@@ -2,7 +2,7 @@
 
 **Data:** 2026-07-17
 
-**Status:** design conversacional aprovado; revisão documental pendente
+**Status:** design e revisão documental aprovados; plano da Fase 1 preparado
 
 **Plataforma inicial:** macOS 26 em Apple Silicon
 
