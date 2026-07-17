@@ -6,7 +6,7 @@
 
 **Architecture:** A Tauri 2 shell hosts a React/TypeScript UI and a Rust core. The Rust core owns encrypted SQLite state, Keychain access, process supervision, policy enforcement, event normalization, lane synchronization, usage collection, and memory retrieval; the frontend receives typed projections through narrow Tauri commands and events. Claude Code and Codex remain the actual harnesses, and every normalized event retains its native reference for audit and debugging.
 
-**Tech Stack:** macOS 26 arm64, Node.js 24.17.0, pnpm 11.5.2, React 19.2.7, TypeScript 7.0.2, Vite 8.1.5, Tauri CLI 2.11.4, Tauri Rust 2.11.5, Rust 1.86.0, Tokio 1.53.0, rusqlite 0.40.1 with bundled SQLCipher, keyring 3.6.3, Vitest 4.1.10, Testing Library 16.3.2, Playwright 1.61.1.
+**Tech Stack:** macOS 26 arm64, Node.js 24.17.0, pnpm 11.5.2, React 19.2.7, TypeScript 7.0.2, Vite 8.1.5, Tauri CLI 2.11.4, Tauri Rust 2.11.5, Rust 1.86.0, Tokio 1.53.0, HeroUI 3.2.2, Tailwind CSS 4.3.3, rusqlite 0.40.1 with bundled SQLCipher, keyring 3.6.3, Vitest 4.1.10, Testing Library 16.3.2, Playwright 1.61.1.
 
 ## Global Constraints
 
@@ -20,6 +20,8 @@
 - Store secrets only in macOS Keychain. Store operational data in SQLCipher. Redact native payloads before logs, fixtures, or audit exports.
 - Keep modules focused: target 250 lines and split any production source file before 400 lines.
 - Frontend tasks must load the `frontend-design` skill and use the Okami design system at `https://okamiops.com/design-system/`; validate contrast, overlap, responsive behavior, keyboard flow, focus, and CSS application visually.
+- Use HeroUI 3 primitives and Lucide icons before introducing custom interactive components or bespoke icons. Keep Okami identity in a thin theme/token layer, reuse shared components, and write custom CSS only for product-specific layout or visual signatures that the component library cannot express cleanly.
+- Keep code readable without narration: comments explain non-obvious invariants, protocol quirks, or security boundaries only; never restate self-explanatory code.
 - Use `apply_patch` for authored file changes. Generated lockfiles and protocol schemas may be produced by their official generators.
 - The existing user npm and Cargo caches are not writable in the managed environment. All commands use repository-local `.cache/pnpm` and `.cache/cargo`, both ignored by Git.
 - Default tests must not consume subscription quota. Live adapter and end-to-end tests run only with `OKAMI_RUN_LIVE_CLI_TESTS=1` and must print the selected runtime/model before sending a turn.
@@ -125,10 +127,10 @@ describe("App", () => {
 
 - [ ] **Step 2: Create the pinned scaffold and install dependencies**
 
-Generate the official React/TypeScript Tauri 2 scaffold without touching `docs/`:
+Generate the official React/TypeScript Tauri 2 scaffold in a disposable directory, inspect it, then reproduce only the required files in the repository with `apply_patch`. This avoids an overwrite-capable `--force` operation and guarantees `docs/` is untouched:
 
 ```bash
-npm_config_cache=$PWD/.cache/npm npx --yes create-tauri-app@4.6.2 . --manager pnpm --template react-ts --identifier com.okami.workbench --tauri-version 2 --force --yes
+npm_config_cache=$PWD/.cache/npm npx --yes create-tauri-app@4.6.2 /tmp/okami-workbench-scaffold --manager pnpm --template react-ts --identifier com.okami.workbench --tauri-version 2 --yes
 test -f docs/superpowers/specs/2026-07-17-okami-workbench-unified-desktop-design.md
 ```
 
@@ -188,11 +190,18 @@ Use this exact script surface in `package.json`:
 }
 ```
 
-Run:
+Install HeroUI v3 with its CSS-first Tailwind v4 integration, then install the remaining dependencies:
 
 ```bash
-pnpm add --save-exact @radix-ui/react-dialog@1.1.19 @radix-ui/react-popover@1.1.19 @radix-ui/react-tabs@1.1.17 @tanstack/react-query@5.101.2 @tauri-apps/api@2.11.1 lucide-react@1.25.0 react@19.2.7 react-dom@19.2.7 react-markdown@10.1.0 react-router-dom@7.18.1 remark-gfm@4.0.1 zod@4.4.3 zustand@5.0.14
-pnpm add --save-dev --save-exact @eslint/js@10.0.1 @playwright/test@1.61.1 @tauri-apps/cli@2.11.4 @testing-library/jest-dom@6.9.1 @testing-library/react@16.3.2 @types/node@26.1.1 @types/react@19.2.17 @types/react-dom@19.2.3 @vitejs/plugin-react@6.0.3 eslint@10.7.0 eslint-plugin-jsx-a11y@6.10.2 eslint-plugin-react-hooks@7.1.1 eslint-plugin-react-refresh@0.5.3 globals@17.7.0 jsdom@29.1.1 prettier@3.9.5 typescript@7.0.2 typescript-eslint@8.64.0 vite@8.1.5 vitest@4.1.10
+pnpm add --save-exact @heroui/react@3.2.2 @heroui/styles@3.2.2 @tanstack/react-query@5.101.2 @tauri-apps/api@2.11.1 lucide-react@1.25.0 react@19.2.7 react-dom@19.2.7 react-markdown@10.1.0 react-router-dom@7.18.1 remark-gfm@4.0.1 tailwindcss@4.3.3 zod@4.4.3 zustand@5.0.14
+pnpm add --save-dev --save-exact @eslint/js@10.0.1 @playwright/test@1.61.1 @tailwindcss/vite@4.3.3 @tauri-apps/cli@2.11.4 @testing-library/jest-dom@6.9.1 @testing-library/react@16.3.2 @types/node@26.1.1 @types/react@19.2.17 @types/react-dom@19.2.3 @vitejs/plugin-react@6.0.3 eslint@10.7.0 eslint-plugin-jsx-a11y@6.10.2 eslint-plugin-react-hooks@7.1.1 eslint-plugin-react-refresh@0.5.3 globals@17.7.0 jsdom@29.1.1 prettier@3.9.5 typescript@7.0.2 typescript-eslint@8.64.0 vite@8.1.5 vitest@4.1.10
+```
+
+`src/styles/global.css` must import Tailwind before HeroUI, following the official v3 order:
+
+```css
+@import "tailwindcss";
+@import "@heroui/styles";
 ```
 
 Expected: `pnpm-lock.yaml` is created under the repository; no file is written below `~/.npm` or `~/.local/share/pnpm`.
@@ -2314,7 +2323,7 @@ git commit -m "test: prove Okami Workbench phase one"
 
 Plan execution must use one of these modes:
 
-1. **Subagent-Driven (recommended):** use `superpowers:subagent-driven-development`; dispatch a fresh implementation worker per task, review specification compliance and code quality between tasks, and stop a worker after three failed validation attempts.
+1. **Subagent-Driven (recommended):** use `superpowers:subagent-driven-development`; dispatch a fresh implementation worker per task, review specification compliance and code quality between tasks, and allow at most two implementation attempts per task. If the second attempt still fails, the coordinating agent assumes the task and finishes it directly. Reviewers stay inside the task brief; broad criticism, speculative rewrites, or overengineering are grounds for the coordinator to stop the agent and complete the scoped work.
 2. **Inline Execution:** use `superpowers:executing-plans`; execute tasks in small batches with a checkpoint after every sprint.
 
 Do not begin Phase 2 until the complete Phase 1 definition of done passes with real Claude and Codex subscription sessions.
