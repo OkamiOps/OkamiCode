@@ -17,6 +17,7 @@ O Okami Workbench é uma aplicação desktop local-first que reúne:
 - browser, HTML inline, arquivos, diffs, terminal, tarefas paralelas, subagentes e aprovações;
 - múltiplas caixas de email, WhatsApp, calendários e Kanban;
 - chat rápido global sem workspace obrigatório;
+- painel unificado de uso, limites, resets, contexto e atividade local;
 - delegação de emails, conversas, cards, eventos, PRs e trabalhos de desenvolvimento;
 - memória compartilhada por SQLite FTS5, Holographic/HRR, Obsidian e GBrain local.
 
@@ -63,6 +64,7 @@ Usar Claude para mandar outro modelo ou CLI trabalhar desperdiça duas cotas e c
 7. Permitir trabalho manual, delegação explícita e automações autorizadas sem confundir esses modos.
 8. Manter dados, índices, credenciais e execução na máquina por padrão.
 9. Tornar toda ação, fonte, aprovação e inferência auditável.
+10. Mostrar a disponibilidade real de cada assinatura antes de iniciar ou delegar trabalho.
 
 ### 3.2 Critérios de sucesso
 
@@ -72,6 +74,8 @@ Usar Claude para mandar outro modelo ou CLI trabalhar desperdiça duas cotas e c
 - Um email, conversa, evento ou PR pode virar uma tarefa delegada.
 - Mover um card acorda o agente associado apenas quando existe um delta relevante e uma política permite a execução.
 - O chat rápido responde sobre a tela atual, email, agenda, Kanban e memória usando somente fontes selecionadas.
+- O usuário consegue comparar limites, resets e atividade sem confundir quota do plano, janela de contexto e tokens locais.
+- Todo percentual de uso mostra fonte, frescor e confiabilidade; quando a quota não estiver disponível, a interface diz isso em vez de estimá-la silenciosamente.
 - Nenhuma mensagem é enviada, evento alterado, PR comentado ou deploy executado sem permissão válida.
 - Reiniciar o aplicativo não perde tarefas, sessões, eventos, aprovações ou artefatos.
 
@@ -83,6 +87,7 @@ Não fazem parte do primeiro ciclo:
 - criar um serviço cloud obrigatório do Okami;
 - substituir os CLIs por uma implementação própria de agente;
 - garantir cache compartilhado entre providers diferentes;
+- prometer quota exata para providers que não exponham uma fonte estável;
 - prometer compatibilidade perfeita com bridges não oficiais;
 - executar fallback silencioso para uma API de inferência paga;
 - permitir autonomia irrestrita sobre email, WhatsApp, repositórios ou sistema operacional;
@@ -134,6 +139,7 @@ flowchart LR
     CORE --> DB["SQLite + SQLCipher"]
     CORE --> KEYCHAIN["macOS Keychain"]
     CORE --> POLICY["Policy e Approval Engine"]
+    CORE --> USAGE["Usage Aggregator"]
 
     EVENTS --> RUNTIMES["Runtime Adapters"]
     EVENTS --> CONNECTORS["Connector Adapters"]
@@ -159,6 +165,9 @@ flowchart LR
     MEMORY --> FTS["FTS5 + Holographic"]
     MEMORY --> OBSIDIAN["Obsidian"]
     MEMORY --> GBRAIN["GBrain local"]
+
+    USAGE --> RUNTIMES
+    USAGE --> DB
 ```
 
 ### 6.1 Desktop shell
@@ -195,7 +204,8 @@ Principais entidades:
 - `connector_account`, `external_thread` e `external_item`;
 - `capability_lease`, `approval` e `external_action`;
 - `memory_source`, `memory_projection` e `citation`;
-- `automation_rule` e `execution_budget`.
+- `automation_rule` e `execution_budget`;
+- `usage_source`, `usage_window`, `usage_snapshot`, `usage_activity_bucket` e `usage_alert`.
 
 O event log usa uma chave de idempotência por origem. Webhooks, respostas repetidas e reinícios não podem criar ações duplicadas.
 
@@ -245,7 +255,7 @@ Todo adapter implementa o mesmo contrato lógico:
 - `stream_events`;
 - `respond_to_approval`;
 - `list_capabilities`;
-- `usage_snapshot`;
+- `usage_capabilities`, `quota_snapshot`, `context_snapshot` e `activity_snapshot`;
 - `export_native_reference`.
 
 Eventos normalizados incluem:
@@ -258,7 +268,7 @@ Eventos normalizados incluem:
 - browser, imagem, HTML e artefato;
 - subagente ou tarefa paralela;
 - pedido e resposta de aprovação;
-- uso, rate limit, retry, erro e conclusão.
+- tokens, model calls, contexto, rate limit, retry, erro e conclusão.
 
 O envelope canônico preserva o payload nativo para debugging, mas a UI consome campos estáveis. Campos desconhecidos são ignorados sem quebrar a execução.
 
@@ -271,6 +281,8 @@ O Workbench prioriza as tools nativas do runtime. Serviços compartilhados só e
 - **Cursor:** usar `--output-format stream-json`, IDs de sessão e `--resume`.
 - **Antigravity/AGY:** instalar companion plugin; consumir hooks JSON, `transcript.jsonl`, `artifactDirectoryPath`, status, tarefas e subagentes. Não depender de parsing ANSI como superfície primária.
 - **Grok e OpenCode:** adaptar o protocolo estruturado disponível; se houver apenas TTY, classificar a integração como limitada até existir um contrato confiável.
+
+Capacidades de uso são opcionais e independentes das capacidades de execução. Um adapter pode executar perfeitamente e não conseguir informar quota restante. Essa ausência não degrada a lane; apenas aparece como `quota unavailable` no Usage Control Center.
 
 ## 9. Sessões, lanes e economia de cota
 
@@ -332,20 +344,106 @@ O Core constrói o pacote de forma determinística. Não chama um modelo para re
 - Estimativas aparecem como estimativas; uso exato só é mostrado quando o runtime o fornecer.
 - Auto-compaction por modelo nunca acontece escondida.
 
-## 10. Experiência desktop
+## 10. Uso, limites e atividade
 
-### 10.1 Navegação principal
+### 10.1 Três medidas distintas
+
+O Usage Control Center nunca mistura:
+
+| Medida | Pergunta respondida | Fonte típica |
+|---|---|---|
+| Quota da assinatura | Quanto ainda posso usar e quando reseta? | Provider, runtime ou comando nativo |
+| Contexto da sessão | Quanto da janela desta conversa está ocupado? | Sessão nativa |
+| Atividade local | Quanto usei, em quais runtimes e tarefas? | Event log do Workbench |
+
+Tokens locais não são convertidos em percentual de quota. Percentuais de providers diferentes também não são comparados como unidades equivalentes: 40% de uma janela semanal do Codex pode representar capacidade prática diferente de 40% de uma janela do Claude ou Grok.
+
+### 10.2 Fontes e confiabilidade
+
+Cada `usage_snapshot` guarda:
+
+- conta, runtime, provider e modelo ou grupo de modelos;
+- tipo de janela, duração e reset;
+- usado, restante, unidade e créditos quando disponíveis;
+- fonte, método de coleta e versão do adapter;
+- horário de coleta, validade e estado de stale;
+- confiabilidade e payload nativo redigido.
+
+Taxonomia de fontes, em ordem de preferência:
+
+1. `official_structured`: protocolo documentado e estruturado, como `account/rateLimits/read` e `account/usage/read` do Codex app-server;
+2. `native_presentational`: comando ou tela nativa do CLI, como `/usage`, lida localmente por adapter versionado;
+3. `dashboard_read`: dashboard autenticado aberto pelo usuário, com coleta opt-in e read-only;
+4. `local_estimate`: tokens, calls, sessões e duração calculados a partir de eventos locais;
+5. `unavailable`: provider sem fonte utilizável.
+
+Leitura presentacional e dashboard podem quebrar quando o fornecedor alterar a UI. O adapter então preserva o último snapshot como stale, explica a falha e deixa de mostrar o dado como atual. O Workbench nunca lê cookies ou tokens diretamente do armazenamento de outro aplicativo; usa a sessão nativa, o navegador dedicado autorizado ou autenticação própria suportada.
+
+### 10.3 Cobertura inicial por adapter
+
+| Adapter | Quota do plano | Atividade |
+|---|---|---|
+| Codex | Estruturada pelo app-server | Estruturada + event log local |
+| Claude Code | Comando/tela nativa quando disponível | Eventos da sessão + event log local |
+| Grok | `/usage` quando disponível | `usage` e `modelUsage` por run + event log |
+| Cursor | Dashboard oficial; Admin API em contas compatíveis | Eventos do Cursor Agent |
+| Antigravity, MiniMax e MiMo | Probe de capability; tela nativa ou indisponível | Event log local |
+| OpenCode | A quota pertence ao provider selecionado | `opencode stats` + event log local |
+
+OpenCode, Claude Code, Codex, Cursor e AGY aparecem na visão **Runtimes**. ChatGPT Pro, Claude Max, SuperGrok, MiniMax, MiMo, Cursor Plan e Google AI aparecem em **Assinaturas**. Isso impede contar o mesmo consumo duas vezes quando um runtime usa mais de um provider.
+
+### 10.4 Interface
+
+A navegação principal contém **Uso & limites**. A tela oferece:
+
+- visão geral com disponibilidade, próximo reset, alertas e cobertura de fontes;
+- tabela por assinatura e janelas de 5 horas, semanais, mensais ou específicas por modelo;
+- visões por runtime e por modelo;
+- detalhe da conta com plano, créditos, resets e histórico;
+- heatmap, tokens, model calls, sessões, duração e ferramentas mais usadas;
+- filtros de período e fonte;
+- link para abrir a fonte nativa;
+- estados `live`, `stale`, `partial`, `estimated` e `unavailable`.
+
+O seletor de lane possui um popover rápido com:
+
+- contexto da sessão atual;
+- limite mais restritivo da assinatura;
+- reset mais próximo;
+- alerta configurado;
+- link para o painel completo.
+
+### 10.5 Alertas e preflight
+
+O usuário configura limiares por conta ou janela, por exemplo 25%, 10% e esgotado. Antes de iniciar uma lane fria, delegar uma tarefa longa ou acordar um agente, o Core executa um preflight determinístico:
+
+1. verifica saúde e snapshot vigente;
+2. sinaliza quota baixa, stale ou indisponível;
+3. estima somente o bootstrap local conhecido, sem fingir conhecer a cobrança do provider;
+4. sugere lanes compatíveis;
+5. espera decisão do usuário.
+
+Não existe troca automática por padrão. Uma automação só pode mudar de lane quando possuir política explícita, allowlist de providers, budget e regra de aprovação. Toda sugestão e troca fica na auditoria.
+
+### 10.6 Histórico local
+
+O Event Router alimenta contadores locais sem nova inferência. Snapshots de quota são séries temporais separadas dos eventos de atividade. Retenção e granularidade são configuráveis; agregações diárias preservam tendências sem manter payloads desnecessários. O usuário pode excluir histórico local sem desconectar a assinatura.
+
+## 11. Experiência desktop
+
+### 11.1 Navegação principal
 
 - **Início:** resumo de agenda, inbox, tarefas e execuções.
 - **Workbench:** coding e tarefas de projeto.
 - **Inbox:** email e WhatsApp unificados.
 - **Agenda:** calendários combinados.
 - **Kanban:** trabalho manual, delegado e automatizado.
+- **Uso & limites:** quotas, resets, contexto, atividade e alertas.
 - **Memória:** fontes, notas, entidades, relações e proveniência.
 - **Automações:** regras, budgets, histórico e kill switch.
 - **Conexões:** contas, runtimes, CLIs e diagnóstico.
 
-### 10.2 Workbench adaptativo
+### 11.2 Workbench adaptativo
 
 O centro é o chat. Superfícies de trabalho abrem sob demanda:
 
@@ -360,7 +458,7 @@ O centro é o chat. Superfícies de trabalho abrem sob demanda:
 
 Um painel contextual lateral mostra lane, provider, modelo, uso, workspace, Git, fontes e permissões ativas. Ele pode ser recolhido.
 
-### 10.3 Chat rápido global
+### 11.3 Chat rápido global
 
 O chat rápido:
 
@@ -383,7 +481,7 @@ Chips possíveis:
 
 O chat pesquisa localmente primeiro e entrega ao modelo somente resultados selecionados. Uma conversa rápida pode virar tarefa, nota ou anexo de projeto.
 
-## 11. Eu, Agente e Automação
+## 12. Eu, Agente e Automação
 
 Todo item acionável possui um proprietário e uma política:
 
@@ -393,7 +491,7 @@ Todo item acionável possui um proprietário e uma política:
 | Agente | Delegação delimitada a uma tarefa, conversa ou artefato |
 | Automação | Regra persistente previamente aprovada |
 
-### 11.1 Cards orientados a eventos
+### 12.1 Cards orientados a eventos
 
 Um card guarda:
 
@@ -423,7 +521,7 @@ Quando o card se move:
 
 O passo 2 não usa modelo.
 
-### 11.2 Delegação de comunicação
+### 12.2 Delegação de comunicação
 
 Email, WhatsApp, evento, PR, mensagem e chat rápido podem virar tarefa.
 
@@ -448,9 +546,9 @@ Modos de resposta:
 
 Uma resposta nova na thread vira delta da tarefa e pode acordar a lane conforme sua política.
 
-## 12. Conectores
+## 13. Conectores
 
-### 12.1 Contrato
+### 13.1 Contrato
 
 Cada conector implementa:
 
@@ -464,7 +562,7 @@ Cada conector implementa:
 - health e reautenticação;
 - desconexão e remoção de dados.
 
-### 12.2 Email
+### 13.2 Email
 
 - Gmail via OAuth e APIs oficiais.
 - Outlook via Microsoft Graph.
@@ -472,23 +570,23 @@ Cada conector implementa:
 - Hostinger, Titan, cPanel e outros via IMAP/SMTP configurável.
 - Novas caixas podem ser adicionadas sem alterar o domínio central.
 
-### 12.3 WhatsApp
+### 13.3 WhatsApp
 
 - Interface de provider separa domínio e implementação.
 - EvolutionGo é o provider inicial para o fluxo local desejado.
 - Meta Cloud API permanece alternativa compatível.
 - O status da integração não pode esconder a natureza oficial ou não oficial do provider.
 
-### 12.4 Calendário
+### 13.4 Calendário
 
 - Google Calendar;
 - Microsoft Graph Calendar;
 - CalDAV para outros provedores;
 - leitura combinada, conflitos, criação e atualização com aprovação.
 
-## 13. Memória
+## 14. Memória
 
-### 13.1 Quatro camadas
+### 14.1 Quatro camadas
 
 | Camada | Função |
 |---|---|
@@ -497,7 +595,7 @@ Cada conector implementa:
 | Obsidian | Decisões e documentação legíveis por humanos |
 | GBrain local | Entidades, relações, timelines e conhecimento cruzado |
 
-### 13.2 FTS5
+### 14.2 FTS5
 
 FTS5/BM25 é a base para termos exatos, nomes, commits, PRs, erros e conteúdo textual. O índice cobre:
 
@@ -509,7 +607,7 @@ FTS5/BM25 é a base para termos exatos, nomes, commits, PRs, erros e conteúdo t
 - runs, comandos e artefatos;
 - texto extraído de anexos.
 
-### 13.3 Holographic/HRR
+### 14.3 Holographic/HRR
 
 O Holographic complementa FTS5 com:
 
@@ -532,7 +630,7 @@ BM25
 + vínculo com tarefa e tela atual
 ```
 
-### 13.4 Obsidian
+### 14.4 Obsidian
 
 Configuração inicial:
 
@@ -554,7 +652,7 @@ Conversas rápidas não são salvas automaticamente. Decisões, aprendizados, sc
 
 Um watcher detecta mudanças externas e reindexa. Conflitos são exibidos; o Workbench não sobrescreve silenciosamente notas alteradas por Claude, Codex ou pelo usuário.
 
-### 13.5 GBrain local
+### 14.5 GBrain local
 
 O GBrain é uma camada relacional opcional, porém recomendada. Nesta máquina ele usa PostgreSQL nativo + pgvector local; PGLite não é usado devido à incompatibilidade documentada com macOS 26 em Apple Silicon.
 
@@ -572,7 +670,7 @@ Filtros determinísticos impedem promoção de:
 
 Obsidian e o brain repo continuam legíveis e portáveis; os índices podem ser reconstruídos.
 
-### 13.6 Recuperação e proveniência
+### 14.6 Recuperação e proveniência
 
 Toda memória entregue a um modelo possui:
 
@@ -585,9 +683,9 @@ Toda memória entregue a um modelo possui:
 
 A interface mostra chips como `Memória utilizada: 3 notas`. O usuário pode abrir, remover ou bloquear uma fonte antes da execução.
 
-## 14. Segurança e permissões
+## 15. Segurança e permissões
 
-### 14.1 Capability Leases
+### 15.1 Capability Leases
 
 Cada execução recebe uma lease temporária:
 
@@ -604,7 +702,7 @@ Níveis:
 
 Deploy, exclusão, pagamento, acesso a secrets e mudanças destrutivas sempre exigem confirmação reforçada.
 
-### 14.2 Conteúdo não confiável
+### 15.2 Conteúdo não confiável
 
 Email, WhatsApp, páginas, documentos e resultados externos são marcados como `UNTRUSTED_CONTENT`.
 
@@ -614,7 +712,7 @@ Email, WhatsApp, páginas, documentos e resultados externos são marcados como `
 - Prompt injection conhecida é registrada e sinalizada.
 - Testes adversariais cobrem arquivos, imagens, emails e páginas.
 
-### 14.3 Credenciais e OAuth
+### 15.3 Credenciais e OAuth
 
 - Tokens, senhas IMAP, chaves e chave mestra ficam no macOS Keychain.
 - OAuth para apps nativos usa navegador externo, Authorization Code + PKCE e loopback efêmero.
@@ -622,7 +720,7 @@ Email, WhatsApp, páginas, documentos e resultados externos são marcados como `
 - Credenciais não entram em logs, prompts, SQLite, Obsidian ou GBrain.
 - Desconectar uma conta remove credenciais e oferece opções explícitas para cache e memória derivada.
 
-### 14.4 Isolamento
+### 15.4 Isolamento
 
 - Capabilities do Tauri limitam cada janela e webview.
 - Sidecars recebem comandos e diretórios allowlisted.
@@ -631,9 +729,9 @@ Email, WhatsApp, páginas, documentos e resultados externos são marcados como `
 - Logs aplicam redaction antes da persistência.
 - Backups locais são criptografados.
 
-## 15. Ações externas, idempotência e falhas
+## 16. Ações externas, idempotência e falhas
 
-### 15.1 Outbox
+### 16.1 Outbox
 
 Toda ação externa passa por uma outbox:
 
@@ -649,7 +747,7 @@ draft -> approval_pending -> dispatching -> confirmed
 - Estado incerto nunca é tratado como falha comum; exige reconciliação.
 - A mesma mensagem, comentário ou evento não pode ser enviado duas vezes após crash.
 
-### 15.2 Estados de conectores
+### 16.2 Estados de conectores
 
 - conectado;
 - sincronizando;
@@ -660,16 +758,17 @@ draft -> approval_pending -> dispatching -> confirmed
 
 Falhar WhatsApp não derruba email, Kanban ou coding. Falhar um runtime pausa sua lane. O Core não muda provider ou cobrança sem autorização.
 
-### 15.3 Falhas de runtime
+### 16.3 Falhas de runtime
 
 - Processo encerrado: preservar eventos e permitir retomada.
 - Auth expirada: pausar e solicitar reconexão.
 - Rate limit: mostrar retry sugerido, não trocar automaticamente.
+- Fonte de quota falhou: manter último snapshot como stale, separar atividade local e não bloquear execução manual.
 - Evento desconhecido: armazenar payload nativo, continuar se possível e marcar adapter degradado.
 - Aprovação órfã: expirar e reconciliar no resume.
 - Tool call interrompida: registrar `interrupted`, nunca reexecutar silenciosamente.
 
-## 16. Auditoria
+## 17. Auditoria
 
 Cada ação registra:
 
@@ -682,11 +781,12 @@ Cada ação registra:
 - fontes e memória fornecidas;
 - resultado e confirmação externa;
 - uso reportado ou estimado;
+- fonte, frescor, janela e reset do snapshot usado no preflight;
 - arquivos, diffs e artefatos.
 
 Auditoria é local, pesquisável e exportável. Secrets são removidos antes da gravação.
 
-## 17. Fases de entrega
+## 18. Fases de entrega
 
 ### Fase 1 — Workbench diário
 
@@ -694,6 +794,9 @@ Auditoria é local, pesquisável e exportável. Secrets são removidos antes da 
 - interface Síntese Okami;
 - tarefas, chats rápidos e lanes;
 - Claude Code e Codex;
+- Usage Control Center, histórico local e popover rápido;
+- quota estruturada do Codex e adapter inicial de uso do Claude;
+- alertas e preflight sem troca automática;
 - browser, HTML, arquivos, diffs, terminal, approvals e subagentes;
 - delta sync;
 - SQLite/SQLCipher + FTS5;
@@ -701,7 +804,7 @@ Auditoria é local, pesquisável e exportável. Secrets são removidos antes da 
 - Keychain, leases e auditoria;
 - retomada após reinício.
 
-**Gate:** executar uma tarefa real nos dois runtimes, alternar sem inferência auxiliar e retomar ambas as sessões nativas.
+**Gate:** executar uma tarefa real nos dois runtimes, alternar sem inferência auxiliar, retomar ambas as sessões nativas e exibir contexto, atividade e quota com fonte correta.
 
 ### Fase 2 — Catálogo de runtimes
 
@@ -710,11 +813,12 @@ Auditoria é local, pesquisável e exportável. Secrets são removidos antes da 
 - Antigravity/AGY;
 - OpenCode;
 - MiniMax e MiMo quando compatíveis;
+- adapters de quota e atividade para Grok, Cursor, AGY, OpenCode, MiniMax e MiMo;
 - doctor de CLIs;
 - Holographic portado para Rust;
 - matriz de capabilities, delta e saúde.
 
-**Gate:** cada adapter passa o mesmo contrato de eventos, cancelamento, retomada, aprovação e erro.
+**Gate:** cada adapter passa o mesmo contrato de eventos, cancelamento, retomada, aprovação e erro; ausência ou quebra da fonte de quota aparece como indisponível ou stale, nunca como percentual fabricado.
 
 ### Fase 3 — Inbox e trabalho delegado
 
@@ -751,47 +855,57 @@ Auditoria é local, pesquisável e exportável. Secrets são removidos antes da 
 
 **Gate:** respostas de memória mostram fontes e toda inferência auxiliar aparece no consumo.
 
-## 18. Estratégia de testes
+## 19. Estratégia de testes
 
-### 18.1 Testes de contrato
+### 19.1 Testes de contrato
 
 - suites comuns para runtime adapters e connectors;
 - golden fixtures de eventos nativos;
 - campos desconhecidos e evolução de schema;
 - cancelamento e backpressure;
-- idempotência e reconciliação.
+- idempotência e reconciliação;
+- fixtures de quota oficial, leitura presentacional, stale, parcial e indisponível;
+- cálculo de reset com timezone, horário de verão e relógio local incorreto;
+- separação entre quota, contexto e atividade.
 
-### 18.2 Integração real
+### 19.2 Integração real
 
 - usar os CLIs instalados na máquina;
 - verificar autenticação por assinatura;
 - iniciar, retomar, interromper e concluir sessões;
 - validar browser, arquivos, terminal, approvals e subagentes;
-- testar restart do Core e da aplicação.
+- testar restart do Core e da aplicação;
+- comparar snapshots com a tela nativa dos providers suportados;
+- alterar a versão de um CLI e verificar degradação segura do parser de uso;
+- validar que OpenCode não cria uma assinatura duplicada para o provider subjacente.
 
-### 18.3 Segurança
+### 19.3 Segurança
 
 - prompt injection direta e indireta;
 - secret scanning em logs, banco, GBrain e Obsidian;
 - tentativa de capability escalation;
 - OAuth state/PKCE e callback loopback;
 - acesso fora do workspace;
-- replay de webhooks e eventos.
+- replay de webhooks e eventos;
+- confirmar que coleta de uso não lê cookies, tokens ou credenciais de outros aplicativos;
+- redigir payloads de quota antes de persistir ou exportar.
 
-### 18.4 Frontend
+### 19.4 Frontend
 
 - validação visual em viewport real do macOS;
 - responsividade e panes redimensionáveis;
 - contraste, foco, teclado e screen reader;
 - ausência de sobreposição e conteúdo cortado;
 - estados vazios, loading, erro, offline e rate limit;
-- renderização de mensagens longas, diffs, HTML e ferramentas.
+- renderização de mensagens longas, diffs, HTML e ferramentas;
+- legibilidade das tabelas e barras com diferentes unidades, fontes e estados stale;
+- popover de uso sem sobrepor composer, seletor de modelo ou approvals.
 
-### 18.5 Critério de conclusão
+### 19.5 Critério de conclusão
 
 Build verde não encerra uma fase. Cada gate precisa de um fluxo E2E clicável, evidência de execução real e auditoria coerente.
 
-## 19. Decisões fixadas
+## 20. Decisões fixadas
 
 - Tauri 2 + React/TypeScript + Rust.
 - SQLite/SQLCipher como estado operacional.
@@ -799,6 +913,9 @@ Build verde não encerra uma fase. Cada gate precisa de um fluxo E2E clicável, 
 - Claude Code é harness preferencial, não obrigatório.
 - Runtimes nativos permanecem disponíveis.
 - Não usar API de inferência paga como fallback silencioso.
+- Usage Control Center separa quota, contexto e atividade local.
+- Todo dado de limite mostra fonte, frescor e confiabilidade; indisponível não vira estimativa silenciosa.
+- Alertas e preflight sugerem lanes, mas não trocam provider sem política explícita.
 - Um único runtime/provider executor por run; child runs e invocações auxiliares são visíveis.
 - Sessões nativas persistentes por lane, sincronizadas por delta.
 - Chat rápido possui conversas próprias e sem workspace por padrão.
@@ -812,7 +929,7 @@ Build verde não encerra uma fase. Cada gate precisa de um fluxo E2E clicável, 
 - Capabilities temporárias e outbox idempotente controlam ações.
 - O primeiro plano de implementação cobre somente a Fase 1.
 
-## 20. Referências técnicas
+## 21. Referências técnicas
 
 - [Tauri 2](https://v2.tauri.app/)
 - [Tauri — external binaries/sidecars](https://v2.tauri.app/develop/sidecar/)
@@ -821,6 +938,7 @@ Build verde não encerra uma fase. Cada gate precisa de um fluxo E2E clicável, 
 - [Claude Code CLI](https://docs.anthropic.com/en/docs/claude-code/cli-usage)
 - [Claude Code LLM gateway](https://docs.anthropic.com/en/docs/claude-code/llm-gateway)
 - [Cursor Agent — stream-json](https://docs.cursor.com/en/cli/reference/output-format)
+- [Cursor — planos e uso](https://docs.cursor.com/account/pricing)
 - [Antigravity hooks](https://antigravity.google/docs/hooks)
 - [OpenCode providers](https://opencode.ai/docs/providers)
 - [OpenCode configuration and compaction](https://opencode.ai/docs/config/)
