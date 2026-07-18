@@ -20,6 +20,7 @@
 - Store secrets only in macOS Keychain. Store operational data in SQLCipher. Redact native payloads before logs, fixtures, or audit exports.
 - Keep modules focused: target 250 lines and split any production source file before 400 lines.
 - Frontend tasks must load the `frontend-design` skill and use the Okami design system at `https://okamiops.com/design-system/`; validate contrast, overlap, responsive behavior, keyboard flow, focus, and CSS application visually.
+- Frontend tasks must also follow the canonical five-region layout (nav rail, sectioned sidebar, list pane, focal content, details panel) defined in `docs/superpowers/specs/2026-07-18-okami-workbench-layout-reference.md`. The screenshot reference governs structure and density only; every color, font, radius, and focus style comes from Okami tokens.
 - Use HeroUI 3 primitives and Lucide icons before introducing custom interactive components or bespoke icons. Keep Okami identity in a thin theme/token layer, reuse shared components, and write custom CSS only for product-specific layout or visual signatures that the component library cannot express cleanly.
 - Keep code readable without narration: comments explain non-obvious invariants, protocol quirks, or security boundaries only; never restate self-explanatory code.
 - Use `apply_patch` for authored file changes. Generated lockfiles and protocol schemas may be produced by their official generators.
@@ -2323,7 +2324,8 @@ git commit -m "test: prove Okami Workbench phase one"
 
 Plan execution must use one of these modes:
 
-1. **Subagent-Driven (recommended):** use `superpowers:subagent-driven-development`; dispatch a fresh implementation worker per task, review specification compliance and code quality between tasks, and allow at most two implementation attempts per task. If the second attempt still fails, the coordinating agent assumes the task and finishes it directly. Reviewers stay inside the task brief; broad criticism, speculative rewrites, or overengineering are grounds for the coordinator to stop the agent and complete the scoped work.
-2. **Inline Execution:** use `superpowers:executing-plans`; execute tasks in small batches with a checkpoint after every sprint.
+1. **Codex-Driven (user-selected, recommended):** dispatch each task to Codex through the shared local runtime (`codex:codex-rescue` agent), one task per Codex run, passing the task brief verbatim plus the Global Constraints. Claude Code acts as coordinator only: it reviews each returned diff for specification compliance, runs the task's gate commands itself, and commits. At most two Codex attempts per task; on a second failure the coordinator finishes the task directly. The coordinator never opens a second inference lane to supervise a running Codex task.
+2. **Subagent-Driven:** use `superpowers:subagent-driven-development`; dispatch a fresh implementation worker per task, review specification compliance and code quality between tasks, and allow at most two implementation attempts per task. If the second attempt still fails, the coordinating agent assumes the task and finishes it directly. Reviewers stay inside the task brief; broad criticism, speculative rewrites, or overengineering are grounds for the coordinator to stop the agent and complete the scoped work.
+3. **Inline Execution:** use `superpowers:executing-plans`; execute tasks in small batches with a checkpoint after every sprint.
 
 Do not begin Phase 2 until the complete Phase 1 definition of done passes with real Claude and Codex subscription sessions.

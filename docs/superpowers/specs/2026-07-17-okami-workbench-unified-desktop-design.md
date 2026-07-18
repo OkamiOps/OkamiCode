@@ -4,6 +4,8 @@
 
 **Status:** design e revisão documental aprovados; plano da Fase 1 preparado
 
+**Revisão 2026-07-18:** estrutura de layout fixada pela referência visual do usuário (ver `2026-07-18-okami-workbench-layout-reference.md`), Todoist definido como provider inicial do Kanban e fases reordenadas para entregar Inbox, Kanban e Agenda antes do catálogo amplo de runtimes.
+
 **Plataforma inicial:** macOS 26 em Apple Silicon
 
 **Princípio central:** uma interface local para trabalhar, comunicar, organizar e delegar usando as assinaturas e os CLIs já instalados.
@@ -431,6 +433,8 @@ O Event Router alimenta contadores locais sem nova inferência. Snapshots de quo
 
 ## 11. Experiência desktop
 
+A estrutura visual de todas as áreas segue as cinco regiões canônicas (rail, sidebar seccionada, lista, conteúdo focal, painel de detalhes) definidas na referência de layout `2026-07-18-okami-workbench-layout-reference.md`, aplicadas com os tokens do design system Okami.
+
 ### 11.1 Navegação principal
 
 - **Início:** resumo de agenda, inbox, tarefas e execuções.
@@ -583,6 +587,17 @@ Cada conector implementa:
 - Microsoft Graph Calendar;
 - CalDAV para outros provedores;
 - leitura combinada, conflitos, criação e atualização com aprovação.
+
+O usuário mantém hoje três agendas separadas; a visão combinada com identificação de conflitos entre contas é requisito, não conveniência.
+
+### 13.5 Kanban e tarefas (Todoist)
+
+- Todoist é o provider inicial do Kanban, via API oficial (REST v2 + Sync) com OAuth.
+- Projetos, seções, tarefas, labels, prazos e comentários são sincronizados de forma incremental com cursor e idempotência, seguindo o contrato de conectores.
+- Cards do Workbench podem espelhar tarefas do Todoist ou existir apenas localmente; o vínculo é explícito e visível.
+- Escritas no Todoist (criar, mover, concluir, comentar) passam pela outbox e pelas mesmas políticas de aprovação de qualquer ação externa.
+- Políticas de ativação de agente (seção 12.1) valem igualmente para cards espelhados; mover um card no Todoist gera delta pelo sync e segue o mesmo fluxo determinístico.
+- A interface de provider permite adicionar outros backends de Kanban no futuro sem alterar o domínio.
 
 ## 14. Memória
 
@@ -806,7 +821,23 @@ Auditoria é local, pesquisável e exportável. Secrets são removidos antes da 
 
 **Gate:** executar uma tarefa real nos dois runtimes, alternar sem inferência auxiliar, retomar ambas as sessões nativas e exibir contexto, atividade e quota com fonte correta.
 
-### Fase 2 — Catálogo de runtimes
+### Fase 2 — Painel de trabalho: Inbox, Kanban e Agenda
+
+Reordenada em 2026-07-18: o painel diário (email, Kanban/Todoist e agenda unificada) entrega mais valor imediato ao usuário do que o catálogo amplo de runtimes, que passa a ser a Fase 3.
+
+- Gmail, Zoho, Hostinger e IMAP/SMTP;
+- estrutura para Outlook;
+- Kanban com Todoist como provider inicial (seção 13.5);
+- Google Calendar, Microsoft Calendar e CalDAV com visão combinada das três agendas e conflitos;
+- email para tarefa;
+- delegação;
+- cards orientados a eventos;
+- drafts, approvals e outbox;
+- resumo de agenda e conflitos no Início.
+
+**Gate:** email recebido -> tarefa -> Codex produz proposta -> usuário revisa -> envio único confirmado; um card do Todoist sincroniza nos dois sentidos sem duplicar ação; as três agendas aparecem combinadas com conflitos corretos.
+
+### Fase 3 — Catálogo de runtimes
 
 - Grok;
 - Cursor;
@@ -820,26 +851,12 @@ Auditoria é local, pesquisável e exportável. Secrets são removidos antes da 
 
 **Gate:** cada adapter passa o mesmo contrato de eventos, cancelamento, retomada, aprovação e erro; ausência ou quebra da fonte de quota aparece como indisponível ou stale, nunca como percentual fabricado.
 
-### Fase 3 — Inbox e trabalho delegado
-
-- Gmail, Zoho, Hostinger e IMAP/SMTP;
-- estrutura para Outlook;
-- Kanban;
-- email para tarefa;
-- delegação;
-- cards orientados a eventos;
-- drafts, approvals e outbox.
-
-**Gate:** email recebido -> tarefa -> Codex produz proposta -> usuário revisa -> envio único confirmado.
-
-### Fase 4 — WhatsApp e agenda
+### Fase 4 — WhatsApp e contexto global
 
 - EvolutionGo e provider interface;
-- Google Calendar, Microsoft Calendar e CalDAV;
 - contexto global no chat;
 - conversa/evento para tarefa;
-- delegação por conversa;
-- resumo de agenda e conflitos.
+- delegação por conversa.
 
 **Gate:** chat responde sobre email e agenda com fontes selecionadas, sem anexar projeto ou acordar agente silenciosamente.
 
@@ -928,6 +945,9 @@ Build verde não encerra uma fase. Cada gate precisa de um fluxo E2E clicável, 
 - Conteúdo externo é não confiável.
 - Capabilities temporárias e outbox idempotente controlam ações.
 - O primeiro plano de implementação cobre somente a Fase 1.
+- A estrutura de layout segue a referência `2026-07-18-okami-workbench-layout-reference.md`; a identidade visual segue os tokens Okami.
+- Todoist é o provider inicial do Kanban; a Fase 2 entrega o painel de trabalho (Inbox, Kanban, Agenda) antes do catálogo de runtimes.
+- A implementação é executada primariamente pelo Codex, com o Claude Code coordenando, revisando e mantendo os gates.
 
 ## 21. Referências técnicas
 
@@ -941,6 +961,8 @@ Build verde não encerra uma fase. Cada gate precisa de um fluxo E2E clicável, 
 - [Cursor — planos e uso](https://docs.cursor.com/account/pricing)
 - [Antigravity hooks](https://antigravity.google/docs/hooks)
 - [OpenCode providers](https://opencode.ai/docs/providers)
+- [Todoist REST API v2](https://developer.todoist.com/rest/v2/)
+- [Todoist Sync API](https://developer.todoist.com/sync/v9/)
 - [OpenCode configuration and compaction](https://opencode.ai/docs/config/)
 - [SQLite FTS5](https://sqlite.org/fts5.html)
 - [GBrain](https://github.com/garrytan/gbrain)
