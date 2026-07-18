@@ -1,5 +1,7 @@
 # Okami Workbench Phase 1 Implementation Plan
 
+> **SUPERSEDED (2026-07-18):** the desktop shell decision changed from Tauri 2 + Rust to Electron + TypeScript. This plan is kept for reference only. The active plan is `2026-07-18-okami-workbench-phase-1-electron.md`.
+
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
 **Goal:** Deliver a bundle-ready macOS desktop application in which Marcos can run and resume real Claude Code and Codex subscription sessions through one chat-native UI, inspect native tools and approvals, switch persistent lanes without an auxiliary model, search local Obsidian context, and see honest usage data.

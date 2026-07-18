@@ -6,6 +6,8 @@
 
 **Revisão 2026-07-18:** estrutura de layout fixada pela referência visual do usuário (ver `2026-07-18-okami-workbench-layout-reference.md`), Todoist definido como provider inicial do Kanban e fases reordenadas para entregar Inbox, Kanban e Agenda antes do catálogo amplo de runtimes.
 
+**Revisão 2026-07-18 (2):** shell desktop trocado de Tauri 2 + Rust para **Electron + TypeScript de ponta a ponta**, por decisão do usuário: todos os CLIs orquestrados são Node.js, e uma única linguagem acelera o desenvolvimento (executado pelo Codex, coordenado pelo Claude). Duas clarificações de leitura: (a) "Codex-Driven" descreve apenas quem escreve o código do app durante a construção, não o runtime do produto — o produto continua multi-runtime com Claude Code como harness preferencial; (b) `stream-json` é somente o formato estruturado de eventos do Claude Code CLI para integração programática, não um modo ou modelo diferente.
+
 **Plataforma inicial:** macOS 26 em Apple Silicon
 
 **Princípio central:** uma interface local para trabalhar, comunicar, organizar e delegar usando as assinaturas e os CLIs já instalados.
@@ -135,7 +137,7 @@ Dados locais continuam sujeitos a prompt injection, vazamento por logs, execuç�
 
 ```mermaid
 flowchart LR
-    UI["Síntese Okami<br/>React + TypeScript"] --> CORE["Okami Core<br/>Tauri 2 + Rust"]
+    UI["Síntese Okami<br/>React + TypeScript (renderer sandboxed)"] --> CORE["Okami Core<br/>Electron main process (TypeScript)"]
 
     CORE --> EVENTS["Event Router"]
     CORE --> DB["SQLite + SQLCipher"]
@@ -174,12 +176,12 @@ flowchart LR
 
 ### 6.1 Desktop shell
 
-- **Tauri 2** fornece janela, menus, tray, notificações, deep links, atualizações e capabilities por janela/webview.
-- **React + TypeScript** implementa a interface e componentes visuais.
-- **Rust** implementa o Core, persistência, policy engine, supervisão de processos, IPC e conectores locais.
-- Sidecars são permitidos para binários externos, browser automation e GBrain, mas cada um recebe permissões explícitas.
+- **Electron** fornece janela, menus, tray, notificações, deep links e atualizações; TypeScript é a única linguagem do produto.
+- **React + TypeScript** implementa a interface no renderer, que roda com `contextIsolation: true`, `nodeIntegration: false` e sandbox ativo.
+- **O processo main** implementa o Core: persistência, policy engine, supervisão de processos, coleta de uso, conectores e memória. Trabalhos pesados ou instáveis (parsers de CLI, indexação, browser automation) rodam em `utilityProcess` dedicados.
+- O preload expõe ao renderer apenas uma ponte tipada e enumerada (`contextBridge`); nenhum módulo Node vaza para a UI.
 
-O frontend não abre processos arbitrários, lê o Keychain ou acessa diretamente o banco. Toda operação privilegiada passa por comandos Tauri tipados e pelo Policy Engine.
+O frontend não abre processos arbitrários, lê o Keychain ou acessa diretamente o banco. Toda operação privilegiada passa pela ponte IPC tipada e pelo Policy Engine no processo main.
 
 Browser automation usa um perfil dedicado do Chromium/Chrome controlado por CDP. HTML inline roda em webview sandboxed, sem acesso às APIs privilegiadas do aplicativo. Conteúdo externo nunca é renderizado na mesma origem da interface principal.
 
@@ -632,7 +634,7 @@ O Holographic complementa FTS5 com:
 - binding, unbinding e cleanup;
 - recência, importância e confiança.
 
-Na Fase 2, o algoritmo existente do Okami-Agent será portado para Rust e validado contra fixtures da implementação Python. Não haverá sidecar Python obrigatório.
+Na Fase 3, o algoritmo existente do Okami-Agent será portado para TypeScript (rodando em `utilityProcess`) e validado contra fixtures da implementação Python. Não haverá sidecar Python obrigatório.
 
 Ranking lógico:
 
@@ -737,8 +739,8 @@ Email, WhatsApp, páginas, documentos e resultados externos são marcados como `
 
 ### 15.4 Isolamento
 
-- Capabilities do Tauri limitam cada janela e webview.
-- Sidecars recebem comandos e diretórios allowlisted.
+- Renderer com sandbox, `contextIsolation` e ponte preload enumerada; `webContents` externos nunca recebem preload privilegiado.
+- Processos filhos e `utilityProcess` recebem comandos e diretórios allowlisted.
 - Terminal e file tools respeitam workspace e lease.
 - O frontend nunca recebe token bruto.
 - Logs aplicam redaction antes da persistência.
@@ -805,7 +807,7 @@ Auditoria é local, pesquisável e exportável. Secrets são removidos antes da 
 
 ### Fase 1 — Workbench diário
 
-- Tauri + React + Rust;
+- Electron + React + TypeScript;
 - interface Síntese Okami;
 - tarefas, chats rápidos e lanes;
 - Claude Code e Codex;
@@ -846,7 +848,7 @@ Reordenada em 2026-07-18: o painel diário (email, Kanban/Todoist e agenda unifi
 - MiniMax e MiMo quando compatíveis;
 - adapters de quota e atividade para Grok, Cursor, AGY, OpenCode, MiniMax e MiMo;
 - doctor de CLIs;
-- Holographic portado para Rust;
+- Holographic portado para TypeScript;
 - matriz de capabilities, delta e saúde.
 
 **Gate:** cada adapter passa o mesmo contrato de eventos, cancelamento, retomada, aprovação e erro; ausência ou quebra da fonte de quota aparece como indisponível ou stale, nunca como percentual fabricado.
@@ -924,7 +926,7 @@ Build verde não encerra uma fase. Cada gate precisa de um fluxo E2E clicável, 
 
 ## 20. Decisões fixadas
 
-- Tauri 2 + React/TypeScript + Rust.
+- Electron + React, TypeScript de ponta a ponta; o processo main é o núcleo privilegiado e o renderer roda sandboxed.
 - SQLite/SQLCipher como estado operacional.
 - Chat-native; terminal é avançado.
 - Claude Code é harness preferencial, não obrigatório.
@@ -951,9 +953,10 @@ Build verde não encerra uma fase. Cada gate precisa de um fluxo E2E clicável, 
 
 ## 21. Referências técnicas
 
-- [Tauri 2](https://v2.tauri.app/)
-- [Tauri — external binaries/sidecars](https://v2.tauri.app/develop/sidecar/)
-- [Tauri — capabilities](https://v2.tauri.app/security/capabilities/)
+- [Electron](https://www.electronjs.org/docs/latest/)
+- [Electron — security checklist](https://www.electronjs.org/docs/latest/tutorial/security)
+- [Electron — process model e utilityProcess](https://www.electronjs.org/docs/latest/tutorial/process-model)
+- [electron-builder](https://www.electron.build/)
 - [Codex app-server](https://github.com/openai/codex/blob/main/codex-rs/app-server/README.md)
 - [Claude Code CLI](https://docs.anthropic.com/en/docs/claude-code/cli-usage)
 - [Claude Code LLM gateway](https://docs.anthropic.com/en/docs/claude-code/llm-gateway)

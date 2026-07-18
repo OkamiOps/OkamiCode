@@ -8,7 +8,7 @@
 
 ## 1. Origem
 
-O usuário forneceu um screenshot de um painel de atendimento (inbox com sidebar seccionada, lista de conversas, conversa central e painel de detalhes). Essa estrutura foi aprovada como o esqueleto de todas as telas de conteúdo do Okami Workbench, combinada com os tokens Okami definidos no plano da Fase 1 (`src/styles/tokens.css`).
+O usuário forneceu um screenshot de um painel de atendimento (inbox com sidebar seccionada, lista de conversas, conversa central e painel de detalhes). Essa estrutura foi aprovada como o esqueleto de todas as telas de conteúdo do Okami Workbench, combinada com os tokens Okami definidos no plano da Fase 1 (`src/renderer/styles/tokens.css`).
 
 ## 2. As cinco regiões canônicas
 
@@ -84,5 +84,5 @@ Interpretados com HeroUI 3 + tokens Okami (nunca com a paleta creme do original)
 ## 6. Relação com os demais documentos
 
 - Complementa a seção 11 (Experiência desktop) da spec `2026-07-17-okami-workbench-unified-desktop-design.md`.
-- Restringe as Tasks 11–13 e 18 do plano `2026-07-17-okami-workbench-phase-1.md`: o `AppShell` implementa as regiões 1, 2 e 5; Workbench implementa 3 e 4.
+- Restringe as Tasks 11–13 e 18 do plano `2026-07-18-okami-workbench-phase-1-electron.md`: o `AppShell` implementa as regiões 1, 2 e 5; Workbench implementa 3 e 4.
 - Fases futuras (Inbox, Kanban/Todoist, Agenda) devem reutilizar os mesmos componentes de região em vez de criar layouts próprios.
