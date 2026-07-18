@@ -1,0 +1,851 @@
+<title>Okami Workbench — protótipo visual</title>
+<style>
+  /* Okami tokens — design system dark-first, committed single theme (product identity) */
+  :root {
+    color-scheme: dark;
+    --ok-bg: #08090c;
+    --ok-surface-1: #121318;
+    --ok-surface-2: #181a20;
+    --ok-surface-3: #202229;
+    --ok-border: #2a2d35;
+    --ok-text: #f2f2f4;
+    --ok-text-muted: #9a9da6;
+    --ok-orange: #ff7a1a;
+    --ok-cyan: #68ddeb;
+    --ok-green: #61cf8c;
+    --ok-yellow: #f2c868;
+    --ok-red: #fb6b75;
+    --ok-radius-sm: 6px;
+    --ok-radius-md: 9px;
+    --font-ui: -apple-system, "SF Pro Text", system-ui, "Segoe UI", sans-serif;
+    --font-mono: ui-monospace, "SF Mono", SFMono-Regular, Menlo, monospace;
+  }
+  * { box-sizing: border-box; }
+  html, body { height: 100%; }
+  body {
+    margin: 0; background: var(--ok-bg); color: var(--ok-text);
+    font: 13px/1.5 var(--font-ui);
+    -webkit-font-smoothing: antialiased;
+  }
+  ::selection { background: rgba(255,122,26,.3); }
+
+  .app {
+    display: grid; height: 100vh; min-height: 640px;
+    grid-template-rows: 44px 1fr;
+    grid-template-columns: 64px 260px minmax(0,1fr);
+  }
+
+  /* ── Topbar ─────────────────────────────── */
+  .topbar {
+    grid-column: 1 / -1;
+    display: flex; align-items: center; gap: 16px;
+    padding: 0 16px 0 20px;
+    background: var(--ok-surface-1);
+    border-bottom: 1px solid var(--ok-border);
+  }
+  .crumb { display: flex; align-items: center; gap: 8px; color: var(--ok-text-muted); font-size: 12.5px; }
+  .crumb b { color: var(--ok-text); font-weight: 600; }
+  .crumb svg { opacity: .5; }
+  .topbar .spacer { flex: 1; }
+  .usage-chip {
+    display: flex; align-items: center; gap: 10px;
+    background: var(--ok-surface-2); border: 1px solid var(--ok-border);
+    border-radius: 999px; padding: 4px 12px 4px 8px; cursor: pointer;
+    font-size: 11.5px; color: var(--ok-text-muted);
+  }
+  .usage-chip:hover { border-color: #3a3e48; }
+  .usage-chip .bar { width: 54px; height: 4px; border-radius: 2px; background: var(--ok-surface-3); overflow: hidden; }
+  .usage-chip .bar i { display: block; height: 100%; border-radius: 2px; }
+  .usage-chip strong { color: var(--ok-text); font-weight: 600; font-variant-numeric: tabular-nums; }
+  .icon-btn {
+    width: 28px; height: 28px; display: grid; place-items: center;
+    border-radius: var(--ok-radius-sm); color: var(--ok-text-muted);
+    border: none; background: transparent; cursor: pointer;
+  }
+  .icon-btn:hover { background: var(--ok-surface-3); color: var(--ok-text); }
+  .avatar {
+    width: 26px; height: 26px; border-radius: 50%;
+    background: linear-gradient(135deg, var(--ok-orange), #c24d00);
+    display: grid; place-items: center; font-size: 11px; font-weight: 700; color: #14060a;
+  }
+
+  /* ── Region 1: rail ─────────────────────── */
+  .rail {
+    background: var(--ok-surface-1); border-right: 1px solid var(--ok-border);
+    display: flex; flex-direction: column; align-items: center;
+    padding: 14px 0; gap: 4px;
+  }
+  .rail .logo {
+    width: 34px; height: 34px; margin-bottom: 12px; border-radius: 10px;
+    background: linear-gradient(140deg, var(--ok-orange) 10%, #b34400 90%);
+    display: grid; place-items: center; color: #140a04;
+  }
+  .rail button {
+    width: 40px; height: 40px; display: grid; place-items: center;
+    border: none; background: transparent; color: var(--ok-text-muted);
+    border-radius: var(--ok-radius-md); cursor: pointer; position: relative;
+  }
+  .rail button:hover { color: var(--ok-text); background: var(--ok-surface-3); }
+  .rail button.active { color: var(--ok-orange); background: rgba(255,122,26,.12); }
+  .rail button.active::before {
+    content: ""; position: absolute; left: -13px; top: 10px; bottom: 10px;
+    width: 3px; border-radius: 2px; background: var(--ok-orange);
+  }
+  .rail .push { flex: 1; }
+  .rail .dot { position: absolute; top: 7px; right: 7px; width: 7px; height: 7px; border-radius: 50%; background: var(--ok-red); border: 2px solid var(--ok-surface-1); }
+
+  /* ── Region 2: sidebar ──────────────────── */
+  .sidebar {
+    background: var(--ok-surface-1); border-right: 1px solid var(--ok-border);
+    overflow-y: auto; padding: 14px 10px 20px;
+  }
+  .sidebar h2 { margin: 0 8px 12px; font-size: 14.5px; font-weight: 700; letter-spacing: -.01em; }
+  .side-section { margin-bottom: 18px; }
+  .side-section > header {
+    display: flex; align-items: center; justify-content: space-between;
+    padding: 0 8px 6px; font-size: 10.5px; font-weight: 600;
+    letter-spacing: .08em; text-transform: uppercase; color: var(--ok-text-muted);
+  }
+  .side-item {
+    display: flex; align-items: center; gap: 9px; width: 100%;
+    padding: 6px 8px; border: none; background: transparent; text-align: left;
+    border-radius: var(--ok-radius-sm); color: var(--ok-text); font: inherit; cursor: pointer;
+  }
+  .side-item:hover { background: var(--ok-surface-2); }
+  .side-item.active { background: var(--ok-surface-3); }
+  .side-item svg { color: var(--ok-text-muted); flex: none; }
+  .side-item .label { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .count {
+    font-size: 10.5px; font-weight: 600; color: var(--ok-text-muted);
+    background: var(--ok-surface-3); border-radius: 999px; padding: 1px 7px;
+    font-variant-numeric: tabular-nums;
+  }
+  .count.hot { background: rgba(255,122,26,.16); color: var(--ok-orange); }
+  .lane-row { display: flex; align-items: center; gap: 9px; padding: 7px 8px; border-radius: var(--ok-radius-sm); }
+  .lane-row:hover { background: var(--ok-surface-2); }
+  .lane-glyph {
+    width: 24px; height: 24px; border-radius: 7px; display: grid; place-items: center;
+    font-size: 10px; font-weight: 800; font-family: var(--font-mono); flex: none;
+  }
+  .lane-meta { flex: 1; min-width: 0; }
+  .lane-meta .name { font-size: 12.5px; font-weight: 600; line-height: 1.25; }
+  .lane-meta .sub { font-size: 10.5px; color: var(--ok-text-muted); font-family: var(--font-mono); }
+  .route {
+    font-size: 9.5px; font-family: var(--font-mono); padding: 2px 6px;
+    border-radius: 4px; letter-spacing: .03em; flex: none;
+  }
+  .route.direct   { color: var(--ok-green);  background: rgba(97,207,140,.12); }
+  .route.bridged  { color: var(--ok-yellow); background: rgba(242,200,104,.12); }
+  .route.native   { color: var(--ok-cyan);   background: rgba(104,221,235,.12); }
+
+  /* ── main area: view container ──────────── */
+  .view { display: none; grid-template-columns: 320px minmax(0,1fr) 320px; min-height: 0; }
+  .view.visible { display: grid; }
+  .view.two-col { grid-template-columns: minmax(0,1fr) 320px; }
+
+  /* ── Region 3: list pane ────────────────── */
+  .list-pane { border-right: 1px solid var(--ok-border); display: flex; flex-direction: column; min-height: 0; background: var(--ok-bg); }
+  .list-head {
+    display: flex; align-items: center; justify-content: space-between;
+    padding: 14px 14px 10px;
+  }
+  .list-head h3 { margin: 0; font-size: 13.5px; font-weight: 700; }
+  .list-head .hint { font-size: 11px; color: var(--ok-text-muted); }
+  .list-scroll { overflow-y: auto; padding: 0 8px 16px; }
+  .item {
+    display: flex; gap: 10px; width: 100%; text-align: left;
+    padding: 10px; border: none; background: transparent; font: inherit; color: inherit;
+    border-radius: var(--ok-radius-md); cursor: pointer;
+  }
+  .item:hover { background: var(--ok-surface-1); }
+  .item.selected { background: var(--ok-surface-2); box-shadow: inset 0 0 0 1px var(--ok-border); }
+  .item .ico {
+    width: 32px; height: 32px; border-radius: 9px; flex: none;
+    display: grid; place-items: center; font-size: 12px; font-weight: 700;
+  }
+  .item .body { flex: 1; min-width: 0; }
+  .item .row1 { display: flex; align-items: baseline; gap: 8px; }
+  .item .title { font-weight: 600; font-size: 12.5px; flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .item .time { font-size: 10.5px; color: var(--ok-text-muted); font-variant-numeric: tabular-nums; }
+  .item .preview { font-size: 11.5px; color: var(--ok-text-muted); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; margin-top: 1px; }
+  .item .row2 { display: flex; gap: 6px; margin-top: 5px; align-items: center; }
+  .pill {
+    font-size: 9.5px; font-family: var(--font-mono); border-radius: 4px; padding: 2px 6px;
+    color: var(--ok-text-muted); background: var(--ok-surface-3);
+  }
+  .pill.approval { color: var(--ok-yellow); background: rgba(242,200,104,.12); }
+  .pill.running  { color: var(--ok-green);  background: rgba(97,207,140,.12); }
+  .pill.agent    { color: var(--ok-cyan);   background: rgba(104,221,235,.12); }
+  .unread {
+    min-width: 17px; height: 17px; border-radius: 999px; background: var(--ok-orange);
+    color: #140a04; font-size: 10px; font-weight: 700; display: grid; place-items: center;
+    padding: 0 5px; margin-left: auto;
+  }
+
+  /* ── Region 4: focal content (chat) ─────── */
+  .chat { display: flex; flex-direction: column; min-width: 0; min-height: 0; }
+  .chat-head {
+    display: flex; align-items: center; gap: 12px;
+    padding: 12px 18px; border-bottom: 1px solid var(--ok-border); background: var(--ok-surface-1);
+  }
+  .chat-head .t { flex: 1; min-width: 0; }
+  .chat-head .t .name { font-size: 13.5px; font-weight: 700; }
+  .chat-head .t .sub { font-size: 11px; color: var(--ok-text-muted); font-family: var(--font-mono); }
+  .btn {
+    font: 600 12px/1 var(--font-ui); padding: 7px 12px; border-radius: var(--ok-radius-sm);
+    border: 1px solid var(--ok-border); background: var(--ok-surface-2); color: var(--ok-text); cursor: pointer;
+  }
+  .btn:hover { border-color: #3a3e48; }
+  .btn.primary { background: var(--ok-orange); border-color: var(--ok-orange); color: #140a04; }
+  .btn.primary:hover { filter: brightness(1.07); }
+  .btn.ghost-danger { color: var(--ok-red); }
+  .chat-scroll { flex: 1; overflow-y: auto; padding: 20px 22px; display: flex; flex-direction: column; gap: 14px; }
+  .msg { max-width: 620px; }
+  .msg .bubble {
+    padding: 10px 14px; border-radius: 14px; font-size: 13px; line-height: 1.55;
+  }
+  .msg.user { align-self: flex-end; }
+  .msg.user .bubble { background: var(--ok-surface-3); border-bottom-right-radius: 5px; }
+  .msg.agent { align-self: flex-start; width: 100%; max-width: 680px; }
+  .msg.agent .who {
+    display: flex; align-items: center; gap: 7px; margin-bottom: 6px;
+    font-size: 11px; font-weight: 600; color: var(--ok-text-muted);
+  }
+  .msg.agent .who .lane-glyph { width: 18px; height: 18px; border-radius: 5px; font-size: 8px; }
+  .msg.agent .bubble { background: var(--ok-surface-1); border: 1px solid var(--ok-border); border-top-left-radius: 5px; }
+  .msg .stamp { font-size: 10px; color: var(--ok-text-muted); margin-top: 4px; font-variant-numeric: tabular-nums; }
+  .msg.user .stamp { text-align: right; }
+  code { font-family: var(--font-mono); font-size: 11.5px; background: var(--ok-surface-3); border-radius: 4px; padding: 1px 5px; }
+
+  .tool-card {
+    border: 1px solid var(--ok-border); border-radius: var(--ok-radius-md);
+    background: var(--ok-surface-1); overflow: hidden; margin-top: 8px; font-size: 12px;
+  }
+  .tool-card > header {
+    display: flex; align-items: center; gap: 9px; padding: 8px 12px; cursor: pointer;
+    color: var(--ok-text-muted);
+  }
+  .tool-card > header .tname { font-family: var(--font-mono); font-size: 11.5px; color: var(--ok-text); }
+  .tool-card > header .state { margin-left: auto; font-size: 10.5px; font-family: var(--font-mono); }
+  .state.ok { color: var(--ok-green); }
+  .state.run { color: var(--ok-cyan); }
+  .tool-card pre {
+    margin: 0; padding: 10px 14px; border-top: 1px solid var(--ok-border);
+    font: 11px/1.6 var(--font-mono); color: var(--ok-text-muted);
+    overflow-x: auto; background: #0c0d11;
+  }
+  .diffline-add { color: var(--ok-green); }
+  .diffline-del { color: var(--ok-red); }
+
+  .approval-card {
+    border: 1px solid rgba(242,200,104,.35); border-radius: var(--ok-radius-md);
+    background: rgba(242,200,104,.06); padding: 12px 14px; margin-top: 8px;
+  }
+  .approval-card .ttl { display: flex; align-items: center; gap: 8px; font-weight: 700; font-size: 12.5px; color: var(--ok-yellow); }
+  .approval-card p { margin: 6px 0 10px; font-size: 12px; color: var(--ok-text-muted); }
+  .approval-card .cmd {
+    font-family: var(--font-mono); font-size: 11.5px; background: #0c0d11;
+    border: 1px solid var(--ok-border); border-radius: 6px; padding: 7px 10px; margin-bottom: 10px; color: var(--ok-text);
+  }
+  .approval-card .acts { display: flex; gap: 8px; }
+
+  .composer { padding: 12px 18px 16px; border-top: 1px solid var(--ok-border); background: var(--ok-surface-1); }
+  .composer .ctx { display: flex; gap: 6px; margin-bottom: 8px; flex-wrap: wrap; }
+  .chip {
+    display: inline-flex; align-items: center; gap: 6px; font-size: 10.5px;
+    font-family: var(--font-mono); color: var(--ok-cyan);
+    background: rgba(104,221,235,.1); border: 1px solid rgba(104,221,235,.25);
+    border-radius: 999px; padding: 3px 9px;
+  }
+  .chip button { border: none; background: none; color: inherit; cursor: pointer; padding: 0; font-size: 11px; line-height: 1; }
+  .composer .box {
+    border: 1px solid var(--ok-border); border-radius: 12px; background: var(--ok-surface-2);
+    padding: 10px 12px 8px;
+  }
+  .composer .box:focus-within { border-color: rgba(255,122,26,.55); box-shadow: 0 0 0 3px rgba(255,122,26,.12); }
+  .composer textarea {
+    width: 100%; border: none; background: transparent; resize: none; color: var(--ok-text);
+    font: 13px/1.5 var(--font-ui); outline: none; min-height: 38px;
+  }
+  .composer .toolrow { display: flex; align-items: center; gap: 4px; margin-top: 6px; }
+  .lane-picker {
+    display: inline-flex; align-items: center; gap: 7px; font-size: 11px; font-weight: 600;
+    background: var(--ok-surface-3); border: 1px solid var(--ok-border);
+    border-radius: 999px; padding: 4px 10px 4px 5px; cursor: pointer; color: var(--ok-text);
+  }
+  .lane-picker .lane-glyph { width: 18px; height: 18px; border-radius: 5px; font-size: 8px; }
+  .lane-picker .mode { color: var(--ok-text-muted); font-weight: 500; font-family: var(--font-mono); font-size: 10px; }
+  .send {
+    margin-left: auto; width: 30px; height: 30px; border-radius: 9px; border: none;
+    background: var(--ok-orange); color: #140a04; display: grid; place-items: center; cursor: pointer;
+  }
+  .send:hover { filter: brightness(1.07); }
+
+  /* ── Region 5: details panel ────────────── */
+  .details { border-left: 1px solid var(--ok-border); background: var(--ok-surface-1); overflow-y: auto; }
+  .details .tabs { display: flex; gap: 2px; padding: 10px 12px 0; border-bottom: 1px solid var(--ok-border); }
+  .details .tab {
+    font: 600 12px/1 var(--font-ui); color: var(--ok-text-muted); background: none; border: none;
+    padding: 8px 12px 10px; cursor: pointer; border-bottom: 2px solid transparent;
+  }
+  .details .tab.active { color: var(--ok-text); border-bottom-color: var(--ok-orange); }
+  .dgroup { padding: 14px 16px; border-bottom: 1px solid var(--ok-border); }
+  .dgroup h4 {
+    margin: 0 0 10px; font-size: 10.5px; font-weight: 600; letter-spacing: .08em;
+    text-transform: uppercase; color: var(--ok-text-muted);
+  }
+  .kv { display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: 3.5px 0; font-size: 12px; }
+  .kv .k { color: var(--ok-text-muted); }
+  .kv .v { font-weight: 500; text-align: right; }
+  .kv .v.mono { font-family: var(--font-mono); font-size: 11px; }
+  .kv .v .route { margin-left: 6px; }
+  .mini-add { color: var(--ok-text-muted); background: none; border: none; font: 500 11.5px var(--font-ui); cursor: pointer; padding: 0; }
+  .mini-add:hover { color: var(--ok-orange); }
+  .ctxbar { height: 5px; border-radius: 3px; background: var(--ok-surface-3); overflow: hidden; margin-top: 6px; }
+  .ctxbar i { display: block; height: 100%; border-radius: 3px; }
+  .quota-line { margin-bottom: 10px; }
+  .quota-line .kv { padding-bottom: 0; }
+  .srcnote { font-size: 10px; color: var(--ok-text-muted); font-family: var(--font-mono); margin-top: 3px; }
+  .dot-live { display: inline-block; width: 6px; height: 6px; border-radius: 50%; background: var(--ok-green); margin-right: 5px; }
+  .dot-stale { display: inline-block; width: 6px; height: 6px; border-radius: 50%; background: var(--ok-yellow); margin-right: 5px; }
+
+  /* ── Inbox specifics ────────────────────── */
+  .mailrow .ico { border-radius: 50%; }
+  .quiet-banner {
+    margin: 14px 18px 0; border: 1px dashed var(--ok-border); border-radius: var(--ok-radius-md);
+    padding: 9px 14px; font-size: 11.5px; color: var(--ok-text-muted);
+    display: flex; gap: 8px; align-items: center;
+  }
+  .quiet-banner b { color: var(--ok-text); }
+
+  /* ── Usage view ─────────────────────────── */
+  .usage-main { overflow-y: auto; padding: 20px 24px; }
+  .usage-main h3 { margin: 0 0 4px; font-size: 16px; font-weight: 700; }
+  .usage-main .sub { color: var(--ok-text-muted); font-size: 12px; margin-bottom: 18px; }
+  .cards { display: grid; grid-template-columns: repeat(auto-fit, minmax(230px, 1fr)); gap: 12px; margin-bottom: 22px; }
+  .ucard {
+    border: 1px solid var(--ok-border); border-radius: var(--ok-radius-md);
+    background: var(--ok-surface-1); padding: 14px 16px;
+  }
+  .ucard header { display: flex; align-items: center; gap: 9px; margin-bottom: 10px; }
+  .ucard header .lane-glyph { width: 22px; height: 22px; }
+  .ucard header .nm { font-weight: 700; font-size: 12.5px; flex: 1; }
+  .ucard .big { font-size: 22px; font-weight: 700; font-variant-numeric: tabular-nums; letter-spacing: -.02em; }
+  .ucard .big small { font-size: 11px; font-weight: 500; color: var(--ok-text-muted); margin-left: 5px; }
+  .ucard .reset { font-size: 10.5px; color: var(--ok-text-muted); font-family: var(--font-mono); margin-top: 2px; }
+  .freshness { margin-left: auto; font-size: 9.5px; font-family: var(--font-mono); padding: 2px 6px; border-radius: 4px; }
+  .freshness.live { color: var(--ok-green); background: rgba(97,207,140,.12); }
+  .freshness.stale { color: var(--ok-yellow); background: rgba(242,200,104,.12); }
+  .freshness.unavail { color: var(--ok-text-muted); background: var(--ok-surface-3); }
+  table.usage { width: 100%; border-collapse: collapse; font-size: 12px; }
+  table.usage th {
+    text-align: left; font-size: 10.5px; text-transform: uppercase; letter-spacing: .07em;
+    color: var(--ok-text-muted); font-weight: 600; padding: 8px 10px; border-bottom: 1px solid var(--ok-border);
+  }
+  table.usage td { padding: 9px 10px; border-bottom: 1px solid var(--ok-border); vertical-align: middle; }
+  table.usage td.mono { font-family: var(--font-mono); font-size: 11px; color: var(--ok-text-muted); font-variant-numeric: tabular-nums; }
+  .wbar { width: 120px; height: 5px; background: var(--ok-surface-3); border-radius: 3px; overflow: hidden; }
+  .wbar i { display: block; height: 100%; }
+  .table-wrap { border: 1px solid var(--ok-border); border-radius: var(--ok-radius-md); overflow-x: auto; background: var(--ok-surface-1); }
+
+  /* glyph palettes */
+  .g-claude { background: rgba(255,122,26,.16); color: var(--ok-orange); }
+  .g-gpt    { background: rgba(104,221,235,.14); color: var(--ok-cyan); }
+  .g-grok   { background: rgba(242,242,244,.12); color: var(--ok-text); }
+  .g-mail   { background: rgba(97,207,140,.14); color: var(--ok-green); }
+  .g-task   { background: var(--ok-surface-3); color: var(--ok-text-muted); }
+
+  button:focus-visible, .item:focus-visible, .side-item:focus-visible, textarea:focus-visible {
+    outline: none; box-shadow: 0 0 0 2px var(--ok-bg), 0 0 0 4px var(--ok-cyan);
+  }
+  @media (prefers-reduced-motion: no-preference) {
+    .view.visible { animation: fade .18s ease; }
+    @keyframes fade { from { opacity: 0; } }
+  }
+  .note {
+    position: fixed; bottom: 14px; right: 16px; z-index: 9;
+    font-size: 10.5px; font-family: var(--font-mono); color: var(--ok-text-muted);
+    background: var(--ok-surface-2); border: 1px solid var(--ok-border);
+    border-radius: 999px; padding: 5px 12px; opacity: .85;
+  }
+</style>
+
+<div class="app">
+  <!-- Topbar -->
+  <div class="topbar">
+    <span class="crumb">
+      <b id="crumb-area">Workbench</b>
+      <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="m9 18 6-6-6-6"/></svg>
+      <span id="crumb-item">Refatorar billing do Chat-Panel</span>
+    </span>
+    <span class="spacer"></span>
+    <button class="usage-chip" onclick="showView('usage')" title="Uso & limites">
+      <span class="bar"><i style="width:62%;background:var(--ok-orange)"></i></span>
+      <span>Claude <strong>62%</strong></span>
+      <span class="bar"><i style="width:31%;background:var(--ok-cyan)"></i></span>
+      <span>ChatGPT <strong>31%</strong></span>
+    </button>
+    <button class="icon-btn" title="Notificações"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M6 8a6 6 0 0 1 12 0c0 7 3 9 3 9H3s3-2 3-9"/><path d="M10.3 21a1.94 1.94 0 0 0 3.4 0"/></svg></button>
+    <span class="avatar">M</span>
+  </div>
+
+  <!-- Region 1: navigation rail -->
+  <nav class="rail">
+    <span class="logo" title="Okami Workbench">
+      <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2"><path d="M4 4l4 5 4-3 4 3 4-5v9a8 8 0 0 1-16 0z"/></svg>
+    </span>
+    <button title="Início"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="m3 9 9-7 9 7v11a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"/></svg></button>
+    <button title="Workbench" id="rail-workbench" class="active" onclick="showView('workbench')"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="16 18 22 12 16 6"/><polyline points="8 6 2 12 8 18"/></svg></button>
+    <button title="Inbox" id="rail-inbox" onclick="showView('inbox')"><span class="dot"></span><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="22 12 16 12 14 15 10 15 8 12 2 12"/><path d="M5.45 5.11 2 12v6a2 2 0 0 0 2 2h16a2 2 0 0 0 2-2v-6l-3.45-6.89A2 2 0 0 0 16.76 4H7.24a2 2 0 0 0-1.79 1.11z"/></svg></button>
+    <button title="Agenda"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="4" width="18" height="18" rx="2"/><line x1="16" y1="2" x2="16" y2="6"/><line x1="8" y1="2" x2="8" y2="6"/><line x1="3" y1="10" x2="21" y2="10"/></svg></button>
+    <button title="Kanban"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="3" width="7" height="14" rx="1.5"/><rect x="14" y="3" width="7" height="9" rx="1.5"/></svg></button>
+    <button title="Uso e limites" id="rail-usage" onclick="showView('usage')"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 3v18h18"/><path d="m7 13 3-4 4 3 5-6"/></svg></button>
+    <button title="Memória"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 2a5 5 0 0 0-5 5c0 1.5.5 2 1 3-2 0-3.5 1.5-3.5 3.5S6 17 8 17c0 2 1.8 4 4 4s4-2 4-4c2 0 3.5-1.5 3.5-3.5S18 10 16 10c.5-1 1-1.5 1-3a5 5 0 0 0-5-5z"/></svg></button>
+    <span class="push"></span>
+    <button title="Conexões"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M9 17H7A5 5 0 0 1 7 7h2"/><path d="M15 7h2a5 5 0 1 1 0 10h-2"/><line x1="8" y1="12" x2="16" y2="12"/></svg></button>
+    <button title="Configurações"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 1 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 1 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 1 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 1 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"/></svg></button>
+  </nav>
+
+  <!-- Region 2: sectioned sidebar -->
+  <aside class="sidebar" id="sidebar-workbench">
+    <h2 id="sidebar-title">Workbench</h2>
+
+    <div class="side-section">
+      <header><span>Tarefas</span><button class="mini-add">+ Nova</button></header>
+      <button class="side-item active"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="9"/></svg><span class="label">Abertas</span><span class="count hot">4</span></button>
+      <button class="side-item"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 8v4l2.5 2.5"/><circle cx="12" cy="12" r="9"/></svg><span class="label">Aguardando aprovação</span><span class="count">2</span></button>
+      <button class="side-item"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M20 6 9 17l-5-5"/></svg><span class="label">Concluídas</span><span class="count">18</span></button>
+    </div>
+
+    <div class="side-section">
+      <header><span>Lanes</span></header>
+      <div class="lane-row">
+        <span class="lane-glyph g-claude">CL</span>
+        <span class="lane-meta"><span class="name">Claude</span><br><span class="sub">Claude Max · Opus</span></span>
+        <span class="route direct">direct</span>
+      </div>
+      <div class="lane-row">
+        <span class="lane-glyph g-gpt">GP</span>
+        <span class="lane-meta"><span class="name">GPT · harness Claude</span><br><span class="sub">ChatGPT Pro · Sol</span></span>
+        <span class="route bridged">bridged</span>
+      </div>
+      <div class="lane-row">
+        <span class="lane-glyph g-grok">GK</span>
+        <span class="lane-meta"><span class="name">Grok</span><br><span class="sub">SuperGrok · 4.5</span></span>
+        <span class="route native">native</span>
+      </div>
+    </div>
+
+    <div class="side-section">
+      <header><span>Filtros</span></header>
+      <button class="side-item"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="4" fill="currentColor" stroke="none"/></svg><span class="label">Prioridade alta</span></button>
+      <button class="side-item"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="4" fill="currentColor" stroke="none" opacity=".5"/></svg><span class="label">Delegadas a agente</span></button>
+      <button class="side-item"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="4" fill="currentColor" stroke="none" opacity=".3"/></svg><span class="label">Aguardando clientes</span></button>
+    </div>
+  </aside>
+
+  <!-- ═══ VIEW: WORKBENCH ═══ -->
+  <section class="view visible" id="view-workbench">
+    <!-- Region 3: task list -->
+    <div class="list-pane">
+      <div class="list-head"><h3>Abertas</h3><span class="hint">4 tarefas</span></div>
+      <div class="list-scroll">
+        <button class="item selected">
+          <span class="ico g-claude">CL</span>
+          <span class="body">
+            <span class="row1"><span class="title">Refatorar billing do Chat-Panel</span><span class="time">10:24</span></span>
+            <span class="preview">Diff pronto em stripe/webhooks.ts — aguardando aprovação de git push</span>
+            <span class="row2"><span class="pill approval">aprovação pendente</span><span class="pill">2 lanes</span></span>
+          </span>
+        </button>
+        <button class="item">
+          <span class="ico g-gpt">GP</span>
+          <span class="body">
+            <span class="row1"><span class="title">Testes e2e do fluxo de convite</span><span class="time">09:58</span></span>
+            <span class="preview">Rodando Playwright: 14/22 specs verdes até agora…</span>
+            <span class="row2"><span class="pill running">executando</span><span class="pill agent">bridged · ChatGPT</span></span>
+          </span>
+        </button>
+        <button class="item">
+          <span class="ico g-grok">GK</span>
+          <span class="body">
+            <span class="row1"><span class="title">Wireframe da tela de conexões</span><span class="time">ontem</span></span>
+            <span class="preview">3 variações geradas; escolher direção antes de detalhar</span>
+            <span class="row2"><span class="pill">native · SuperGrok</span></span>
+          </span>
+        </button>
+        <button class="item">
+          <span class="ico g-task">OB</span>
+          <span class="body">
+            <span class="row1"><span class="title">Documentar decisão do gateway</span><span class="time">seg</span></span>
+            <span class="preview">Promover resumo da conversa para Obsidian › Projetos</span>
+            <span class="row2"><span class="pill">manual · Eu</span></span>
+          </span>
+        </button>
+      </div>
+    </div>
+
+    <!-- Region 4: conversation -->
+    <div class="chat">
+      <div class="chat-head">
+        <span class="t">
+          <span class="name">Refatorar billing do Chat-Panel</span><br>
+          <span class="sub">lane Claude · sessão nativa a91f…c2 · ~/Git/Chat-Panel</span>
+        </span>
+        <button class="btn">Mudar para GPT</button>
+        <button class="btn ghost-danger">Interromper</button>
+      </div>
+
+      <div class="chat-scroll">
+        <div class="msg user">
+          <div class="bubble">O webhook do Stripe está duplicando invoices quando o retry chega fora de ordem. Corrige com idempotência e me mostra o diff antes de subir.</div>
+          <div class="stamp">10:12 · Marcos</div>
+        </div>
+
+        <div class="msg agent">
+          <div class="who"><span class="lane-glyph g-claude">CL</span> Claude · Opus <span style="font-family:var(--font-mono);font-weight:400">· harness Claude Code</span></div>
+          <div class="bubble">
+            Encontrei a causa: o handler processa <code>invoice.payment_succeeded</code> sem chave de idempotência, então o retry do Stripe cria uma segunda invoice local. Vou adicionar uma tabela de eventos processados com unique em <code>stripe_event_id</code> e curto-circuito no handler.
+            <div class="tool-card">
+              <header>
+                <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="4 17 10 11 4 5"/><line x1="12" y1="19" x2="20" y2="19"/></svg>
+                <span class="tname">Read · src/stripe/webhooks.ts</span>
+                <span class="state ok">concluído</span>
+              </header>
+            </div>
+            <div class="tool-card">
+              <header>
+                <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 20h9"/><path d="M16.5 3.5a2.12 2.12 0 0 1 3 3L7 19l-4 1 1-4z"/></svg>
+                <span class="tname">Edit · src/stripe/webhooks.ts</span>
+                <span class="state ok">+18 −4</span>
+              </header>
+              <pre><span class="diffline-add">+ const seen = await events.claim(evt.id);</span>
+<span class="diffline-add">+ if (!seen.inserted) return res.status(200).end();</span>
+<span class="diffline-del">- await createInvoice(evt.data.object);</span>
+<span class="diffline-add">+ await createInvoiceOnce(evt.id, evt.data.object);</span></pre>
+            </div>
+            <div class="tool-card">
+              <header>
+                <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polygon points="6 3 20 12 6 21"/></svg>
+                <span class="tname">Bash · pnpm test stripe</span>
+                <span class="state ok">12 passed</span>
+              </header>
+            </div>
+            Testes verdes. Para publicar preciso de aprovação:
+            <div class="approval-card">
+              <div class="ttl">
+                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 9v4"/><path d="M12 17h.01"/><path d="M10.3 3.86 1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.7 3.86a2 2 0 0 0-3.4 0z"/></svg>
+                Aprovação necessária · ação externa
+              </div>
+              <p>Enviar branch para o remoto. Capability <code>terminal.exec</code> · lease expira em 14 min.</p>
+              <div class="cmd">git push origin fix/stripe-idempotency</div>
+              <div class="acts">
+                <button class="btn primary">Permitir uma vez</button>
+                <button class="btn">Negar</button>
+              </div>
+            </div>
+          </div>
+          <div class="stamp">10:24 · 2 tool calls aguardando · consumo: Claude Max</div>
+        </div>
+      </div>
+
+      <div class="composer">
+        <div class="ctx">
+          <span class="chip">memória: decisão-billing.md <button title="Remover">✕</button></span>
+          <span class="chip">diff atual <button title="Remover">✕</button></span>
+        </div>
+        <div class="box">
+          <textarea placeholder="Escreva para a lane Claude… (⌘K para chat rápido global)"></textarea>
+          <div class="toolrow">
+            <button class="lane-picker" title="Trocar lane">
+              <span class="lane-glyph g-claude">CL</span>
+              Claude · Opus <span class="mode">manual</span>
+              <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="m6 9 6 6 6-6"/></svg>
+            </button>
+            <button class="icon-btn" title="Anexar"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="m21.44 11.05-9.19 9.19a6 6 0 0 1-8.49-8.49l8.57-8.57A4 4 0 1 1 18 8.84l-8.59 8.57a2 2 0 0 1-2.83-2.83l8.49-8.48"/></svg></button>
+            <button class="icon-btn" title="Memória"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="8"/><path d="m21 21-4.3-4.3"/></svg></button>
+            <button class="send" title="Enviar"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2"><path d="m5 12 14 0"/><path d="m13 5 7 7-7 7"/></svg></button>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Region 5: details -->
+    <aside class="details">
+      <div class="tabs">
+        <button class="tab active">Detalhes</button>
+        <button class="tab">Atividade</button>
+        <button class="tab">Fontes</button>
+      </div>
+      <div class="dgroup">
+        <h4>Lane ativa</h4>
+        <div class="kv"><span class="k">Harness</span><span class="v">Claude Code</span></div>
+        <div class="kv"><span class="k">Modelo</span><span class="v">Claude Opus</span></div>
+        <div class="kv"><span class="k">Rota</span><span class="v"><span class="route direct">direct</span></span></div>
+        <div class="kv"><span class="k">Consumindo</span><span class="v">Claude Max</span></div>
+        <div class="kv"><span class="k">Sessão nativa</span><span class="v mono">a91f…c2</span></div>
+        <div class="kv"><span class="k">Contexto da sessão</span><span class="v mono">41%</span></div>
+        <div class="ctxbar"><i style="width:41%;background:var(--ok-cyan)"></i></div>
+      </div>
+      <div class="dgroup">
+        <h4>Quota das assinaturas</h4>
+        <div class="quota-line">
+          <div class="kv"><span class="k">Claude Max · semana</span><span class="v mono">38% rest.</span></div>
+          <div class="ctxbar"><i style="width:62%;background:var(--ok-orange)"></i></div>
+          <div class="srcnote"><span class="dot-live"></span>native · há 4 min · reseta sex 21:00</div>
+        </div>
+        <div class="quota-line">
+          <div class="kv"><span class="k">ChatGPT Pro · semana</span><span class="v mono">69% rest.</span></div>
+          <div class="ctxbar"><i style="width:31%;background:var(--ok-cyan)"></i></div>
+          <div class="srcnote"><span class="dot-live"></span>official · há 1 min · reseta qua 09:00</div>
+        </div>
+        <div class="quota-line">
+          <div class="kv"><span class="k">SuperGrok · 5 h</span><span class="v mono">stale</span></div>
+          <div class="ctxbar"><i style="width:12%;background:var(--ok-yellow)"></i></div>
+          <div class="srcnote"><span class="dot-stale"></span>presentational · há 3 h</div>
+        </div>
+      </div>
+      <div class="dgroup">
+        <h4>Workspace</h4>
+        <div class="kv"><span class="k">Pasta</span><span class="v mono">~/Git/Chat-Panel</span></div>
+        <div class="kv"><span class="k">Branch</span><span class="v mono">fix/stripe-idempotency</span></div>
+        <div class="kv"><span class="k">Diff</span><span class="v mono">+18 −4 · 1 arquivo</span></div>
+      </div>
+      <div class="dgroup">
+        <h4>Vínculos</h4>
+        <div class="kv"><span class="k">Card Todoist</span><button class="mini-add">+ Vincular</button></div>
+        <div class="kv"><span class="k">Thread de email</span><button class="mini-add">+ Vincular</button></div>
+        <div class="kv"><span class="k">Nota Obsidian</span><span class="v mono">decisão-billing.md</span></div>
+      </div>
+      <div class="dgroup">
+        <h4>Permissões ativas</h4>
+        <div class="kv"><span class="k">workspace.write</span><span class="v mono">lease · 22 min</span></div>
+        <div class="kv"><span class="k">terminal.exec</span><span class="v" style="color:var(--ok-yellow)">aguardando</span></div>
+      </div>
+    </aside>
+  </section>
+
+  <!-- ═══ VIEW: INBOX ═══ -->
+  <section class="view" id="view-inbox">
+    <div class="list-pane">
+      <div class="list-head"><h3>Não lidos</h3><span class="hint">6 threads · 3 contas</span></div>
+      <div class="list-scroll">
+        <button class="item mailrow selected">
+          <span class="ico g-mail">SW</span>
+          <span class="body">
+            <span class="row1"><span class="title">Samantha William</span><span class="time">10:20</span></span>
+            <span class="preview">O widget de analytics sumiu da versão nova do dashboard…</span>
+            <span class="row2"><span class="pill">gmail</span><span class="pill agent">rascunho do agente</span><span class="unread">2</span></span>
+          </span>
+        </button>
+        <button class="item mailrow">
+          <span class="ico" style="background:rgba(104,221,235,.14);color:var(--ok-cyan)">EV</span>
+          <span class="body">
+            <span class="row1"><span class="title">Emerson Vaccaro</span><span class="time">09:31</span></span>
+            <span class="preview">Obrigado pela proposta — conseguimos fechar o escopo até sexta?</span>
+            <span class="row2"><span class="pill">zoho</span><span class="unread">1</span></span>
+          </span>
+        </button>
+        <button class="item mailrow">
+          <span class="ico" style="background:rgba(242,200,104,.14);color:var(--ok-yellow)">CL</span>
+          <span class="body">
+            <span class="row1"><span class="title">Corey Lubin</span><span class="time">08:47</span></span>
+            <span class="preview">Pode enviar o orçamento atualizado do site institucional?</span>
+            <span class="row2"><span class="pill">hostinger</span><span class="pill">virou tarefa</span></span>
+          </span>
+        </button>
+        <button class="item mailrow">
+          <span class="ico" style="background:var(--ok-surface-3);color:var(--ok-text-muted)">ST</span>
+          <span class="body">
+            <span class="row1"><span class="title">Stripe</span><span class="time">07:02</span></span>
+            <span class="preview">Your invoice for July is available</span>
+            <span class="row2"><span class="pill">gmail</span></span>
+          </span>
+        </button>
+      </div>
+    </div>
+
+    <div class="chat">
+      <div class="chat-head">
+        <span class="t">
+          <span class="name">Samantha William</span><br>
+          <span class="sub">pedido #0007742 · gmail · atendimento</span>
+        </span>
+        <button class="btn">Virar tarefa</button>
+        <button class="btn primary">Delegar com aprovação</button>
+      </div>
+      <div class="quiet-banner">
+        <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="9"/><path d="M12 8v4"/><path d="M12 16h.01"/></svg>
+        <span>Modo <b>Eu</b> — nenhum agente age nesta thread sem delegação explícita.</span>
+      </div>
+      <div class="chat-scroll">
+        <div class="msg agent">
+          <div class="who"><span class="ico g-mail" style="width:18px;height:18px;border-radius:5px;font-size:8px;display:grid;place-items:center">SW</span> Samantha William</div>
+          <div class="bubble">Oi! Revisei os mockups novos do dashboard, mas tem algo estranho: pedi o widget de analytics priorizado acima da dobra e ele não aparece nessa versão.</div>
+          <div class="stamp">10:20</div>
+        </div>
+        <div class="msg user">
+          <div class="bubble">Obrigado pelo aviso! Vou verificar com o time de design agora mesmo. Você está olhando o protótipo desktop ou mobile?</div>
+          <div class="stamp">10:23 · enviado por Marcos</div>
+        </div>
+        <div class="msg agent">
+          <div class="who"><span class="lane-glyph g-gpt">GP</span> Rascunho do agente · GPT via harness Claude <span class="route bridged" style="margin-left:4px">bridged</span></div>
+          <div class="bubble">
+            Sugestão de resposta: "Confirmado — o widget saiu por engano no merge da sprint 14. Volto com a versão corrigida até as 15h de hoje, com o analytics fixado acima da dobra."
+            <div class="acts" style="display:flex;gap:8px;margin-top:10px">
+              <button class="btn primary">Aprovar e enviar</button>
+              <button class="btn">Editar</button>
+              <button class="btn ghost-danger">Descartar</button>
+            </div>
+          </div>
+          <div class="stamp">10:26 · rascunho — nada foi enviado · consumo: ChatGPT Pro</div>
+        </div>
+      </div>
+      <div class="composer">
+        <div class="box">
+          <textarea placeholder="Responder para Samantha…"></textarea>
+          <div class="toolrow">
+            <button class="lane-picker"><span class="lane-glyph g-task" style="font-size:9px">EU</span> Responder como Marcos <span class="mode">manual</span></button>
+            <button class="send" title="Enviar"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2"><path d="m5 12 14 0"/><path d="m13 5 7 7-7 7"/></svg></button>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <aside class="details">
+      <div class="tabs"><button class="tab active">Detalhes</button><button class="tab">Histórico</button></div>
+      <div class="dgroup">
+        <h4>Contato</h4>
+        <div class="kv"><span class="k">Nome</span><span class="v">Samantha William</span></div>
+        <div class="kv"><span class="k">Email</span><span class="v mono">samantha@kettle.co</span></div>
+        <div class="kv"><span class="k">Empresa</span><span class="v">Kettle & Co</span></div>
+        <div class="kv"><span class="k">Local</span><span class="v">New York, USA</span></div>
+      </div>
+      <div class="dgroup">
+        <h4>Conversa</h4>
+        <div class="kv"><span class="k">Status</span><span class="v" style="color:var(--ok-green)">● Aberta</span></div>
+        <div class="kv"><span class="k">Prioridade</span><span class="v" style="color:var(--ok-orange)">Alta</span></div>
+        <div class="kv"><span class="k">Conta</span><span class="v">gmail · msant262</span></div>
+        <div class="kv"><span class="k">Etiquetas</span><button class="mini-add">+ Adicionar</button></div>
+      </div>
+      <div class="dgroup">
+        <h4>Vínculos</h4>
+        <div class="kv"><span class="k">Tarefa</span><span class="v mono">dashboard-fix</span></div>
+        <div class="kv"><span class="k">Card Todoist</span><button class="mini-add">+ Vincular</button></div>
+        <div class="kv"><span class="k">Evento</span><button class="mini-add">+ Vincular</button></div>
+      </div>
+      <div class="dgroup">
+        <h4>Recentes</h4>
+        <div class="kv"><span class="k">Website redesign</span><span class="v mono">10 mai</span></div>
+        <div class="kv"><span class="k">Brand identity</span><span class="v mono">04 jun</span></div>
+        <div class="kv"><span class="k">Mobile UX</span><span class="v mono">06 jun</span></div>
+      </div>
+    </aside>
+  </section>
+
+  <!-- ═══ VIEW: USAGE ═══ -->
+  <section class="view two-col" id="view-usage">
+    <div class="usage-main">
+      <h3>Uso &amp; limites</h3>
+      <div class="sub">Quota de assinatura, contexto de sessão e atividade local são medidas separadas — cada valor mostra fonte e frescor.</div>
+
+      <div class="cards">
+        <div class="ucard">
+          <header><span class="lane-glyph g-claude">CL</span><span class="nm">Claude Max</span><span class="freshness live">live</span></header>
+          <div class="big">38%<small>restante · semana</small></div>
+          <div class="reset">reseta sex 21:00 · fonte: native /usage · há 4 min</div>
+        </div>
+        <div class="ucard">
+          <header><span class="lane-glyph g-gpt">GP</span><span class="nm">ChatGPT Pro</span><span class="freshness live">live</span></header>
+          <div class="big">69%<small>restante · semana</small></div>
+          <div class="reset">reseta qua 09:00 · fonte: official app-server · há 1 min</div>
+        </div>
+        <div class="ucard">
+          <header><span class="lane-glyph g-grok">GK</span><span class="nm">SuperGrok</span><span class="freshness stale">stale</span></header>
+          <div class="big">88%<small>restante · 5 h</small></div>
+          <div class="reset">último dado há 3 h · fonte: /usage presentational</div>
+        </div>
+        <div class="ucard">
+          <header><span class="lane-glyph g-task">MX</span><span class="nm">MiniMax</span><span class="freshness unavail">indisponível</span></header>
+          <div class="big">—<small>sem fonte de quota</small></div>
+          <div class="reset">atividade local disponível · 41k tokens hoje</div>
+        </div>
+      </div>
+
+      <div class="table-wrap">
+        <table class="usage">
+          <thead>
+            <tr><th>Assinatura</th><th>Janela</th><th>Quota da assinatura</th><th>Reseta</th><th>Fonte</th><th>Atividade local (hoje)</th></tr>
+          </thead>
+          <tbody>
+            <tr>
+              <td><b>Claude Max</b></td><td class="mono">semana</td>
+              <td><span class="wbar"><i style="width:62%;background:var(--ok-orange)"></i></span></td>
+              <td class="mono">sex 21:00</td><td class="mono">native · live</td><td class="mono">128k tok · 34 calls</td>
+            </tr>
+            <tr>
+              <td><b>Claude Max</b></td><td class="mono">5 h · Opus</td>
+              <td><span class="wbar"><i style="width:24%;background:var(--ok-orange)"></i></span></td>
+              <td class="mono">14:00</td><td class="mono">native · live</td><td class="mono">61k tok · 12 calls</td>
+            </tr>
+            <tr>
+              <td><b>ChatGPT Pro</b></td><td class="mono">semana</td>
+              <td><span class="wbar"><i style="width:31%;background:var(--ok-cyan)"></i></span></td>
+              <td class="mono">qua 09:00</td><td class="mono">official · live</td><td class="mono">203k tok · 51 calls</td>
+            </tr>
+            <tr>
+              <td><b>SuperGrok</b></td><td class="mono">5 h</td>
+              <td><span class="wbar"><i style="width:12%;background:var(--ok-yellow)"></i></span></td>
+              <td class="mono">—</td><td class="mono">presentational · stale</td><td class="mono">9k tok · 3 calls</td>
+            </tr>
+            <tr>
+              <td><b>MiniMax</b></td><td class="mono">—</td>
+              <td class="mono">quota indisponível</td>
+              <td class="mono">—</td><td class="mono">unavailable</td><td class="mono">41k tok · 8 calls</td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+    </div>
+
+    <aside class="details">
+      <div class="tabs"><button class="tab active">Alertas</button><button class="tab">Preflight</button></div>
+      <div class="dgroup">
+        <h4>Limiares configurados</h4>
+        <div class="kv"><span class="k">Claude Max</span><span class="v mono">25% · 10% · 0%</span></div>
+        <div class="kv"><span class="k">ChatGPT Pro</span><span class="v mono">25% · 10%</span></div>
+        <div class="kv"><span class="k">SuperGrok</span><span class="v mono">10%</span></div>
+      </div>
+      <div class="dgroup">
+        <h4>Alertas recentes</h4>
+        <div class="kv"><span class="k" style="color:var(--ok-yellow)">Claude 5 h &lt; 25%</span><span class="v mono">hoje 11:40</span></div>
+        <div class="kv"><span class="k">Grok fonte stale</span><span class="v mono">hoje 08:15</span></div>
+      </div>
+      <div class="dgroup">
+        <h4>Preflight — próxima lane fria</h4>
+        <div class="kv"><span class="k">Sugestão 1</span><span class="v">GPT · <span class="route bridged">bridged</span></span></div>
+        <div class="kv"><span class="k">Motivo</span><span class="v mono">69% rest. · saudável</span></div>
+        <div class="kv"><span class="k">Sugestão 2</span><span class="v">Claude · <span class="route direct">direct</span></span></div>
+        <div class="kv"><span class="k">Motivo</span><span class="v mono">38% rest. · reset sex</span></div>
+        <div style="font-size:10.5px;color:var(--ok-text-muted);margin-top:8px">Nenhuma troca automática — sugestões apenas.</div>
+      </div>
+    </aside>
+  </section>
+</div>
+
+<span class="note">protótipo estático · tokens Okami · layout de 5 regiões</span>
+
+<script>
+  const areas = { workbench: "Workbench", inbox: "Inbox", usage: "Uso & limites" };
+  const items = { workbench: "Refatorar billing do Chat-Panel", inbox: "Samantha William", usage: "Visão geral" };
+  function showView(name) {
+    for (const v of document.querySelectorAll(".view")) v.classList.remove("visible");
+    document.getElementById("view-" + name).classList.add("visible");
+    for (const b of document.querySelectorAll(".rail button")) b.classList.remove("active");
+    const rail = document.getElementById("rail-" + name);
+    if (rail) rail.classList.add("active");
+    document.getElementById("crumb-area").textContent = areas[name];
+    document.getElementById("crumb-item").textContent = items[name];
+    document.getElementById("sidebar-title").textContent = areas[name];
+  }
+</script>
