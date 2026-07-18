@@ -1,14 +1,62 @@
 import { Surface } from "@heroui/react";
 import { MessageSquareText, Radio } from "lucide-react";
+import { useEffect, useState } from "react";
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
+import { canonicalEventSchema } from "../../../shared/contracts/event";
+import {
+  EventCardRegistry,
+  type EventCardEvent,
+} from "./events/EventCardRegistry";
 import { useWorkbenchStore } from "./store";
+
+const TEXT_EVENT_KINDS = new Set(["message_delta", "message_completed"]);
+
+function eventForCard(raw: unknown): EventCardEvent {
+  const parsed = canonicalEventSchema.safeParse(raw);
+  if (parsed.success) return parsed.data;
+  if (!raw || typeof raw !== "object" || Array.isArray(raw)) {
+    return { kind: "invalid_renderer_event", payload: { raw } };
+  }
+  const record = raw as Record<string, unknown>;
+  return {
+    id: typeof record.id === "string" ? record.id : undefined,
+    kind:
+      typeof record.kind === "string" ? record.kind : "invalid_renderer_event",
+    occurredAt:
+      typeof record.occurredAt === "string" ? record.occurredAt : undefined,
+    payload:
+      record.payload &&
+      typeof record.payload === "object" &&
+      !Array.isArray(record.payload)
+        ? (record.payload as Record<string, unknown>)
+        : { raw },
+  };
+}
 
 export function Conversation() {
   const sentMessages = useWorkbenchStore((state) => state.sentMessages);
   const streams = useWorkbenchStore((state) => state.streams);
+  const [events, setEvents] = useState<EventCardEvent[]>([]);
   const streamedMessages = Object.entries(streams);
-  const isEmpty = sentMessages.length === 0 && streamedMessages.length === 0;
+  const isEmpty =
+    sentMessages.length === 0 &&
+    streamedMessages.length === 0 &&
+    events.length === 0;
+
+  useEffect(() => {
+    if (!window.okami?.onEvent) return;
+    return window.okami.onEvent((raw) => {
+      const event = eventForCard(raw);
+      if (TEXT_EVENT_KINDS.has(event.kind)) return;
+      setEvents((current) => {
+        if (event.id && current.some((item) => item.id === event.id)) {
+          return current;
+        }
+        return [...current, event].slice(-200);
+      });
+    });
+  }, []);
 
   return (
     <div
@@ -55,6 +103,12 @@ export function Conversation() {
               </div>
               <ReactMarkdown remarkPlugins={[remarkGfm]}>{body}</ReactMarkdown>
             </Surface>
+          ))}
+          {events.map((event, index) => (
+            <EventCardRegistry
+              event={event}
+              key={event.id ?? `${event.kind}-${index}`}
+            />
           ))}
         </div>
       )}
