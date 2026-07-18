@@ -13,6 +13,7 @@ export interface StartSessionRequest {
   laneId: LaneId;
   cwd: string;
   model?: string;
+  env?: NodeJS.ProcessEnv;
 }
 
 export interface ResumeSessionRequest extends StartSessionRequest {

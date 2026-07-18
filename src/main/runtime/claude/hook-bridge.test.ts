@@ -1,9 +1,12 @@
+import { rm, stat } from "node:fs/promises";
 import path from "node:path";
 import { describe, expect, it } from "vitest";
 import { newRunId } from "../../../shared/ids";
+import { createGatewayProfile } from "../../gateway/profile";
 import {
   assessClaudeCapabilities,
   claudeArgs,
+  claudeGatewayEnvironment,
   createClaudeSettings,
 } from "./command";
 import {
@@ -54,7 +57,7 @@ describe("Claude command contract", () => {
   it("degrades when the required capability surface is incomplete", () => {
     const ready = assessClaudeCapabilities(
       "2.1.214 (Claude Code)",
-      `${claudeArgs({ settingsPath, sessionId }).join(" ")} --resume --verbose`,
+      `${claudeArgs({ settingsPath, sessionId }).join(" ")} --resume --model --verbose`,
     );
     const degraded = assessClaudeCapabilities(
       "2.1.214 (Claude Code)",
@@ -151,6 +154,59 @@ describe("okami-hook bridge", () => {
 });
 
 describe("Claude adapter session lifecycle", () => {
+  it("removes the isolated gateway config directory when the session closes", async () => {
+    const harness = await startClaudeAdapterHarness({
+      command: path.resolve("tests/fixtures/runtime/claude/lazy-init-cli.mjs"),
+    });
+    const runId = newRunId();
+    const environment = claudeGatewayEnvironment({
+      profile: createGatewayProfile({
+        id: "chatgpt-test",
+        provider: "chatgpt",
+        kind: "bridged",
+        env: {},
+        displayQuotaAccount: "ChatGPT Plus",
+      }),
+      port: 43123,
+      bearerToken: "gateway-session-token",
+      model: "gpt-5.2",
+    });
+    const configDirectory = environment.CLAUDE_CONFIG_DIR;
+    try {
+      expect(configDirectory).toBeTypeOf("string");
+      if (!configDirectory)
+        throw new Error("Missing gateway Claude config dir");
+      expect((await stat(configDirectory)).mode & 0o777).toBe(0o700);
+
+      const session = await harness.adapter.start({
+        laneId: harness.laneId,
+        cwd: process.cwd(),
+        model: "gpt-5.2",
+        env: environment,
+      });
+      const run = await harness.adapter.sendTurn({
+        runId,
+        laneId: harness.laneId,
+        nativeSessionId: session.nativeSessionId,
+        input: "exercise gateway config cleanup",
+      });
+      const events = [];
+      for await (const event of run.events) events.push(event);
+      expect(events.length).toBeGreaterThan(0);
+      await harness.adapter.cancel(runId);
+
+      await expect(stat(configDirectory)).rejects.toMatchObject({
+        code: "ENOENT",
+      });
+    } finally {
+      await harness.adapter.cancel(runId);
+      await harness.close();
+      if (configDirectory) {
+        await rm(configDirectory, { recursive: true, force: true });
+      }
+    }
+  });
+
   it.each([
     { method: "start" as const, eventKind: "session_started" as const },
     { method: "resume" as const, eventKind: "session_resumed" as const },

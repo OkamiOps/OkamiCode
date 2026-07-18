@@ -1,7 +1,14 @@
 import type { LaneId } from "../../shared/ids";
 import type { AuditRepository } from "../db/repositories/audit";
-import type { LaneRepository } from "../db/repositories/lanes";
+import type { LaneRecord, LaneRepository } from "../db/repositories/lanes";
+import {
+  resolveRoute,
+  type GatewayAccount,
+  type GatewayHealthStatus,
+  type ResolvedRoute,
+} from "../gateway/route-resolver";
 import type { RunHandle } from "../runtime/adapter";
+import { claudeGatewayEnvironment } from "../runtime/claude/command";
 import type { RuntimeRegistry } from "../runtime/registry";
 import {
   type DeltaPackage,
@@ -9,6 +16,14 @@ import {
   type LaneTemperature,
 } from "./delta";
 import type { RunService } from "./run-service";
+
+export interface LaneGatewayRouting {
+  port: number;
+  bearerToken: string;
+  accounts: GatewayAccount[];
+  health?: Partial<Record<string, GatewayHealthStatus>>;
+  preferNative?: (lane: LaneRecord) => boolean;
+}
 
 interface LaneServiceDependencies {
   lanes: Pick<
@@ -21,6 +36,7 @@ interface LaneServiceDependencies {
   runService: Pick<RunService, "sendTurn">;
   createAuditId: () => string;
   clock?: () => Date;
+  gateway?: LaneGatewayRouting;
 }
 
 export interface OpenLaneOptions {
@@ -33,6 +49,11 @@ export interface OpenedLane {
   runtimeVersion: string;
   temperature: LaneTemperature;
   delta: DeltaPackage | null;
+  harness: "claude" | "native";
+  runtimeKind: "claude" | "codex";
+  routeKind: "direct" | "compatible" | "bridged" | "native";
+  routeReason: string;
+  displayQuotaAccount: string;
 }
 
 export class LaneService {
@@ -48,8 +69,13 @@ export class LaneService {
   ): Promise<OpenedLane> {
     const lane = this.dependencies.lanes.findById(laneId);
     if (!lane) throw new Error(`Unknown lane ${laneId}`);
-    const runtime = this.dependencies.runtimes.lookup(lane.runtimeKind);
-    if (!runtime) throw new Error(`No runtime adapter for ${lane.runtimeKind}`);
+    const route = this.resolveLaneRoute(lane);
+    if (route.kind === "unavailable") {
+      throw new Error(`Lane route unavailable: ${route.reason}`);
+    }
+    const runtimeKind = route.harness === "claude" ? "claude" : route.runtime;
+    const runtime = this.dependencies.runtimes.lookup(runtimeKind);
+    if (!runtime) throw new Error(`No runtime adapter for ${runtimeKind}`);
 
     const binding = this.dependencies.lanes.findNativeSessionBinding(lane.id);
     const candidateDelta = this.dependencies.deltaBuilder.build(lane.id);
@@ -68,6 +94,16 @@ export class LaneService {
       laneId: lane.id as LaneId,
       cwd: lane.workspacePath ?? process.cwd(),
       model: lane.model,
+      ...(route.kind === "compatible" || route.kind === "bridged"
+        ? {
+            env: claudeGatewayEnvironment({
+              profile: route.profile,
+              port: this.dependencies.gateway!.port,
+              bearerToken: this.dependencies.gateway!.bearerToken,
+              model: lane.model,
+            }),
+          }
+        : {}),
     };
     const session = binding
       ? await runtime.resume({
@@ -90,16 +126,43 @@ export class LaneService {
       runtimeVersion: session.runtimeVersion,
       temperature,
       delta,
+      harness: route.harness,
+      runtimeKind,
+      routeKind: route.kind,
+      routeReason: route.reason,
+      displayQuotaAccount: route.displayQuotaAccount,
     };
   }
 
-  sendTurn(opened: OpenedLane, input: string): Promise<RunHandle> {
-    return this.dependencies.runService.sendTurn({
+  async sendTurn(opened: OpenedLane, input: string): Promise<RunHandle> {
+    const run = await this.dependencies.runService.sendTurn({
       laneId: opened.laneId,
       nativeSessionId: opened.nativeSessionId,
       input,
       delta: opened.delta,
+      runtimeKind: opened.runtimeKind,
     });
+    const lane = this.dependencies.lanes.findById(opened.laneId);
+    if (!lane) throw new Error(`Unknown lane ${opened.laneId}`);
+    this.dependencies.audit.record({
+      id: this.dependencies.createAuditId(),
+      taskId: lane.taskId,
+      laneId: lane.id,
+      runId: run.runId,
+      actor: "core",
+      action: "lane_route_resolved",
+      decision: null,
+      capability: null,
+      resource: null,
+      metadata: {
+        harness: opened.harness,
+        routeKind: opened.routeKind,
+        routeReason: opened.routeReason,
+        displayQuotaAccount: opened.displayQuotaAccount,
+      },
+      occurredAt: this.clock().toISOString(),
+    });
+    return run;
   }
 
   async switch(
@@ -130,5 +193,33 @@ export class LaneService {
       occurredAt: this.clock().toISOString(),
     });
     return opened;
+  }
+
+  private resolveLaneRoute(lane: LaneRecord): ResolvedRoute {
+    const gateway = this.dependencies.gateway;
+    if (gateway) {
+      return resolveRoute({
+        model: lane.model,
+        accounts: gateway.accounts,
+        health: gateway.health,
+        preferNative: gateway.preferNative?.(lane),
+      });
+    }
+    if (lane.runtimeKind === "claude") {
+      return {
+        harness: "claude",
+        kind: "direct",
+        runtime: "claude",
+        reason: "claude_model",
+        displayQuotaAccount: "Claude subscription",
+      };
+    }
+    return {
+      harness: "native",
+      kind: "native",
+      runtime: lane.runtimeKind,
+      reason: "native_requested",
+      displayQuotaAccount: "ChatGPT subscription",
+    };
   }
 }

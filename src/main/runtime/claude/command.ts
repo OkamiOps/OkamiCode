@@ -1,6 +1,12 @@
 import { execFile } from "node:child_process";
+import { chmodSync, mkdtempSync } from "node:fs";
+import os from "node:os";
 import path from "node:path";
 import { promisify } from "node:util";
+import {
+  assertNoAnthropicCredentials,
+  type GatewayProfile,
+} from "../../gateway/profile";
 
 const execFileAsync = promisify(execFile);
 const REQUIRED_FLAGS = [
@@ -14,9 +20,11 @@ const REQUIRED_FLAGS = [
   "--settings",
   "--session-id",
   "--resume",
+  "--model",
   "--verbose",
 ] as const;
 const SUPPORTED_VERSIONS = new Set(["2.1.212", "2.1.214"]);
+const GATEWAY_CONFIG_DIRECTORY_PREFIX = "okami-claude-gateway-";
 const DEGRADED_DENY = [
   "Bash",
   "Edit",
@@ -30,6 +38,7 @@ export interface ClaudeArgsOptions {
   settingsPath: string;
   sessionId?: string;
   resumeId?: string;
+  model?: string;
 }
 
 export interface ClaudeCapabilities {
@@ -44,6 +53,13 @@ export interface ClaudeSettingsOptions {
   allowedWorkspaces: string[];
   hookScriptPath: string;
   degraded: boolean;
+}
+
+export interface ClaudeGatewayEnvironmentOptions {
+  profile: GatewayProfile;
+  port: number;
+  bearerToken: string;
+  model: string;
 }
 
 export interface ClaudeSettings {
@@ -90,6 +106,7 @@ export function claudeArgs(options: ClaudeArgsOptions): string[] {
     "--settings",
     options.settingsPath,
     ...binding,
+    ...(options.model ? ["--model", options.model] : []),
   ];
 }
 
@@ -98,8 +115,64 @@ export function claudeEnvironment(
 ): NodeJS.ProcessEnv {
   const environment = { ...process.env, ...overrides };
   delete environment.ANTHROPIC_API_KEY;
+  delete environment.ANTHROPIC_AUTH_TOKEN;
+  delete environment.ANTHROPIC_BASE_URL;
+  delete environment.ANTHROPIC_CUSTOM_HEADERS;
+  delete environment.ANTHROPIC_CUSTOM_MODEL_OPTION;
+  delete environment.ANTHROPIC_MODEL;
   delete environment.OPENAI_API_KEY;
   return environment;
+}
+
+export function claudeGatewayEnvironment(
+  options: ClaudeGatewayEnvironmentOptions,
+): NodeJS.ProcessEnv {
+  assertNoAnthropicCredentials(options.profile);
+  if (
+    !Number.isInteger(options.port) ||
+    options.port < 1 ||
+    options.port > 65535
+  ) {
+    throw new Error("Gateway port must be a valid TCP port");
+  }
+  if (!options.bearerToken) throw new Error("Gateway bearer token is required");
+  if (!options.model) throw new Error("Gateway model is required");
+  const configDirectory = mkdtempSync(
+    path.join(os.tmpdir(), GATEWAY_CONFIG_DIRECTORY_PREFIX),
+  );
+  chmodSync(configDirectory, 0o700);
+  return {
+    ...claudeEnvironment(options.profile.env),
+    ANTHROPIC_BASE_URL: `http://127.0.0.1:${options.port}/${encodeURIComponent(options.profile.id)}`,
+    // This authenticates only to Okami's loopback gateway, not to Anthropic.
+    ANTHROPIC_AUTH_TOKEN: options.bearerToken,
+    ANTHROPIC_CUSTOM_MODEL_OPTION: options.model,
+    // Isolation keeps global SessionStart hooks/settings out of gateway lanes and
+    // guarantees the user's Claude subscription OAuth token never reaches the gateway.
+    // The per-session --settings file remains active independently via its CLI flag.
+    CLAUDE_CONFIG_DIR: configDirectory,
+  };
+}
+
+export function ownedClaudeGatewayConfigDirectory(
+  environment: NodeJS.ProcessEnv | undefined,
+): string | undefined {
+  const candidate = environment?.CLAUDE_CONFIG_DIR;
+  if (
+    !candidate ||
+    !environment.ANTHROPIC_BASE_URL?.startsWith("http://127.0.0.1:") ||
+    !environment.ANTHROPIC_AUTH_TOKEN
+  ) {
+    return undefined;
+  }
+  const resolved = path.resolve(candidate);
+  if (
+    path.dirname(resolved) !== path.resolve(os.tmpdir()) ||
+    !path.basename(resolved).startsWith(GATEWAY_CONFIG_DIRECTORY_PREFIX)
+  ) {
+    return undefined;
+  }
+  return resolved;
 }
 
 export function assessClaudeCapabilities(

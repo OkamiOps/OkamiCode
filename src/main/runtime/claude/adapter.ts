@@ -22,6 +22,7 @@ import {
   claudeArgs,
   claudeEnvironment,
   createClaudeSettings,
+  ownedClaudeGatewayConfigDirectory,
   probeClaudeCapabilities,
   type ClaudeCapabilities,
 } from "./command";
@@ -56,6 +57,7 @@ interface ClaudeSessionState {
   initialMessages: NativeRecord[];
   allowedWorkspaces: string[];
   temporaryDirectory: string;
+  gatewayConfigDirectory?: string;
   degraded: boolean;
   resumed: boolean;
 }
@@ -183,25 +185,34 @@ export class ClaudeAdapter implements RuntimeAdapter {
     request: StartSessionRequest | ResumeSessionRequest,
     resume: boolean,
   ): Promise<NativeSession> {
-    const capabilities = await this.probe();
-    if (!capabilities.version) {
-      throw new Error(capabilities.detail ?? "Claude CLI is unavailable");
-    }
-
-    const temporaryDirectory = await mkdtemp(
-      path.join(os.tmpdir(), "okami-claude-"),
+    const gatewayConfigDirectory = ownedClaudeGatewayConfigDirectory(
+      request.env,
     );
-    const settingsPath = path.join(temporaryDirectory, "settings.json");
-    const allowedWorkspaces = [path.resolve(request.cwd)];
+    let temporaryDirectory: string | undefined;
     let hookContext: ClaudeHookContext | undefined;
-    const hookServer = new ClaudeHookServer({
-      policyEngine: this.dependencies.policyEngine,
-      approvalBroker: this.dependencies.approvalBroker,
-      context: () => hookContext,
-    });
+    let hookServer: ClaudeHookServer | undefined;
     let spawnedProcess: JsonlProcess<NativeRecord> | undefined;
     try {
-      await hookServer.start();
+      const capabilities = await this.probe();
+      if (!capabilities.version) {
+        throw new Error(capabilities.detail ?? "Claude CLI is unavailable");
+      }
+      const sessionTemporaryDirectory = await mkdtemp(
+        path.join(os.tmpdir(), "okami-claude-"),
+      );
+      temporaryDirectory = sessionTemporaryDirectory;
+      const settingsPath = path.join(
+        sessionTemporaryDirectory,
+        "settings.json",
+      );
+      const allowedWorkspaces = [path.resolve(request.cwd)];
+      const sessionHookServer = new ClaudeHookServer({
+        policyEngine: this.dependencies.policyEngine,
+        approvalBroker: this.dependencies.approvalBroker,
+        context: () => hookContext,
+      });
+      hookServer = sessionHookServer;
+      await sessionHookServer.start();
       const settings = createClaudeSettings({
         allowedWorkspaces,
         hookScriptPath:
@@ -223,14 +234,15 @@ export class ClaudeAdapter implements RuntimeAdapter {
             settingsPath,
             sessionId: resume ? undefined : candidateSessionId,
             resumeId: resume ? candidateSessionId : undefined,
+            model: request.model,
           }),
           // Claude 2.1.214 rejects stream-json output without this compatibility flag.
           "--verbose",
         ],
         {
           cwd: request.cwd,
-          env: hookServer.hookEnvironment(
-            claudeEnvironment(this.dependencies.env),
+          env: sessionHookServer.hookEnvironment(
+            request.env ?? claudeEnvironment(this.dependencies.env),
           ),
         },
       );
@@ -241,13 +253,14 @@ export class ClaudeAdapter implements RuntimeAdapter {
         launchSessionId: candidateSessionId,
         runtimeVersion: capabilities.version,
         process,
-        hookServer,
+        hookServer: sessionHookServer,
         setHookContext: (context) => {
           hookContext = context;
         },
         initialMessages,
         allowedWorkspaces,
-        temporaryDirectory,
+        temporaryDirectory: sessionTemporaryDirectory,
+        gatewayConfigDirectory,
         degraded: capabilities.mode === "degraded",
         resumed: resume,
       };
@@ -260,8 +273,11 @@ export class ClaudeAdapter implements RuntimeAdapter {
     } catch (error) {
       await spawnedProcess?.cancel();
       await spawnedProcess?.wait();
-      await hookServer.close();
-      await rm(temporaryDirectory, { recursive: true, force: true });
+      await hookServer?.close();
+      await removeClaudeTemporaryDirectories(
+        temporaryDirectory,
+        gatewayConfigDirectory,
+      );
       throw error;
     }
   }
@@ -295,7 +311,10 @@ export class ClaudeAdapter implements RuntimeAdapter {
     await session.process.cancel();
     await session.process.wait();
     await session.hookServer.close();
-    await rm(session.temporaryDirectory, { recursive: true, force: true });
+    await removeClaudeTemporaryDirectories(
+      session.temporaryDirectory,
+      session.gatewayConfigDirectory,
+    );
   }
 
   private async *projectRunEvents(
@@ -323,6 +342,17 @@ export class ClaudeAdapter implements RuntimeAdapter {
       this.dependencies.env,
     );
   }
+}
+
+async function removeClaudeTemporaryDirectories(
+  settingsDirectory: string | undefined,
+  gatewayConfigDirectory: string | undefined,
+): Promise<void> {
+  await Promise.all(
+    [settingsDirectory, gatewayConfigDirectory]
+      .filter((directory): directory is string => Boolean(directory))
+      .map((directory) => rm(directory, { recursive: true, force: true })),
+  );
 }
 
 async function authoritativeSessionId(

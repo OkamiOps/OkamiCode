@@ -1,4 +1,5 @@
 import type { LaneId, RunId } from "../../shared/ids";
+import type { RuntimeKind } from "../../shared/contracts/lane";
 import type { LaneRepository } from "../db/repositories/lanes";
 import type { RunRepository } from "../db/repositories/runs";
 import type { RunHandle } from "../runtime/adapter";
@@ -18,6 +19,7 @@ export interface SendLaneTurnRequest {
   nativeSessionId: string;
   input: string;
   delta: DeltaPackage | null;
+  runtimeKind?: RuntimeKind;
 }
 
 export class RunService {
@@ -39,8 +41,9 @@ export class RunService {
     ) {
       throw new Error("Delta cursor does not match the target lane");
     }
-    const runtime = this.dependencies.runtimes.lookup(lane.runtimeKind);
-    if (!runtime) throw new Error(`No runtime adapter for ${lane.runtimeKind}`);
+    const runtimeKind = request.runtimeKind ?? lane.runtimeKind;
+    const runtime = this.dependencies.runtimes.lookup(runtimeKind);
+    if (!runtime) throw new Error(`No runtime adapter for ${runtimeKind}`);
 
     const runId = this.dependencies.createRunId() as RunId;
     const startedAt = this.clock().toISOString();

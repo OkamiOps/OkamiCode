@@ -1,7 +1,132 @@
+import { rm } from "node:fs/promises";
 import { describe, expect, it } from "vitest";
+import { createGatewayProfile } from "../gateway/profile";
 import { createLaneHarness } from "./test-harness";
 
+const chatGptProfile = createGatewayProfile({
+  id: "chatgpt-lane",
+  provider: "chatgpt",
+  kind: "bridged",
+  env: { CODEX_HOME: "/tmp/okami-codex" },
+  displayQuotaAccount: "ChatGPT Plus",
+});
+
 describe("LaneService", () => {
+  it("launches a GPT lane on the Claude harness with gateway env", async () => {
+    const h = createLaneHarness({
+      runtime: "codex",
+      gateway: {
+        port: 43123,
+        bearerToken: "gateway-session-token",
+        accounts: [
+          {
+            provider: "chatgpt",
+            bridgedProfile: chatGptProfile,
+            nativeRuntime: "codex",
+          },
+        ],
+      },
+    });
+
+    try {
+      const opened = await h.openExisting();
+
+      expect(opened).toMatchObject({
+        routeKind: "bridged",
+        routeReason: "subscription_bridge",
+        displayQuotaAccount: "ChatGPT Plus",
+      });
+      expect(h.runtimes.claude.startRequests).toHaveLength(1);
+      expect(h.runtimes.codex.startRequests).toHaveLength(0);
+      expect(h.runtimes.claude.startRequests[0]?.env).toMatchObject({
+        ANTHROPIC_BASE_URL: "http://127.0.0.1:43123/chatgpt-lane",
+        ANTHROPIC_AUTH_TOKEN: "gateway-session-token",
+      });
+      expect(
+        h.runtimes.claude.startRequests[0]?.env?.ANTHROPIC_API_KEY,
+      ).toBeUndefined();
+    } finally {
+      await removeGatewayConfigDirectory(
+        h.runtimes.claude.startRequests[0]?.env,
+      );
+    }
+  });
+
+  it("launches the native adapter unchanged when the bridge is unhealthy", async () => {
+    const h = createLaneHarness({
+      runtime: "codex",
+      gateway: {
+        port: 43123,
+        bearerToken: "gateway-session-token",
+        health: { chatgpt: "unhealthy" },
+        accounts: [
+          {
+            provider: "chatgpt",
+            bridgedProfile: chatGptProfile,
+            nativeRuntime: "codex",
+          },
+        ],
+      },
+    });
+
+    const opened = await h.openExisting();
+
+    expect(opened).toMatchObject({
+      routeKind: "native",
+      routeReason: "bridge_unhealthy",
+      displayQuotaAccount: "ChatGPT Plus",
+    });
+    expect(h.runtimes.codex.startRequests).toHaveLength(1);
+    expect(h.runtimes.codex.startRequests[0]?.env).toBeUndefined();
+    expect(h.runtimes.claude.startRequests).toHaveLength(0);
+  });
+
+  it("records the resolved route and quota account for every turn", async () => {
+    const h = createLaneHarness({
+      runtime: "codex",
+      gateway: {
+        port: 43123,
+        bearerToken: "gateway-session-token",
+        accounts: [
+          {
+            provider: "chatgpt",
+            bridgedProfile: chatGptProfile,
+            nativeRuntime: "codex",
+          },
+        ],
+      },
+    });
+    try {
+      const opened = await h.openExisting();
+      const run = await h.service.sendTurn(opened, "hello");
+
+      expect(h.runtimes.claude.sentTurns).toHaveLength(1);
+      expect(h.runtimes.codex.sentTurns).toHaveLength(0);
+
+      const audit = h.fx.db
+        .prepare(
+          `SELECT run_id, action, metadata_json
+           FROM audit_entries WHERE action = 'lane_route_resolved'`,
+        )
+        .get() as
+        { run_id: string; action: string; metadata_json: string } | undefined;
+      expect(audit).toEqual({
+        run_id: run.runId,
+        action: "lane_route_resolved",
+        metadata_json: JSON.stringify({
+          harness: "claude",
+          routeKind: "bridged",
+          routeReason: "subscription_bridge",
+          displayQuotaAccount: "ChatGPT Plus",
+        }),
+      });
+    } finally {
+      await removeGatewayConfigDirectory(
+        h.runtimes.claude.startRequests[0]?.env,
+      );
+    }
+  });
+
   it("resumes a hot lane without bootstrap", async () => {
     const h = createLaneHarness({
       runtime: "codex",
@@ -137,3 +262,10 @@ describe("LaneService", () => {
     });
   });
 });
+
+async function removeGatewayConfigDirectory(
+  environment: NodeJS.ProcessEnv | undefined,
+): Promise<void> {
+  const directory = environment?.CLAUDE_CONFIG_DIR;
+  if (directory) await rm(directory, { recursive: true, force: true });
+}

@@ -16,12 +16,14 @@ import { RuntimeRegistry } from "../runtime/registry";
 import { DeltaBuilder } from "./delta";
 import { LaneService } from "./lane-service";
 import { RunService } from "./run-service";
+import type { LaneGatewayRouting } from "./lane-service";
 
 interface LaneHarnessOptions {
   runtime?: RuntimeKind;
   nativeSession?: string;
   cursor?: number;
   events?: number[];
+  gateway?: LaneGatewayRouting;
 }
 
 export class FakeRuntimeAdapter implements RuntimeAdapter {
@@ -29,6 +31,8 @@ export class FakeRuntimeAdapter implements RuntimeAdapter {
   resumeCalls = 0;
   sendTurnCalls = 0;
   readonly sentTurns: NativeTurnRequest[] = [];
+  readonly startRequests: StartSessionRequest[] = [];
+  readonly resumeRequests: ResumeSessionRequest[] = [];
   rejectNextTurn = false;
 
   constructor(readonly kind: RuntimeKind) {}
@@ -43,6 +47,7 @@ export class FakeRuntimeAdapter implements RuntimeAdapter {
 
   start(request: StartSessionRequest): Promise<NativeSession> {
     this.startCalls += 1;
+    this.startRequests.push(request);
     return Promise.resolve({
       laneId: request.laneId,
       nativeSessionId: `new-${request.laneId}`,
@@ -52,6 +57,7 @@ export class FakeRuntimeAdapter implements RuntimeAdapter {
 
   resume(request: ResumeSessionRequest): Promise<NativeSession> {
     this.resumeCalls += 1;
+    this.resumeRequests.push(request);
     return Promise.resolve({
       laneId: request.laneId,
       nativeSessionId: request.nativeSessionId,
@@ -92,6 +98,10 @@ export class FakeRuntimeAdapter implements RuntimeAdapter {
 export interface LaneHarness {
   fx: TestDatabase;
   fakeRuntime: FakeRuntimeAdapter;
+  runtimes: {
+    claude: FakeRuntimeAdapter;
+    codex: FakeRuntimeAdapter;
+  };
   service: LaneService;
   buildDelta(): ReturnType<DeltaBuilder["build"]>;
   openExisting(): ReturnType<LaneService["open"]>;
@@ -111,7 +121,7 @@ export function createLaneHarness(
       ...lane,
       runtimeKind: runtime,
       providerKind: runtime === "codex" ? "chatgpt" : "claude_max",
-      model: `${runtime}-test`,
+      model: runtime === "codex" ? "gpt-test" : "claude-test",
       lastEventCursor: options.cursor ?? 0,
       updatedAt: nextTimestamp(lane.updatedAt),
     },
@@ -131,9 +141,14 @@ export function createLaneHarness(
     appendEvent(fx, sequence);
   }
 
-  const fakeRuntime = new FakeRuntimeAdapter(runtime);
+  const runtimes = {
+    claude: new FakeRuntimeAdapter("claude"),
+    codex: new FakeRuntimeAdapter("codex"),
+  };
+  const fakeRuntime = runtimes[runtime];
   const registry = new RuntimeRegistry();
-  registry.register(fakeRuntime);
+  registry.register(runtimes.claude);
+  registry.register(runtimes.codex);
   const deltaBuilder = new DeltaBuilder({
     db: fx.db,
     tasks: fx.tasks,
@@ -153,11 +168,13 @@ export function createLaneHarness(
     deltaBuilder,
     runService,
     createAuditId: randomUUID,
+    gateway: options.gateway,
   });
 
   return {
     fx,
     fakeRuntime,
+    runtimes,
     service,
     buildDelta: () => deltaBuilder.build(fx.laneId),
     openExisting: () => service.open(fx.laneId),
@@ -189,7 +206,7 @@ export function createLaneHarness(
         taskId: fx.taskId,
         runtimeKind: runtime,
         providerKind: runtime === "codex" ? "chatgpt" : "claude_max",
-        model: `${runtime}-test`,
+        model: runtime === "codex" ? "gpt-test" : "claude-test",
         status: "ready",
         workspacePath: null,
         lastEventCursor: laneOptions.cursor ?? 0,
