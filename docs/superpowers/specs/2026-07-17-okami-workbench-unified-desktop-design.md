@@ -8,6 +8,8 @@
 
 **Revisão 2026-07-18 (2):** shell desktop trocado de Tauri 2 + Rust para **Electron + TypeScript de ponta a ponta**, por decisão do usuário: todos os CLIs orquestrados são Node.js, e uma única linguagem acelera o desenvolvimento (executado pelo Codex, coordenado pelo Claude). Duas clarificações de leitura: (a) "Codex-Driven" descreve apenas quem escreve o código do app durante a construção, não o runtime do produto — o produto continua multi-runtime com Claude Code como harness preferencial; (b) `stream-json` é somente o formato estruturado de eventos do Claude Code CLI para integração programática, não um modo ou modelo diferente.
 
+**Revisão 2026-07-18 (3):** harness unificado promovido a comportamento padrão do produto (seção 7.1): selecionar GPT, Grok ou outro modelo executa o harness do Claude Code roteado pelo Subscription Gateway para a assinatura daquele provider; a quota Claude só é consumida por modelos Claude. Runtimes nativos viram fallback explícito. Novo invariante: perfis de gateway de providers não-Claude não contêm credenciais Anthropic. A Fase 1 passa a incluir o gateway com bridge ChatGPT.
+
 **Plataforma inicial:** macOS 26 em Apple Silicon
 
 **Princípio central:** uma interface local para trabalhar, comunicar, organizar e delegar usando as assinaturas e os CLIs já instalados.
@@ -225,28 +227,35 @@ Esses conceitos permanecem separados na interface e no domínio:
 | Modelo | GPT, Claude, Grok, MiniMax, MiMo | Inferência |
 | Lane | Claude Code + Claude Max em uma tarefa | Continuidade nativa |
 
-### 7.1 Caminhos de integração
+### 7.1 Harness unificado por padrão
 
-1. **Runtime nativo com assinatura:** Claude Code/Claude Max, Codex/ChatGPT, Grok/SuperGrok, Cursor e AGY usam seus próprios logins e sessões.
-2. **Endpoint compatível oficial:** planos que oferecem interface Anthropic-compatible podem ser usados pelo Claude Code através de configuração isolada.
-3. **Subscription Bridge experimental:** proxies locais que adaptam OAuth de uma assinatura para o protocolo esperado pelo Claude Code podem ser testados, mas aparecem como experimentais.
-4. **Fallback nativo:** se um bridge falhar, o usuário pode mudar para o runtime nativo correspondente. Não existe fallback silencioso.
+**Comportamento normal do produto:** selecionar qualquer modelo — GPT, Grok, MiniMax, MiMo — executa o **harness do Claude Code** apontado, via Subscription Gateway local, para a assinatura daquele provider. A quota do Claude só é consumida quando o modelo selecionado é um Claude. Runtimes nativos (Codex app-server, Grok CLI etc.) são o fallback explícito, não o caminho principal.
 
-O Claude Code é o harness preferencial, não uma promessa de que todo modelo suportará todas as suas ferramentas. Cada combinação passa por uma matriz de capabilities e um smoke test antes de ser considerada utilizável.
+Ordem de resolução de rota por provider, avaliada pelo gateway:
+
+1. **Endpoint Anthropic-compatible oficial:** planos que oferecem interface compatível (por exemplo, planos de coding de MiniMax/MiMo) são usados pelo Claude Code através de perfil isolado (`ANTHROPIC_BASE_URL` + credencial do plano). Rota `compatible`.
+2. **Subscription Bridge local:** para assinaturas sem endpoint compatível oficial (ChatGPT, SuperGrok), um proxy local adapta o OAuth da assinatura ao protocolo esperado pelo Claude Code. Rota `bridged` — funcional por padrão, mas marcada com seu nível de confiabilidade, pois não é suportada pelo fornecedor e pode quebrar ou violar termos de uso; o app mostra isso com clareza em vez de esconder.
+3. **Runtime nativo:** se a rota via harness Claude estiver indisponível, degradada ou o usuário preferir, a lane usa o runtime nativo do provider (Codex app-server, Grok CLI). Rota `native`. A troca é sempre explícita e visível; não existe fallback silencioso.
+
+**Invariante de isolamento de quota:** perfis de gateway de providers não-Claude **não contêm credenciais Anthropic**. Uma falha de bridge nunca pode redirecionar tráfego para a assinatura Claude; ela pausa a lane e oferece o fallback nativo. O painel da lane mostra sempre qual assinatura está sendo consumida.
+
+O Claude Code é o harness padrão, não uma promessa de que todo modelo suportará todas as suas ferramentas com a mesma qualidade. Cada combinação provider+rota passa por uma matriz de capabilities e um smoke test antes de ser considerada utilizável, e o resultado aparece em Conexões.
 
 ### 7.2 Subscription Gateway
 
 O gateway local:
 
 - resolve perfil, provider, modelo e credencial;
-- expõe somente o protocolo necessário ao harness;
+- expõe somente o protocolo necessário ao harness (endpoint Anthropic-compatible em loopback, um perfil por conta);
 - nunca contém um roteador automático que escolha API paga;
-- registra provider/modelo efetivos;
-- mostra suporte como `native`, `compatible`, `experimental` ou `unavailable`;
+- nunca inclui credenciais Anthropic em perfis de outros providers (invariante da seção 7.1);
+- registra provider/modelo efetivos e qual assinatura foi consumida em cada run;
+- mostra a rota como `compatible`, `bridged`, `native` ou `unavailable`, com estado de saúde e confiabilidade;
+- executa health check e smoke test por perfil antes de marcar a rota como utilizável;
 - mantém credenciais fora do frontend e dos logs;
 - não executa inferência.
 
-Claude Code documenta configuração via LLM gateways e `ANTHROPIC_BASE_URL`, mas gateways de terceiros não são mantidos ou auditados pela Anthropic. Por isso, bridges são componentes substituíveis e não a única rota do produto.
+Claude Code documenta configuração via LLM gateways e `ANTHROPIC_BASE_URL`, mas gateways e bridges de terceiros não são mantidos ou auditados pela Anthropic nem pelos providers de destino. Por isso, cada bridge é um componente substituível com contrato próprio, monitorado por health check; quando quebra, a lane pausa e oferece o runtime nativo — nunca a assinatura Claude.
 
 ## 8. Runtime adapters e eventos canônicos
 
@@ -808,6 +817,7 @@ Auditoria é local, pesquisável e exportável. Secrets são removidos antes da 
 ### Fase 1 — Workbench diário
 
 - Electron + React + TypeScript;
+- Subscription Gateway com perfis por conta e bridge ChatGPT→Anthropic-compatible, permitindo lane GPT no harness do Claude Code sem consumir quota Claude;
 - interface Síntese Okami;
 - tarefas, chats rápidos e lanes;
 - Claude Code e Codex;
@@ -821,7 +831,7 @@ Auditoria é local, pesquisável e exportável. Secrets são removidos antes da 
 - Keychain, leases e auditoria;
 - retomada após reinício.
 
-**Gate:** executar uma tarefa real nos dois runtimes, alternar sem inferência auxiliar, retomar ambas as sessões nativas e exibir contexto, atividade e quota com fonte correta.
+**Gate:** executar uma tarefa real nos dois runtimes, alternar sem inferência auxiliar, retomar ambas as sessões nativas e exibir contexto, atividade e quota com fonte correta. Adicionalmente: uma lane GPT executada pelo harness do Claude Code via gateway conclui um turno real consumindo somente a assinatura ChatGPT, com a quota Claude comprovadamente intacta.
 
 ### Fase 2 — Painel de trabalho: Inbox, Kanban e Agenda
 
@@ -929,8 +939,9 @@ Build verde não encerra uma fase. Cada gate precisa de um fluxo E2E clicável, 
 - Electron + React, TypeScript de ponta a ponta; o processo main é o núcleo privilegiado e o renderer roda sandboxed.
 - SQLite/SQLCipher como estado operacional.
 - Chat-native; terminal é avançado.
-- Claude Code é harness preferencial, não obrigatório.
-- Runtimes nativos permanecem disponíveis.
+- Claude Code é o harness padrão para todos os modelos; selecionar um modelo não-Claude roteia pelo Subscription Gateway para a assinatura daquele provider.
+- Selecionar um modelo não-Claude nunca consome quota Claude; perfis de gateway de outros providers não contêm credenciais Anthropic.
+- Runtimes nativos permanecem disponíveis como fallback explícito por lane.
 - Não usar API de inferência paga como fallback silencioso.
 - Usage Control Center separa quota, contexto e atividade local.
 - Todo dado de limite mostra fonte, frescor e confiabilidade; indisponível não vira estimativa silenciosa.

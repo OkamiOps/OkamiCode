@@ -17,6 +17,7 @@
 - Do not implement email, WhatsApp, calendar, Kanban/Todoist, Grok, Cursor, AGY, OpenCode, MiniMax, MiMo, Holographic/HRR, GBrain, or persistent automation in this plan (they are Phase 2+).
 - A run has exactly one executor. No hidden supervisory model, summarization model, paid API fallback, or silent provider switch is permitted.
 - Claude and Codex must use the user's installed CLI subscription authentication. Tests must never inject `ANTHROPIC_API_KEY` or `OPENAI_API_KEY`.
+- **Unified harness is the product default (spec §7.1):** selecting a non-Claude model runs the Claude Code harness pointed at that provider's subscription through the local Subscription Gateway (Task 19). Claude quota is consumed only by Claude models. Gateway profiles for non-Claude providers must never contain Anthropic credentials; a bridge failure pauses the lane and offers the native runtime — it never reroutes to the Claude subscription.
 - Default live CLI versions for fixtures are Claude Code `2.1.212` and Codex CLI `0.144.5`; adapters must probe versions and degrade explicitly when an unsupported protocol is detected.
 - All privileged operations live in the main process. The renderer runs sandboxed with `contextIsolation: true` and `nodeIntegration: false`; it cannot spawn processes, touch the filesystem, read key material, or open the database. The preload exposes only the enumerated `okami` API defined in Task 10.
 - Store the database key only via Electron `safeStorage` (Keychain-backed). Store operational data in SQLCipher. Redact native payloads before logs, fixtures, or audit exports.
@@ -36,7 +37,7 @@
 |---|---|---|
 | 0 — Foundation | 1–3 | App boots, contracts are stable, encrypted state opens safely |
 | 1 — Trusted core | 4–6 | Events persist, leases gate actions, process transport survives cancellation |
-| 2 — Real runtimes | 7–9 | Codex and Claude run natively; lanes resume and sync only deltas |
+| 2 — Real runtimes | 7–9, 19 | Codex and Claude run natively; the gateway routes GPT through the Claude harness on ChatGPT quota; lanes resume and sync only deltas |
 | 3 — Desktop experience | 10–14 | Okami shell, chat, tool surfaces, approvals, quick chat |
 | 4 — Usage and memory | 15–16 | Honest limits/activity and read-only Obsidian retrieval |
 | 5 — Recovery and release | 17–18 | Restart recovery, audit, visual/E2E proof, bundle-ready `.app`/DMG candidate |
@@ -59,6 +60,7 @@
 │   ├── secrets.ts                        # safeStorage-backed database key
 │   ├── policy/                           # leases, approvals, deterministic authorize
 │   ├── runtime/                          # JSONL transport, supervisor, codex/, claude/
+│   ├── gateway/                          # Subscription Gateway: profiles, routes, chatgpt bridge
 │   ├── orchestration/                    # lanes, delta builder, quick chat, recovery
 │   ├── usage/                            # collectors, snapshots, activity, preflight
 │   ├── memory/                           # Obsidian scanner, FTS5 indexer, watcher
@@ -1464,7 +1466,8 @@ Expected: FAIL — fixtures and scripts missing.
 2. Codex lane reads it and creates `codex.txt` with `CODEX_SAW_CLAUDE`;
 3. Claude resumes its original native session and confirms only the Codex delta;
 4. usage refresh shows source/freshness for every value; no hidden run exists;
-5. restart the app core; both native session bindings and audit entries survive.
+5. a GPT lane runs one turn through the **Claude harness gateway route**, the lane panel shows `bridged · ChatGPT`, and Claude quota snapshots before/after are identical;
+6. restart the app core; both native session bindings and audit entries survive.
 
 `electron-builder.yml` targets `dmg` and `dir` for arm64 with `appId: com.okami.workbench`, `mac.category: public.app-category.developer-tools`, hardened runtime off for the unsigned local candidate (signing/notarization is a separate explicit release step, never committed). `scripts/release-gate.sh` runs `pnpm check`, `pnpm test:e2e`, `./scripts/doctor.sh`, a secret scan over tracked files, `git diff --check`, then `pnpm package`.
 
@@ -1487,12 +1490,112 @@ git add package.json pnpm-lock.yaml playwright.config.ts electron-builder.yml te
 git commit -m "test: prove Okami Workbench phase one"
 ```
 
+### Task 19: Subscription Gateway — GPT through the Claude harness on ChatGPT quota
+
+> **Execution order:** run this task after Task 9 (it extends the Claude adapter and lane routing) and before Task 12 (the LaneSelector shows routes). It is numbered 19 only to avoid renumbering the plan.
+
+**Files:**
+- Create: `src/main/gateway/profile.ts`
+- Create: `src/main/gateway/route-resolver.ts`
+- Create: `src/main/gateway/server.ts`
+- Create: `src/main/gateway/bridges/chatgpt.ts`
+- Create: `src/main/gateway/health.ts`
+- Create: `src/main/gateway/route-resolver.test.ts`
+- Create: `src/main/gateway/bridges/chatgpt.test.ts`
+- Create: `src/main/gateway/live.test.ts`
+- Create: `tests/fixtures/gateway/anthropic-messages-request.json`
+- Create: `tests/fixtures/gateway/chatgpt-stream.jsonl`
+- Modify: `src/main/runtime/claude/command.ts`, `src/main/orchestration/lane-service.ts`, `src/main/ipc/handlers.ts`
+
+**What it builds:** a loopback-only HTTP server exposing one Anthropic-compatible endpoint per gateway profile. A profile binds `provider account → bridge or official compatible endpoint`. When a lane selects a non-Claude model, `LaneService` starts the Claude Code CLI with `ANTHROPIC_BASE_URL=http://127.0.0.1:<port>/<profileId>` and a per-session bearer token, so the harness, tools, hooks, and approvals are all Claude Code — but inference is billed to the selected provider's subscription. The initial bridge adapts the Anthropic Messages API (including streaming and tool use) to the ChatGPT subscription backend used by Codex, reusing the OAuth tokens from the user's existing `codex login` session state.
+
+- [ ] **Step 1: Write failing route-resolution and quota-isolation tests**
+
+```ts
+// src/main/gateway/route-resolver.test.ts
+import { describe, expect, it } from "vitest";
+import { resolveRoute } from "./route-resolver";
+
+describe("resolveRoute", () => {
+  it("routes a GPT lane through the claude harness on the chatgpt profile", () => {
+    const route = resolveRoute({ model: "gpt", accounts: accountsFixture() });
+    expect(route).toMatchObject({ harness: "claude", kind: "bridged", profile: { provider: "chatgpt" } });
+  });
+
+  it("never places anthropic credentials in a non-claude profile", () => {
+    const route = resolveRoute({ model: "gpt", accounts: accountsFixture() });
+    expect(JSON.stringify(route.profile.env)).not.toMatch(/anthropic|claude/i);
+    expect(route.profile.env.ANTHROPIC_API_KEY).toBeUndefined();
+  });
+
+  it("falls back to the native runtime explicitly when the bridge is unhealthy", () => {
+    const route = resolveRoute({ model: "gpt", accounts: accountsFixture(), health: { chatgpt: "unhealthy" } });
+    expect(route).toMatchObject({ harness: "native", kind: "native", runtime: "codex", reason: "bridge_unhealthy" });
+  });
+
+  it("routes claude models directly without the gateway", () => {
+    const route = resolveRoute({ model: "claude", accounts: accountsFixture() });
+    expect(route).toMatchObject({ harness: "claude", kind: "direct" });
+  });
+});
+```
+
+```ts
+// src/main/gateway/bridges/chatgpt.test.ts
+it("translates an anthropic messages request with tools into a chatgpt turn and back", async () => {
+  const bridge = createChatGptBridge(fakeChatGptBackend("tests/fixtures/gateway/chatgpt-stream.jsonl"));
+  const request = readJson("tests/fixtures/gateway/anthropic-messages-request.json");
+  const events = await collectSse(bridge.handleMessages(request));
+  expect(events.some((e) => e.type === "content_block_delta")).toBe(true);
+  expect(events.some((e) => e.type === "content_block_start" && e.content_block?.type === "tool_use")).toBe(true);
+  expect(events.at(-1)?.type).toBe("message_stop");
+});
+```
+
+- [ ] **Step 2: Run and verify failure** — `pnpm test src/main/gateway` — Expected: FAIL, modules missing.
+
+- [ ] **Step 3: Implement profiles, server, bridge, health, and lane routing**
+
+```ts
+// src/main/gateway/profile.ts
+export interface GatewayProfile {
+  id: string;
+  provider: "chatgpt" | "minimax" | "mimo";
+  kind: "bridged" | "compatible";
+  // env handed to the Claude Code process for this lane; MUST NOT contain Anthropic credentials.
+  env: Record<string, string>;
+  displayQuotaAccount: string; // which subscription the lane consumes, shown in the lane panel
+}
+```
+
+`server.ts` binds `127.0.0.1` only, requires the per-session bearer token, and mounts `/v1/messages` per profile. `bridges/chatgpt.ts` translates Messages API requests (system, messages, tools, streaming SSE) to the ChatGPT backend protocol and back, reading OAuth material from the user's Codex session state read-only; token refresh failures surface as `bridge_unhealthy`, never as a retry against another provider. `health.ts` runs a zero-cost handshake per profile with TTL. `route-resolver.ts` implements the spec §7.1 order: `compatible` → `bridged` → explicit `native` fallback with reason. `lane-service.ts` consumes the route: `harness: "claude"` lanes launch the Claude adapter with the profile env; `harness: "native"` lanes launch the provider's native adapter. The lane details panel and audit record `route.kind` and `displayQuotaAccount` for every run.
+
+`live.test.ts` (guarded by `OKAMI_RUN_LIVE_CLI_TESTS=1`) starts the gateway, runs one real Claude-harness turn on the ChatGPT profile asking for the exact string `OKAMI_GATEWAY_SMOKE`, then reads Codex `account/rateLimits/read` before/after to show ChatGPT consumption, and asserts the Claude usage snapshot is unchanged.
+
+- [ ] **Step 4: Run gates**
+
+```bash
+pnpm test src/main/gateway src/main/orchestration
+OKAMI_RUN_LIVE_CLI_TESTS=1 pnpm test src/main/gateway/live.test.ts
+pnpm typecheck && pnpm lint
+```
+
+Expected: unit suites pass with zero network calls; live smoke returns `OKAMI_GATEWAY_SMOKE` billed to ChatGPT with Claude quota intact.
+
+- [ ] **Step 5: Commit**
+
+```bash
+git add src/main/gateway src/main/runtime/claude/command.ts src/main/orchestration/lane-service.ts src/main/ipc/handlers.ts tests/fixtures/gateway
+git commit -m "feat: route non-claude models through the claude harness gateway"
+```
+
 ## Phase 1 Spec Coverage Map
 
 | Specification requirement | Implemented and proven by |
 |---|---|
 | Electron + React + TypeScript, privileged main process, sandboxed renderer | Tasks 1, 3, 10; security E2E in 18 |
 | Claude Code and Codex subscription runtimes | Tasks 6–8, 18 |
+| Unified Claude harness for non-Claude models with quota isolation (spec §7.1) | Task 19; live proof in Tasks 18–19 |
 | Persistent native lanes and delta-only switching | Task 9; live proof in Task 18 |
 | Chat-native UI, five-region Okami layout, terminal as advanced drawer | Tasks 11–13 |
 | Native browser, HTML, files, diffs, terminal, approvals, subagents | Tasks 7–8 fixtures; renderers and security tests in 13 |
@@ -1506,6 +1609,7 @@ git commit -m "test: prove Okami Workbench phase one"
 ## Full Phase 1 Definition of Done
 
 - A real task starts in Claude, continues in Codex, and resumes in the original Claude session without a hidden model call.
+- A GPT lane runs through the Claude Code harness via the gateway, consumes only ChatGPT quota, and a bridge failure pauses the lane with an explicit native fallback — Claude quota is never touched by a non-Claude model.
 - Hot lanes send no bootstrap; stale lanes send only the deterministic event delta.
 - Browser/HTML/files/diffs/terminal/subagent/approval events are visible as chat-native components; terminal remains advanced.
 - Every privileged action is allowed by a live lease or a single-use approval recorded in audit.
