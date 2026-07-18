@@ -50,6 +50,8 @@ export const workbenchClient = {
   taskCreate: (request: IpcRequest<"task:create">) =>
     invokeCommand("task:create", request),
   taskList: () => invokeCommand("task:list", {}),
+  laneList: (request: IpcRequest<"lane:list">) =>
+    invokeCommand("lane:list", request),
   laneOpen: (request: IpcRequest<"lane:open">) =>
     invokeCommand("lane:open", request),
   laneSendTurn: (request: IpcRequest<"lane:sendTurn">) =>

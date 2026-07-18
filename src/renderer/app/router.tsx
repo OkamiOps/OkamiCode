@@ -1,5 +1,6 @@
 import { Navigate, Route, Routes } from "react-router-dom";
 import { StatusBadge } from "../components/StatusBadge";
+import { WorkbenchPage } from "../features/workbench/WorkbenchPage";
 import { AppShell } from "./layout/AppShell";
 
 interface ScreenProps {
@@ -33,16 +34,7 @@ export function AppRouter() {
   return (
     <Routes>
       <Route element={<AppShell />}>
-        <Route
-          path="/workbench"
-          element={
-            <Screen
-              eyebrow="Execução assistida"
-              title="Okami Workbench"
-              description="Selecione uma tarefa na fila para acompanhar a execução e seus eventos."
-            />
-          }
-        />
+        <Route path="/workbench" element={<WorkbenchPage />} />
         <Route
           path="/quick-chat"
           element={

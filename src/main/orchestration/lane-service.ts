@@ -28,7 +28,7 @@ export interface LaneGatewayRouting {
 interface LaneServiceDependencies {
   lanes: Pick<
     LaneRepository,
-    "bindNativeSession" | "findById" | "findNativeSessionBinding"
+    "bindNativeSession" | "findById" | "findNativeSessionBinding" | "list"
   >;
   audit: Pick<AuditRepository, "record">;
   runtimes: Pick<RuntimeRegistry, "lookup">;
@@ -45,15 +45,42 @@ export interface OpenLaneOptions {
 
 export interface OpenedLane {
   laneId: string;
+  taskId: string;
   nativeSessionId: string;
+  nativeSessionIdPrefix: string;
   runtimeVersion: string;
   temperature: LaneTemperature;
   delta: DeltaPackage | null;
+  pendingDeltaEvents: number;
   harness: "claude" | "native";
   runtimeKind: "claude" | "codex";
+  providerAccountLabel: string;
+  model: string;
   routeKind: "direct" | "compatible" | "bridged" | "native";
   routeReason: string;
   displayQuotaAccount: string;
+  permissionMode: string | null;
+  workspacePath: string | null;
+  status: LaneRecord["status"];
+}
+
+export interface LaneSummary {
+  laneId: string;
+  taskId: string;
+  harness: "claude" | "native";
+  runtimeKind: "claude" | "codex";
+  runtimeVersion: string | null;
+  providerAccountLabel: string;
+  model: string;
+  routeKind: "direct" | "compatible" | "bridged" | "native" | "unavailable";
+  routeReason: string;
+  displayQuotaAccount: string;
+  permissionMode: string | null;
+  workspacePath: string | null;
+  nativeSessionIdPrefix: string | null;
+  status: LaneRecord["status"];
+  temperature: LaneTemperature;
+  pendingDeltaEvents: number;
 }
 
 export class LaneService {
@@ -61,6 +88,46 @@ export class LaneService {
 
   constructor(private readonly dependencies: LaneServiceDependencies) {
     this.clock = dependencies.clock ?? (() => new Date());
+  }
+
+  list(taskId?: string): LaneSummary[] {
+    return this.dependencies.lanes.list(taskId).map((lane) => {
+      const route = this.resolveLaneRoute(lane);
+      const binding = this.dependencies.lanes.findNativeSessionBinding(lane.id);
+      const pendingDeltaEvents = this.dependencies.deltaBuilder.build(lane.id)
+        .events.length;
+      const temperature: LaneTemperature = binding
+        ? pendingDeltaEvents > 0
+          ? "stale"
+          : "hot"
+        : "cold";
+      const runtimeKind =
+        route.kind === "unavailable"
+          ? lane.runtimeKind
+          : route.harness === "claude"
+            ? "claude"
+            : route.runtime;
+      return {
+        laneId: lane.id,
+        taskId: lane.taskId,
+        harness: route.harness,
+        runtimeKind,
+        runtimeVersion: binding?.runtimeVersion ?? null,
+        providerAccountLabel: providerAccountLabel(lane),
+        model: lane.model,
+        routeKind: route.kind,
+        routeReason: route.reason,
+        displayQuotaAccount: route.displayQuotaAccount,
+        permissionMode: null,
+        workspacePath: lane.workspacePath,
+        nativeSessionIdPrefix: binding
+          ? nativeSessionIdPrefix(binding.nativeSessionId)
+          : null,
+        status: lane.status,
+        temperature,
+        pendingDeltaEvents,
+      };
+    });
   }
 
   async open(
@@ -122,15 +189,23 @@ export class LaneService {
 
     return {
       laneId: lane.id,
+      taskId: lane.taskId,
       nativeSessionId: session.nativeSessionId,
+      nativeSessionIdPrefix: nativeSessionIdPrefix(session.nativeSessionId),
       runtimeVersion: session.runtimeVersion,
       temperature,
       delta,
+      pendingDeltaEvents: candidateDelta.events.length,
       harness: route.harness,
       runtimeKind,
+      providerAccountLabel: providerAccountLabel(lane),
+      model: lane.model,
       routeKind: route.kind,
       routeReason: route.reason,
       displayQuotaAccount: route.displayQuotaAccount,
+      permissionMode: null,
+      workspacePath: lane.workspacePath,
+      status: lane.status,
     };
   }
 
@@ -222,4 +297,14 @@ export class LaneService {
       displayQuotaAccount: "ChatGPT subscription",
     };
   }
+}
+
+function providerAccountLabel(lane: LaneRecord): string {
+  return lane.providerKind === "claude_max" ? "Claude Max" : "ChatGPT";
+}
+
+function nativeSessionIdPrefix(nativeSessionId: string): string {
+  return nativeSessionId.length > 8
+    ? `${nativeSessionId.slice(0, 8)}…`
+    : nativeSessionId;
 }

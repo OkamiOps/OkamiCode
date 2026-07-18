@@ -6,7 +6,7 @@ import {
   PanelRightClose,
   PanelRightOpen,
 } from "lucide-react";
-import { useState } from "react";
+import { useMemo, useState } from "react";
 import { Outlet, useLocation } from "react-router-dom";
 import { ResizablePane } from "../../components/ResizablePane";
 import { StatusBadge } from "../../components/StatusBadge";
@@ -22,13 +22,37 @@ const routeLabels: Record<string, string> = {
   "/workbench": "Workbench",
 };
 
+export interface AppShellOutletContext {
+  collapseDetails: () => void;
+  collapseList: () => void;
+  detailsDrawerTarget: HTMLDivElement | null;
+  detailsTarget: HTMLDivElement | null;
+  listTarget: HTMLDivElement | null;
+}
+
 export function AppShell() {
   const { pathname } = useLocation();
   const [detailsVisible, setDetailsVisible] = useState(true);
   const [listVisible, setListVisible] = useState(true);
   const [sidebarVisible, setSidebarVisible] = useState(true);
+  const [detailsDrawerTarget, setDetailsDrawerTarget] =
+    useState<HTMLDivElement | null>(null);
+  const [detailsTarget, setDetailsTarget] = useState<HTMLDivElement | null>(
+    null,
+  );
+  const [listTarget, setListTarget] = useState<HTMLDivElement | null>(null);
   const areaLabel = routeLabels[pathname] ?? "Workbench";
   const hasList = pathname === "/workbench";
+  const outletContext = useMemo<AppShellOutletContext>(
+    () => ({
+      collapseDetails: () => setDetailsVisible(false),
+      collapseList: () => setListVisible(false),
+      detailsDrawerTarget,
+      detailsTarget,
+      listTarget,
+    }),
+    [detailsDrawerTarget, detailsTarget, listTarget],
+  );
 
   return (
     <div className="app-shell" data-has-list={hasList}>
@@ -55,37 +79,7 @@ export function AppShell() {
           maxSize={340}
           minSize={300}
         >
-          <section className="queue-pane" aria-label="Lista de tarefas">
-            <header className="pane-header queue-pane__header">
-              <div>
-                <p className="pane-kicker">Fila</p>
-                <h2>Tarefas</h2>
-              </div>
-              <Tooltip.Root closeDelay={0} delay={300}>
-                <Button
-                  aria-label="Recolher lista de tarefas"
-                  className="icon-button"
-                  isIconOnly
-                  variant="ghost"
-                  onPress={() => setListVisible(false)}
-                >
-                  <ListCollapse aria-hidden="true" size={17} />
-                </Button>
-                <Tooltip.Content className="ok-tooltip" placement="right">
-                  Recolher lista de tarefas
-                </Tooltip.Content>
-              </Tooltip.Root>
-            </header>
-            <div className="queue-pane__summary">
-              <span>Todas</span>
-              <StatusBadge label="0 ativas" status="neutral" />
-            </div>
-            <div className="queue-pane__empty">
-              <span aria-hidden="true">00</span>
-              <p>Nenhuma tarefa na fila.</p>
-              <small>As tarefas criadas aparecerão aqui.</small>
-            </div>
-          </section>
+          <div className="h-full min-h-0" ref={setListTarget} />
         </ResizablePane>
       )}
       <main className="focal-region">
@@ -172,7 +166,14 @@ export function AppShell() {
                       <Drawer.CloseTrigger aria-label="Fechar painel de detalhes" />
                     </Drawer.Header>
                     <Drawer.Body className="details-drawer-body">
-                      <DetailsPanel areaLabel={areaLabel} />
+                      {hasList ? (
+                        <div
+                          className="h-full min-h-0"
+                          ref={setDetailsDrawerTarget}
+                        />
+                      ) : (
+                        <DetailsPanel areaLabel={areaLabel} />
+                      )}
                     </Drawer.Body>
                   </Drawer.Dialog>
                 </Drawer.Content>
@@ -180,7 +181,7 @@ export function AppShell() {
             </Drawer.Root>
           </div>
         </header>
-        <Outlet />
+        <Outlet context={outletContext} />
       </main>
       {detailsVisible && (
         <ResizablePane
@@ -191,10 +192,14 @@ export function AppShell() {
           minSize={300}
           resizeEdge="left"
         >
-          <DetailsPanel
-            areaLabel={areaLabel}
-            onCollapse={() => setDetailsVisible(false)}
-          />
+          {hasList ? (
+            <div className="h-full min-h-0" ref={setDetailsTarget} />
+          ) : (
+            <DetailsPanel
+              areaLabel={areaLabel}
+              onCollapse={() => setDetailsVisible(false)}
+            />
+          )}
         </ResizablePane>
       )}
     </div>

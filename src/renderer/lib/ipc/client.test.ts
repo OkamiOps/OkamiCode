@@ -93,7 +93,7 @@ function stateFixture(overrides: Partial<TestAppState> = {}): TestAppState {
     approvals: { findById: vi.fn(), resolve: vi.fn() },
     policyEngine: {},
     runtimes: { lookup: vi.fn() },
-    laneService: { open: vi.fn(), sendTurn: vi.fn() },
+    laneService: { list: vi.fn(() => []), open: vi.fn(), sendTurn: vi.fn() },
     runService: {},
     createId: () => "b672d2e8-688b-48ac-a618-3294bfc96a99",
     clock: () => new Date("2026-07-18T12:00:00.000Z"),
@@ -121,6 +121,7 @@ it("exposes exactly the enumerated command surface", () => {
     "system:doctor",
     "task:create",
     "task:list",
+    "lane:list",
     "lane:open",
     "lane:sendTurn",
     "run:cancel",
@@ -182,8 +183,8 @@ it("exposes a frozen preload facade and removes wrapped event listeners", async 
   expect(Object.isFrozen(okami.invoke)).toBe(true);
   expect(Object.keys(okami.invoke)).toEqual(ipcChannels);
 
-  await okami.invoke["task:list"]({});
-  expect(electronMocks.invoke).toHaveBeenCalledWith("task:list", {});
+  await okami.invoke["lane:list"]({});
+  expect(electronMocks.invoke).toHaveBeenCalledWith("lane:list", {});
 
   const listener = vi.fn();
   const unsubscribe = okami.onEvent(listener);
@@ -320,20 +321,35 @@ it("opens lanes, sends turns, and forwards only sanitized canonical events", asy
   };
   const opened = {
     laneId: canonicalEvent.laneId,
+    taskId: canonicalEvent.taskId,
     nativeSessionId: "native-session-1",
+    nativeSessionIdPrefix: "native-s…",
     runtimeVersion: "1.2.3",
     temperature: "hot" as const,
     delta: null,
+    pendingDeltaEvents: 0,
     harness: "native" as const,
     runtimeKind: "codex" as const,
+    providerAccountLabel: "ChatGPT",
+    model: "gpt-5.6",
     routeKind: "native" as const,
     routeReason: "native_requested",
     displayQuotaAccount: "ChatGPT subscription",
+    permissionMode: null,
+    workspacePath: "/workspace/okami",
+    status: "ready" as const,
   };
+  const listed = {
+    ...opened,
+    nativeSessionIdPrefix: "native-s…",
+  };
+  delete (listed as Partial<typeof opened>).nativeSessionId;
+  delete (listed as Partial<typeof opened>).delta;
   const append = vi.fn();
   const state = stateFixture({
     events: { append },
     laneService: {
+      list: vi.fn(() => [listed]),
       open: vi.fn(async () => opened),
       sendTurn: vi.fn(async () => ({
         runId: canonicalEvent.runId,
@@ -347,8 +363,16 @@ it("opens lanes, sends turns, and forwards only sanitized canonical events", asy
   const event = trustedEvent();
 
   await expect(
+    handlers.get("lane:list")?.(event, { taskId: canonicalEvent.taskId }),
+  ).resolves.toEqual([listed]);
+  await expect(
     handlers.get("lane:open")?.(event, { laneId: opened.laneId }),
-  ).resolves.not.toHaveProperty("nativeSessionId");
+  ).resolves.toMatchObject({
+    nativeSessionIdPrefix: "native-s…",
+    providerAccountLabel: "ChatGPT",
+    model: "gpt-5.6",
+    workspacePath: "/workspace/okami",
+  });
   await expect(
     handlers.get("lane:sendTurn")?.(event, {
       laneId: opened.laneId,
@@ -368,6 +392,34 @@ it("opens lanes, sends turns, and forwards only sanitized canonical events", asy
       input_tokens: 12,
     },
   });
+});
+
+it("validates lane list projections in the renderer client", async () => {
+  const lane = {
+    laneId: "50df72f3-cc11-42d2-87be-c928a9ae2cbf",
+    taskId: "27ee79a7-d3c3-48dd-84c6-cb589a4cb606",
+    harness: "claude",
+    runtimeKind: "claude",
+    runtimeVersion: "0.144.5",
+    providerAccountLabel: "ChatGPT",
+    model: "gpt-5.6",
+    routeKind: "bridged",
+    routeReason: "subscription_bridge",
+    displayQuotaAccount: "ChatGPT Plus",
+    permissionMode: null,
+    workspacePath: "/workspace/okami",
+    nativeSessionIdPrefix: "thread-1…",
+    status: "ready",
+    temperature: "stale",
+    pendingDeltaEvents: 2,
+  };
+  installOkamiMock({ "lane:list": [lane] });
+
+  await expect(workbenchClient.laneList({})).resolves.toEqual([lane]);
+  installOkamiMock({ "lane:list": [{ ...lane, pendingDeltaEvents: -1 }] });
+  await expect(workbenchClient.laneList({})).rejects.toThrow(
+    /pendingDeltaEvents/,
+  );
 });
 
 it("cancels runs and resolves approvals through their owning runtime", async () => {

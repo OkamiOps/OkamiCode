@@ -12,6 +12,46 @@ const chatGptProfile = createGatewayProfile({
 });
 
 describe("LaneService", () => {
+  it("lists honest lane projections without opening native sessions", () => {
+    const h = createLaneHarness({
+      runtime: "codex",
+      nativeSession: "thread-123456789",
+      events: [1, 2],
+      gateway: {
+        port: 43123,
+        bearerToken: "gateway-session-token",
+        accounts: [
+          {
+            provider: "chatgpt",
+            bridgedProfile: chatGptProfile,
+            nativeRuntime: "codex",
+          },
+        ],
+      },
+    });
+
+    expect(h.service.list(h.fx.taskId)).toEqual([
+      expect.objectContaining({
+        laneId: h.fx.laneId,
+        taskId: h.fx.taskId,
+        harness: "claude",
+        runtimeKind: "claude",
+        providerAccountLabel: "ChatGPT",
+        model: "gpt-test",
+        routeKind: "bridged",
+        displayQuotaAccount: "ChatGPT Plus",
+        permissionMode: null,
+        workspacePath: null,
+        nativeSessionIdPrefix: "thread-1…",
+        status: "ready",
+        temperature: "stale",
+        pendingDeltaEvents: 2,
+      }),
+    ]);
+    expect(h.runtimes.claude.startCalls).toBe(0);
+    expect(h.runtimes.codex.startCalls).toBe(0);
+  });
+
   it("launches a GPT lane on the Claude harness with gateway env", async () => {
     const h = createLaneHarness({
       runtime: "codex",

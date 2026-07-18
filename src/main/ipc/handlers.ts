@@ -70,6 +70,8 @@ async function dispatch(
       return createTask(state, request as IpcRequest<"task:create">);
     case "task:list":
       return listTasks(state);
+    case "lane:list":
+      return listLanes(state, request as IpcRequest<"lane:list">);
     case "lane:open":
       return openLane(state, openedLanes, request as IpcRequest<"lane:open">);
     case "lane:sendTurn":
@@ -97,6 +99,10 @@ async function dispatch(
     case "memory:reindex":
       return { status: "not_implemented", channel };
   }
+}
+
+function listLanes(state: AppState, request: IpcRequest<"lane:list">) {
+  return state.laneService.list(request.taskId);
 }
 
 async function systemDoctor(state: AppState) {
@@ -195,13 +201,21 @@ async function openLane(
 function openedLaneProjection(opened: OpenedLane) {
   return {
     laneId: opened.laneId,
+    taskId: opened.taskId,
     runtimeVersion: opened.runtimeVersion,
     temperature: opened.temperature,
     harness: opened.harness,
     runtimeKind: opened.runtimeKind,
+    providerAccountLabel: opened.providerAccountLabel,
+    model: opened.model,
     routeKind: opened.routeKind,
     routeReason: opened.routeReason,
     displayQuotaAccount: opened.displayQuotaAccount,
+    permissionMode: opened.permissionMode,
+    workspacePath: opened.workspacePath,
+    nativeSessionIdPrefix: opened.nativeSessionIdPrefix,
+    status: opened.status,
+    pendingDeltaEvents: opened.pendingDeltaEvents,
   };
 }
 

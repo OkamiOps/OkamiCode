@@ -1,10 +1,15 @@
 import { z } from "zod";
-import { providerKindSchema, runtimeKindSchema } from "./lane";
+import {
+  laneStatusSchema,
+  providerKindSchema,
+  runtimeKindSchema,
+} from "./lane";
 
 export const ipcChannels = [
   "system:doctor",
   "task:create",
   "task:list",
+  "lane:list",
   "lane:open",
   "lane:sendTurn",
   "run:cancel",
@@ -73,18 +78,39 @@ export const laneOpenRequestSchema = z
   })
   .strict();
 
-export const openedLaneSchema = z
+export const laneListRequestSchema = z
+  .object({ taskId: entityIdSchema.optional() })
+  .strict();
+
+export const laneSummarySchema = z
   .object({
     laneId: entityIdSchema,
-    runtimeVersion: z.string().min(1),
-    temperature: z.enum(["hot", "stale", "cold", "clean"]),
+    taskId: entityIdSchema,
     harness: z.enum(["claude", "native"]),
     runtimeKind: runtimeKindSchema,
-    routeKind: z.enum(["direct", "compatible", "bridged", "native"]),
+    runtimeVersion: z.string().min(1).nullable(),
+    providerAccountLabel: z.string().min(1),
+    model: z.string().min(1),
+    routeKind: z.enum([
+      "direct",
+      "compatible",
+      "bridged",
+      "native",
+      "unavailable",
+    ]),
     routeReason: z.string().min(1),
     displayQuotaAccount: z.string().min(1),
+    permissionMode: z.string().min(1).nullable(),
+    workspacePath: z.string().min(1).nullable(),
+    nativeSessionIdPrefix: z.string().min(1).nullable(),
+    status: laneStatusSchema,
+    temperature: z.enum(["hot", "stale", "cold", "clean"]),
+    pendingDeltaEvents: z.number().int().nonnegative(),
   })
   .strict();
+
+export const laneListSchema = z.array(laneSummarySchema);
+export const openedLaneSchema = laneSummarySchema;
 
 export const laneSendTurnRequestSchema = z
   .object({
@@ -181,6 +207,7 @@ export const ipcRequestSchemas = {
   "system:doctor": emptyRequestSchema,
   "task:create": taskCreateRequestSchema,
   "task:list": emptyRequestSchema,
+  "lane:list": laneListRequestSchema,
   "lane:open": laneOpenRequestSchema,
   "lane:sendTurn": laneSendTurnRequestSchema,
   "run:cancel": runCancelRequestSchema,
@@ -199,6 +226,7 @@ export const ipcResponseSchemas = {
   "system:doctor": systemDoctorSchema,
   "task:create": taskSchema,
   "task:list": taskListSchema,
+  "lane:list": laneListSchema,
   "lane:open": openedLaneSchema,
   "lane:sendTurn": runSummarySchema,
   "run:cancel": runCancelResultSchema,

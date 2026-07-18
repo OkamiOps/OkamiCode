@@ -66,6 +66,24 @@ export class LaneRepository {
     return row ? rowToLane(row) : undefined;
   }
 
+  list(taskId?: string): LaneRecord[] {
+    const rows = taskId
+      ? (this.db
+          .prepare(
+            `SELECT * FROM runtime_lanes
+             WHERE task_id = ?
+             ORDER BY updated_at DESC, id ASC`,
+          )
+          .all(taskId) as LaneRow[])
+      : (this.db
+          .prepare(
+            `SELECT * FROM runtime_lanes
+             ORDER BY updated_at DESC, id ASC`,
+          )
+          .all() as LaneRow[]);
+    return rows.map(rowToLane);
+  }
+
   findNativeSessionBinding(
     laneId: string,
   ): NativeSessionBindingRecord | undefined {
