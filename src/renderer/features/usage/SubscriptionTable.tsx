@@ -1,10 +1,13 @@
-import { Chip } from "@heroui/react";
-import type { UsageSnapshotContract } from "../../../shared/contracts/ipc";
+import type {
+  UsageActivityBucketContract,
+  UsageSnapshotContract,
+} from "../../../shared/contracts/ipc";
 
 type UsageSnapshot = UsageSnapshotContract;
 type UsageWindow = UsageSnapshot["windows"][number];
 
 interface SubscriptionTableProps {
+  activity?: UsageActivityBucketContract[];
   subscriptions: UsageSnapshot[];
 }
 
@@ -14,13 +17,62 @@ export function SourceFreshness({
   snapshot: Pick<UsageSnapshot, "freshness" | "source">;
 }) {
   return (
-    <span className="inline-flex items-center gap-1 text-[10px] text-[var(--ok-text-muted)]">
+    <span
+      className={`freshness-pill freshness-pill--${freshnessTone(snapshot.freshness)}`}
+    >
       {snapshot.source.kind} · {snapshot.freshness}
     </span>
   );
 }
 
-export function SubscriptionTable({ subscriptions }: SubscriptionTableProps) {
+export function SubscriptionCards({ subscriptions }: SubscriptionTableProps) {
+  return (
+    <div className="usage-cards">
+      {subscriptions.map((subscription) => {
+        const window = mostRestrictiveWindow(subscription.windows);
+        const runtime = runtimePresentation(subscription);
+        return (
+          <article className="usage-card" key={subscription.accountRef}>
+            <header>
+              <span
+                aria-hidden="true"
+                className={`lane-glyph runtime-glyph--${runtime.tone}`}
+              >
+                {runtime.glyph}
+              </span>
+              <strong>{subscription.accountLabel}</strong>
+              <span
+                className={`freshness-pill freshness-pill--${freshnessTone(subscription.freshness)}`}
+              >
+                {freshnessLabel(subscription.freshness)}
+              </span>
+            </header>
+            <p className="usage-card__value">
+              {window?.remainingPercent === null ||
+              window?.remainingPercent === undefined
+                ? "—"
+                : `${formatNumber(window.remainingPercent)}%`}
+              <small>
+                {window ? `restante · ${window.label}` : "sem fonte de quota"}
+              </small>
+            </p>
+            <p className="usage-card__reset">
+              {window?.resetsAt
+                ? `reseta ${formatReset(window.resetsAt)}`
+                : "reset indisponível"}{" "}
+              · fonte: {subscription.source.kind}
+            </p>
+          </article>
+        );
+      })}
+    </div>
+  );
+}
+
+export function SubscriptionTable({
+  activity = [],
+  subscriptions,
+}: SubscriptionTableProps) {
   const rows = subscriptions.flatMap<{
     subscription: UsageSnapshot;
     window: UsageWindow | null;
@@ -31,27 +83,22 @@ export function SubscriptionTable({ subscriptions }: SubscriptionTableProps) {
   );
 
   return (
-    <div className="overflow-x-auto rounded-[var(--ok-radius-md)] border border-[var(--ok-border)]">
-      <table className="w-full min-w-[720px] border-collapse text-left text-xs">
-        <thead className="bg-[var(--ok-surface-2)] text-[10px] uppercase tracking-[0.08em] text-[var(--ok-text-muted)]">
+    <div className="usage-table-wrap">
+      <table className="usage-table">
+        <thead>
           <tr>
-            <th className="px-3 py-2.5" scope="col">
-              Assinatura
-            </th>
-            <th className="px-3 py-2.5" scope="col">
-              Janela
-            </th>
-            <th className="px-3 py-2.5" scope="col">
-              Quota da assinatura
-            </th>
-            <th className="px-3 py-2.5" scope="col">
-              Próximo reset
-            </th>
+            <th scope="col">Assinatura</th>
+            <th scope="col">Janela</th>
+            <th scope="col">Quota da assinatura</th>
+            <th scope="col">Próximo reset</th>
+            <th scope="col">Fonte</th>
+            <th scope="col">Atividade local (hoje)</th>
           </tr>
         </thead>
         <tbody>
           {rows.map(({ subscription, window }, index) => (
             <SubscriptionRow
+              activity={activity}
               key={`${subscription.provider}:${subscription.accountRef}:${window?.label ?? index}`}
               subscription={subscription}
               window={window}
@@ -64,49 +111,97 @@ export function SubscriptionTable({ subscriptions }: SubscriptionTableProps) {
 }
 
 function SubscriptionRow({
+  activity,
   subscription,
   window,
 }: {
+  activity: UsageActivityBucketContract[];
   subscription: UsageSnapshot;
   window: UsageWindow | null;
 }) {
+  const local = activity.filter(
+    (bucket) =>
+      bucket.provider === subscription.provider ||
+      bucket.runtime === subscription.runtime,
+  );
+  const tokens = local.reduce(
+    (total, bucket) =>
+      total +
+      bucket.inputTokens +
+      bucket.cachedInputTokens +
+      bucket.outputTokens +
+      bucket.reasoningTokens,
+    0,
+  );
+  const calls = local.reduce((total, bucket) => total + bucket.modelCalls, 0);
+
   return (
-    <tr className="border-t border-[var(--ok-border)] bg-[var(--ok-surface-1)] align-top">
-      <td className="px-3 py-3">
-        <strong className="block font-semibold text-[var(--ok-text)]">
-          {subscription.accountLabel}
-        </strong>
-        <span className="mt-1 block text-[10px] text-[var(--ok-text-muted)]">
+    <tr>
+      <td>
+        <strong>{subscription.accountLabel}</strong>
+        <span className="usage-table__subline">
           {subscription.plan ?? "Plano não informado"} · {subscription.runtime}
         </span>
       </td>
-      <td className="px-3 py-3 text-[var(--ok-text-muted)]">
+      <td className="usage-table__mono">
         {window?.label ?? "Sem janela legível"}
       </td>
-      <td className="px-3 py-3">
-        <div className="flex flex-wrap items-center gap-2">
-          <strong className="tabular-nums text-[var(--ok-text)]">
-            {quotaLabel(window)}
-          </strong>
-          <Chip
-            className="border border-[var(--ok-border)] bg-[var(--ok-bg)] text-[10px] text-[var(--ok-text-muted)]"
-            size="sm"
-            variant="secondary"
-          >
-            <SourceFreshness snapshot={subscription} />
-          </Chip>
+      <td>
+        <div className="usage-table__quota">
+          <span className="usage-progress" aria-hidden="true">
+            <i
+              className={`usage-progress__fill usage-progress__fill--${subscription.provider === "claude_max" ? "orange" : "cyan"}`}
+              style={{ width: `${window?.usedPercent ?? 0}%` }}
+            />
+          </span>
+          <strong className="usage-table__mono">{quotaLabel(window)}</strong>
         </div>
         {subscription.error && (
-          <p className="mb-0 mt-1 max-w-[320px] text-[10px] leading-4 text-[var(--ok-yellow)]">
-            {subscription.error}
-          </p>
+          <p className="usage-table__error">{subscription.error}</p>
         )}
       </td>
-      <td className="px-3 py-3 tabular-nums text-[var(--ok-text-muted)]">
+      <td className="usage-table__mono">
         {window?.resetsAt ? formatReset(window.resetsAt) : "reset indisponível"}
+      </td>
+      <td className="usage-table__mono">
+        <SourceFreshness snapshot={subscription} />
+      </td>
+      <td className="usage-table__mono">
+        {local.length ? `${formatNumber(tokens)} tok · ${calls} calls` : "—"}
       </td>
     </tr>
   );
+}
+
+function mostRestrictiveWindow(windows: UsageWindow[]) {
+  return [...windows].sort(
+    (left, right) =>
+      (left.remainingPercent ?? Number.POSITIVE_INFINITY) -
+      (right.remainingPercent ?? Number.POSITIVE_INFINITY),
+  )[0];
+}
+
+function runtimePresentation(subscription: UsageSnapshot) {
+  if (subscription.provider === "chatgpt") {
+    return { glyph: "GP", tone: "gpt" } as const;
+  }
+  if (subscription.provider === "claude_max") {
+    return { glyph: "CL", tone: "claude" } as const;
+  }
+  if (subscription.provider === "supergrok") {
+    return { glyph: "GK", tone: "grok" } as const;
+  }
+  return { glyph: "MX", tone: "task" } as const;
+}
+
+function freshnessTone(freshness: UsageSnapshot["freshness"]) {
+  if (freshness === "live") return "live";
+  if (freshness === "unavailable") return "unavailable";
+  return "stale";
+}
+
+function freshnessLabel(freshness: UsageSnapshot["freshness"]) {
+  return freshness === "unavailable" ? "indisponível" : freshness;
 }
 
 function quotaLabel(window: UsageWindow | null): string {

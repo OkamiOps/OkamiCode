@@ -1,6 +1,5 @@
 import { Button, Tabs, Tooltip } from "@heroui/react";
-import { ChevronRight, GitBranch, Link2, ShieldCheck } from "lucide-react";
-import { StatusBadge } from "../../components/StatusBadge";
+import { ChevronRight, Link2 } from "lucide-react";
 
 interface DetailsPanelProps {
   areaLabel: string;
@@ -10,28 +9,22 @@ interface DetailsPanelProps {
 export function DetailsPanel({ areaLabel, onCollapse }: DetailsPanelProps) {
   return (
     <aside className="details-panel" aria-label="Detalhes contextuais">
-      <header className="pane-header details-panel__header">
-        <div>
-          <p className="pane-kicker">Contexto</p>
-          <h2>Detalhes</h2>
-        </div>
-        {onCollapse && (
-          <Tooltip.Root closeDelay={0} delay={300}>
-            <Button
-              aria-label="Recolher painel de detalhes"
-              className="icon-button"
-              isIconOnly
-              variant="ghost"
-              onPress={onCollapse}
-            >
-              <ChevronRight aria-hidden="true" size={17} />
-            </Button>
-            <Tooltip.Content className="ok-tooltip" placement="left">
-              Recolher painel de detalhes
-            </Tooltip.Content>
-          </Tooltip.Root>
-        )}
-      </header>
+      {onCollapse && (
+        <Tooltip.Root closeDelay={0} delay={300}>
+          <Button
+            aria-label="Recolher painel de detalhes"
+            className="icon-button details-collapse"
+            isIconOnly
+            variant="ghost"
+            onPress={onCollapse}
+          >
+            <ChevronRight aria-hidden="true" size={17} />
+          </Button>
+          <Tooltip.Content className="ok-tooltip" placement="left">
+            Recolher painel de detalhes
+          </Tooltip.Content>
+        </Tooltip.Root>
+      )}
       <Tabs
         aria-label="Visualização de detalhes"
         className="details-tabs"
@@ -40,31 +33,43 @@ export function DetailsPanel({ areaLabel, onCollapse }: DetailsPanelProps) {
       >
         <Tabs.List aria-label="Seções de detalhes">
           <Tabs.Tab id="details">Detalhes</Tabs.Tab>
-          <Tabs.Tab id="links">Links</Tabs.Tab>
+          <Tabs.Tab id="links">Vínculos</Tabs.Tab>
         </Tabs.List>
         <Tabs.Panel id="details">
-          <dl className="details-list">
-            <div>
-              <dt>Área</dt>
-              <dd>{areaLabel}</dd>
-            </div>
-            <div>
-              <dt>Runtime</dt>
-              <dd>
-                <StatusBadge label="ocioso" status="neutral" />
-              </dd>
-            </div>
-            <div>
-              <dt>Workspace</dt>
-              <dd>Nenhum selecionado</dd>
-            </div>
-            <div>
-              <dt>Permissões</dt>
-              <dd className="details-inline-value">
-                <ShieldCheck aria-hidden="true" size={14} /> Padrão seguro
-              </dd>
-            </div>
-          </dl>
+          <div className="details-scroll">
+            <section className="detail-group">
+              <h3>Área ativa</h3>
+              <div className="detail-row">
+                <span>Área</span>
+                <strong>{areaLabel}</strong>
+              </div>
+              <div className="detail-row">
+                <span>Runtime</span>
+                <strong>ocioso</strong>
+              </div>
+            </section>
+            <section className="detail-group">
+              <h3>Workspace</h3>
+              <div className="detail-row">
+                <span>Pasta</span>
+                <strong className="detail-row__mono">não selecionada</strong>
+              </div>
+              <div className="detail-row">
+                <span>Permissões</span>
+                <strong>Padrão seguro</strong>
+              </div>
+            </section>
+            <section className="detail-group">
+              <h3>Fonte</h3>
+              <p className="detail-source-note">
+                <span
+                  aria-hidden="true"
+                  className="source-dot source-dot--stale"
+                />
+                aguardando seleção · stale
+              </p>
+            </section>
+          </div>
         </Tabs.Panel>
         <Tabs.Panel id="links">
           <div className="details-empty">
@@ -73,10 +78,6 @@ export function DetailsPanel({ areaLabel, onCollapse }: DetailsPanelProps) {
           </div>
         </Tabs.Panel>
       </Tabs>
-      <footer className="details-panel__footer">
-        <GitBranch aria-hidden="true" size={14} />
-        <span>Git aguardando workspace</span>
-      </footer>
     </aside>
   );
 }

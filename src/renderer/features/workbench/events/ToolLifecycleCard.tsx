@@ -1,6 +1,7 @@
-import { Card, Chip } from "@heroui/react";
+import { Accordion, Card } from "@heroui/react";
 import {
   CheckCircle2,
+  ChevronDown,
   CircleDashed,
   CircleDotDashed,
   Wrench,
@@ -35,24 +36,16 @@ function valueAt(
 
 function eventStatus(kind: string) {
   if (kind.endsWith("completed") || kind === "approval_resolved") {
-    return {
-      Icon: CheckCircle2,
-      label: "concluído",
-      tone: "text-[var(--ok-green)]",
-    };
+    return { Icon: CheckCircle2, label: "concluído", tone: "ok" } as const;
   }
   if (kind.endsWith("updated")) {
     return {
       Icon: CircleDotDashed,
       label: "em andamento",
-      tone: "text-[var(--ok-cyan)]",
-    };
+      tone: "run",
+    } as const;
   }
-  return {
-    Icon: CircleDashed,
-    label: "iniciado",
-    tone: "text-[var(--ok-yellow)]",
-  };
+  return { Icon: CircleDashed, label: "iniciado", tone: "wait" } as const;
 }
 
 export function ToolLifecycleCard({ event }: ToolLifecycleCardProps) {
@@ -64,41 +57,44 @@ export function ToolLifecycleCard({ event }: ToolLifecycleCardProps) {
     valueAt(event.payload, ["aggregatedOutput", "output", "delta"]) ?? "";
   const workspacePath = valueAt(event.payload, ["cwd", "workspacePath"]);
   const { Icon, label, tone } = eventStatus(event.kind);
+  const itemId = event.id ?? `${event.kind}-tool`;
 
   return (
-    <Card className="rounded-[var(--ok-radius-md)] border border-[var(--ok-border)] border-l-2 border-l-[var(--ok-orange)] bg-[var(--ok-surface-1)]">
-      <Card.Header className="flex items-start gap-2 px-3 py-2.5">
-        <Wrench
-          aria-hidden="true"
-          className="mt-0.5 shrink-0 text-[var(--ok-orange)]"
-          size={15}
-        />
-        <div className="min-w-0 flex-1">
-          <Card.Title className="truncate text-xs font-semibold">
-            {tool}
-          </Card.Title>
-          {command && (
-            <code className="mt-1 block overflow-x-auto whitespace-pre text-[11px] text-[var(--ok-cyan)]">
-              {command}
-            </code>
-          )}
-          {command && (
-            <TerminalDrawer
-              command={command}
-              output={output}
-              workspacePath={workspacePath}
-            />
-          )}
-        </div>
-        <Chip
-          className={`border border-[var(--ok-border)] bg-[var(--ok-bg)] text-[10px] ${tone}`}
-          size="sm"
-          variant="secondary"
-        >
-          <Icon aria-hidden="true" className="mr-1 inline" size={10} />
-          {label}
-        </Chip>
-      </Card.Header>
+    <Card className="tool-card">
+      <Accordion defaultExpandedKeys={output ? [itemId] : []} hideSeparator>
+        <Accordion.Item id={itemId}>
+          <Accordion.Heading>
+            <Accordion.Trigger className="tool-card__header">
+              <Wrench aria-hidden="true" size={13} />
+              <span className="tool-card__name">
+                {tool}
+                {command ? ` · ${command}` : ""}
+              </span>
+              <span className={`tool-card__state tool-card__state--${tone}`}>
+                <Icon aria-hidden="true" size={10} />
+                {label}
+              </span>
+              <ChevronDown aria-hidden="true" size={12} />
+            </Accordion.Trigger>
+          </Accordion.Heading>
+          <Accordion.Panel>
+            <Accordion.Body>
+              <pre className="tool-card__output">
+                {output || command || "O runtime não forneceu saída textual."}
+              </pre>
+              {(command || output) && (
+                <div className="tool-card__advanced">
+                  <TerminalDrawer
+                    command={command}
+                    output={output}
+                    workspacePath={workspacePath}
+                  />
+                </div>
+              )}
+            </Accordion.Body>
+          </Accordion.Panel>
+        </Accordion.Item>
+      </Accordion>
     </Card>
   );
 }

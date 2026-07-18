@@ -16,17 +16,15 @@ export function BrowserCard({ screenshot, title, url }: BrowserCardProps) {
   const safeScreenshot = screenshotSource(screenshot);
 
   return (
-    <Card className="overflow-hidden rounded-[var(--ok-radius-md)] border border-[var(--ok-border)] bg-[var(--ok-surface-1)]">
-      <Card.Header className="flex items-start gap-2 border-b border-[var(--ok-border)] px-3 py-2">
+    <Card className="tool-card tool-surface-card">
+      <Card.Header className="tool-surface-card__header">
         <Globe2
           aria-hidden="true"
           className="mt-0.5 shrink-0 text-[var(--ok-cyan)]"
           size={15}
         />
         <div className="min-w-0 flex-1">
-          <Card.Title className="truncate text-xs font-semibold">
-            {displayTitle}
-          </Card.Title>
+          <Card.Title className="tool-card__name">{displayTitle}</Card.Title>
           <Card.Description className="mt-0.5 truncate text-[10px] text-[var(--ok-text-muted)]">
             {url}
           </Card.Description>
@@ -49,7 +47,7 @@ export function BrowserCard({ screenshot, title, url }: BrowserCardProps) {
           </Tooltip.Root>
         </span>
       </Card.Header>
-      <Card.Content className="bg-[var(--ok-bg)] p-2">
+      <Card.Content className="tool-surface-card__body bg-[var(--ok-bg)] p-2">
         {safeScreenshot ? (
           <img
             alt={`Captura de ${displayTitle}`}

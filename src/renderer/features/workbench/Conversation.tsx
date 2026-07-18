@@ -1,13 +1,15 @@
 import { Surface } from "@heroui/react";
-import { MessageSquareText, Radio } from "lucide-react";
+import { MessageSquareText } from "lucide-react";
 import { useEffect, useState } from "react";
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
 import { canonicalEventSchema } from "../../../shared/contracts/event";
+import type { WorkbenchLane } from "./api";
 import {
   EventCardRegistry,
   type EventCardEvent,
 } from "./events/EventCardRegistry";
+import { laneDisplayName } from "./LaneSelector";
 import { useWorkbenchStore } from "./store";
 
 const TEXT_EVENT_KINDS = new Set(["message_delta", "message_completed"]);
@@ -34,7 +36,7 @@ function eventForCard(raw: unknown): EventCardEvent {
   };
 }
 
-export function Conversation() {
+export function Conversation({ lane }: { lane: WorkbenchLane | null }) {
   const sentMessages = useWorkbenchStore((state) => state.sentMessages);
   const streams = useWorkbenchStore((state) => state.streams);
   const [events, setEvents] = useState<EventCardEvent[]>([]);
@@ -43,6 +45,7 @@ export function Conversation() {
     sentMessages.length === 0 &&
     streamedMessages.length === 0 &&
     events.length === 0;
+  const runtime = runtimePresentation(lane);
 
   useEffect(() => {
     if (!window.okami?.onEvent) return;
@@ -59,59 +62,101 @@ export function Conversation() {
   }, []);
 
   return (
-    <div
-      aria-label="Conversa da tarefa"
-      className="min-h-0 overflow-y-auto px-4 py-5 sm:px-6"
-    >
+    <div aria-label="Conversa da tarefa" className="conversation-scroll">
       {isEmpty ? (
-        <div className="grid min-h-full place-content-center justify-items-center text-center">
-          <span className="grid size-10 place-items-center rounded-[var(--ok-radius-md)] border border-[var(--ok-border)] bg-[var(--ok-surface-1)] text-[var(--ok-orange)]">
+        <div className="conversation-empty">
+          <span>
             <MessageSquareText aria-hidden="true" size={18} />
           </span>
-          <h2 className="mt-3 text-sm font-semibold">Conversa pronta</h2>
-          <p className="mt-1 max-w-sm text-xs leading-5 text-[var(--ok-text-muted)]">
+          <h2>Conversa pronta</h2>
+          <p>
             Escolha uma lane e envie a próxima instrução. Eventos nativos serão
             anexados aqui em tempo real.
           </p>
         </div>
       ) : (
-        <div className="mx-auto grid w-full max-w-3xl gap-3" aria-live="polite">
+        <div className="conversation-thread" aria-live="polite">
           {sentMessages.map((message) => (
-            <Surface
-              className="ml-auto max-w-[82%] rounded-[var(--ok-radius-md)] border border-[color-mix(in_srgb,var(--ok-orange)_36%,var(--ok-border))] bg-[color-mix(in_srgb,var(--ok-orange)_12%,var(--ok-surface-2))] px-3 py-2.5 text-sm leading-6 text-[var(--ok-text)]"
+            <article
+              className="message-group message-group--user"
               key={message.id}
-              variant="secondary"
             >
-              <ReactMarkdown remarkPlugins={[remarkGfm]}>
-                {message.body}
-              </ReactMarkdown>
-            </Surface>
+              <Surface className="message-bubble" variant="secondary">
+                <ReactMarkdown remarkPlugins={[remarkGfm]}>
+                  {message.body}
+                </ReactMarkdown>
+              </Surface>
+              <div className="message-stamp">agora · você</div>
+            </article>
           ))}
           {streamedMessages.map(([key, body]) => (
-            <Surface
-              className="mr-auto max-w-[88%] rounded-[var(--ok-radius-md)] border border-[var(--ok-border)] bg-[var(--ok-surface-1)] px-3 py-2.5 text-sm leading-6 text-[var(--ok-text)] [&_a]:text-[var(--ok-cyan)] [&_code]:text-[var(--ok-cyan)] [&_p]:m-0"
-              key={key}
-              variant="secondary"
-            >
-              <div className="mb-1.5 flex items-center gap-1.5 text-[10px] font-semibold uppercase tracking-[0.1em] text-[var(--ok-text-muted)]">
-                <Radio
+            <article className="message-group message-group--agent" key={key}>
+              <header className="message-agent-header">
+                <span
                   aria-hidden="true"
-                  className="text-[var(--ok-green)]"
-                  size={11}
-                />
-                Streaming
-              </div>
-              <ReactMarkdown remarkPlugins={[remarkGfm]}>{body}</ReactMarkdown>
-            </Surface>
+                  className={`message-agent-glyph runtime-glyph--${runtime.tone}`}
+                >
+                  {runtime.glyph}
+                </span>
+                <strong>
+                  {lane
+                    ? `${laneDisplayName(lane)} · ${shortModel(lane.model)}`
+                    : "Agente"}
+                </strong>
+                <span>
+                  · harness{" "}
+                  {lane?.harness === "native" ? "nativo" : "Claude Code"}
+                </span>
+              </header>
+              <Surface className="message-bubble" variant="secondary">
+                <ReactMarkdown remarkPlugins={[remarkGfm]}>
+                  {body}
+                </ReactMarkdown>
+              </Surface>
+              <div className="message-stamp">agora · streaming</div>
+            </article>
           ))}
           {events.map((event, index) => (
-            <EventCardRegistry
-              event={event}
+            <article
+              className="conversation-event"
               key={event.id ?? `${event.kind}-${index}`}
-            />
+            >
+              <EventCardRegistry event={event} />
+              <div className="message-stamp">
+                {formatTimestamp(event.occurredAt)} · evento da lane
+              </div>
+            </article>
           ))}
         </div>
       )}
     </div>
   );
+}
+
+function runtimePresentation(lane: WorkbenchLane | null) {
+  if (!lane) return { glyph: "CL", tone: "claude" } as const;
+  const account = `${lane.providerAccountLabel} ${lane.model}`.toLowerCase();
+  if (account.includes("grok")) return { glyph: "GK", tone: "grok" } as const;
+  if (/chatgpt|\bgpt|\bo[134]/u.test(account)) {
+    return { glyph: "GP", tone: "gpt" } as const;
+  }
+  return { glyph: "CL", tone: "claude" } as const;
+}
+
+function shortModel(model: string): string {
+  const match = model.match(
+    /(?:claude-)?(opus|sonnet|haiku)|((?:gpt|o\d)[\w.-]*)/iu,
+  );
+  const value = match?.[1] ?? match?.[2] ?? model;
+  return `${value.charAt(0).toUpperCase()}${value.slice(1)}`;
+}
+
+function formatTimestamp(value?: string): string {
+  if (!value) return "agora";
+  const date = new Date(value);
+  if (Number.isNaN(date.valueOf())) return "agora";
+  return new Intl.DateTimeFormat("pt-BR", {
+    hour: "2-digit",
+    minute: "2-digit",
+  }).format(date);
 }

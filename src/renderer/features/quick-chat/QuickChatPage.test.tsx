@@ -1,5 +1,6 @@
 import { cleanup, render, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
+import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { MemoryRouter, Route, Routes } from "react-router-dom";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { AppShell } from "../../app/layout/AppShell";
@@ -90,22 +91,24 @@ function renderQuickChat({
   };
 
   render(
-    <MemoryRouter initialEntries={["/quick-chat"]}>
-      <Routes>
-        <Route element={<AppShell />}>
-          <Route
-            path="/quick-chat"
-            element={
-              <QuickChatPage
-                api={api}
-                initialChips={chips}
-                initialMessages={messages}
-              />
-            }
-          />
-        </Route>
-      </Routes>
-    </MemoryRouter>,
+    <QueryClientProvider client={new QueryClient()}>
+      <MemoryRouter initialEntries={["/quick-chat"]}>
+        <Routes>
+          <Route element={<AppShell />}>
+            <Route
+              path="/quick-chat"
+              element={
+                <QuickChatPage
+                  api={api}
+                  initialChips={chips}
+                  initialMessages={messages}
+                />
+              }
+            />
+          </Route>
+        </Routes>
+      </MemoryRouter>
+    </QueryClientProvider>,
   );
 
   return { calls };

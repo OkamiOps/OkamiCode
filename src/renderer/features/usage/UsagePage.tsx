@@ -11,7 +11,11 @@ import { useState, type FormEvent } from "react";
 import type { IpcRequest, IpcResponse } from "../../../shared/contracts/ipc";
 import { workbenchClient } from "../../lib/ipc/client";
 import { ActivityDashboard } from "./ActivityDashboard";
-import { SourceFreshness, SubscriptionTable } from "./SubscriptionTable";
+import {
+  SourceFreshness,
+  SubscriptionCards,
+  SubscriptionTable,
+} from "./SubscriptionTable";
 
 export type UsageOverview = Extract<
   IpcResponse<"usage:overview">,
@@ -136,22 +140,14 @@ function UsageContent({
 }) {
   const context = overview.context;
   return (
-    <section
-      className="h-full min-h-0 overflow-y-auto"
-      aria-labelledby="usage-heading"
-    >
-      <header className="flex min-h-20 flex-wrap items-center justify-between gap-4 border-b border-[var(--ok-border)] bg-[var(--ok-surface-1)] px-4 py-4 sm:px-6">
+    <section className="usage-page" aria-labelledby="usage-heading">
+      <header className="usage-page__header">
         <div>
-          <p className="pane-kicker m-0">Controle de consumo honesto</p>
-          <h1
-            className="mb-0 mt-1 text-xl font-semibold tracking-[-0.03em]"
-            id="usage-heading"
-          >
-            Uso e limites
-          </h1>
+          <p>Quota, contexto e atividade usam fontes independentes</p>
+          <h1 id="usage-heading">Uso e limites</h1>
         </div>
         <Button
-          className="border border-[var(--ok-border)] bg-[var(--ok-surface-2)] text-xs text-[var(--ok-text)]"
+          className="usage-refresh"
           isDisabled={!onRefresh || isRefreshing}
           size="sm"
           variant="secondary"
@@ -166,38 +162,45 @@ function UsageContent({
         </Button>
       </header>
 
-      <div className="grid gap-5 p-4 sm:p-6">
-        <section aria-labelledby="subscription-heading">
+      <div className="usage-page__content">
+        <section
+          className="usage-section"
+          aria-labelledby="subscription-heading"
+        >
           <MeasureHeading
             description="Percentuais do provider permanecem separados dos contadores locais."
             id="subscription-heading"
             title="Quota da assinatura"
           />
-          <SubscriptionTable subscriptions={overview.subscriptions} />
+          <SubscriptionCards subscriptions={overview.subscriptions} />
+          <SubscriptionTable
+            activity={overview.activity}
+            subscriptions={overview.subscriptions}
+          />
         </section>
 
-        <section aria-labelledby="context-heading">
+        <section className="usage-section" aria-labelledby="context-heading">
           <MeasureHeading
             description="Ocupação da conversa ativa, sem inferir cobrança do provider."
             id="context-heading"
             title="Contexto desta sessão"
           />
-          <Card className="border border-[var(--ok-border)] bg-[var(--ok-surface-1)] shadow-none">
-            <Card.Content className="flex flex-wrap items-center justify-between gap-4 p-4">
+          <Card className="usage-context-card">
+            <Card.Content className="usage-context-card__content">
               <div>
-                <p className="m-0 text-2xl font-semibold tabular-nums tracking-[-0.04em]">
+                <p className="usage-context-card__value">
                   {context.usedPercent === null
                     ? "contexto indisponível"
                     : `${format(context.usedPercent)}% usado`}
                 </p>
-                <p className="mb-0 mt-1 text-[11px] text-[var(--ok-text-muted)]">
+                <p className="usage-context-card__note">
                   {context.remainingTokens === null
                     ? "Tokens restantes não informados"
                     : `${format(context.remainingTokens)} tokens restantes`}
                 </p>
               </div>
               <Chip
-                className="border border-[var(--ok-border)] bg-[var(--ok-bg)] text-[10px]"
+                className="usage-context-card__source"
                 size="sm"
                 variant="secondary"
               >
@@ -228,14 +231,10 @@ function MeasureHeading({
   title: string;
 }) {
   return (
-    <div className="mb-3 flex flex-wrap items-end justify-between gap-2">
+    <div className="usage-section-heading">
       <div>
-        <h2 className="m-0 text-base font-semibold" id={id}>
-          {title}
-        </h2>
-        <p className="mb-0 mt-1 text-[11px] text-[var(--ok-text-muted)]">
-          {description}
-        </p>
+        <h2 id={id}>{title}</h2>
+        <p>{description}</p>
       </div>
       <ShieldCheck
         aria-hidden="true"
@@ -273,10 +272,7 @@ function AlertControls({
     });
   }
   return (
-    <form
-      className="flex flex-wrap items-end gap-3 rounded-[var(--ok-radius-md)] border border-[var(--ok-border)] bg-[var(--ok-surface-1)] p-4"
-      onSubmit={submit}
-    >
+    <form className="usage-alert-controls" onSubmit={submit}>
       <div className="mr-auto min-w-52">
         <div className="flex items-center gap-2">
           <AlertTriangle

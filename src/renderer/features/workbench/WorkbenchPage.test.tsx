@@ -1,5 +1,6 @@
 import { act, cleanup, render, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
+import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { MemoryRouter, Route, Routes } from "react-router-dom";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import type { CanonicalEvent } from "../../../shared/contracts/event";
@@ -104,13 +105,15 @@ function renderWorkbenchFixture({
   };
 
   render(
-    <MemoryRouter initialEntries={["/workbench"]}>
-      <Routes>
-        <Route element={<AppShell />}>
-          <Route path="/workbench" element={<WorkbenchPage api={api} />} />
-        </Route>
-      </Routes>
-    </MemoryRouter>,
+    <QueryClientProvider client={new QueryClient()}>
+      <MemoryRouter initialEntries={["/workbench"]}>
+        <Routes>
+          <Route element={<AppShell />}>
+            <Route path="/workbench" element={<WorkbenchPage api={api} />} />
+          </Route>
+        </Routes>
+      </MemoryRouter>
+    </QueryClientProvider>,
   );
 
   return {

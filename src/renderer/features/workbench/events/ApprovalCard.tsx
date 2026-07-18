@@ -1,4 +1,4 @@
-import { Button, Card, Chip } from "@heroui/react";
+import { Button, Card } from "@heroui/react";
 import { AlertTriangle, Check, ShieldAlert, X } from "lucide-react";
 import { useState } from "react";
 import type { IpcRequest } from "../../../../shared/contracts/ipc";
@@ -61,37 +61,26 @@ export function ApprovalCard({ event, onResolve }: ApprovalCardProps) {
   }
 
   return (
-    <Card className="rounded-[var(--ok-radius-md)] border border-[color-mix(in_srgb,var(--ok-yellow)_36%,var(--ok-border))] border-l-2 border-l-[var(--ok-yellow)] bg-[var(--ok-surface-1)]">
-      <Card.Header className="flex items-start gap-2 px-3 py-2.5">
+    <Card className="approval-card">
+      <Card.Header className="approval-card__content">
         <ShieldAlert
           aria-hidden="true"
-          className="mt-0.5 shrink-0 text-[var(--ok-yellow)]"
+          className="approval-card__icon"
           size={16}
         />
-        <div className="min-w-0 flex-1">
-          <Card.Title className="text-xs font-semibold">
-            Aprovação humana necessária
+        <div className="approval-card__body">
+          <Card.Title className="approval-card__title">
+            Aprovação necessária · ação externa
           </Card.Title>
-          <code className="mt-1.5 block overflow-x-auto whitespace-pre-wrap break-words text-[11px] leading-5 text-[var(--ok-text)]">
-            {command}
-          </code>
-          <div className="mt-2 flex flex-wrap items-center gap-2">
-            <Chip
-              className="border border-[var(--ok-border)] bg-[var(--ok-bg)] text-[10px] text-[var(--ok-yellow)]"
-              size="sm"
-              variant="secondary"
-            >
-              <AlertTriangle
-                aria-hidden="true"
-                className="mr-1 inline"
-                size={10}
-              />
-              risco: {risk}
-            </Chip>
+          <p className="approval-card__description">
+            Esta ação exige confirmação humana · risco: {risk}
+          </p>
+          <code className="approval-card__command">{command}</code>
+          <div className="approval-card__actions">
             {!alreadyResolved && !resolution && (
               <>
                 <Button
-                  className="h-7 bg-[var(--ok-orange)] px-2.5 text-[10px] font-semibold text-black"
+                  className="approval-card__allow"
                   isDisabled={!approvalId || isResolving}
                   size="sm"
                   onPress={() => void resolve("allow_once")}
@@ -100,7 +89,7 @@ export function ApprovalCard({ event, onResolve }: ApprovalCardProps) {
                   Permitir uma vez
                 </Button>
                 <Button
-                  className="h-7 border border-[var(--ok-border)] bg-[var(--ok-surface-2)] px-2.5 text-[10px] text-[var(--ok-text)]"
+                  className="approval-card__deny"
                   isDisabled={!approvalId || isResolving}
                   size="sm"
                   variant="secondary"
@@ -112,7 +101,8 @@ export function ApprovalCard({ event, onResolve }: ApprovalCardProps) {
               </>
             )}
             {(alreadyResolved || resolution) && (
-              <span className="text-[10px] text-[var(--ok-text-muted)]">
+              <span className="approval-card__resolved">
+                <AlertTriangle aria-hidden="true" size={11} />
                 {resolution === "allow_once"
                   ? "Permitido uma vez"
                   : "Resolvido"}
@@ -120,7 +110,7 @@ export function ApprovalCard({ event, onResolve }: ApprovalCardProps) {
             )}
           </div>
           {error && (
-            <p className="mt-2 text-[10px] text-[var(--ok-red)]" role="alert">
+            <p className="approval-card__error" role="alert">
               Não foi possível resolver: {error}
             </p>
           )}

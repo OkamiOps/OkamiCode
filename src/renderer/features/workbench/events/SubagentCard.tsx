@@ -33,19 +33,17 @@ export function SubagentCard({ event }: SubagentCardProps) {
     text(event.payload, "status");
 
   return (
-    <Card className="rounded-[var(--ok-radius-md)] border border-[var(--ok-border)] border-l-2 border-l-[var(--ok-cyan)] bg-[var(--ok-surface-1)]">
+    <Card className="tool-card">
       <Accordion hideSeparator>
         <Accordion.Item id={event.id ?? `${event.kind}-subagent`}>
           <Accordion.Heading>
-            <Accordion.Trigger className="flex w-full items-center gap-2 px-3 py-2.5 text-left">
+            <Accordion.Trigger className="tool-card__header">
               <Network
                 aria-hidden="true"
                 className="text-[var(--ok-cyan)]"
                 size={15}
               />
-              <span className="min-w-0 flex-1 truncate text-xs font-semibold">
-                {name}
-              </span>
+              <span className="tool-card__name">{name}</span>
               <Chip
                 className="border border-[var(--ok-border)] bg-[var(--ok-bg)] text-[10px] text-[var(--ok-text-muted)]"
                 size="sm"

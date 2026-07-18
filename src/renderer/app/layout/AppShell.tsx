@@ -9,7 +9,7 @@ import {
 import { useMemo, useState } from "react";
 import { Outlet, useLocation } from "react-router-dom";
 import { ResizablePane } from "../../components/ResizablePane";
-import { StatusBadge } from "../../components/StatusBadge";
+import { UsageToolbarChip } from "../../features/usage/UsageToolbarChip";
 import { DetailsPanel } from "./DetailsPanel";
 import { NavigationRail } from "./NavigationRail";
 import { Sidebar } from "./Sidebar";
@@ -56,6 +56,69 @@ export function AppShell() {
 
   return (
     <div className="app-shell" data-has-list={hasList}>
+      <header className="app-toolbar">
+        <div className="app-toolbar__breadcrumb" aria-label="Localização atual">
+          <span>Okami</span>
+          <ChevronRight aria-hidden="true" size={14} />
+          <strong>{areaLabel}</strong>
+        </div>
+        <div className="app-toolbar__actions">
+          <UsageToolbarChip />
+          <Tooltip.Root closeDelay={0} delay={300}>
+            <Button
+              aria-label={
+                detailsVisible
+                  ? "Recolher painel de detalhes"
+                  : "Mostrar painel de detalhes"
+              }
+              className="icon-button details-desktop-trigger"
+              isIconOnly
+              variant="ghost"
+              onPress={() => setDetailsVisible((visible) => !visible)}
+            >
+              {detailsVisible ? (
+                <PanelRightClose aria-hidden="true" size={17} />
+              ) : (
+                <PanelRightOpen aria-hidden="true" size={17} />
+              )}
+            </Button>
+            <Tooltip.Content className="ok-tooltip" placement="bottom">
+              {detailsVisible ? "Recolher detalhes" : "Mostrar detalhes"}
+            </Tooltip.Content>
+          </Tooltip.Root>
+          <Drawer.Root>
+            <Drawer.Trigger
+              aria-label="Abrir painel de detalhes"
+              className="icon-button details-drawer-trigger"
+            >
+              <PanelRightOpen aria-hidden="true" size={17} />
+            </Drawer.Trigger>
+            <Drawer.Backdrop className="details-drawer-backdrop">
+              <Drawer.Content
+                className="details-drawer-content"
+                placement="right"
+              >
+                <Drawer.Dialog className="details-drawer-dialog">
+                  <Drawer.Header className="details-drawer-header">
+                    <Drawer.Heading>Detalhes</Drawer.Heading>
+                    <Drawer.CloseTrigger aria-label="Fechar painel de detalhes" />
+                  </Drawer.Header>
+                  <Drawer.Body className="details-drawer-body">
+                    {hasList ? (
+                      <div
+                        className="h-full min-h-0"
+                        ref={setDetailsDrawerTarget}
+                      />
+                    ) : (
+                      <DetailsPanel areaLabel={areaLabel} />
+                    )}
+                  </Drawer.Body>
+                </Drawer.Dialog>
+              </Drawer.Content>
+            </Drawer.Backdrop>
+          </Drawer.Root>
+        </div>
+      </header>
       <NavigationRail />
       {sidebarVisible && (
         <ResizablePane
@@ -83,8 +146,7 @@ export function AppShell() {
         </ResizablePane>
       )}
       <main className="focal-region">
-        <header className="app-toolbar">
-          {/* Reopen triggers sit at the left edge, where the collapsed panes were. */}
+        <div className="pane-reopen-triggers">
           {!sidebarVisible && (
             <Tooltip.Root closeDelay={0} delay={300}>
               <Button
@@ -117,71 +179,7 @@ export function AppShell() {
               </Tooltip.Content>
             </Tooltip.Root>
           )}
-          <div
-            className="app-toolbar__breadcrumb"
-            aria-label="Localização atual"
-          >
-            <span>Okami</span>
-            <ChevronRight aria-hidden="true" size={14} />
-            <strong>{areaLabel}</strong>
-          </div>
-          <div className="app-toolbar__actions">
-            <StatusBadge label="Uso normal" status="online" />
-            <Tooltip.Root closeDelay={0} delay={300}>
-              <Button
-                aria-label={
-                  detailsVisible
-                    ? "Recolher painel de detalhes"
-                    : "Mostrar painel de detalhes"
-                }
-                className="icon-button details-desktop-trigger"
-                isIconOnly
-                variant="ghost"
-                onPress={() => setDetailsVisible((visible) => !visible)}
-              >
-                {detailsVisible ? (
-                  <PanelRightClose aria-hidden="true" size={17} />
-                ) : (
-                  <PanelRightOpen aria-hidden="true" size={17} />
-                )}
-              </Button>
-              <Tooltip.Content className="ok-tooltip" placement="bottom">
-                {detailsVisible ? "Recolher detalhes" : "Mostrar detalhes"}
-              </Tooltip.Content>
-            </Tooltip.Root>
-            <Drawer.Root>
-              <Drawer.Trigger
-                aria-label="Abrir painel de detalhes"
-                className="icon-button details-drawer-trigger"
-              >
-                <PanelRightOpen aria-hidden="true" size={17} />
-              </Drawer.Trigger>
-              <Drawer.Backdrop className="details-drawer-backdrop">
-                <Drawer.Content
-                  className="details-drawer-content"
-                  placement="right"
-                >
-                  <Drawer.Dialog className="details-drawer-dialog">
-                    <Drawer.Header className="details-drawer-header">
-                      <Drawer.Heading>Detalhes</Drawer.Heading>
-                      <Drawer.CloseTrigger aria-label="Fechar painel de detalhes" />
-                    </Drawer.Header>
-                    <Drawer.Body className="details-drawer-body">
-                      {hasList ? (
-                        <div
-                          className="h-full min-h-0"
-                          ref={setDetailsDrawerTarget}
-                        />
-                      ) : (
-                        <DetailsPanel areaLabel={areaLabel} />
-                      )}
-                    </Drawer.Body>
-                  </Drawer.Dialog>
-                </Drawer.Content>
-              </Drawer.Backdrop>
-            </Drawer.Root>
-          </div>
-        </header>
+        </div>
         <Outlet context={outletContext} />
       </main>
       {detailsVisible && (

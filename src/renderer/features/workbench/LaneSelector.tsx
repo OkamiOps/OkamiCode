@@ -1,19 +1,11 @@
-import { Button, Chip, Skeleton, Tooltip } from "@heroui/react";
+import { Button, Skeleton, Tabs, Tooltip } from "@heroui/react";
 import { useQuery } from "@tanstack/react-query";
-import {
-  Bot,
-  ChevronRight,
-  Clock3,
-  FolderCode,
-  Gauge,
-  GitBranch,
-  Route,
-  ShieldCheck,
-  Sparkles,
-} from "lucide-react";
-import type { WorkbenchLane } from "./api";
-import { UsageQuickPopover } from "../usage/UsageQuickPopover";
+import { ChevronRight } from "lucide-react";
+import type { ReactNode } from "react";
+import type { UsageSnapshotContract } from "../../../shared/contracts/ipc";
 import { workbenchClient } from "../../lib/ipc/client";
+import { UsageQuickPopover } from "../usage/UsageQuickPopover";
+import type { WorkbenchLane } from "./api";
 
 interface LaneSelectorProps {
   error: Error | null;
@@ -59,154 +51,337 @@ export function LaneSelector({
   });
   const usageOverview =
     usage.data && "generatedAt" in usage.data ? usage.data : undefined;
+  const context = usageOverview?.context;
+
   return (
     <aside
       aria-label="Detalhes da lane"
-      className="details-panel h-full min-h-0"
+      className="details-panel workbench-details"
     >
-      <header className="pane-header details-panel__header">
-        <div>
-          <p className="pane-kicker">Sessão</p>
-          <h2>Lanes</h2>
-        </div>
-        <Tooltip.Root closeDelay={0} delay={300}>
-          <Button
-            aria-label="Recolher painel de detalhes"
-            className="icon-button"
-            isIconOnly
-            variant="ghost"
-            onPress={onCollapse}
-          >
-            <ChevronRight aria-hidden="true" size={17} />
-          </Button>
-          <Tooltip.Content className="ok-tooltip" placement="left">
-            Recolher detalhes
-          </Tooltip.Content>
-        </Tooltip.Root>
-      </header>
-
-      <div className="min-h-0 flex-1 overflow-y-auto p-3">
-        {isLoading ? (
-          <div className="grid gap-2" aria-label="Carregando lanes">
-            <Skeleton className="h-20 rounded-[var(--ok-radius-md)]" />
-            <Skeleton className="h-20 rounded-[var(--ok-radius-md)]" />
-          </div>
-        ) : error ? (
-          <p className="text-xs text-[var(--ok-red)]" role="alert">
-            Não foi possível carregar as lanes: {error.message}
-          </p>
-        ) : lanes.length === 0 ? (
-          <p className="py-8 text-center text-xs text-[var(--ok-text-muted)]">
-            Nenhuma lane vinculada à tarefa.
-          </p>
-        ) : (
-          <div className="grid gap-2" aria-label="Lanes da tarefa">
-            {lanes.map((lane) => {
-              const name = laneDisplayName(lane);
-              const isSelected = lane.laneId === selectedLane?.laneId;
-              const Icon = name === "Codex" ? Bot : Sparkles;
-              return (
-                <div
-                  className="rounded-[var(--ok-radius-md)] border border-[var(--ok-border)] bg-[var(--ok-surface-2)] p-2.5"
-                  data-selected={isSelected}
-                  key={lane.laneId}
-                >
-                  <div className="flex items-center gap-2">
-                    <Icon
-                      aria-hidden="true"
-                      className="text-[var(--ok-orange)]"
-                      size={16}
-                    />
-                    <strong className="min-w-0 flex-1 truncate text-xs">
-                      {name}
-                    </strong>
-                    <Chip
-                      className="border border-[var(--ok-border)] bg-[var(--ok-bg)] text-[10px] text-[var(--ok-cyan)]"
-                      size="sm"
-                      variant="secondary"
+      <Tooltip.Root closeDelay={0} delay={300}>
+        <Button
+          aria-label="Recolher painel de detalhes"
+          className="icon-button details-collapse"
+          isIconOnly
+          variant="ghost"
+          onPress={onCollapse}
+        >
+          <ChevronRight aria-hidden="true" size={17} />
+        </Button>
+        <Tooltip.Content className="ok-tooltip" placement="left">
+          Recolher detalhes
+        </Tooltip.Content>
+      </Tooltip.Root>
+      <Tabs
+        aria-label="Visualização de detalhes da lane"
+        className="details-tabs details-tabs--workbench"
+        defaultSelectedKey="details"
+        variant="secondary"
+      >
+        <Tabs.List aria-label="Seções de detalhes da lane">
+          <Tabs.Tab id="details">Detalhes</Tabs.Tab>
+          <Tabs.Tab id="activity">Atividade</Tabs.Tab>
+          <Tabs.Tab id="sources">Fontes</Tabs.Tab>
+        </Tabs.List>
+        <Tabs.Panel id="details">
+          <div className="details-scroll">
+            {selectedLane && (
+              <section className="detail-group">
+                <h3>Lane ativa</h3>
+                <DetailRow label="Harness" value={harnessLabel(selectedLane)} />
+                <DetailRow
+                  label="Provider"
+                  value={selectedLane.providerAccountLabel}
+                />
+                <DetailRow label="Modelo" value={selectedLane.model} />
+                <DetailRow
+                  label="Rota"
+                  value={
+                    <span
+                      className={`route-badge route-badge--${selectedLane.routeKind}`}
                     >
-                      {lane.routeKind}
-                    </Chip>
-                  </div>
-                  <p className="mt-1.5 truncate text-[11px] text-[var(--ok-text-muted)]">
-                    {lane.model} · {lane.displayQuotaAccount}
-                  </p>
-                  {!isSelected && (
-                    <Button
-                      className="mt-2 h-7 w-full border border-[var(--ok-border)] bg-[var(--ok-surface-3)] text-[11px] text-[var(--ok-text)]"
-                      isDisabled={isOpening}
-                      size="sm"
-                      variant="secondary"
-                      onPress={() => onOpen(lane.laneId)}
-                    >
-                      Mudar para {name}
-                    </Button>
-                  )}
-                </div>
-              );
-            })}
-          </div>
-        )}
+                      {selectedLane.routeKind}
+                    </span>
+                  }
+                />
+                <DetailRow
+                  label="Consumindo"
+                  value={selectedLane.displayQuotaAccount}
+                />
+                <DetailRow
+                  label="Sessão nativa"
+                  mono
+                  value={value(selectedLane.nativeSessionIdPrefix)}
+                />
+                <DetailRow
+                  label="Contexto da sessão"
+                  mono
+                  value={
+                    context?.usedPercent === null ||
+                    context?.usedPercent === undefined
+                      ? "indisponível"
+                      : `${format(context.usedPercent)}%`
+                  }
+                />
+                <ProgressBar tone="cyan" value={context?.usedPercent ?? 0} />
+                <SourceNote
+                  freshness={context?.freshness ?? "unavailable"}
+                  text={
+                    context
+                      ? `${context.source.kind} · ${context.freshness}`
+                      : "fonte indisponível"
+                  }
+                />
+              </section>
+            )}
 
-        {selectedLane && (
-          <dl className="details-list mt-4">
-            <div>
-              <dt>Harness</dt>
-              <dd className="details-inline-value">
-                <Route aria-hidden="true" size={13} />
-                {harnessLabel(selectedLane)}
-              </dd>
-            </div>
-            <div>
-              <dt>Provider</dt>
-              <dd>{selectedLane.providerAccountLabel}</dd>
-            </div>
-            <div>
-              <dt>Modelo</dt>
-              <dd>{selectedLane.model}</dd>
-            </div>
-            <div>
-              <dt>Assinatura</dt>
-              <dd className="details-inline-value justify-between">
-                <span className="details-inline-value min-w-0">
-                  <Gauge aria-hidden="true" size={13} />
-                  {selectedLane.displayQuotaAccount}
-                </span>
+            <section className="detail-group">
+              <div className="detail-group__heading">
+                <h3>Quota das assinaturas</h3>
                 <UsageQuickPopover overview={usageOverview} />
-              </dd>
-            </div>
-            <div>
-              <dt>Permissões</dt>
-              <dd className="details-inline-value">
-                <ShieldCheck aria-hidden="true" size={13} />
-                {value(selectedLane.permissionMode)}
-              </dd>
-            </div>
-            <div>
-              <dt>Workspace</dt>
-              <dd className="details-inline-value">
-                <FolderCode aria-hidden="true" size={13} />
-                {value(selectedLane.workspacePath)}
-              </dd>
-            </div>
-            <div>
-              <dt>Sessão</dt>
-              <dd>{value(selectedLane.nativeSessionIdPrefix)}</dd>
-            </div>
-            <div>
-              <dt>Estado</dt>
-              <dd className="details-inline-value">
-                <Clock3 aria-hidden="true" size={13} />
-                {selectedLane.status} · {selectedLane.temperature}
-              </dd>
-            </div>
-          </dl>
-        )}
-      </div>
-      <footer className="details-panel__footer">
-        <GitBranch aria-hidden="true" size={14} />
-        <span>{selectedLane?.workspacePath ?? "Git aguardando workspace"}</span>
-      </footer>
+              </div>
+              {usageOverview?.subscriptions.length ? (
+                usageOverview.subscriptions.map((subscription) => (
+                  <QuotaLine
+                    key={subscription.accountRef}
+                    subscription={subscription}
+                  />
+                ))
+              ) : (
+                <SourceNote freshness="unavailable" text="quota indisponível" />
+              )}
+            </section>
+
+            {selectedLane && (
+              <section className="detail-group">
+                <h3>Workspace</h3>
+                <DetailRow
+                  label="Pasta"
+                  mono
+                  value={value(selectedLane.workspacePath)}
+                />
+                <DetailRow
+                  label="Permissões"
+                  value={value(selectedLane.permissionMode)}
+                />
+                <DetailRow label="Estado" value={selectedLane.status} />
+                <DetailRow
+                  label="Temperatura"
+                  mono
+                  value={selectedLane.temperature}
+                />
+              </section>
+            )}
+
+            <section className="detail-group">
+              <h3>Lanes disponíveis</h3>
+              <LaneList
+                error={error}
+                isLoading={isLoading}
+                isOpening={isOpening}
+                lanes={lanes}
+                onOpen={onOpen}
+                selectedLane={selectedLane}
+              />
+            </section>
+          </div>
+        </Tabs.Panel>
+        <Tabs.Panel id="activity">
+          <div className="details-scroll">
+            <section className="detail-group">
+              <h3>Execução atual</h3>
+              <DetailRow
+                label="Estado"
+                value={selectedLane?.status ?? "Sem lane"}
+              />
+              <DetailRow
+                label="Eventos pendentes"
+                mono
+                value={String(selectedLane?.pendingDeltaEvents ?? 0)}
+              />
+            </section>
+          </div>
+        </Tabs.Panel>
+        <Tabs.Panel id="sources">
+          <div className="details-scroll">
+            <section className="detail-group">
+              <h3>Fontes de quota</h3>
+              {usageOverview?.subscriptions.map((subscription) => (
+                <SourceNote
+                  freshness={subscription.freshness}
+                  key={subscription.accountRef}
+                  text={`${subscription.accountLabel} · ${subscription.source.kind}`}
+                />
+              ))}
+            </section>
+          </div>
+        </Tabs.Panel>
+      </Tabs>
     </aside>
+  );
+}
+
+function LaneList({
+  error,
+  isLoading,
+  isOpening,
+  lanes,
+  onOpen,
+  selectedLane,
+}: Pick<
+  LaneSelectorProps,
+  "error" | "isLoading" | "isOpening" | "lanes" | "onOpen" | "selectedLane"
+>) {
+  if (isLoading) {
+    return (
+      <div className="grid gap-2" aria-label="Carregando lanes">
+        <Skeleton className="h-16 rounded-[var(--ok-radius-md)]" />
+        <Skeleton className="h-16 rounded-[var(--ok-radius-md)]" />
+      </div>
+    );
+  }
+  if (error) {
+    return (
+      <p className="detail-error" role="alert">
+        Não foi possível carregar as lanes: {error.message}
+      </p>
+    );
+  }
+  if (lanes.length === 0) {
+    return <p className="detail-empty">Nenhuma lane vinculada à tarefa.</p>;
+  }
+  return (
+    <div className="detail-lane-list" aria-label="Lanes da tarefa">
+      {lanes.map((lane) => {
+        const selected = lane.laneId === selectedLane?.laneId;
+        const runtime = runtimePresentation(lane);
+        return (
+          <div
+            className="detail-lane-card"
+            data-selected={selected}
+            key={lane.laneId}
+          >
+            <span
+              aria-hidden="true"
+              className={`lane-glyph runtime-glyph--${runtime.tone}`}
+            >
+              {runtime.glyph}
+            </span>
+            <span className="detail-lane-card__meta">
+              <strong>{laneDisplayName(lane)}</strong>
+              <span>
+                {lane.providerAccountLabel} · {lane.model}
+              </span>
+            </span>
+            <span className={`route-badge route-badge--${lane.routeKind}`}>
+              {lane.routeKind}
+            </span>
+            {!selected && (
+              <Button
+                className="detail-lane-card__action"
+                isDisabled={isOpening}
+                size="sm"
+                variant="secondary"
+                onPress={() => onOpen(lane.laneId)}
+              >
+                Mudar para {laneDisplayName(lane)}
+              </Button>
+            )}
+          </div>
+        );
+      })}
+    </div>
+  );
+}
+
+function DetailRow({
+  label,
+  mono = false,
+  value: detail,
+}: {
+  label: string;
+  mono?: boolean;
+  value: ReactNode;
+}) {
+  return (
+    <div className="detail-row">
+      <span>{label}</span>
+      <strong className={mono ? "detail-row__mono" : undefined}>
+        {detail}
+      </strong>
+    </div>
+  );
+}
+
+function QuotaLine({ subscription }: { subscription: UsageSnapshotContract }) {
+  const window = subscription.windows[0];
+  return (
+    <div className="quota-line">
+      <DetailRow
+        label={`${subscription.accountLabel}${window ? ` · ${window.label}` : ""}`}
+        mono
+        value={
+          window?.remainingPercent === null ||
+          window?.remainingPercent === undefined
+            ? "indisponível"
+            : `${format(window.remainingPercent)}% rest.`
+        }
+      />
+      <ProgressBar
+        tone={subscription.provider === "claude_max" ? "orange" : "cyan"}
+        value={window?.usedPercent ?? 0}
+      />
+      <SourceNote
+        freshness={subscription.freshness}
+        text={`${subscription.source.kind} · ${subscription.freshness}`}
+      />
+    </div>
+  );
+}
+
+function ProgressBar({
+  tone,
+  value,
+}: {
+  tone: "cyan" | "orange";
+  value: number;
+}) {
+  return (
+    <span className="detail-progress" aria-hidden="true">
+      <i
+        className={`detail-progress__fill detail-progress__fill--${tone}`}
+        style={{ width: `${value}%` }}
+      />
+    </span>
+  );
+}
+
+function SourceNote({ freshness, text }: { freshness: string; text: string }) {
+  const live = freshness === "live";
+  return (
+    <p className="detail-source-note">
+      <span
+        aria-hidden="true"
+        className={
+          live ? "source-dot source-dot--live" : "source-dot source-dot--stale"
+        }
+      />
+      {text}
+    </p>
+  );
+}
+
+function runtimePresentation(lane: WorkbenchLane) {
+  const account = `${lane.providerAccountLabel} ${lane.model}`.toLowerCase();
+  if (account.includes("grok")) return { glyph: "GK", tone: "grok" } as const;
+  if (/chatgpt|\bgpt|\bo[134]/u.test(account)) {
+    return { glyph: "GP", tone: "gpt" } as const;
+  }
+  return { glyph: "CL", tone: "claude" } as const;
+}
+
+function format(number: number): string {
+  return new Intl.NumberFormat("pt-BR", { maximumFractionDigits: 1 }).format(
+    number,
   );
 }

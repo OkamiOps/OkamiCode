@@ -1,5 +1,5 @@
 import { Card } from "@heroui/react";
-import { CalendarDays, Flame } from "lucide-react";
+import { Activity, CalendarDays, Flame } from "lucide-react";
 import { useMemo, useState } from "react";
 import {
   Cell,
@@ -43,9 +43,9 @@ export function ActivityDashboard({ activity }: ActivityDashboardProps) {
   return (
     <section
       aria-labelledby="activity-dashboard-heading"
-      className="overflow-hidden rounded-[calc(var(--ok-radius-md)+3px)] border border-[color-mix(in_srgb,var(--ok-orange)_30%,var(--ok-border))] bg-[var(--ok-surface-1)]"
+      className="activity-dashboard"
     >
-      <header className="flex flex-wrap items-end justify-between gap-4 border-b border-[var(--ok-border)] px-4 py-4 sm:px-5">
+      <header className="activity-dashboard__header">
         <div>
           <div className="flex items-center gap-2 text-[var(--ok-orange)]">
             <Flame aria-hidden="true" size={15} />
@@ -78,13 +78,13 @@ export function ActivityDashboard({ activity }: ActivityDashboardProps) {
         </label>
       </header>
 
-      <div className="grid gap-3 p-4 sm:grid-cols-2 xl:grid-cols-3">
+      <div className="activity-stat-grid">
         {summary.stats.map((stat) => (
           <StatCard key={stat.label} stat={stat} />
         ))}
       </div>
 
-      <div className="border-t border-[var(--ok-border)] p-4 sm:p-5">
+      <div className="activity-calendar">
         <div className="mb-3 flex flex-wrap items-center justify-between gap-2">
           <div className="flex items-center gap-2">
             <CalendarDays
@@ -141,17 +141,17 @@ export function ActivityDashboard({ activity }: ActivityDashboardProps) {
 
 function StatCard({ stat }: { stat: Stat }) {
   return (
-    <Card className="border border-[var(--ok-border)] bg-[var(--ok-surface-2)] shadow-none">
-      <Card.Content className="p-3.5">
-        <p className="m-0 text-[10px] font-semibold uppercase tracking-[0.08em] text-[var(--ok-text-muted)]">
-          {stat.label}
-        </p>
-        <p className="mb-0 mt-2 break-words text-xl font-semibold tabular-nums tracking-[-0.03em] text-[var(--ok-text)]">
-          {stat.value}
-        </p>
-        <p className="mb-0 mt-1 text-[9px] text-[var(--ok-text-muted)]">
-          local_estimate · estimated
-        </p>
+    <Card className="activity-stat-card">
+      <Card.Content>
+        <header>
+          <Activity aria-hidden="true" size={13} />
+          <strong>{stat.label}</strong>
+          <span className="freshness-pill freshness-pill--stale">
+            estimated
+          </span>
+        </header>
+        <p className="activity-stat-card__value">{stat.value}</p>
+        <p className="activity-stat-card__source">local_estimate · estimated</p>
       </Card.Content>
     </Card>
   );

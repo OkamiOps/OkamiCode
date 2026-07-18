@@ -1,11 +1,9 @@
-import { Chip } from "@heroui/react";
 import {
   QueryClient,
   QueryClientProvider,
   useMutation,
   useQuery,
 } from "@tanstack/react-query";
-import { Activity, PanelsTopLeft } from "lucide-react";
 import { useEffect, useState } from "react";
 import { createPortal } from "react-dom";
 import { useOutletContext } from "react-router-dom";
@@ -74,6 +72,8 @@ function WorkbenchContent({ api }: { api: WorkbenchApi }) {
       lanes.find((lane) => lane.laneId === effectiveLaneId) ??
       null)
     : null;
+  const selectedTask =
+    tasks.find((task) => task.id === effectiveTaskId) ?? null;
 
   const openLane = useMutation({
     mutationFn: api.openLane,
@@ -108,6 +108,7 @@ function WorkbenchContent({ api }: { api: WorkbenchApi }) {
       isLoading={tasksQuery.isLoading}
       onCollapse={shell.collapseList}
       onSelect={storeActions.selectTask}
+      selectedLane={selectedLane}
       selectedTaskId={effectiveTaskId}
       tasks={tasks}
     />
@@ -130,50 +131,32 @@ function WorkbenchContent({ api }: { api: WorkbenchApi }) {
       {shell.detailsTarget && createPortal(laneDetails, shell.detailsTarget)}
       {shell.detailsDrawerTarget &&
         createPortal(laneDetails, shell.detailsDrawerTarget)}
-      <section
-        aria-labelledby="workbench-heading"
-        className="grid h-full min-h-0 grid-rows-[auto_minmax(0,1fr)_auto] overflow-hidden"
-      >
-        <header className="flex min-h-16 items-center justify-between gap-4 border-b border-[var(--ok-border)] bg-[var(--ok-surface-1)] px-4">
-          <div className="min-w-0">
-            <p className="pane-kicker">Execução assistida</p>
-            <h1
-              className="truncate text-base font-semibold tracking-[-0.02em]"
-              id="workbench-heading"
-            >
-              Okami Workbench
+      <section aria-labelledby="workbench-heading" className="workbench-view">
+        <header className="conversation-header">
+          <div className="conversation-header__title">
+            <h1 id="workbench-heading">
+              {selectedTask?.title ?? "Okami Workbench"}
             </h1>
+            <p>
+              {selectedLane
+                ? `lane ${laneDisplayName(selectedLane)} · sessão ${selectedLane.nativeSessionIdPrefix ?? "não iniciada"} · ${selectedLane.workspacePath ?? "workspace não informado"}`
+                : "Selecione uma lane para iniciar a sessão"}
+            </p>
           </div>
           {selectedLane && (
-            <div className="flex min-w-0 items-center gap-2">
-              <Chip
-                className="border border-[var(--ok-border)] bg-[var(--ok-surface-2)] text-[var(--ok-text)]"
-                size="sm"
-                variant="secondary"
+            <div className="conversation-header__meta">
+              <span
+                className={`route-badge route-badge--${selectedLane.routeKind}`}
               >
-                <PanelsTopLeft
-                  aria-hidden="true"
-                  className="mr-1 inline text-[var(--ok-orange)]"
-                  size={11}
-                />
-                {laneDisplayName(selectedLane)}
-              </Chip>
-              <Chip
-                className="border border-[var(--ok-border)] bg-[var(--ok-surface-2)] text-[var(--ok-green)]"
-                size="sm"
-                variant="secondary"
-              >
-                <Activity
-                  aria-hidden="true"
-                  className="mr-1 inline"
-                  size={11}
-                />
+                {selectedLane.routeKind}
+              </span>
+              <span className="conversation-header__status">
                 {selectedLane.status}
-              </Chip>
+              </span>
             </div>
           )}
         </header>
-        <Conversation />
+        <Conversation lane={selectedLane} />
         <Composer
           activeRunId={activeRunId}
           error={queryError(sendTurn.error ?? cancelRun.error)}

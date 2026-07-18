@@ -1,13 +1,13 @@
 import { Button, ListBox, Skeleton, Tooltip } from "@heroui/react";
-import { CircleDot, ListCollapse } from "lucide-react";
-import { StatusBadge } from "../../components/StatusBadge";
-import type { WorkbenchTask } from "./api";
+import { ListCollapse } from "lucide-react";
+import type { WorkbenchLane, WorkbenchTask } from "./api";
 
 interface TaskListPaneProps {
   error: Error | null;
   isLoading: boolean;
   onCollapse: () => void;
   onSelect: (taskId: string) => void;
+  selectedLane: WorkbenchLane | null;
   selectedTaskId: string | null;
   tasks: WorkbenchTask[];
 }
@@ -17,6 +17,7 @@ export function TaskListPane({
   isLoading,
   onCollapse,
   onSelect,
+  selectedLane,
   selectedTaskId,
   tasks,
 }: TaskListPaneProps) {
@@ -25,12 +26,14 @@ export function TaskListPane({
   return (
     <section
       aria-label="Lista de tarefas"
-      className="queue-pane h-full min-h-0"
+      className="queue-pane task-list-pane"
     >
-      <header className="pane-header queue-pane__header">
+      <header className="task-list-header">
         <div>
-          <p className="pane-kicker">Fila</p>
-          <h2>Tarefas</h2>
+          <h2>Abertas</h2>
+          <span>
+            {activeCount} {activeCount === 1 ? "tarefa" : "tarefas"}
+          </span>
         </div>
         <Tooltip.Root closeDelay={0} delay={300}>
           <Button
@@ -47,18 +50,11 @@ export function TaskListPane({
           </Tooltip.Content>
         </Tooltip.Root>
       </header>
-      <div className="queue-pane__summary">
-        <span>Todas</span>
-        <StatusBadge
-          label={`${activeCount} ${activeCount === 1 ? "ativa" : "ativas"}`}
-          status={activeCount > 0 ? "online" : "neutral"}
-        />
-      </div>
       {isLoading ? (
         <div className="grid gap-2 p-3" aria-label="Carregando tarefas">
-          <Skeleton className="h-16 rounded-[var(--ok-radius-md)]" />
-          <Skeleton className="h-16 rounded-[var(--ok-radius-md)]" />
-          <Skeleton className="h-16 rounded-[var(--ok-radius-md)]" />
+          <Skeleton className="h-20 rounded-[var(--ok-radius-md)]" />
+          <Skeleton className="h-20 rounded-[var(--ok-radius-md)]" />
+          <Skeleton className="h-20 rounded-[var(--ok-radius-md)]" />
         </div>
       ) : error ? (
         <div className="queue-pane__empty" role="alert">
@@ -75,35 +71,89 @@ export function TaskListPane({
       ) : (
         <ListBox
           aria-label="Tarefas disponíveis"
-          className="min-h-0 flex-1 overflow-y-auto p-2"
+          className="task-list"
           onAction={(key) => onSelect(String(key))}
           selectedKeys={selectedTaskId ? new Set([selectedTaskId]) : new Set()}
           selectionMode="single"
         >
-          {tasks.map((task) => (
-            <ListBox.Item
-              className="mb-1 grid min-h-16 grid-cols-[20px_minmax(0,1fr)] gap-2 rounded-[var(--ok-radius-md)] border border-transparent px-2 py-2 text-[var(--ok-text-muted)] data-[selected=true]:border-[var(--ok-border)] data-[selected=true]:bg-[var(--ok-surface-3)] data-[selected=true]:text-[var(--ok-text)]"
-              id={task.id}
-              key={task.id}
-              textValue={task.title}
-            >
-              <CircleDot
-                aria-hidden="true"
-                className="mt-0.5 text-[var(--ok-orange)]"
-                size={15}
-              />
-              <span className="min-w-0">
-                <strong className="block truncate text-xs font-semibold text-[var(--ok-text)]">
-                  {task.title}
-                </strong>
-                <span className="mt-1 block truncate text-[11px]">
-                  {task.objective}
+          {tasks.map((task) => {
+            const selected = task.id === selectedTaskId;
+            const runtime = runtimePresentation(selected ? selectedLane : null);
+            const status = statusPresentation(task.status);
+            return (
+              <ListBox.Item
+                className="task-list-item"
+                id={task.id}
+                key={task.id}
+                textValue={task.title}
+              >
+                <span
+                  aria-hidden="true"
+                  className={`task-list-item__glyph runtime-glyph--${runtime.tone}`}
+                >
+                  {runtime.glyph}
                 </span>
-              </span>
-            </ListBox.Item>
-          ))}
+                <span className="task-list-item__body">
+                  <span className="task-list-item__heading">
+                    <strong>{task.title}</strong>
+                    <time dateTime={task.updatedAt}>
+                      {formatTimestamp(task.updatedAt)}
+                    </time>
+                  </span>
+                  <span className="task-list-item__preview">
+                    {task.objective}
+                  </span>
+                  <span className="task-list-item__badges">
+                    <span className={`task-pill task-pill--${status.tone}`}>
+                      {status.label}
+                    </span>
+                    {selectedLane && selected && (
+                      <span className="task-pill task-pill--route">
+                        {selectedLane.routeKind} ·{" "}
+                        {selectedLane.displayQuotaAccount}
+                      </span>
+                    )}
+                  </span>
+                </span>
+              </ListBox.Item>
+            );
+          })}
         </ListBox>
       )}
     </section>
   );
+}
+
+function runtimePresentation(lane: WorkbenchLane | null) {
+  if (!lane) return { glyph: "OB", tone: "task" } as const;
+  const account = `${lane.providerAccountLabel} ${lane.model}`.toLowerCase();
+  if (account.includes("grok")) return { glyph: "GK", tone: "grok" } as const;
+  if (/chatgpt|\bgpt|\bo[134]/u.test(account)) {
+    return { glyph: "GP", tone: "gpt" } as const;
+  }
+  return { glyph: "CL", tone: "claude" } as const;
+}
+
+function statusPresentation(status: string) {
+  const normalized = status.toLowerCase();
+  if (/approval|aprova|waiting|aguard/u.test(normalized)) {
+    return { label: "aprovação pendente", tone: "approval" } as const;
+  }
+  if (/active|running|execut/u.test(normalized)) {
+    return { label: "executando", tone: "running" } as const;
+  }
+  return { label: status.replaceAll("_", " "), tone: "neutral" } as const;
+}
+
+function formatTimestamp(value: string): string {
+  const date = new Date(value);
+  if (Number.isNaN(date.valueOf())) return "—";
+  const now = new Date();
+  const sameDay = date.toDateString() === now.toDateString();
+  return new Intl.DateTimeFormat(
+    "pt-BR",
+    sameDay
+      ? { hour: "2-digit", minute: "2-digit" }
+      : { day: "2-digit", month: "short" },
+  ).format(date);
 }

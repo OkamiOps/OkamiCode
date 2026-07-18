@@ -1,14 +1,8 @@
-import { Button, Chip, Label, TextArea, TextField } from "@heroui/react";
-import {
-  Bot,
-  FolderCode,
-  Route,
-  Send,
-  ShieldCheck,
-  Square,
-} from "lucide-react";
+import { Button, Label, TextArea, TextField } from "@heroui/react";
+import { ArrowRight, Square } from "lucide-react";
 import { useState, type FormEvent } from "react";
 import type { WorkbenchLane } from "./api";
+import { laneDisplayName } from "./LaneSelector";
 
 interface ComposerProps {
   activeRunId: string | null;
@@ -38,6 +32,7 @@ export function Composer({
   onSend,
 }: ComposerProps) {
   const [input, setInput] = useState("");
+  const runtime = runtimePresentation(lane);
 
   async function handleSubmit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
@@ -48,56 +43,24 @@ export function Composer({
   }
 
   return (
-    <form
-      className="border-t border-[var(--ok-border)] bg-[var(--ok-surface-1)] p-3"
-      onSubmit={(event) => void handleSubmit(event)}
-    >
+    <form className="composer" onSubmit={(event) => void handleSubmit(event)}>
       {lane ? (
-        <div
-          aria-label="Rota efetiva da lane"
-          className="mb-2 flex flex-wrap items-center gap-1.5 text-[10px] text-[var(--ok-text-muted)]"
-        >
-          <Chip
-            className="border border-[var(--ok-border)] bg-[var(--ok-bg)] text-[var(--ok-text)]"
-            size="sm"
-            variant="secondary"
-          >
-            <Bot aria-hidden="true" className="mr-1 inline" size={11} />
-            {harnessLabel(lane)}
-          </Chip>
-          <Chip
-            className="border border-[var(--ok-border)] bg-[var(--ok-bg)] text-[var(--ok-text)]"
-            size="sm"
-            variant="secondary"
-          >
-            {lane.providerAccountLabel}
-          </Chip>
-          <Chip
-            className="border border-[var(--ok-border)] bg-[var(--ok-bg)] text-[var(--ok-text)]"
-            size="sm"
-            variant="secondary"
-          >
-            {lane.model}
-          </Chip>
-          <Chip
-            className="border border-[var(--ok-border)] bg-[var(--ok-bg)] text-[var(--ok-cyan)]"
-            size="sm"
-            variant="secondary"
-          >
-            <Route aria-hidden="true" className="mr-1 inline" size={11} />
-            {lane.routeKind}
-          </Chip>
-          <span className="inline-flex items-center gap-1">
-            <ShieldCheck aria-hidden="true" size={11} />
-            {metadataValue(lane.permissionMode)}
-          </span>
-          <span className="inline-flex min-w-0 items-center gap-1 truncate">
-            <FolderCode aria-hidden="true" size={11} />
-            {metadataValue(lane.workspacePath)}
-          </span>
-          <span>Assinatura: {lane.displayQuotaAccount}</span>
+        <div aria-label="Rota efetiva da lane" className="composer-context">
+          {[
+            harnessLabel(lane),
+            lane.providerAccountLabel,
+            lane.model,
+            lane.routeKind,
+            lane.displayQuotaAccount,
+            `${metadataValue(lane.permissionMode)} · ${metadataValue(lane.workspacePath)}`,
+          ].map((label) => (
+            <span className="composer-context-chip" key={label}>
+              {label}
+              <span aria-hidden="true">✕</span>
+            </span>
+          ))}
           {lane.temperature === "stale" && lane.pendingDeltaEvents > 0 && (
-            <span className="text-[var(--ok-yellow)]">
+            <span className="composer-context-warning">
               {lane.pendingDeltaEvents}{" "}
               {lane.pendingDeltaEvents === 1
                 ? "evento pendente"
@@ -106,51 +69,91 @@ export function Composer({
           )}
         </div>
       ) : (
-        <p className="mb-2 text-[11px] text-[var(--ok-yellow)]">
+        <p className="composer-no-lane">
           Selecione uma lane para enviar uma instrução.
         </p>
       )}
 
-      <div className="flex items-end gap-2">
-        <TextField className="min-w-0 flex-1" fullWidth>
+      <div className="composer-box">
+        <TextField className="composer-field" fullWidth>
           <Label className="sr-only">Mensagem para a lane</Label>
           <TextArea
-            className="max-h-40 min-h-11 w-full resize-none rounded-[var(--ok-radius-md)] border border-[var(--ok-border)] bg-[var(--ok-bg)] px-3 py-2.5 text-sm text-[var(--ok-text)] outline-none placeholder:text-[var(--ok-text-muted)] focus:border-[var(--ok-cyan)]"
+            className="composer-textarea"
             disabled={!lane || isSending}
-            placeholder="Descreva o próximo passo…"
+            placeholder={
+              lane
+                ? `Escreva para a lane ${laneDisplayName(lane)}…`
+                : "Descreva o próximo passo…"
+            }
             rows={2}
             value={input}
             onChange={(event) => setInput(event.target.value)}
           />
         </TextField>
-        {activeRunId ? (
-          <Button
-            className="h-11 border border-[color-mix(in_srgb,var(--ok-red)_45%,var(--ok-border))] text-[var(--ok-red)]"
-            isDisabled={isCancelling}
-            type="button"
-            variant="ghost"
-            onPress={() => void onCancel(activeRunId)}
-          >
-            <Square aria-hidden="true" size={14} />
-            Interromper
-          </Button>
-        ) : (
-          <Button
-            className="h-11 bg-[var(--ok-orange)] font-semibold text-[var(--ok-bg)]"
-            isDisabled={!lane || !input.trim() || isSending}
-            type="submit"
-            variant="primary"
-          >
-            <Send aria-hidden="true" size={14} />
-            Enviar
-          </Button>
-        )}
+        <div className="composer-toolrow">
+          {lane && (
+            <span className="composer-lane-picker" title="Lane selecionada">
+              <span
+                aria-hidden="true"
+                className={`composer-lane-glyph runtime-glyph--${runtime.tone}`}
+              >
+                {runtime.glyph}
+              </span>
+              {laneDisplayName(lane)} · {shortModel(lane.model)}
+              <span className="composer-lane-picker__mode">
+                {metadataValue(lane.permissionMode)}
+              </span>
+            </span>
+          )}
+          {activeRunId ? (
+            <Button
+              aria-label="Interromper"
+              className="composer-stop"
+              isDisabled={isCancelling}
+              isIconOnly
+              type="button"
+              variant="ghost"
+              onPress={() => void onCancel(activeRunId)}
+            >
+              <Square aria-hidden="true" size={13} />
+            </Button>
+          ) : (
+            <Button
+              aria-label="Enviar"
+              className="composer-send"
+              isDisabled={!lane || !input.trim() || isSending}
+              isIconOnly
+              type="submit"
+              variant="primary"
+            >
+              <ArrowRight aria-hidden="true" size={15} strokeWidth={2.2} />
+            </Button>
+          )}
+        </div>
       </div>
       {error && (
-        <p className="mt-2 text-[11px] text-[var(--ok-red)]" role="alert">
+        <p className="composer-error" role="alert">
           {error.message}
         </p>
       )}
     </form>
   );
+}
+
+function runtimePresentation(lane: WorkbenchLane | null) {
+  if (!lane) return { glyph: "OB", tone: "task" } as const;
+  const account = `${lane.providerAccountLabel} ${lane.model}`.toLowerCase();
+  if (account.includes("grok")) return { glyph: "GK", tone: "grok" } as const;
+  if (/chatgpt|\bgpt|\bo[134]/u.test(account)) {
+    return { glyph: "GP", tone: "gpt" } as const;
+  }
+  return { glyph: "CL", tone: "claude" } as const;
+}
+
+function shortModel(model: string): string {
+  const match = model.match(
+    /(?:claude-)?(opus|sonnet|haiku)|((?:gpt|o\d)[\w.-]*)/iu,
+  );
+  const value = match?.[1] ?? match?.[2] ?? model;
+  return `${value.charAt(0).toUpperCase()}${value.slice(1)}`;
 }
