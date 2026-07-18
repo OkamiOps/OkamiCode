@@ -15,6 +15,14 @@ export interface LaneRecord {
   updatedAt: string;
 }
 
+export interface NativeSessionBindingRecord {
+  laneId: string;
+  nativeSessionId: string;
+  runtimeVersion: string;
+  boundAt: string;
+  updatedAt: string;
+}
+
 interface LaneRow {
   id: string;
   task_id: string;
@@ -25,6 +33,14 @@ interface LaneRow {
   workspace_path: string | null;
   last_event_cursor: number;
   created_at: string;
+  updated_at: string;
+}
+
+interface NativeSessionBindingRow {
+  lane_id: string;
+  native_session_id: string;
+  runtime_version: string;
+  bound_at: string;
   updated_at: string;
 }
 
@@ -48,6 +64,51 @@ export class LaneRepository {
       .prepare("SELECT * FROM runtime_lanes WHERE id = ?")
       .get(id) as LaneRow | undefined;
     return row ? rowToLane(row) : undefined;
+  }
+
+  findNativeSessionBinding(
+    laneId: string,
+  ): NativeSessionBindingRecord | undefined {
+    const row = this.db
+      .prepare("SELECT * FROM native_session_bindings WHERE lane_id = ?")
+      .get(laneId) as NativeSessionBindingRow | undefined;
+    return row ? rowToNativeSessionBinding(row) : undefined;
+  }
+
+  bindNativeSession(binding: NativeSessionBindingRecord): void {
+    this.db
+      .prepare(
+        `INSERT INTO native_session_bindings
+         (lane_id, native_session_id, runtime_version, bound_at, updated_at)
+         VALUES (@laneId, @nativeSessionId, @runtimeVersion, @boundAt, @updatedAt)
+         ON CONFLICT(lane_id) DO UPDATE SET
+           native_session_id = excluded.native_session_id,
+           runtime_version = excluded.runtime_version,
+           updated_at = excluded.updated_at`,
+      )
+      .run(binding);
+  }
+
+  advanceCursor(
+    id: string,
+    fromSequenceExclusive: number,
+    toSequenceInclusive: number,
+    updatedAt: string,
+  ): void {
+    if (toSequenceInclusive < fromSequenceExclusive) {
+      throw new Error("A lane cursor cannot move backwards");
+    }
+    if (toSequenceInclusive === fromSequenceExclusive) return;
+    const result = this.db
+      .prepare(
+        `UPDATE runtime_lanes
+         SET last_event_cursor = ?, updated_at = ?
+         WHERE id = ? AND last_event_cursor = ?`,
+      )
+      .run(toSequenceInclusive, updatedAt, id, fromSequenceExclusive);
+    if (result.changes !== 1) {
+      throw new OptimisticConcurrencyError("Lane cursor", id);
+    }
   }
 
   update(lane: LaneRecord, expectedUpdatedAt: string): void {
@@ -77,6 +138,18 @@ function rowToLane(row: LaneRow): LaneRecord {
     workspacePath: row.workspace_path,
     lastEventCursor: row.last_event_cursor,
     createdAt: row.created_at,
+    updatedAt: row.updated_at,
+  };
+}
+
+function rowToNativeSessionBinding(
+  row: NativeSessionBindingRow,
+): NativeSessionBindingRecord {
+  return {
+    laneId: row.lane_id,
+    nativeSessionId: row.native_session_id,
+    runtimeVersion: row.runtime_version,
+    boundAt: row.bound_at,
     updatedAt: row.updated_at,
   };
 }
