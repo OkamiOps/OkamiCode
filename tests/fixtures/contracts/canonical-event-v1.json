@@ -1,0 +1,12 @@
+{
+  "schemaVersion": 1,
+  "id": "evt-fixture-7",
+  "taskId": "11111111-1111-4111-8111-111111111111",
+  "laneId": "22222222-2222-4222-8222-222222222222",
+  "runId": "33333333-3333-4333-8333-333333333333",
+  "sequence": 7,
+  "occurredAt": "2026-07-17T18:00:00Z",
+  "kind": "tool_call_completed",
+  "nativeEventId": "native-tool-7",
+  "payload": { "tool": "Read", "status": "completed" }
+}
