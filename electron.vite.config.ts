@@ -30,6 +30,13 @@ export default defineConfig({
   },
   preload: {
     plugins: [externalizeDepsPlugin()],
+    build: {
+      rollupOptions: {
+        // Sandboxed preloads must be CommonJS; ESM preloads fail to load
+        // silently and leave the renderer without the okami bridge.
+        output: { format: "cjs", entryFileNames: "index.js" },
+      },
+    },
   },
   renderer: {
     root: ".",

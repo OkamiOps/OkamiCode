@@ -31,7 +31,7 @@ export function createMainWindow(): BrowserWindow {
     height: 900,
     minWidth: 1024,
     webPreferences: {
-      preload: path.join(import.meta.dirname, "../preload/index.mjs"),
+      preload: path.join(import.meta.dirname, "../preload/index.js"),
       ...secureWebPreferences,
     },
   });
