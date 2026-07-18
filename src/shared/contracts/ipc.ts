@@ -159,13 +159,62 @@ export const quickChatCreateRequestSchema = z
   .object({ runtime: runtimeKindSchema })
   .strict();
 
-export const quickChatSendRequestSchema = z
+const quickChatTurnRequestSchema = z
   .object({
     chatId: entityIdSchema,
     input: userTextSchema,
     contextRefs: z.array(opaqueReferenceSchema).max(100),
   })
   .strict();
+
+const quickChatPromotionRequestSchema = z
+  .object({
+    chatId: entityIdSchema,
+    promotion: z
+      .object({
+        title: z.string().trim().min(1).max(240),
+        objective: z.string().trim().min(1).max(20_000),
+        selectedMessageIds: z.array(entityIdSchema).max(1_000),
+        contextRefs: z.array(opaqueReferenceSchema).max(100),
+      })
+      .strict(),
+  })
+  .strict();
+
+export const quickChatSendRequestSchema = z.union([
+  quickChatTurnRequestSchema,
+  quickChatPromotionRequestSchema,
+]);
+
+export const quickChatConversationSchema = z
+  .object({
+    id: entityIdSchema,
+    taskId: entityIdSchema,
+    laneId: entityIdSchema,
+    runtime: runtimeKindSchema,
+    workspaceId: z.null(),
+    createdAt: z.iso.datetime({ offset: true }),
+  })
+  .strict();
+
+export const quickChatPromotionResultSchema = z
+  .object({
+    task: taskSchema,
+    conversationId: entityIdSchema,
+    sourceConversationId: entityIdSchema,
+    copiedMessageIds: z.array(entityIdSchema),
+    contextRefs: z.array(opaqueReferenceSchema),
+  })
+  .strict();
+
+export const quickChatTurnResultSchema = runSummarySchema.extend({
+  messageId: entityIdSchema,
+});
+
+export const quickChatSendResultSchema = z.union([
+  quickChatTurnResultSchema,
+  quickChatPromotionResultSchema,
+]);
 
 export const usageAlertSetRequestSchema = z
   .object({
@@ -231,8 +280,8 @@ export const ipcResponseSchemas = {
   "lane:sendTurn": runSummarySchema,
   "run:cancel": runCancelResultSchema,
   "approval:resolve": approvalResultSchema,
-  "quickChat:create": notImplementedSchema("quickChat:create"),
-  "quickChat:send": notImplementedSchema("quickChat:send"),
+  "quickChat:create": quickChatConversationSchema,
+  "quickChat:send": quickChatSendResultSchema,
   "usage:overview": notImplementedSchema("usage:overview"),
   "usage:refresh": notImplementedSchema("usage:refresh"),
   "usage:alertSet": notImplementedSchema("usage:alertSet"),

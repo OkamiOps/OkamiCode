@@ -10,8 +10,10 @@ import {
 } from "../../shared/contracts/ipc";
 import type { RuntimeKind } from "../../shared/contracts/lane";
 import type { RunId } from "../../shared/ids";
+import { AuditRepository } from "../db/repositories/audit";
 import type { TaskRecord } from "../db/repositories/tasks";
 import type { OpenedLane } from "../orchestration/lane-service";
+import { QuickChatService } from "../orchestration/quick-chat";
 import type { RunHandle, RuntimeHealth } from "../runtime/adapter";
 import type { AppState } from "./app-state";
 
@@ -39,6 +41,17 @@ export function registerIpcHandlers({
   state,
 }: RegisterIpcHandlersOptions): void {
   const openedLanes = new Map<string, OpenedLane>();
+  let quickChat: QuickChatService | undefined;
+  const quickChatService = () =>
+    (quickChat ??= new QuickChatService({
+      db: state.database,
+      tasks: state.tasks,
+      lanes: state.lanes,
+      audit: new AuditRepository(state.database),
+      laneService: state.laneService,
+      createId: state.createId,
+      clock: state.clock,
+    }));
 
   for (const channel of ipcChannels) {
     ipcMain.handle(channel, async (event, payload) => {
@@ -50,6 +63,7 @@ export function registerIpcHandlers({
         event,
         state,
         openedLanes,
+        quickChatService,
       );
       return ipcResponseSchemas[channel].parse(response);
     });
@@ -62,6 +76,7 @@ async function dispatch(
   event: IpcMainInvokeEvent,
   state: AppState,
   openedLanes: Map<string, OpenedLane>,
+  quickChatService: () => QuickChatService,
 ): Promise<unknown> {
   switch (channel) {
     case "system:doctor":
@@ -90,7 +105,16 @@ async function dispatch(
         request as IpcRequest<"approval:resolve">,
       );
     case "quickChat:create":
+      return quickChatService().create(
+        (request as IpcRequest<"quickChat:create">).runtime,
+      );
     case "quickChat:send":
+      return sendQuickChat(
+        quickChatService(),
+        event.sender,
+        state,
+        request as IpcRequest<"quickChat:send">,
+      );
     case "usage:overview":
     case "usage:refresh":
     case "usage:alertSet":
@@ -99,6 +123,34 @@ async function dispatch(
     case "memory:reindex":
       return { status: "not_implemented", channel };
   }
+}
+
+async function sendQuickChat(
+  quickChat: QuickChatService,
+  sender: Pick<WebContents, "send">,
+  state: AppState,
+  request: IpcRequest<"quickChat:send">,
+) {
+  if ("promotion" in request) {
+    return quickChat.promote({
+      chatId: request.chatId,
+      ...request.promotion,
+    });
+  }
+  const result = await quickChat.send(
+    request.chatId,
+    request.input,
+    request.contextRefs,
+  );
+  void forwardEvents(state, sender, result.run).catch(
+    state.reportBackgroundError,
+  );
+  return {
+    runId: result.run.runId,
+    laneId: result.laneId,
+    messageId: result.messageId,
+    status: "running" as const,
+  };
 }
 
 function listLanes(state: AppState, request: IpcRequest<"lane:list">) {

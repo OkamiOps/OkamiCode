@@ -1,5 +1,6 @@
 import { Navigate, Route, Routes } from "react-router-dom";
 import { StatusBadge } from "../components/StatusBadge";
+import { QuickChatPage } from "../features/quick-chat/QuickChatPage";
 import { WorkbenchPage } from "../features/workbench/WorkbenchPage";
 import { AppShell } from "./layout/AppShell";
 
@@ -35,16 +36,7 @@ export function AppRouter() {
     <Routes>
       <Route element={<AppShell />}>
         <Route path="/workbench" element={<WorkbenchPage />} />
-        <Route
-          path="/quick-chat"
-          element={
-            <Screen
-              eyebrow="Conversa sem workspace"
-              title="Início"
-              description="Inicie uma conversa rápida e escolha explicitamente o contexto necessário."
-            />
-          }
-        />
+        <Route path="/quick-chat" element={<QuickChatPage />} />
         <Route
           path="/usage"
           element={

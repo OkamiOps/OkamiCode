@@ -41,6 +41,7 @@ interface LaneServiceDependencies {
 
 export interface OpenLaneOptions {
   inheritTask?: boolean;
+  workspaceFallbackPath?: string;
 }
 
 export interface OpenedLane {
@@ -159,7 +160,7 @@ export class LaneService {
       temperature === "stale" || temperature === "cold" ? candidateDelta : null;
     const request = {
       laneId: lane.id as LaneId,
-      cwd: lane.workspacePath ?? process.cwd(),
+      cwd: lane.workspacePath ?? options.workspaceFallbackPath ?? process.cwd(),
       model: lane.model,
       ...(route.kind === "compatible" || route.kind === "bridged"
         ? {

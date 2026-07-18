@@ -471,12 +471,6 @@ it("cancels runs and resolves approvals through their owning runtime", async () 
 it("returns validated not_implemented results for later-task commands", async () => {
   const handlers = ipcHarness(stateFixture());
   const requests: Partial<Record<IpcChannel, unknown>> = {
-    "quickChat:create": { runtime: "codex" },
-    "quickChat:send": {
-      chatId: "b672d2e8-688b-48ac-a618-3294bfc96a99",
-      input: "Summarize",
-      contextRefs: [],
-    },
     "usage:overview": {},
     "usage:refresh": {},
     "usage:alertSet": {
