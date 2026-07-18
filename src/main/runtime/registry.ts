@@ -1,5 +1,9 @@
 import type { RuntimeKind } from "../../shared/contracts/lane";
 import type { RuntimeAdapter } from "./adapter";
+import {
+  ClaudeAdapter,
+  type ClaudeAdapterDependencies,
+} from "./claude/adapter";
 import { CodexAdapter, type CodexAdapterDependencies } from "./codex/adapter";
 
 export class RuntimeRegistry {
@@ -15,6 +19,7 @@ export class RuntimeRegistry {
 }
 
 export interface RuntimeRegistryDependencies {
+  claude: ClaudeAdapterDependencies;
   codex: CodexAdapterDependencies;
 }
 
@@ -22,6 +27,7 @@ export function createRuntimeRegistry(
   dependencies: RuntimeRegistryDependencies,
 ): RuntimeRegistry {
   const registry = new RuntimeRegistry();
+  registry.register(new ClaudeAdapter(dependencies.claude));
   registry.register(new CodexAdapter(dependencies.codex));
   return registry;
 }

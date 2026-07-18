@@ -1,0 +1,14 @@
+{
+  "session_id": "<redacted-session-id>",
+  "transcript_path": "<redacted-transcript-path>",
+  "cwd": "<redacted-workspace>",
+  "permission_mode": "manual",
+  "hook_event_name": "PreToolUse",
+  "tool_name": "Bash",
+  "tool_input": {
+    "command": "git status --short",
+    "description": "Inspect repository status"
+  },
+  "tool_use_id": "<redacted-tool-use-id>",
+  "future_hook_field": { "accepted": true }
+}
