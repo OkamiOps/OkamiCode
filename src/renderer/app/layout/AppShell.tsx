@@ -84,6 +84,39 @@ export function AppShell() {
       )}
       <main className="focal-region">
         <header className="app-toolbar">
+          {/* Reopen triggers sit at the left edge, where the collapsed panes were. */}
+          {!sidebarVisible && (
+            <Tooltip.Root closeDelay={0} delay={300}>
+              <Button
+                aria-label="Mostrar barra lateral"
+                className="icon-button sidebar-open-trigger"
+                isIconOnly
+                variant="ghost"
+                onPress={() => setSidebarVisible(true)}
+              >
+                <PanelLeftOpen aria-hidden="true" size={17} />
+              </Button>
+              <Tooltip.Content className="ok-tooltip" placement="bottom">
+                Mostrar barra lateral
+              </Tooltip.Content>
+            </Tooltip.Root>
+          )}
+          {hasList && !listVisible && (
+            <Tooltip.Root closeDelay={0} delay={300}>
+              <Button
+                aria-label="Mostrar lista de tarefas"
+                className="icon-button list-open-trigger"
+                isIconOnly
+                variant="ghost"
+                onPress={() => setListVisible(true)}
+              >
+                <ListCollapse aria-hidden="true" size={17} />
+              </Button>
+              <Tooltip.Content className="ok-tooltip" placement="bottom">
+                Mostrar lista de tarefas
+              </Tooltip.Content>
+            </Tooltip.Root>
+          )}
           <div
             className="app-toolbar__breadcrumb"
             aria-label="Localização atual"
@@ -93,38 +126,6 @@ export function AppShell() {
             <strong>{areaLabel}</strong>
           </div>
           <div className="app-toolbar__actions">
-            {!sidebarVisible && (
-              <Tooltip.Root closeDelay={0} delay={300}>
-                <Button
-                  aria-label="Mostrar barra lateral"
-                  className="icon-button sidebar-open-trigger"
-                  isIconOnly
-                  variant="ghost"
-                  onPress={() => setSidebarVisible(true)}
-                >
-                  <PanelLeftOpen aria-hidden="true" size={17} />
-                </Button>
-                <Tooltip.Content className="ok-tooltip" placement="bottom">
-                  Mostrar barra lateral
-                </Tooltip.Content>
-              </Tooltip.Root>
-            )}
-            {hasList && !listVisible && (
-              <Tooltip.Root closeDelay={0} delay={300}>
-                <Button
-                  aria-label="Mostrar lista de tarefas"
-                  className="icon-button list-open-trigger"
-                  isIconOnly
-                  variant="ghost"
-                  onPress={() => setListVisible(true)}
-                >
-                  <ListCollapse aria-hidden="true" size={17} />
-                </Button>
-                <Tooltip.Content className="ok-tooltip" placement="bottom">
-                  Mostrar lista de tarefas
-                </Tooltip.Content>
-              </Tooltip.Root>
-            )}
             <StatusBadge label="Uso normal" status="online" />
             <Tooltip.Root closeDelay={0} delay={300}>
               <Button
