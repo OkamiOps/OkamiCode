@@ -1,0 +1,448 @@
+import { beforeEach, expect, it, vi } from "vitest";
+import { emitOkamiEvent, installOkamiMock } from "../../test/okami-mock";
+import { type RendererOkamiBridge, workbenchClient } from "./client";
+import { subscribeToWorkbenchEvents } from "./events";
+import type { IpcChannel } from "../../../shared/contracts/ipc";
+
+const electronMocks = vi.hoisted(() => ({
+  expose: vi.fn(),
+  invoke: vi.fn(async () => undefined),
+  on: vi.fn(),
+  removeListener: vi.fn(),
+}));
+
+vi.mock("electron", () => ({
+  contextBridge: { exposeInMainWorld: electronMocks.expose },
+  ipcRenderer: {
+    invoke: electronMocks.invoke,
+    on: electronMocks.on,
+    removeListener: electronMocks.removeListener,
+  },
+}));
+
+type RegisteredHandler = (event: unknown, payload: unknown) => Promise<unknown>;
+interface TestAppState {
+  database: unknown;
+  tasks: unknown;
+  lanes: unknown;
+  runs: unknown;
+  events: unknown;
+  approvals: unknown;
+  policyEngine: unknown;
+  runtimes: unknown;
+  laneService: unknown;
+  runService: unknown;
+  createId: () => string;
+  clock: () => Date;
+  reportBackgroundError: (error: unknown) => void;
+}
+
+const sharedContract = (await vi.importActual(
+  "../../../shared/contracts/ipc",
+)) as {
+  ipcChannels: readonly IpcChannel[];
+  eventChannel: string;
+};
+const { ipcChannels, eventChannel } = sharedContract;
+
+const handlerModule = (await vi.importActual("../../../main/ipc/handlers")) as {
+  registerIpcHandlers(options: {
+    ipcMain: {
+      handle(channel: string, handler: RegisteredHandler): void;
+    };
+    rendererUrl: string;
+    state: TestAppState;
+  }): void;
+};
+const { registerIpcHandlers } = handlerModule;
+
+function ipcHarness(state: TestAppState) {
+  const handlers = new Map<IpcChannel, RegisteredHandler>();
+  registerIpcHandlers({
+    ipcMain: {
+      handle: (channel, handler) => {
+        handlers.set(channel as IpcChannel, handler);
+      },
+    },
+    rendererUrl: "http://127.0.0.1:5173/index.html",
+    state,
+  });
+  return handlers;
+}
+
+function trustedEvent() {
+  const senderFrame = { url: "http://127.0.0.1:5173/workbench" };
+  return {
+    senderFrame,
+    sender: { mainFrame: senderFrame, send: vi.fn() },
+  };
+}
+
+function stateFixture(overrides: Partial<TestAppState> = {}): TestAppState {
+  return {
+    database: {
+      prepare: vi.fn(() => ({
+        get: vi.fn(() => ({ healthy: 1 })),
+        all: vi.fn(() => []),
+      })),
+    },
+    tasks: { insert: vi.fn() },
+    lanes: { findById: vi.fn() },
+    runs: { findById: vi.fn() },
+    events: { append: vi.fn() },
+    approvals: { findById: vi.fn(), resolve: vi.fn() },
+    policyEngine: {},
+    runtimes: { lookup: vi.fn() },
+    laneService: { open: vi.fn(), sendTurn: vi.fn() },
+    runService: {},
+    createId: () => "b672d2e8-688b-48ac-a618-3294bfc96a99",
+    clock: () => new Date("2026-07-18T12:00:00.000Z"),
+    reportBackgroundError: vi.fn(),
+    ...overrides,
+  };
+}
+
+beforeEach(() =>
+  installOkamiMock({ systemDoctor: { database: "ok", runtimes: [] } }),
+);
+
+it("validates responses before returning them", async () => {
+  await expect(workbenchClient.systemDoctor()).resolves.toEqual({
+    database: "ok",
+    runtimes: [],
+  });
+  installOkamiMock({ systemDoctor: { database: 42, runtimes: [] } });
+  await expect(workbenchClient.systemDoctor()).rejects.toThrow(/database/);
+});
+
+it("exposes exactly the enumerated command surface", () => {
+  expect(ipcChannels).toEqual(ipcChannels);
+  expect(ipcChannels).toEqual([
+    "system:doctor",
+    "task:create",
+    "task:list",
+    "lane:open",
+    "lane:sendTurn",
+    "run:cancel",
+    "approval:resolve",
+    "quickChat:create",
+    "quickChat:send",
+    "usage:overview",
+    "usage:refresh",
+    "usage:alertSet",
+    "memory:configure",
+    "memory:search",
+    "memory:reindex",
+  ]);
+  expect(Object.keys(window.okami.invoke)).toEqual(ipcChannels);
+});
+
+it("parses events before notifying consumers", () => {
+  const event = {
+    schemaVersion: 1,
+    id: "event-1",
+    taskId: "27ee79a7-d3c3-48dd-84c6-cb589a4cb606",
+    laneId: "50df72f3-cc11-42d2-87be-c928a9ae2cbf",
+    runId: "4d32d86d-3199-4327-9d0c-e283268ed239",
+    sequence: 0,
+    occurredAt: "2026-07-18T12:00:00.000Z",
+    kind: "session_started",
+    nativeEventId: null,
+    payload: {},
+  };
+  const received: unknown[] = [];
+  const unsubscribe = subscribeToWorkbenchEvents((parsed) =>
+    received.push(parsed),
+  );
+
+  emitOkamiEvent(event);
+  expect(received).toEqual([event]);
+  expect(() => emitOkamiEvent({ ...event, schemaVersion: 2 })).toThrow(
+    /schemaVersion/,
+  );
+  expect(received).toEqual([event]);
+
+  unsubscribe();
+});
+
+it("exposes a frozen preload facade and removes wrapped event listeners", async () => {
+  await vi.importActual("../../../preload/index");
+  expect(electronMocks.expose).toHaveBeenCalledOnce();
+  const [, okami] = electronMocks.expose.mock.calls[0] as [
+    string,
+    RendererOkamiBridge,
+  ];
+
+  expect(Object.keys(okami).sort()).toEqual([
+    "bridgeVersion",
+    "invoke",
+    "onEvent",
+  ]);
+  expect(Object.isFrozen(okami)).toBe(true);
+  expect(Object.isFrozen(okami.invoke)).toBe(true);
+  expect(Object.keys(okami.invoke)).toEqual(ipcChannels);
+
+  await okami.invoke["task:list"]({});
+  expect(electronMocks.invoke).toHaveBeenCalledWith("task:list", {});
+
+  const listener = vi.fn();
+  const unsubscribe = okami.onEvent(listener);
+  const [channel, wrapped] = electronMocks.on.mock.calls[0] as [
+    string,
+    (_event: unknown, payload: unknown) => void,
+  ];
+  expect(channel).toBe(eventChannel);
+  wrapped({}, { schemaVersion: 1 });
+  expect(listener).toHaveBeenCalledWith({ schemaVersion: 1 });
+  unsubscribe();
+  expect(electronMocks.removeListener).toHaveBeenCalledWith(
+    eventChannel,
+    wrapped,
+  );
+});
+
+it("registers every handler and parses requests before touching services", async () => {
+  const state = new Proxy(
+    {},
+    {
+      get: () => {
+        throw new Error("service touched");
+      },
+    },
+  ) as unknown as TestAppState;
+  const handlers = ipcHarness(state);
+
+  expect([...handlers.keys()]).toEqual(ipcChannels);
+  for (const channel of ipcChannels) {
+    await expect(
+      handlers.get(channel)?.(trustedEvent(), { unexpected: true }),
+    ).rejects.not.toThrow("service touched");
+  }
+});
+
+it("rejects an untrusted renderer before command dispatch", async () => {
+  const handlers = ipcHarness(stateFixture());
+  const event = trustedEvent();
+  event.senderFrame.url = "https://evil.example/workbench";
+
+  await expect(handlers.get("task:list")?.(event, {})).rejects.toThrow(
+    "Untrusted renderer origin",
+  );
+});
+
+it("runs doctor and task handlers through real state dependencies", async () => {
+  const inserted: unknown[] = [];
+  const database = {
+    prepare: vi.fn((sql: string) => ({
+      get: vi.fn(() => ({ healthy: 1 })),
+      all: vi.fn(() =>
+        sql.includes("FROM tasks")
+          ? [
+              {
+                id: "b672d2e8-688b-48ac-a618-3294bfc96a99",
+                kind: "workbench",
+                title: "Workbench task",
+                objective: "Ship the bridge",
+                status: "active",
+                created_at: "2026-07-18T12:00:00.000Z",
+                updated_at: "2026-07-18T12:00:00.000Z",
+              },
+            ]
+          : [],
+      ),
+    })),
+  };
+  const adapter = {
+    detect: vi.fn(async () => ({
+      available: true,
+      protocolSupported: true,
+      version: "1.2.3",
+    })),
+  };
+  const state = stateFixture({
+    database,
+    tasks: { insert: (task: unknown) => inserted.push(task) },
+    runtimes: {
+      lookup: vi.fn(() => adapter),
+    },
+  });
+  const handlers = ipcHarness(state);
+
+  await expect(
+    handlers.get("system:doctor")?.(trustedEvent(), {}),
+  ).resolves.toEqual({
+    database: "ok",
+    runtimes: [
+      {
+        runtime: "claude",
+        status: "ready",
+        version: "1.2.3",
+        detail: null,
+      },
+      {
+        runtime: "codex",
+        status: "ready",
+        version: "1.2.3",
+        detail: null,
+      },
+    ],
+  });
+  await expect(
+    handlers.get("task:create")?.(trustedEvent(), {
+      title: "Workbench task",
+      objective: "Ship the bridge",
+    }),
+  ).resolves.toMatchObject({ title: "Workbench task", status: "active" });
+  expect(inserted).toHaveLength(1);
+  await expect(
+    handlers.get("task:list")?.(trustedEvent(), {}),
+  ).resolves.toEqual([
+    expect.objectContaining({ title: "Workbench task", status: "active" }),
+  ]);
+});
+
+it("opens lanes, sends turns, and forwards only sanitized canonical events", async () => {
+  const canonicalEvent = {
+    schemaVersion: 1 as const,
+    id: "event-2",
+    taskId: "27ee79a7-d3c3-48dd-84c6-cb589a4cb606",
+    laneId: "50df72f3-cc11-42d2-87be-c928a9ae2cbf",
+    runId: "4d32d86d-3199-4327-9d0c-e283268ed239",
+    sequence: 1,
+    occurredAt: "2026-07-18T12:00:00.000Z",
+    kind: "message_delta" as const,
+    nativeEventId: null,
+    payload: {
+      cwd: "/Users/marcos/secret",
+      provider_token: "provider-secret-value",
+      input_tokens: 12,
+    },
+  };
+  const opened = {
+    laneId: canonicalEvent.laneId,
+    nativeSessionId: "native-session-1",
+    runtimeVersion: "1.2.3",
+    temperature: "hot" as const,
+    delta: null,
+    harness: "native" as const,
+    runtimeKind: "codex" as const,
+    routeKind: "native" as const,
+    routeReason: "native_requested",
+    displayQuotaAccount: "ChatGPT subscription",
+  };
+  const append = vi.fn();
+  const state = stateFixture({
+    events: { append },
+    laneService: {
+      open: vi.fn(async () => opened),
+      sendTurn: vi.fn(async () => ({
+        runId: canonicalEvent.runId,
+        events: (async function* () {
+          yield canonicalEvent;
+        })(),
+      })),
+    },
+  });
+  const handlers = ipcHarness(state);
+  const event = trustedEvent();
+
+  await expect(
+    handlers.get("lane:open")?.(event, { laneId: opened.laneId }),
+  ).resolves.not.toHaveProperty("nativeSessionId");
+  await expect(
+    handlers.get("lane:sendTurn")?.(event, {
+      laneId: opened.laneId,
+      input: "Continue",
+    }),
+  ).resolves.toEqual({
+    runId: canonicalEvent.runId,
+    laneId: opened.laneId,
+    status: "running",
+  });
+  await vi.waitFor(() => expect(append).toHaveBeenCalledWith(canonicalEvent));
+  expect(event.sender.send).toHaveBeenCalledWith(eventChannel, {
+    ...canonicalEvent,
+    payload: {
+      cwd: "[redacted]",
+      provider_token: "[redacted]",
+      input_tokens: 12,
+    },
+  });
+});
+
+it("cancels runs and resolves approvals through their owning runtime", async () => {
+  const runId = "4d32d86d-3199-4327-9d0c-e283268ed239";
+  const laneId = "50df72f3-cc11-42d2-87be-c928a9ae2cbf";
+  const approvalId = "b672d2e8-688b-48ac-a618-3294bfc96a99";
+  const adapter = { cancel: vi.fn(), respondToApproval: vi.fn() };
+  const resolved = {
+    id: approvalId,
+    runId,
+    laneId,
+    status: "allowed_once" as const,
+    resolvedAt: "2026-07-18T12:00:00.000Z",
+  };
+  const state = stateFixture({
+    runs: {
+      findById: vi.fn(() => ({ id: runId, laneId })),
+    },
+    lanes: {
+      findById: vi.fn(() => ({ id: laneId, runtimeKind: "codex" })),
+    },
+    approvals: {
+      findById: vi.fn(() => ({ id: approvalId, runId, laneId })),
+      resolve: vi.fn(() => resolved),
+    },
+    runtimes: {
+      lookup: vi.fn(() => adapter),
+    },
+  });
+  const handlers = ipcHarness(state);
+
+  await expect(
+    handlers.get("run:cancel")?.(trustedEvent(), { runId }),
+  ).resolves.toEqual({ runId, cancelled: true });
+  expect(adapter.cancel).toHaveBeenCalledWith(runId);
+  await expect(
+    handlers.get("approval:resolve")?.(trustedEvent(), {
+      approvalId,
+      decision: "allow_once",
+    }),
+  ).resolves.toEqual(resolved);
+  expect(adapter.respondToApproval).toHaveBeenCalledWith({
+    runId,
+    approvalId,
+    decision: "allow_once",
+  });
+});
+
+it("returns validated not_implemented results for later-task commands", async () => {
+  const handlers = ipcHarness(stateFixture());
+  const requests: Partial<Record<IpcChannel, unknown>> = {
+    "quickChat:create": { runtime: "codex" },
+    "quickChat:send": {
+      chatId: "b672d2e8-688b-48ac-a618-3294bfc96a99",
+      input: "Summarize",
+      contextRefs: [],
+    },
+    "usage:overview": {},
+    "usage:refresh": {},
+    "usage:alertSet": {
+      provider: "chatgpt",
+      accountRef: "primary",
+      remainingPercent: 20,
+      enabled: true,
+    },
+    "memory:configure": { scopeRefs: [] },
+    "memory:search": { query: "gateway" },
+    "memory:reindex": {
+      sourceId: "b672d2e8-688b-48ac-a618-3294bfc96a99",
+    },
+  };
+
+  for (const [channel, request] of Object.entries(requests)) {
+    await expect(
+      handlers.get(channel as IpcChannel)?.(trustedEvent(), request),
+    ).resolves.toEqual({ status: "not_implemented", channel });
+  }
+});

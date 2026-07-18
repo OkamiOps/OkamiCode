@@ -1,4 +1,28 @@
-import { contextBridge } from "electron";
+import { contextBridge, ipcRenderer } from "electron";
+import {
+  eventChannel,
+  ipcChannels,
+  type IpcInvokeFacade,
+  type OkamiBridge,
+} from "../shared/contracts/ipc";
 
-// The full typed API arrives in Task 10; expose only a version marker until then.
-contextBridge.exposeInMainWorld("okami", { bridgeVersion: 1 });
+const invoke = Object.freeze(
+  Object.fromEntries(
+    ipcChannels.map((channel) => [
+      channel,
+      (payload: unknown) => ipcRenderer.invoke(channel, payload),
+    ]),
+  ) as IpcInvokeFacade,
+);
+
+const okami = Object.freeze({
+  bridgeVersion: 1,
+  invoke,
+  onEvent: (listener: (event: unknown) => void) => {
+    const wrapped = (_event: unknown, data: unknown) => listener(data);
+    ipcRenderer.on(eventChannel, wrapped);
+    return () => ipcRenderer.removeListener(eventChannel, wrapped);
+  },
+} satisfies OkamiBridge);
+
+contextBridge.exposeInMainWorld("okami", okami);
