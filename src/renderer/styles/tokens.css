@@ -1,0 +1,18 @@
+:root {
+  color-scheme: dark;
+  --ok-bg-0: #060609;
+  --ok-bg-1: #0b0b12;
+  --ok-bg-2: #11111b;
+  --ok-line: #1f1f2e;
+  --ok-fg: #f4f4f8;
+  --ok-fg-soft: #b9bac8;
+  --ok-fg-mute: #6c6d80;
+  --ok-orange: #ff7a1a;
+  --ok-display: "Space Grotesk", system-ui, sans-serif;
+  --ok-mono: "JetBrains Mono", ui-monospace, monospace;
+  --s-2: 8px;
+  --s-4: 16px;
+  --s-6: 24px;
+  --s-9: 56px;
+  --r-2: 4px;
+}

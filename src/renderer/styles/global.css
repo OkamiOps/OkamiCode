@@ -1,0 +1,61 @@
+@import "tailwindcss";
+@import "@heroui/styles";
+
+* {
+  box-sizing: border-box;
+}
+
+html,
+body,
+#root {
+  min-width: 320px;
+  min-height: 100%;
+}
+
+body {
+  margin: 0;
+  background: var(--ok-bg-0);
+  color: var(--ok-fg);
+  font-family: var(--ok-display);
+}
+
+.boot-shell {
+  display: grid;
+  min-height: 100vh;
+  place-content: center;
+  padding: var(--s-6);
+  background:
+    linear-gradient(var(--ok-line) 1px, transparent 1px),
+    linear-gradient(90deg, var(--ok-line) 1px, transparent 1px),
+    radial-gradient(circle at center, var(--ok-bg-2), var(--ok-bg-0) 68%);
+  background-size:
+    var(--s-9) var(--s-9),
+    var(--s-9) var(--s-9),
+    auto;
+}
+
+.boot-shell h1,
+.boot-shell p {
+  margin: 0;
+}
+
+.boot-shell h1 {
+  font-size: clamp(2.5rem, 7vw, 5rem);
+  font-weight: 600;
+  letter-spacing: -0.05em;
+  line-height: 0.95;
+}
+
+.boot-shell > p:last-child {
+  margin-top: var(--s-4);
+  color: var(--ok-fg-soft);
+}
+
+.eyebrow {
+  margin-bottom: var(--s-2) !important;
+  color: var(--ok-orange);
+  font-family: var(--ok-mono);
+  font-size: 0.75rem;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+}

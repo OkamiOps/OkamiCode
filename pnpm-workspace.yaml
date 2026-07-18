@@ -1,0 +1,8 @@
+allowBuilds:
+  better-sqlite3-multiple-ciphers: true
+  electron: true
+  electron-winstaller: false
+  esbuild: true
+  lzma-native: false
+  node-pty: true
+storeDir: .cache/pnpm
