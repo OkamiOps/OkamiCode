@@ -6,9 +6,7 @@ import {
 } from "./lane";
 
 export { ipcChannels, eventChannel, type IpcChannel } from "./channels";
-import { ipcChannels } from "./channels";
 import type { IpcChannel } from "./channels";
-
 
 const emptyRequestSchema = z.object({}).strict();
 const entityIdSchema = z.uuid();

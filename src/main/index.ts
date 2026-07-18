@@ -138,8 +138,11 @@ async function bootstrap(): Promise<void> {
   );
   const leaseRepository = new LeaseRepository(database);
 
-  let state: AppState;
-  const stateRef = () => state;
+  const box: { state?: AppState } = {};
+  const stateRef = () => {
+    if (!box.state) throw new Error("AppState not ready");
+    return box.state;
+  };
   const approvalBroker = new RepositoryApprovalBroker({
     findById: (id: string) => stateRef().approvals.findById(id),
   });
@@ -181,7 +184,7 @@ async function bootstrap(): Promise<void> {
     ],
   });
 
-  state = createAppState({
+  const state = createAppState({
     database,
     runtimes,
     gateway: {
@@ -199,6 +202,7 @@ async function bootstrap(): Promise<void> {
       console.error("[okami] background error", error);
     },
   });
+  box.state = state;
   seedInitialWorkspace(state);
   registerIpcHandlers({
     ipcMain,
