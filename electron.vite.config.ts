@@ -29,7 +29,8 @@ export default defineConfig({
     plugins: [externalizeDepsPlugin(), phaseOneSchemaAsset()],
   },
   preload: {
-    plugins: [externalizeDepsPlugin()],
+    // No externalizeDepsPlugin here: a sandboxed preload cannot require
+    // node_modules at runtime, so every dependency must be bundled in.
     build: {
       rollupOptions: {
         // Sandboxed preloads must be CommonJS; ESM preloads fail to load

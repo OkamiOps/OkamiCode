@@ -5,27 +5,10 @@ import {
   runtimeKindSchema,
 } from "./lane";
 
-export const ipcChannels = [
-  "system:doctor",
-  "task:create",
-  "task:list",
-  "lane:list",
-  "lane:open",
-  "lane:sendTurn",
-  "run:cancel",
-  "approval:resolve",
-  "quickChat:create",
-  "quickChat:send",
-  "usage:overview",
-  "usage:refresh",
-  "usage:alertSet",
-  "memory:configure",
-  "memory:search",
-  "memory:reindex",
-] as const;
+export { ipcChannels, eventChannel, type IpcChannel } from "./channels";
+import { ipcChannels } from "./channels";
+import type { IpcChannel } from "./channels";
 
-export const eventChannel = "workbench:event" as const;
-export type IpcChannel = (typeof ipcChannels)[number];
 
 const emptyRequestSchema = z.object({}).strict();
 const entityIdSchema = z.uuid();

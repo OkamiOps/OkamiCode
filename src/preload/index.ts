@@ -1,10 +1,6 @@
 import { contextBridge, ipcRenderer } from "electron";
-import {
-  eventChannel,
-  ipcChannels,
-  type IpcInvokeFacade,
-  type OkamiBridge,
-} from "../shared/contracts/ipc";
+import { eventChannel, ipcChannels } from "../shared/contracts/channels";
+import type { IpcInvokeFacade, OkamiBridge } from "../shared/contracts/ipc";
 
 const invoke = Object.freeze(
   Object.fromEntries(

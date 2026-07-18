@@ -35,6 +35,14 @@ export function createMainWindow(): BrowserWindow {
       ...secureWebPreferences,
     },
   });
+  window.webContents.on("preload-error", (_event, preloadPath, error) => {
+    console.error("[okami] preload error", preloadPath, error);
+  });
+  window.webContents.on("did-finish-load", () => {
+    void window.webContents
+      .executeJavaScript("typeof window.okami")
+      .then((bridge) => console.log("[okami] bridge:", bridge));
+  });
   if (process.env.ELECTRON_RENDERER_URL) {
     window.loadURL(process.env.ELECTRON_RENDERER_URL);
   } else {
