@@ -1,4 +1,5 @@
 import { Button, Chip, Skeleton, Tooltip } from "@heroui/react";
+import { useQuery } from "@tanstack/react-query";
 import {
   Bot,
   ChevronRight,
@@ -11,6 +12,8 @@ import {
   Sparkles,
 } from "lucide-react";
 import type { WorkbenchLane } from "./api";
+import { UsageQuickPopover } from "../usage/UsageQuickPopover";
+import { workbenchClient } from "../../lib/ipc/client";
 
 interface LaneSelectorProps {
   error: Error | null;
@@ -46,6 +49,16 @@ export function LaneSelector({
   onOpen,
   selectedLane,
 }: LaneSelectorProps) {
+  const hasBridge = typeof window !== "undefined" && "okami" in window;
+  const usage = useQuery({
+    enabled: hasBridge,
+    queryFn: () => workbenchClient.usageOverview(),
+    queryKey: ["usage", "quick-popover"],
+    retry: false,
+    staleTime: 60_000,
+  });
+  const usageOverview =
+    usage.data && "generatedAt" in usage.data ? usage.data : undefined;
   return (
     <aside
       aria-label="Detalhes da lane"
@@ -154,9 +167,12 @@ export function LaneSelector({
             </div>
             <div>
               <dt>Assinatura</dt>
-              <dd className="details-inline-value">
-                <Gauge aria-hidden="true" size={13} />
-                {selectedLane.displayQuotaAccount}
+              <dd className="details-inline-value justify-between">
+                <span className="details-inline-value min-w-0">
+                  <Gauge aria-hidden="true" size={13} />
+                  {selectedLane.displayQuotaAccount}
+                </span>
+                <UsageQuickPopover overview={usageOverview} />
               </dd>
             </div>
             <div>

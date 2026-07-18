@@ -15,6 +15,7 @@ import type { TaskRecord } from "../db/repositories/tasks";
 import type { OpenedLane } from "../orchestration/lane-service";
 import { QuickChatService } from "../orchestration/quick-chat";
 import type { RunHandle, RuntimeHealth } from "../runtime/adapter";
+import { createUsageCommands, type UsageCommands } from "../usage/service";
 import type { AppState } from "./app-state";
 
 interface RegisterIpcHandlersOptions {
@@ -52,6 +53,11 @@ export function registerIpcHandlers({
       createId: state.createId,
       clock: state.clock,
     }));
+  let usage: UsageCommands | undefined;
+  const usageService = () => {
+    if (usage === undefined) usage = createUsageCommands(state);
+    return usage;
+  };
 
   for (const channel of ipcChannels) {
     ipcMain.handle(channel, async (event, payload) => {
@@ -64,6 +70,7 @@ export function registerIpcHandlers({
         state,
         openedLanes,
         quickChatService,
+        usageService,
       );
       return ipcResponseSchemas[channel].parse(response);
     });
@@ -77,6 +84,7 @@ async function dispatch(
   state: AppState,
   openedLanes: Map<string, OpenedLane>,
   quickChatService: () => QuickChatService,
+  usageService: () => UsageCommands,
 ): Promise<unknown> {
   switch (channel) {
     case "system:doctor":
@@ -116,8 +124,11 @@ async function dispatch(
         request as IpcRequest<"quickChat:send">,
       );
     case "usage:overview":
+      return usageService().overview("overview");
     case "usage:refresh":
+      return usageService().overview("refresh");
     case "usage:alertSet":
+      return usageService().setAlert(request as IpcRequest<"usage:alertSet">);
     case "memory:configure":
     case "memory:search":
     case "memory:reindex":

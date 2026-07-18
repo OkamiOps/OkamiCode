@@ -468,17 +468,51 @@ it("cancels runs and resolves approvals through their owning runtime", async () 
   });
 });
 
-it("returns validated not_implemented results for later-task commands", async () => {
+it("returns honest unavailable usage data when collectors have no database", async () => {
   const handlers = ipcHarness(stateFixture());
-  const requests: Partial<Record<IpcChannel, unknown>> = {
-    "usage:overview": {},
-    "usage:refresh": {},
-    "usage:alertSet": {
+  const expected = {
+    activity: [],
+    alerts: [],
+    context: {
+      collectedAt: "2026-07-18T12:00:00.000Z",
+      freshness: "unavailable",
+      laneId: null,
+      remainingTokens: null,
+      source: {
+        adapterVersion: "event-v1",
+        kind: "unavailable",
+        method: "native session usage events",
+      },
+      usedPercent: null,
+    },
+    generatedAt: "2026-07-18T12:00:00.000Z",
+    subscriptions: [],
+  };
+
+  await expect(
+    handlers.get("usage:overview")?.(trustedEvent(), {}),
+  ).resolves.toEqual(expected);
+  await expect(
+    handlers.get("usage:refresh")?.(trustedEvent(), {}),
+  ).resolves.toEqual(expected);
+  await expect(
+    handlers.get("usage:alertSet")?.(trustedEvent(), {
       provider: "chatgpt",
       accountRef: "primary",
       remainingPercent: 20,
       enabled: true,
-    },
+    }),
+  ).resolves.toEqual({
+    provider: "chatgpt",
+    accountRef: "primary",
+    remainingPercent: 20,
+    enabled: true,
+  });
+});
+
+it("returns validated not_implemented results for later-task commands", async () => {
+  const handlers = ipcHarness(stateFixture());
+  const requests: Partial<Record<IpcChannel, unknown>> = {
     "memory:configure": { scopeRefs: [] },
     "memory:search": { query: "gateway" },
     "memory:reindex": {

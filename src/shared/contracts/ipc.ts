@@ -225,6 +225,109 @@ export const usageAlertSetRequestSchema = z
   })
   .strict();
 
+export const usageSourceKindSchema = z.enum([
+  "official_structured",
+  "native_presentational",
+  "dashboard_read",
+  "local_estimate",
+  "unavailable",
+]);
+
+export const usageFreshnessSchema = z.enum([
+  "live",
+  "stale",
+  "partial",
+  "estimated",
+  "unavailable",
+]);
+
+const usageSourceSchema = z
+  .object({
+    adapterVersion: z.string().min(1),
+    kind: usageSourceKindSchema,
+    method: z.string().min(1),
+  })
+  .strict();
+
+const usageWindowSchema = z
+  .object({
+    durationMinutes: z.number().int().positive().nullable(),
+    kind: z.string().min(1),
+    label: z.string().min(1),
+    modelGroup: z.string().min(1).nullable(),
+    remainingPercent: z.number().min(0).max(100).nullable(),
+    resetsAt: z.iso.datetime({ offset: true }).nullable(),
+    usedPercent: z.number().min(0).max(100).nullable(),
+  })
+  .strict();
+
+export const usageSnapshotSchema = z
+  .object({
+    accountLabel: z.string().min(1),
+    accountRef: z.string().min(1),
+    collectedAt: z.iso.datetime({ offset: true }),
+    credits: z.record(z.string(), z.unknown()).nullable(),
+    error: z.string().min(1).nullable(),
+    freshness: usageFreshnessSchema,
+    plan: z.string().min(1).nullable(),
+    provider: providerKindSchema,
+    runtime: runtimeKindSchema,
+    source: usageSourceSchema,
+    validUntil: z.iso.datetime({ offset: true }).nullable(),
+    windows: z.array(usageWindowSchema),
+  })
+  .strict();
+
+const sessionContextSchema = z
+  .object({
+    collectedAt: z.iso.datetime({ offset: true }),
+    freshness: usageFreshnessSchema,
+    laneId: z.string().nullable(),
+    remainingTokens: z.number().int().nonnegative().nullable(),
+    source: usageSourceSchema,
+    usedPercent: z.number().min(0).max(100).nullable(),
+  })
+  .strict();
+
+const usageActivityBucketSchema = z
+  .object({
+    bucketStart: z.iso.datetime({ offset: true }),
+    cachedInputTokens: z.number().int().nonnegative(),
+    durationMs: z.number().int().nonnegative(),
+    inputTokens: z.number().int().nonnegative(),
+    laneId: z.string().min(1),
+    messages: z.number().int().nonnegative(),
+    model: z.string().min(1),
+    modelCalls: z.number().int().nonnegative(),
+    outputTokens: z.number().int().nonnegative(),
+    provider: providerKindSchema,
+    reasoningTokens: z.number().int().nonnegative(),
+    runtime: runtimeKindSchema,
+    sessions: z.number().int().nonnegative(),
+    taskId: z.string().min(1),
+    taskLabel: z.string().min(1).optional(),
+    toolCalls: z.number().int().nonnegative(),
+  })
+  .strict();
+
+export const usageAlertSchema = usageAlertSetRequestSchema;
+
+export const usageOverviewSchema = z
+  .object({
+    activity: z.array(usageActivityBucketSchema),
+    alerts: z.array(usageAlertSchema),
+    context: sessionContextSchema,
+    generatedAt: z.iso.datetime({ offset: true }),
+    subscriptions: z.array(usageSnapshotSchema),
+  })
+  .strict();
+
+export type UsageOverviewContract = z.output<typeof usageOverviewSchema>;
+export type UsageSnapshotContract = z.output<typeof usageSnapshotSchema>;
+export type UsageActivityBucketContract = z.output<
+  typeof usageActivityBucketSchema
+>;
+
 export const memoryConfigureRequestSchema = z
   .object({
     sourceId: entityIdSchema.optional(),
@@ -282,9 +385,9 @@ export const ipcResponseSchemas = {
   "approval:resolve": approvalResultSchema,
   "quickChat:create": quickChatConversationSchema,
   "quickChat:send": quickChatSendResultSchema,
-  "usage:overview": notImplementedSchema("usage:overview"),
-  "usage:refresh": notImplementedSchema("usage:refresh"),
-  "usage:alertSet": notImplementedSchema("usage:alertSet"),
+  "usage:overview": usageOverviewSchema,
+  "usage:refresh": usageOverviewSchema,
+  "usage:alertSet": usageAlertSchema,
   "memory:configure": notImplementedSchema("memory:configure"),
   "memory:search": notImplementedSchema("memory:search"),
   "memory:reindex": notImplementedSchema("memory:reindex"),

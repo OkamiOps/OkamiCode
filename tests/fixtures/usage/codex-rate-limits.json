@@ -1,0 +1,22 @@
+{
+  "rateLimits": {
+    "primary": {
+      "usedPercent": 28,
+      "windowDurationMins": 300,
+      "resetsAt": 1784385000
+    },
+    "secondary": {
+      "usedPercent": 46,
+      "windowDurationMins": 10080,
+      "resetsAt": 1784822400
+    }
+  },
+  "usage": {
+    "planType": "plus",
+    "credits": {
+      "hasCredits": true,
+      "unlimited": false,
+      "balance": "12.50"
+    }
+  }
+}

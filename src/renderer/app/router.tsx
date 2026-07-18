@@ -1,6 +1,7 @@
 import { Navigate, Route, Routes } from "react-router-dom";
 import { StatusBadge } from "../components/StatusBadge";
 import { QuickChatPage } from "../features/quick-chat/QuickChatPage";
+import { UsagePage } from "../features/usage/UsagePage";
 import { WorkbenchPage } from "../features/workbench/WorkbenchPage";
 import { AppShell } from "./layout/AppShell";
 
@@ -37,16 +38,7 @@ export function AppRouter() {
       <Route element={<AppShell />}>
         <Route path="/workbench" element={<WorkbenchPage />} />
         <Route path="/quick-chat" element={<QuickChatPage />} />
-        <Route
-          path="/usage"
-          element={
-            <Screen
-              eyebrow="Controle de consumo"
-              title="Uso e limites"
-              description="As janelas de uso, alertas e limites dos runtimes aparecerão aqui."
-            />
-          }
-        />
+        <Route path="/usage" element={<UsagePage />} />
         <Route
           path="/memory"
           element={
