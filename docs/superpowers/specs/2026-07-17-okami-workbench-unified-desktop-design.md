@@ -414,6 +414,10 @@ A navegação principal contém **Uso & limites**. A tela oferece:
 - visões por runtime e por modelo;
 - detalhe da conta com plano, créditos, resets e histórico;
 - heatmap, tokens, model calls, sessões, duração e ferramentas mais usadas;
+- **painel de atividade estilo "wrapped"** (referência visual aprovada em 2026-07-18), em dois níveis:
+  - **Geral:** total de tokens somando todos os CLIs/providers, sessões, mensagens, dias ativos, sequência atual e maior sequência, horário de pico, modelo favorito, tarefa mais longa e heatmap calendário anual;
+  - **Por CLI/provider:** os mesmos indicadores filtrados por runtime ou assinatura (Claude, Codex/ChatGPT, Grok…), com skills/ferramentas mais usadas quando o runtime expõe;
+  - tudo derivado do event log local (`usage_activity_buckets`), nunca de percentual de quota, mantendo a separação da seção 10.1;
 - filtros de período e fonte;
 - link para abrir a fonte nativa;
 - estados `live`, `stale`, `partial`, `estimated` e `unavailable`.

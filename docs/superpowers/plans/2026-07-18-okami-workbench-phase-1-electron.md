@@ -1292,6 +1292,8 @@ it("labels quota, session context, and local activity as separate measures", () 
 
 `PreflightService.evaluate` filters lanes by capability and health, attaches the latest snapshot per account, returns ranked suggestions with reasons and `automaticSwitch: null` (no auto-switch exists in Phase 1). `lane:sendTurn` blocks only on `hard_stop` policy; low/stale/unavailable quota produces a confirmation warning.
 
+**Activity dashboard (user-requested, spec §10.4):** the Usage page includes a "wrapped"-style activity panel built with Nivo or Recharts (calendar heatmap + stat cards), in two levels driven by a runtime/provider filter: **Geral** (aggregate across all CLIs — total tokens, sessions, messages, active days, current/longest streak, peak hour, favorite model, longest task) and **por CLI/provider** (same stats filtered by runtime or subscription account). All values derive from `usage_activity_buckets` and the local event log — never from quota percentages. Stat cards show tabular numerals; the heatmap uses Okami token colors.
+
 - [ ] **Step 4: Run gates** — `pnpm test src/main/usage src/renderer/features/usage && pnpm typecheck && pnpm lint` — Expected: PASS; test spies confirm refresh spawns only the Codex app-server request or the Claude PTY, never `sendTurn`.
 
 - [ ] **Step 5: Commit**
