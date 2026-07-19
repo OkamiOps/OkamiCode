@@ -42,7 +42,8 @@ export function WorkbenchPage({ api = workbenchApi }: WorkbenchPageProps) {
   );
   const effectiveLaneId = selectedLaneId ?? lanes[0]?.laneId ?? null;
   const selectedLane =
-    lanes.find((lane) => lane.laneId === effectiveLaneId) ?? null;
+    lanes.find((lane) => lane.laneId === effectiveLaneId) ??
+    (effectiveLaneId ? (openedLanes[effectiveLaneId] ?? null) : null);
   const selectedTask =
     tasks.find((task) => task.id === effectiveTaskId) ?? null;
   const hasConversation =

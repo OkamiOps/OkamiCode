@@ -539,6 +539,9 @@ body {
   bottom: calc(100% + 8px);
   left: 0;
   min-width: 300px;
+  max-height: min(420px, 55vh);
+  overflow-y: auto;
+  overscroll-behavior: contain;
   background: #16181d;
   border: 1px solid var(--chat-border);
   border-radius: 14px;

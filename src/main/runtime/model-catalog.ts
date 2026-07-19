@@ -1,4 +1,5 @@
-import { readFileSync } from "node:fs";
+import { execFileSync } from "node:child_process";
+import { readFileSync, realpathSync, statSync } from "node:fs";
 import { homedir } from "node:os";
 import path from "node:path";
 
@@ -23,22 +24,122 @@ interface CodexCachedModel {
   visibility?: string;
 }
 
-// The same set the Claude Code `/model` picker offers for subscription auth.
-// The CLI resolves each alias to the subscription's current model.
-const CLAUDE_CLI_MODELS: CatalogModel[] = [
-  { id: "opus", label: "Opus", description: "Modelo mais capaz" },
-  {
-    id: "sonnet",
-    label: "Sonnet",
-    description: "Equilíbrio entre custo e capacidade",
-  },
-  { id: "haiku", label: "Haiku", description: "Rápido e econômico" },
-  {
-    id: "opusplan",
-    label: "Opus Plan",
-    description: "Opus para planejar, Sonnet para executar",
-  },
-];
+interface ClaudeFamilyVersions {
+  fable?: string;
+  opus?: string;
+  sonnet?: string;
+  haiku?: string;
+}
+
+let claudeScanCache: { key: string; versions: ClaudeFamilyVersions } | null =
+  null;
+
+function familyVersionLabel(suffix: string): string {
+  return suffix.replace(/-/gu, ".");
+}
+
+// Scans the installed Claude Code binary for current model ids so the picker
+// mirrors what this CLI version actually ships (updates with the CLI).
+function locateClaudeBinary(): string | null {
+  const candidates = [
+    path.join(homedir(), ".local", "bin", "claude"),
+    "/usr/local/bin/claude",
+    "/opt/homebrew/bin/claude",
+  ];
+  try {
+    candidates.unshift(
+      execFileSync("/usr/bin/which", ["claude"], { encoding: "utf8" }).trim(),
+    );
+  } catch {
+    // PATH lookups fail inside the packaged app; the fixed candidates cover it.
+  }
+  for (const candidate of candidates) {
+    if (!candidate) continue;
+    try {
+      return realpathSync(candidate);
+    } catch {
+      continue;
+    }
+  }
+  return null;
+}
+
+function scanClaudeBinaryVersions(): ClaudeFamilyVersions {
+  try {
+    const binary = locateClaudeBinary();
+    if (!binary) return {};
+    const cacheKey = `${binary}:${statSync(binary).mtimeMs}`;
+    if (claudeScanCache?.key === cacheKey) return claudeScanCache.versions;
+    const contents = readFileSync(binary).toString("latin1");
+    const versions: ClaudeFamilyVersions = {};
+    for (const family of ["fable", "opus", "sonnet", "haiku"] as const) {
+      const pattern = new RegExp(`claude-${family}-(\\d+(?:-\\d+)?)\\b`, "gu");
+      let best: [number, number] | null = null;
+      let bestSuffix: string | undefined;
+      for (const match of contents.matchAll(pattern)) {
+        const [major, minor = 0] = match[1].split("-").map(Number);
+        // Segments above 99 are date-stamped snapshot ids, not versions.
+        if (major > 99 || minor > 99) continue;
+        if (
+          !best ||
+          major > best[0] ||
+          (major === best[0] && minor > best[1])
+        ) {
+          best = [major, minor];
+          bestSuffix = match[1];
+        }
+      }
+      if (bestSuffix) versions[family] = bestSuffix;
+    }
+    claudeScanCache = { key: cacheKey, versions };
+    console.log("[okami] claude model scan", versions);
+    return versions;
+  } catch (error) {
+    console.error("[okami] claude model scan failed", error);
+    return {};
+  }
+}
+
+function claudeModels(): CatalogModel[] {
+  const versions = scanClaudeBinaryVersions();
+  const models: CatalogModel[] = [];
+  if (versions.fable) {
+    models.push({
+      id: `claude-fable-${versions.fable}`,
+      label: `Fable ${familyVersionLabel(versions.fable)}`,
+      description: "Classe Mythos — modelo mais avançado",
+    });
+  }
+  models.push(
+    {
+      id: "opus",
+      label: versions.opus
+        ? `Opus ${familyVersionLabel(versions.opus)}`
+        : "Opus",
+      description: "Melhor para tarefas complexas do dia a dia",
+    },
+    {
+      id: "sonnet",
+      label: versions.sonnet
+        ? `Sonnet ${familyVersionLabel(versions.sonnet)}`
+        : "Sonnet",
+      description: "Eficiente para tarefas rotineiras",
+    },
+    {
+      id: "haiku",
+      label: versions.haiku
+        ? `Haiku ${familyVersionLabel(versions.haiku)}`
+        : "Haiku",
+      description: "Mais rápido, para respostas curtas",
+    },
+    {
+      id: "opusplan",
+      label: "Opus Plan",
+      description: "Opus para planejar, Sonnet para executar",
+    },
+  );
+  return models;
+}
 
 export function readCodexModelsCache(
   cachePath = path.join(homedir(), ".codex", "models_cache.json"),
@@ -70,8 +171,8 @@ export function buildModelCatalog(): ModelCatalogEntry[] {
       runtimeKind: "claude",
       providerLabel: "Claude",
       routeKind: "direct",
-      source: "aliases do Claude Code (/model)",
-      models: CLAUDE_CLI_MODELS,
+      source: "catálogo do Claude Code instalado",
+      models: claudeModels(),
     },
   ];
   const codexModels = readCodexModelsCache();
