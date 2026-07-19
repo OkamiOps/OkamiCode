@@ -168,7 +168,7 @@ export function Composer({
           onSelectModel={onSelectModel}
           selectedLane={lane}
         />
-        {effort && (
+        {lane && (
           <EffortPicker
             disabled={isSending}
             efforts={efforts}

@@ -814,3 +814,8 @@ textarea:focus-visible {
   opacity: 0.45;
   cursor: default;
 }
+
+.model-picker__button--inert {
+  opacity: 0.55;
+  cursor: default;
+}

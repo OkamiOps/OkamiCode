@@ -79,7 +79,10 @@ function runtimeDependencies(
         laneId: run.laneId,
         actor: { kind: "runtime", runtime: lane?.runtimeKind ?? "claude" },
         capability,
-        resourcePattern: `${workspace}/**`,
+        // terminal.exec resources are command strings, not paths; workspace
+        // confinement for them comes from the harness cwd/allowlist.
+        resourcePattern:
+          capability === "terminal.exec" ? "**" : `${workspace}/**`,
         budget: { maxUses: null, used: 0 },
         issuedAt: now.toISOString(),
         expiresAt: expires.toISOString(),

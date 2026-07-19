@@ -5,6 +5,7 @@ import path from "node:path";
 const MIGRATIONS = [
   "schema/001-phase1-core.sql",
   "schema/002-task-workspace.sql",
+  "schema/003-lane-workspace-repair.sql",
 ];
 
 export function runMigrations(db: InstanceType<typeof SqliteDatabase>): void {

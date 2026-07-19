@@ -19,7 +19,7 @@ interface EffortPickerProps {
   disabled?: boolean;
   efforts: string[];
   onSelect: (effort: string) => void;
-  selected: string;
+  selected: string | null;
 }
 
 export function EffortPicker({
@@ -47,7 +47,22 @@ export function EffortPicker({
     };
   }, [open]);
 
-  if (efforts.length === 0) return null;
+  // A vanished chip reads as broken; models without effort levels keep the
+  // chip visible but inert, with the reason on hover.
+  if (efforts.length === 0 || !selected) {
+    return (
+      <button
+        aria-label="Effort indisponível para este modelo"
+        className="model-picker__button model-picker__button--inert"
+        disabled
+        title="Este modelo não expõe níveis de effort"
+        type="button"
+      >
+        <Gauge aria-hidden="true" size={13} />
+        Effort —
+      </button>
+    );
+  }
 
   return (
     <div className="model-picker" ref={rootRef}>

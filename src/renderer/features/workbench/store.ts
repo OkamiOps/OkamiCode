@@ -115,11 +115,40 @@ export function reduceCanonicalEvent(
   return next;
 }
 
+const EFFORT_STORAGE_KEY = "okami.effortByLane";
+
+function loadPersistedEfforts(): Record<string, string> {
+  try {
+    const raw = globalThis.localStorage?.getItem(EFFORT_STORAGE_KEY);
+    const parsed: unknown = raw ? JSON.parse(raw) : null;
+    if (!parsed || typeof parsed !== "object" || Array.isArray(parsed))
+      return {};
+    return Object.fromEntries(
+      Object.entries(parsed as Record<string, unknown>).filter(
+        (entry): entry is [string, string] => typeof entry[1] === "string",
+      ),
+    );
+  } catch {
+    return {};
+  }
+}
+
+function persistEfforts(efforts: Record<string, string>): void {
+  try {
+    globalThis.localStorage?.setItem(
+      EFFORT_STORAGE_KEY,
+      JSON.stringify(efforts),
+    );
+  } catch {
+    // Persistence is best effort; the in-memory selection still applies.
+  }
+}
+
 export function createWorkbenchStore(): StoreApi<WorkbenchState> {
   return createStore<WorkbenchState>((set) => ({
     activeRunId: null,
     activeRunLaneId: null,
-    effortByLane: {},
+    effortByLane: loadPersistedEfforts(),
     lastUsageByLane: {},
     appliedEventIds: {},
     openedLanes: {},
@@ -155,9 +184,11 @@ export function createWorkbenchStore(): StoreApi<WorkbenchState> {
         return next;
       }),
     setEffort: (laneId, effort) =>
-      set((state) => ({
-        effortByLane: { ...state.effortByLane, [laneId]: effort },
-      })),
+      set((state) => {
+        const effortByLane = { ...state.effortByLane, [laneId]: effort };
+        persistEfforts(effortByLane);
+        return { effortByLane };
+      }),
     selectTask: (taskId) =>
       set({ selectedTaskId: taskId, selectedLaneId: null }),
     setActiveRun: (runId, laneId) =>

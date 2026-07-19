@@ -512,6 +512,11 @@ async function ensureLane(
         `SELECT workspace_path FROM runtime_lanes WHERE task_id = ? LIMIT 1`,
       )
       .get(request.taskId) as { workspace_path: string | null } | undefined;
+    // The task folder is authoritative: it is what the user picked when the
+    // conversation was created, and it scopes both cwd and leases.
+    const owner = state.database
+      .prepare(`SELECT workspace_path FROM tasks WHERE id = ?`)
+      .get(request.taskId) as { workspace_path: string | null } | undefined;
     laneId = state.createId();
     const now = state.clock().toISOString();
     state.lanes.insert({
@@ -521,7 +526,7 @@ async function ensureLane(
       providerKind: request.runtimeKind === "claude" ? "claude_max" : "chatgpt",
       model: request.model,
       status: "ready",
-      workspacePath: sibling?.workspace_path ?? null,
+      workspacePath: owner?.workspace_path ?? sibling?.workspace_path ?? null,
       lastEventCursor: 0,
       createdAt: now,
       updatedAt: now,
