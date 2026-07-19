@@ -17,6 +17,7 @@ export function WorkbenchPage({ api = workbenchApi }: WorkbenchPageProps) {
   const selectedLaneId = useWorkbenchStore((state) => state.selectedLaneId);
   const openedLanes = useWorkbenchStore((state) => state.openedLanes);
   const activeRunId = useWorkbenchStore((state) => state.activeRunId);
+  const activeRunLaneId = useWorkbenchStore((state) => state.activeRunLaneId);
   const sentMessages = useWorkbenchStore((state) => state.sentMessages);
   const streams = useWorkbenchStore((state) => state.streams);
   const storeActions = useWorkbenchStore(useShallow(workbenchActions));
@@ -69,7 +70,7 @@ export function WorkbenchPage({ api = workbenchApi }: WorkbenchPageProps) {
         id: `${run.runId}:user`,
         laneId: request.laneId,
       });
-      storeActions.setActiveRun(run.runId);
+      storeActions.setActiveRun(run.runId, request.laneId);
     },
   });
   const cancelRun = useMutation({
@@ -81,9 +82,14 @@ export function WorkbenchPage({ api = workbenchApi }: WorkbenchPageProps) {
 
   useEffect(() => api.subscribe(storeActions.applyEvent), [api, storeActions]);
 
+  // A running turn only gates the lane it belongs to.
+  const laneActiveRunId =
+    activeRunLaneId !== null && activeRunLaneId === selectedLane?.laneId
+      ? activeRunId
+      : null;
   const composer = (
     <Composer
-      activeRunId={activeRunId}
+      activeRunId={laneActiveRunId}
       error={queryError(
         sendTurn.error ?? cancelRun.error ?? openLane.error ?? ensureLane.error,
       )}
@@ -154,7 +160,7 @@ export function WorkbenchPage({ api = workbenchApi }: WorkbenchPageProps) {
         </div>
       </div>
       <div className="chat-composer-dock">
-        {activeRunId && (
+        {laneActiveRunId && (
           <div className="chat-status-line">
             <span aria-hidden="true" className="pulse" />
             Executando…

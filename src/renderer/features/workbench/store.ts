@@ -15,6 +15,7 @@ export interface SentMessage {
 
 export interface WorkbenchState {
   activeRunId: string | null;
+  activeRunLaneId: string | null;
   appliedEventIds: Record<string, true>;
   openedLanes: Record<string, WorkbenchLane>;
   runStatus: Record<string, WorkbenchRunStatus>;
@@ -27,7 +28,7 @@ export interface WorkbenchState {
   cancelActiveRun(runId: string): void;
   selectLane(laneId: string | null): void;
   selectTask(taskId: string): void;
-  setActiveRun(runId: string): void;
+  setActiveRun(runId: string, laneId: string): void;
   upsertLane(lane: WorkbenchLane): void;
 }
 
@@ -53,7 +54,10 @@ export function reduceCanonicalEvent(
       ...state.runStatus,
       [event.runId]: event.kind === "run_completed" ? "completed" : "failed",
     };
-    if (state.activeRunId === event.runId) next.activeRunId = null;
+    if (state.activeRunId === event.runId) {
+      next.activeRunId = null;
+      next.activeRunLaneId = null;
+    }
   }
   return next;
 }
@@ -61,6 +65,7 @@ export function reduceCanonicalEvent(
 export function createWorkbenchStore(): StoreApi<WorkbenchState> {
   return createStore<WorkbenchState>((set) => ({
     activeRunId: null,
+    activeRunLaneId: null,
     appliedEventIds: {},
     openedLanes: {},
     runStatus: {},
@@ -74,14 +79,17 @@ export function createWorkbenchStore(): StoreApi<WorkbenchState> {
     cancelActiveRun: (runId) =>
       set((state) => ({
         activeRunId: state.activeRunId === runId ? null : state.activeRunId,
+        activeRunLaneId:
+          state.activeRunId === runId ? null : state.activeRunLaneId,
         runStatus: { ...state.runStatus, [runId]: "cancelled" },
       })),
     selectLane: (laneId) => set({ selectedLaneId: laneId }),
     selectTask: (taskId) =>
       set({ selectedTaskId: taskId, selectedLaneId: null }),
-    setActiveRun: (runId) =>
+    setActiveRun: (runId, laneId) =>
       set((state) => ({
         activeRunId: runId,
+        activeRunLaneId: laneId,
         runStatus: { ...state.runStatus, [runId]: "running" },
       })),
     upsertLane: (lane) =>

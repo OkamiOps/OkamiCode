@@ -61,9 +61,11 @@ export function Composer({
         value={input}
       />
       <div className="chat-composer__row">
+        {/* Switching models never sends a prompt, so a running turn must not
+            lock the picker. */}
         <ModelPicker
           catalog={catalog}
-          disabled={Boolean(activeRunId) || isSending}
+          disabled={isSending}
           isOpening={isOpeningLane}
           onSelectModel={onSelectModel}
           selectedLane={lane}
