@@ -476,9 +476,55 @@ body {
 /* Native events become slim rows */
 .conversation-event .tool-card,
 .conversation-event [class*="event-card"] {
-  background: var(--chat-surface) !important;
-  border: 1px solid var(--chat-border-soft) !important;
+  background: transparent !important;
+  border: none !important;
   border-radius: 10px;
+  box-shadow: none !important;
+}
+
+/* Tool activity: one dim line, expandable like Claude/Codex */
+.chat-toolgroup__summary {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  border: none;
+  background: transparent;
+  color: var(--chat-text-dim);
+  font: 500 12.5px/1 inherit;
+  font-family: inherit;
+  padding: 5px 8px;
+  margin-left: -8px;
+  border-radius: 8px;
+  cursor: pointer;
+  transition:
+    color 0.12s ease,
+    background 0.12s ease;
+}
+
+.chat-toolgroup__summary:hover {
+  color: var(--chat-text-mid);
+  background: var(--chat-surface);
+}
+
+.chat-toolgroup__chevron {
+  transition: transform 0.14s ease;
+}
+
+.chat-toolgroup[data-open="true"] .chat-toolgroup__chevron {
+  transform: rotate(90deg);
+}
+
+.chat-toolgroup__items {
+  margin: 8px 0 2px 5px;
+  padding-left: 14px;
+  border-left: 2px solid var(--chat-border-soft);
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.chat-toolgroup__items .tool-card {
+  font-size: 12px;
 }
 
 .conversation-empty,
@@ -499,14 +545,22 @@ body {
   margin: 0 auto;
   background: var(--chat-surface);
   border: 1px solid var(--chat-border);
-  border-radius: 18px;
-  padding: 12px 14px 10px;
-  box-shadow: 0 10px 34px rgba(0, 0, 0, 0.35);
-  transition: border-color 0.15s ease;
+  border-radius: 22px;
+  padding: 14px 16px 12px;
+  box-shadow:
+    0 1px 0 rgba(255, 255, 255, 0.03) inset,
+    0 14px 40px rgba(0, 0, 0, 0.4);
+  transition:
+    border-color 0.15s ease,
+    box-shadow 0.15s ease;
 }
 
 .chat-composer:focus-within {
-  border-color: rgba(255, 122, 26, 0.5);
+  border-color: rgba(255, 122, 26, 0.45);
+  box-shadow:
+    0 1px 0 rgba(255, 255, 255, 0.03) inset,
+    0 0 0 3px rgba(255, 122, 26, 0.08),
+    0 14px 40px rgba(0, 0, 0, 0.4);
 }
 
 .chat-composer textarea {
@@ -520,6 +574,14 @@ body {
   outline: none;
   min-height: 24px;
   max-height: 40vh;
+}
+
+.chat-composer textarea:focus,
+.chat-composer textarea:focus-visible {
+  /* The container carries the focus treatment; the inner field stays bare. */
+  outline: none !important;
+  box-shadow: none !important;
+  border: none !important;
 }
 
 .chat-composer textarea::placeholder {
@@ -793,10 +855,10 @@ textarea:focus-visible {
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  width: 28px;
-  height: 28px;
-  border: 1px solid var(--chat-border);
-  border-radius: 9px;
+  width: 30px;
+  height: 30px;
+  border: none;
+  border-radius: 999px;
   background: transparent;
   color: var(--chat-text-dim);
   cursor: pointer;

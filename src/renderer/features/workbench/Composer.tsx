@@ -1,5 +1,11 @@
 import { ArrowUp, Paperclip, Square } from "lucide-react";
-import { useMemo, useState, type FormEvent, type KeyboardEvent } from "react";
+import {
+  useMemo,
+  useRef,
+  useState,
+  type FormEvent,
+  type KeyboardEvent,
+} from "react";
 import type { ModelCatalog, WorkbenchLane } from "./api";
 import { EffortPicker } from "./EffortPicker";
 import { ModelPicker } from "./ModelPicker";
@@ -43,6 +49,20 @@ export function Composer({
 }: ComposerProps) {
   const [input, setInput] = useState("");
   const [slashIndex, setSlashIndex] = useState(0);
+  const textareaRef = useRef<HTMLTextAreaElement>(null);
+
+  function resizeTextarea() {
+    const node = textareaRef.current;
+    if (!node) return;
+    node.style.height = "auto";
+    node.style.height = `${Math.min(node.scrollHeight, 220)}px`;
+  }
+
+  function updateInput(value: string) {
+    setInput(value);
+    setSlashIndex(0);
+    requestAnimationFrame(resizeTextarea);
+  }
 
   // The menu tracks the first token only: once a space lands, the command is
   // chosen and the rest of the message is free text.
@@ -62,12 +82,12 @@ export function Composer({
     const trimmed = input.trim();
     if (!lane || !trimmed || isSending || activeRunId) return;
     await onSend(trimmed);
-    setInput("");
+    updateInput("");
   }
 
   function applySlashCommand(name: string) {
-    setInput(`/${name} `);
-    setSlashIndex(0);
+    updateInput(`/${name} `);
+    textareaRef.current?.focus();
   }
 
   async function attachFiles() {
@@ -76,10 +96,10 @@ export function Composer({
     const quoted = paths
       .map((path) => (path.includes(" ") ? `"${path}"` : path))
       .join(" ");
-    setInput((current) =>
-      current.length === 0 || current.endsWith(" ")
-        ? `${current}${quoted} `
-        : `${current} ${quoted} `,
+    updateInput(
+      input.length === 0 || input.endsWith(" ")
+        ? `${input}${quoted} `
+        : `${input} ${quoted} `,
     );
   }
 
@@ -109,7 +129,7 @@ export function Composer({
       }
       if (event.key === "Escape") {
         event.preventDefault();
-        setInput(" ".concat(input).trimStart());
+        updateInput(" ".concat(input).trimStart());
         return;
       }
     }
@@ -139,12 +159,10 @@ export function Composer({
       <textarea
         aria-label="Mensagem"
         disabled={isSending}
-        onChange={(event) => {
-          setInput(event.target.value);
-          setSlashIndex(0);
-        }}
+        onChange={(event) => updateInput(event.target.value)}
         onKeyDown={handleKeyDown}
         placeholder="Como posso ajudar? Digite / para comandos"
+        ref={textareaRef}
         rows={1}
         value={input}
       />

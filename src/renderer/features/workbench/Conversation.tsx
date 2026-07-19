@@ -1,5 +1,5 @@
 import { Surface } from "@heroui/react";
-import { MessageSquareText } from "lucide-react";
+import { ChevronRight, MessageSquareText, Wrench } from "lucide-react";
 import { useEffect, useState } from "react";
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
@@ -31,6 +31,81 @@ function isVisibleEvent(event: EventCardEvent): boolean {
   // conversation; the started/completed pair carries the whole story.
   if (event.kind === "tool_call_updated") return false;
   return true;
+}
+
+const TOOL_EVENT_KINDS = new Set(["tool_call_started", "tool_call_completed"]);
+
+type ConversationSegment =
+  | { kind: "tools"; key: string; events: EventCardEvent[] }
+  | { kind: "card"; key: string; event: EventCardEvent };
+
+// Claude/Codex hide tool activity behind a one-line summary; consecutive tool
+// calls collapse into one expandable group here for the same reason.
+function segmentEvents(events: EventCardEvent[]): ConversationSegment[] {
+  const segments: ConversationSegment[] = [];
+  for (const [index, event] of events.entries()) {
+    const key = event.id ?? `${event.kind}-${index}`;
+    if (TOOL_EVENT_KINDS.has(event.kind)) {
+      const last = segments.at(-1);
+      if (last?.kind === "tools") {
+        last.events.push(event);
+        continue;
+      }
+      segments.push({ kind: "tools", key, events: [event] });
+      continue;
+    }
+    segments.push({ kind: "card", key, event });
+  }
+  return segments;
+}
+
+function toolGroupLabel(events: EventCardEvent[]): string {
+  const names = [
+    ...new Set(
+      events.map((event) =>
+        typeof event.payload?.toolName === "string"
+          ? event.payload.toolName
+          : "ferramenta",
+      ),
+    ),
+  ];
+  const running = events.some((event) => event.kind === "tool_call_started");
+  const verb = running ? "Usando" : "Usou";
+  if (events.length === 1) return `${verb} ${names[0]}`;
+  const detail = names.slice(0, 3).join(", ");
+  return `${verb} ${events.length} ferramentas · ${detail}`;
+}
+
+function ToolGroup({ events }: { events: EventCardEvent[] }) {
+  const [open, setOpen] = useState(false);
+  return (
+    <div className="chat-toolgroup" data-open={open || undefined}>
+      <button
+        aria-expanded={open}
+        className="chat-toolgroup__summary"
+        onClick={() => setOpen((value) => !value)}
+        type="button"
+      >
+        <Wrench aria-hidden="true" size={12} />
+        {toolGroupLabel(events)}
+        <ChevronRight
+          aria-hidden="true"
+          className="chat-toolgroup__chevron"
+          size={12}
+        />
+      </button>
+      {open && (
+        <div className="chat-toolgroup__items">
+          {events.map((event, index) => (
+            <EventCardRegistry
+              event={event}
+              key={event.id ?? `${event.kind}-${index}`}
+            />
+          ))}
+        </div>
+      )}
+    </div>
+  );
 }
 
 // A tool call is one card: the completed event folds into its started card
@@ -147,7 +222,6 @@ export function Conversation({
                   {message.body}
                 </ReactMarkdown>
               </Surface>
-              <div className="message-stamp">agora · você</div>
             </article>
           ))}
           {streamedMessages.map(([key, body]) => (
@@ -174,18 +248,15 @@ export function Conversation({
                   {body}
                 </ReactMarkdown>
               </Surface>
-              <div className="message-stamp">agora · streaming</div>
             </article>
           ))}
-          {visibleEvents.map((event, index) => (
-            <article
-              className="conversation-event"
-              key={event.id ?? `${event.kind}-${index}`}
-            >
-              <EventCardRegistry event={event} />
-              <div className="message-stamp">
-                {formatTimestamp(event.occurredAt)} · evento da lane
-              </div>
+          {segmentEvents(visibleEvents).map((segment) => (
+            <article className="conversation-event" key={segment.key}>
+              {segment.kind === "tools" ? (
+                <ToolGroup events={segment.events} />
+              ) : (
+                <EventCardRegistry event={segment.event} />
+              )}
             </article>
           ))}
         </div>
@@ -210,14 +281,4 @@ function shortModel(model: string): string {
   );
   const value = match?.[1] ?? match?.[2] ?? model;
   return `${value.charAt(0).toUpperCase()}${value.slice(1)}`;
-}
-
-function formatTimestamp(value?: string): string {
-  if (!value) return "agora";
-  const date = new Date(value);
-  if (Number.isNaN(date.valueOf())) return "agora";
-  return new Intl.DateTimeFormat("pt-BR", {
-    hour: "2-digit",
-    minute: "2-digit",
-  }).format(date);
 }
