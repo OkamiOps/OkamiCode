@@ -15,6 +15,7 @@ interface RunServiceDependencies {
 }
 
 export interface SendLaneTurnRequest {
+  effort?: string;
   laneId: string;
   nativeSessionId: string;
   input: string;
@@ -61,6 +62,8 @@ export class RunService {
       runId,
       laneId: lane.id as LaneId,
       nativeSessionId: request.nativeSessionId,
+      model: lane.model,
+      ...(request.effort ? { effort: request.effort } : {}),
       input: request.delta
         ? `${JSON.stringify(request.delta)}\n\n${request.input}`
         : request.input,

@@ -169,7 +169,7 @@ export class LaneService {
             env: claudeGatewayEnvironment({
               profile: route.profile,
               port: this.dependencies.gateway!.port,
-              bearerToken: this.dependencies.gateway!.bearerToken,
+              bearerToken: `${this.dependencies.gateway!.bearerToken}.${lane.id}`,
               model: lane.model,
               stableConfigDirectory: this.dependencies.gateway!
                 .gatewayConfigRoot
@@ -219,13 +219,18 @@ export class LaneService {
     };
   }
 
-  async sendTurn(opened: OpenedLane, input: string): Promise<RunHandle> {
+  async sendTurn(
+    opened: OpenedLane,
+    input: string,
+    effort?: string,
+  ): Promise<RunHandle> {
     const run = await this.dependencies.runService.sendTurn({
       laneId: opened.laneId,
       nativeSessionId: opened.nativeSessionId,
       input,
       delta: opened.delta,
       runtimeKind: opened.runtimeKind,
+      ...(effort ? { effort } : {}),
     });
     const lane = this.dependencies.lanes.findById(opened.laneId);
     if (!lane) throw new Error(`Unknown lane ${opened.laneId}`);

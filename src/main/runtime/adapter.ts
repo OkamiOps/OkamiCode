@@ -31,6 +31,8 @@ export interface NativeTurnRequest {
   laneId: LaneId;
   nativeSessionId: string;
   input: string;
+  model?: string;
+  effort?: string;
 }
 
 export interface RunHandle {

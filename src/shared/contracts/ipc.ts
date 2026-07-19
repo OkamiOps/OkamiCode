@@ -119,6 +119,8 @@ export const modelCatalogSchema = z.array(
             id: z.string().min(1),
             label: z.string().min(1),
             description: z.string().min(1).optional(),
+            efforts: z.array(z.string().min(1)).optional(),
+            defaultEffort: z.string().min(1).optional(),
           })
           .strict(),
       ),
@@ -131,6 +133,7 @@ export const laneSendTurnRequestSchema = z
   .object({
     laneId: entityIdSchema,
     input: userTextSchema,
+    effort: z.string().min(1).max(20).optional(),
   })
   .strict();
 

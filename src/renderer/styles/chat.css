@@ -609,6 +609,18 @@ body {
   flex: none;
 }
 
+.chat-context-note {
+  font-size: 11px;
+  color: var(--chat-text-dim);
+  font-variant-numeric: tabular-nums;
+  margin-right: 6px;
+  white-space: nowrap;
+}
+
+.model-picker__menu--compact {
+  min-width: 170px;
+}
+
 .chat-status-line {
   display: flex;
   align-items: center;

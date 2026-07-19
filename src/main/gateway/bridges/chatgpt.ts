@@ -15,7 +15,7 @@ export interface ChatGptBackendRequest extends JsonRecord {
   tools?: JsonRecord[];
   tool_choice: "auto";
   parallel_tool_calls: boolean;
-  reasoning: null;
+  reasoning: { effort: string } | null;
   store: false;
   stream: true;
   include: string[];
@@ -29,8 +29,15 @@ export interface ChatGptBackend {
   stream(request: ChatGptBackendRequest): AsyncIterable<ChatGptStreamEvent>;
 }
 
+export interface ChatGptBridgeContext {
+  effort?: string;
+}
+
 export interface ChatGptBridge {
-  handleMessages(request: unknown): AsyncIterable<string>;
+  handleMessages(
+    request: unknown,
+    context?: ChatGptBridgeContext,
+  ): AsyncIterable<string>;
 }
 
 export interface ChatGptBridgeOptions {
@@ -45,9 +52,13 @@ export function createChatGptBridge(
   options: ChatGptBridgeOptions,
 ): ChatGptBridge {
   return {
-    async *handleMessages(request) {
+    async *handleMessages(request, context) {
       try {
-        const translated = translateAnthropicRequest(request, options.model);
+        const translated = translateAnthropicRequest(
+          request,
+          options.model,
+          context?.effort,
+        );
         const upstream = backend.stream(translated)[Symbol.asyncIterator]();
         const first = await upstream.next();
         yield sse("message_start", {
@@ -89,6 +100,7 @@ async function* prepend<T>(
 function translateAnthropicRequest(
   value: unknown,
   backendModel: string,
+  effort?: string,
 ): ChatGptBackendRequest {
   const request = record(value);
   if (!request || typeof request.model !== "string") {
@@ -110,7 +122,7 @@ function translateAnthropicRequest(
     ...(tools.length > 0 ? { tools } : {}),
     tool_choice: "auto",
     parallel_tool_calls: true,
-    reasoning: null,
+    reasoning: effort ? { effort } : null,
     store: false,
     stream: true,
     include: [],

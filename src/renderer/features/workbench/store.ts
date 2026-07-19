@@ -13,9 +13,17 @@ export interface SentMessage {
   laneId: string;
 }
 
+export interface SessionUsage {
+  inputTokens: number;
+  cacheReadTokens: number;
+  outputTokens: number;
+}
+
 export interface WorkbenchState {
   activeRunId: string | null;
   activeRunLaneId: string | null;
+  effortByLane: Record<string, string>;
+  lastUsageByLane: Record<string, SessionUsage>;
   appliedEventIds: Record<string, true>;
   openedLanes: Record<string, WorkbenchLane>;
   runStatus: Record<string, WorkbenchRunStatus>;
@@ -27,6 +35,7 @@ export interface WorkbenchState {
   applyEvent(event: CanonicalEvent): void;
   cancelActiveRun(runId: string): void;
   selectLane(laneId: string | null): void;
+  setEffort(laneId: string, effort: string): void;
   selectTask(taskId: string): void;
   setActiveRun(runId: string, laneId: string): void;
   upsertLane(lane: WorkbenchLane): void;
@@ -59,6 +68,21 @@ export function reduceCanonicalEvent(
       next.activeRunLaneId = null;
     }
   }
+  if (event.kind === "usage_reported") {
+    const usage = event.payload.usage as Record<string, unknown> | undefined;
+    if (usage && typeof usage === "object") {
+      const toCount = (value: unknown) =>
+        typeof value === "number" && Number.isFinite(value) ? value : 0;
+      next.lastUsageByLane = {
+        ...state.lastUsageByLane,
+        [event.laneId]: {
+          inputTokens: toCount(usage.input_tokens),
+          cacheReadTokens: toCount(usage.cache_read_input_tokens),
+          outputTokens: toCount(usage.output_tokens),
+        },
+      };
+    }
+  }
   return next;
 }
 
@@ -66,6 +90,8 @@ export function createWorkbenchStore(): StoreApi<WorkbenchState> {
   return createStore<WorkbenchState>((set) => ({
     activeRunId: null,
     activeRunLaneId: null,
+    effortByLane: {},
+    lastUsageByLane: {},
     appliedEventIds: {},
     openedLanes: {},
     runStatus: {},
@@ -84,6 +110,10 @@ export function createWorkbenchStore(): StoreApi<WorkbenchState> {
         runStatus: { ...state.runStatus, [runId]: "cancelled" },
       })),
     selectLane: (laneId) => set({ selectedLaneId: laneId }),
+    setEffort: (laneId, effort) =>
+      set((state) => ({
+        effortByLane: { ...state.effortByLane, [laneId]: effort },
+      })),
     selectTask: (taskId) =>
       set({ selectedTaskId: taskId, selectedLaneId: null }),
     setActiveRun: (runId, laneId) =>

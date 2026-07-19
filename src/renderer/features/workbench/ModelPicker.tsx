@@ -56,10 +56,14 @@ export function ModelPicker({
   }, [open]);
 
   const hasModels = catalog.some((entry) => entry.models.length > 0);
+  const normalizeModelId = (id: string) => id.replace(/\[1m\]$/u, "");
   const selectedCatalogModel = selectedLane
     ? catalog
-        .find((entry) => entry.runtimeKind === selectedLane.runtimeKind)
-        ?.models.find((model) => model.id === selectedLane.model)
+        .flatMap((entry) => entry.models)
+        .find(
+          (model) =>
+            normalizeModelId(model.id) === normalizeModelId(selectedLane.model),
+        )
     : undefined;
 
   return (
@@ -105,8 +109,9 @@ export function ModelPicker({
               )}
               {entry.models.map((model) => {
                 const isSelected =
-                  selectedLane?.runtimeKind === entry.runtimeKind &&
-                  selectedLane.model === model.id;
+                  selectedLane !== null &&
+                  normalizeModelId(selectedLane.model) ===
+                    normalizeModelId(model.id);
                 return (
                   <button
                     aria-selected={isSelected}

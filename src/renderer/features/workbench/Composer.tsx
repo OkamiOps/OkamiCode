@@ -1,6 +1,7 @@
 import { ArrowUp, Square } from "lucide-react";
 import { useState, type FormEvent, type KeyboardEvent } from "react";
 import type { ModelCatalog, WorkbenchLane } from "./api";
+import { EffortPicker } from "./EffortPicker";
 import { ModelPicker } from "./ModelPicker";
 
 interface ComposerProps {
@@ -11,7 +12,11 @@ interface ComposerProps {
   isSending: boolean;
   lane: WorkbenchLane | null;
   catalog: ModelCatalog;
+  effort: string | null;
+  efforts: string[];
+  contextNote: string | null;
   onCancel: (runId: string) => Promise<void>;
+  onSelectEffort: (effort: string) => void;
   onSelectModel: (runtimeKind: "claude" | "codex", model: string) => void;
   onSend: (input: string) => Promise<void>;
 }
@@ -24,7 +29,11 @@ export function Composer({
   isSending,
   lane,
   catalog,
+  effort,
+  efforts,
+  contextNote,
   onCancel,
+  onSelectEffort,
   onSelectModel,
   onSend,
 }: ComposerProps) {
@@ -70,7 +79,23 @@ export function Composer({
           onSelectModel={onSelectModel}
           selectedLane={lane}
         />
+        {effort && (
+          <EffortPicker
+            disabled={isSending}
+            efforts={efforts}
+            onSelect={onSelectEffort}
+            selected={effort}
+          />
+        )}
         <span className="chat-composer__spacer" />
+        {contextNote && (
+          <span
+            className="chat-context-note"
+            title="Estimativa local a partir dos eventos de uso da sessão"
+          >
+            {contextNote}
+          </span>
+        )}
         {activeRunId ? (
           <button
             className="chat-stop"

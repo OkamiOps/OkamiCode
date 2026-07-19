@@ -27,6 +27,7 @@ interface RegisterIpcHandlersOptions {
   rendererUrl: string;
   state: AppState;
   modelCatalog?: () => ModelCatalogEntry[];
+  laneEffort?: Map<string, string>;
 }
 
 interface TaskRow {
@@ -46,6 +47,7 @@ export function registerIpcHandlers({
   rendererUrl,
   state,
   modelCatalog = () => [],
+  laneEffort = new Map<string, string>(),
 }: RegisterIpcHandlersOptions): void {
   const openedLanes = new Map<string, OpenedLane>();
   let quickChat: QuickChatService | undefined;
@@ -78,6 +80,7 @@ export function registerIpcHandlers({
         quickChatService,
         usageService,
         modelCatalog,
+        laneEffort,
       );
       return ipcResponseSchemas[channel].parse(response);
     });
@@ -93,6 +96,7 @@ async function dispatch(
   quickChatService: () => QuickChatService,
   usageService: () => UsageCommands,
   modelCatalog: () => ModelCatalogEntry[],
+  laneEffort: Map<string, string>,
 ): Promise<unknown> {
   switch (channel) {
     case "system:doctor":
@@ -119,6 +123,7 @@ async function dispatch(
         openedLanes,
         event.sender,
         request as IpcRequest<"lane:sendTurn">,
+        laneEffort,
       );
     case "run:cancel":
       return cancelRun(state, request as IpcRequest<"run:cancel">);
@@ -343,12 +348,18 @@ async function sendLaneTurn(
   openedLanes: Map<string, OpenedLane>,
   sender: Pick<WebContents, "send">,
   request: IpcRequest<"lane:sendTurn">,
+  laneEffort: Map<string, string>,
 ) {
   const opened =
     openedLanes.get(request.laneId) ??
     (await state.laneService.open(request.laneId));
   openedLanes.set(opened.laneId, opened);
-  const run = await state.laneService.sendTurn(opened, request.input);
+  if (request.effort) laneEffort.set(request.laneId, request.effort);
+  const run = await state.laneService.sendTurn(
+    opened,
+    request.input,
+    request.effort,
+  );
   void forwardEvents(state, sender, run).catch(state.reportBackgroundError);
   return {
     runId: run.runId,

@@ -19,6 +19,9 @@ export interface StartGatewayServerOptions {
   profiles: GatewayMount[];
   bearerToken?: string;
   port?: number;
+  // Resolves per-lane request options (e.g. reasoning effort) from the lane id
+  // carried in the bearer token suffix.
+  effortResolver?: (laneId: string) => string | undefined;
 }
 
 export interface GatewayServer {
@@ -46,7 +49,13 @@ export async function startGatewayServer(
   }
 
   const server = createServer((request, response) => {
-    void handleRequest(request, response, bearerToken, mounts);
+    void handleRequest(
+      request,
+      response,
+      bearerToken,
+      mounts,
+      options.effortResolver,
+    );
   });
   await new Promise<void>((resolve, reject) => {
     server.once("error", reject);
@@ -77,10 +86,12 @@ async function handleRequest(
   response: ServerResponse,
   bearerToken: string,
   mounts: Map<string, GatewayMount>,
+  effortResolver?: (laneId: string) => string | undefined,
 ): Promise<void> {
   response.setHeader("Cache-Control", "no-store");
   response.setHeader("X-Content-Type-Options", "nosniff");
-  if (!authorized(request.headers.authorization, bearerToken)) {
+  const laneId = authorizedLane(request.headers.authorization, bearerToken);
+  if (laneId === null) {
     jsonResponse(response, 401, { error: { type: "unauthorized" } });
     return;
   }
@@ -98,7 +109,10 @@ async function handleRequest(
 
   try {
     const body = await requestJson(request);
-    const iterator = mount.bridge.handleMessages(body)[Symbol.asyncIterator]();
+    const effort = laneId ? effortResolver?.(laneId) : undefined;
+    const iterator = mount.bridge
+      .handleMessages(body, effort ? { effort } : undefined)
+      [Symbol.asyncIterator]();
     const first = await iterator.next();
     response.writeHead(200, {
       Connection: "keep-alive",
@@ -130,10 +144,20 @@ async function handleRequest(
   }
 }
 
-function authorized(header: string | undefined, token: string): boolean {
-  const actual = Buffer.from(header ?? "");
-  const expected = Buffer.from(`Bearer ${token}`);
-  return actual.length === expected.length && timingSafeEqual(actual, expected);
+// Returns "" for the bare token, the lane id for a "token.laneId" bearer, or
+// null when unauthorized.
+function authorizedLane(
+  header: string | undefined,
+  token: string,
+): string | null {
+  const value = header?.startsWith("Bearer ") ? header.slice(7) : "";
+  const [presented, ...suffix] = value.split(".");
+  const actual = Buffer.from(presented ?? "");
+  const expected = Buffer.from(token);
+  if (actual.length !== expected.length || !timingSafeEqual(actual, expected)) {
+    return null;
+  }
+  return suffix.join(".");
 }
 
 async function requestJson(request: IncomingMessage): Promise<unknown> {

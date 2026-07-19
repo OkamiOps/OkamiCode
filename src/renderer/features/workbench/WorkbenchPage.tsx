@@ -20,6 +20,8 @@ export function WorkbenchPage({ api = workbenchApi }: WorkbenchPageProps) {
   const activeRunLaneId = useWorkbenchStore((state) => state.activeRunLaneId);
   const sentMessages = useWorkbenchStore((state) => state.sentMessages);
   const streams = useWorkbenchStore((state) => state.streams);
+  const effortByLane = useWorkbenchStore((state) => state.effortByLane);
+  const lastUsageByLane = useWorkbenchStore((state) => state.lastUsageByLane);
   const storeActions = useWorkbenchStore(useShallow(workbenchActions));
 
   const tasksQuery = useQuery({
@@ -48,6 +50,29 @@ export function WorkbenchPage({ api = workbenchApi }: WorkbenchPageProps) {
     tasks.find((task) => task.id === effectiveTaskId) ?? null;
   const hasConversation =
     sentMessages.length > 0 || Object.keys(streams).length > 0;
+  // Bridged lanes run on the Claude harness, so the catalog entry is found by
+  // model id (with [1m] tolerance), never by the lane's executing runtime.
+  const normalizeModelId = (id: string) => id.replace(/\[1m\]$/u, "");
+  const selectedCatalogModel = selectedLane
+    ? (modelsQuery.data ?? [])
+        .flatMap((entry) => entry.models)
+        .find(
+          (model) =>
+            normalizeModelId(model.id) === normalizeModelId(selectedLane.model),
+        )
+    : undefined;
+  const efforts = selectedCatalogModel?.efforts ?? [];
+  const effort = selectedLane
+    ? (effortByLane[selectedLane.laneId] ??
+      selectedCatalogModel?.defaultEffort ??
+      (efforts.length > 0 ? efforts[Math.min(2, efforts.length - 1)] : null))
+    : null;
+  const contextNote = selectedLane
+    ? sessionContextNote(
+        lastUsageByLane[selectedLane.laneId],
+        selectedLane.model,
+      )
+    : null;
 
   const openLane = useMutation({
     mutationFn: api.openLane,
@@ -99,6 +124,13 @@ export function WorkbenchPage({ api = workbenchApi }: WorkbenchPageProps) {
       isSending={sendTurn.isPending}
       lane={selectedLane}
       catalog={modelsQuery.data ?? []}
+      effort={efforts.length > 0 ? effort : null}
+      efforts={efforts}
+      contextNote={contextNote}
+      onSelectEffort={(nextEffort) => {
+        if (selectedLane)
+          storeActions.setEffort(selectedLane.laneId, nextEffort);
+      }}
       onCancel={async (runId) => {
         await cancelRun.mutateAsync({ runId });
       }}
@@ -108,7 +140,11 @@ export function WorkbenchPage({ api = workbenchApi }: WorkbenchPageProps) {
       }}
       onSend={async (input) => {
         if (!selectedLane) return;
-        await sendTurn.mutateAsync({ laneId: selectedLane.laneId, input });
+        await sendTurn.mutateAsync({
+          laneId: selectedLane.laneId,
+          input,
+          ...(efforts.length > 0 && effort ? { effort } : {}),
+        });
       }}
     />
   );
@@ -173,12 +209,34 @@ export function WorkbenchPage({ api = workbenchApi }: WorkbenchPageProps) {
   );
 }
 
+function sessionContextNote(
+  usage:
+    | { inputTokens: number; cacheReadTokens: number; outputTokens: number }
+    | undefined,
+  model: string,
+): string | null {
+  if (!usage) return null;
+  const used = usage.inputTokens + usage.cacheReadTokens + usage.outputTokens;
+  if (used === 0) return null;
+  const window = model.includes("[1m]")
+    ? 1_000_000
+    : /claude|opus|sonnet|haiku|default/iu.test(model)
+      ? 200_000
+      : null;
+  const compact = (value: number) =>
+    value >= 1000 ? `${Math.round(value / 1000)}k` : `${value}`;
+  if (!window) return `contexto ~${compact(used)} tokens`;
+  const percent = Math.min(100, Math.round((used / window) * 100));
+  return `contexto ${percent}% · ${compact(used)}/${compact(window)}`;
+}
+
 function workbenchActions(state: WorkbenchState) {
   return {
     addSentMessage: state.addSentMessage,
     applyEvent: state.applyEvent,
     cancelActiveRun: state.cancelActiveRun,
     selectLane: state.selectLane,
+    setEffort: state.setEffort,
     selectTask: state.selectTask,
     setActiveRun: state.setActiveRun,
     upsertLane: state.upsertLane,

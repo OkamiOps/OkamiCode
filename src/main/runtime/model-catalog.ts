@@ -9,6 +9,8 @@ export interface CatalogModel {
   id: string;
   label: string;
   description?: string;
+  efforts?: string[];
+  defaultEffort?: string;
 }
 
 export interface ModelCatalogEntry {
@@ -24,12 +26,17 @@ interface CodexCachedModel {
   display_name?: string;
   description?: string;
   visibility?: string;
+  default_reasoning_level?: string;
+  supported_reasoning_levels?: Array<{ effort?: string }>;
 }
 
 interface ClaudeListedModel {
   value?: string;
   displayName?: string;
   description?: string;
+  supportsEffort?: boolean;
+  supportedEffortLevels?: string[];
+  defaultEffortLevel?: string;
 }
 
 export function readCodexModelsCache(
@@ -44,11 +51,20 @@ export function readCodexModelsCache(
         (model): model is CodexCachedModel & { slug: string } =>
           typeof model.slug === "string" && model.visibility === "list",
       )
-      .map((model) => ({
-        id: model.slug,
-        label: model.display_name ?? model.slug,
-        ...(model.description ? { description: model.description } : {}),
-      }));
+      .map((model) => {
+        const efforts = (model.supported_reasoning_levels ?? [])
+          .map((level) => level.effort)
+          .filter((effort): effort is string => typeof effort === "string");
+        return {
+          id: model.slug,
+          label: model.display_name ?? model.slug,
+          ...(model.description ? { description: model.description } : {}),
+          ...(efforts.length > 0 ? { efforts } : {}),
+          ...(model.default_reasoning_level
+            ? { defaultEffort: model.default_reasoning_level }
+            : {}),
+        };
+      });
   } catch {
     return [];
   }
@@ -142,6 +158,14 @@ export function fetchClaudeModelsFromCli(
             id: model.value,
             label: model.displayName ?? model.value,
             ...(model.description ? { description: model.description } : {}),
+            ...(model.supportsEffort && model.supportedEffortLevels?.length
+              ? {
+                  efforts: model.supportedEffortLevels,
+                  ...(model.defaultEffortLevel
+                    ? { defaultEffort: model.defaultEffortLevel }
+                    : {}),
+                }
+              : {}),
           }));
         finish(models);
       });

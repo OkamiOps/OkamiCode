@@ -131,6 +131,18 @@ export class ClaudeAdapter implements RuntimeAdapter {
     });
     try {
       try {
+        if (request.effort && request.model) {
+          // Applies the picker's effort level via the CLI's own control protocol.
+          await session.process.send({
+            type: "control_request",
+            request_id: `okami-effort-${request.runId}`,
+            request: {
+              subtype: "set_model",
+              model: request.model,
+              effort: request.effort,
+            },
+          });
+        }
         await session.process.send(
           turnMessage(
             session.authoritativeSessionId ?? session.launchSessionId,

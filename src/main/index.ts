@@ -174,7 +174,9 @@ async function bootstrap(): Promise<void> {
     env: {},
     displayQuotaAccount: "ChatGPT",
   });
+  const laneEffort = new Map<string, string>();
   const gateway = await startGatewayServer({
+    effortResolver: (laneId) => laneEffort.get(laneId),
     profiles: [
       {
         profile: chatgptProfile,
@@ -219,6 +221,7 @@ async function bootstrap(): Promise<void> {
   seedInitialWorkspace(state);
   registerIpcHandlers({
     ipcMain,
+    laneEffort,
     modelCatalog: () => modelCatalogService.list(),
     rendererUrl:
       process.env.ELECTRON_RENDERER_URL ??
