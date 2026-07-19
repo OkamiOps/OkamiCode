@@ -18,10 +18,18 @@ import type { RunHandle, RuntimeHealth } from "../runtime/adapter";
 import { createUsageCommands, type UsageCommands } from "../usage/service";
 import type { AppState } from "./app-state";
 
+export interface ModelCatalogEntry {
+  runtimeKind: "claude" | "codex";
+  providerLabel: string;
+  routeKind: "direct" | "compatible" | "bridged" | "native" | "unavailable";
+  models: string[];
+}
+
 interface RegisterIpcHandlersOptions {
   ipcMain: Pick<IpcMain, "handle">;
   rendererUrl: string;
   state: AppState;
+  modelCatalog?: ModelCatalogEntry[];
 }
 
 interface TaskRow {
@@ -40,6 +48,7 @@ export function registerIpcHandlers({
   ipcMain,
   rendererUrl,
   state,
+  modelCatalog = [],
 }: RegisterIpcHandlersOptions): void {
   const openedLanes = new Map<string, OpenedLane>();
   let quickChat: QuickChatService | undefined;
@@ -71,6 +80,7 @@ export function registerIpcHandlers({
         openedLanes,
         quickChatService,
         usageService,
+        modelCatalog,
       );
       return ipcResponseSchemas[channel].parse(response);
     });
@@ -85,16 +95,25 @@ async function dispatch(
   openedLanes: Map<string, OpenedLane>,
   quickChatService: () => QuickChatService,
   usageService: () => UsageCommands,
+  modelCatalog: ModelCatalogEntry[],
 ): Promise<unknown> {
   switch (channel) {
     case "system:doctor":
       return systemDoctor(state);
+    case "models:list":
+      return modelCatalog;
     case "task:create":
       return createTask(state, request as IpcRequest<"task:create">);
     case "task:list":
       return listTasks(state);
     case "lane:list":
       return listLanes(state, request as IpcRequest<"lane:list">);
+    case "lane:ensure":
+      return ensureLane(
+        state,
+        openedLanes,
+        request as IpcRequest<"lane:ensure">,
+      );
     case "lane:open":
       return openLane(state, openedLanes, request as IpcRequest<"lane:open">);
     case "lane:sendTurn":
@@ -259,6 +278,46 @@ async function openLane(
   });
   openedLanes.set(opened.laneId, opened);
   return openedLaneProjection(opened);
+}
+
+// Finds (or creates) the lane for task+runtime+model, then opens it. This is
+// what makes the model picker offer full catalogs instead of seeded lanes.
+async function ensureLane(
+  state: AppState,
+  openedLanes: Map<string, OpenedLane>,
+  request: IpcRequest<"lane:ensure">,
+) {
+  const existing = state.database
+    .prepare(
+      `SELECT id FROM runtime_lanes
+       WHERE task_id = ? AND runtime_kind = ? AND model = ?
+       LIMIT 1`,
+    )
+    .get(request.taskId, request.runtimeKind, request.model) as
+    { id: string } | undefined;
+  let laneId = existing?.id;
+  if (!laneId) {
+    const sibling = state.database
+      .prepare(
+        `SELECT workspace_path FROM runtime_lanes WHERE task_id = ? LIMIT 1`,
+      )
+      .get(request.taskId) as { workspace_path: string | null } | undefined;
+    laneId = state.createId();
+    const now = state.clock().toISOString();
+    state.lanes.insert({
+      id: laneId,
+      taskId: request.taskId,
+      runtimeKind: request.runtimeKind,
+      providerKind: request.runtimeKind === "claude" ? "claude_max" : "chatgpt",
+      model: request.model,
+      status: "ready",
+      workspacePath: sibling?.workspace_path ?? null,
+      lastEventCursor: 0,
+      createdAt: now,
+      updatedAt: now,
+    });
+  }
+  return openLane(state, openedLanes, { laneId });
 }
 
 function openedLaneProjection(opened: OpenedLane) {

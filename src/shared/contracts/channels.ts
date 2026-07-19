@@ -2,9 +2,11 @@
 // imports this module and must stay dependency-free.
 export const ipcChannels = [
   "system:doctor",
+  "models:list",
   "task:create",
   "task:list",
   "lane:list",
+  "lane:ensure",
   "lane:open",
   "lane:sendTurn",
   "run:cancel",

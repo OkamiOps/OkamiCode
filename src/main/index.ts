@@ -213,6 +213,21 @@ async function bootstrap(): Promise<void> {
   seedInitialWorkspace(state);
   registerIpcHandlers({
     ipcMain,
+    modelCatalog: [
+      {
+        runtimeKind: "claude",
+        providerLabel: "Claude Max",
+        routeKind: "direct",
+        models: ["opus", "sonnet", "haiku"],
+      },
+      {
+        runtimeKind: "codex",
+        providerLabel: "ChatGPT",
+        routeKind: "bridged",
+        // Verified against the ChatGPT Codex backend for this subscription.
+        models: ["gpt-5.6-sol", "gpt-5.6-terra", "gpt-5.5"],
+      },
+    ],
     rendererUrl:
       process.env.ELECTRON_RENDERER_URL ??
       `file://${path.join(import.meta.dirname, "../renderer/index.html")}`,

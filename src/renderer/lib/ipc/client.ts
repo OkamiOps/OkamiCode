@@ -52,6 +52,9 @@ export const workbenchClient = {
   taskList: () => invokeCommand("task:list", {}),
   laneList: (request: IpcRequest<"lane:list">) =>
     invokeCommand("lane:list", request),
+  laneEnsure: (request: IpcRequest<"lane:ensure">) =>
+    invokeCommand("lane:ensure", request),
+  modelsList: () => invokeCommand("models:list", {}),
   laneOpen: (request: IpcRequest<"lane:open">) =>
     invokeCommand("lane:open", request),
   laneSendTurn: (request: IpcRequest<"lane:sendTurn">) =>

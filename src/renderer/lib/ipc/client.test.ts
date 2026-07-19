@@ -119,9 +119,11 @@ it("exposes exactly the enumerated command surface", () => {
   expect(ipcChannels).toEqual(ipcChannels);
   expect(ipcChannels).toEqual([
     "system:doctor",
+    "models:list",
     "task:create",
     "task:list",
     "lane:list",
+    "lane:ensure",
     "lane:open",
     "lane:sendTurn",
     "run:cancel",

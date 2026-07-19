@@ -25,6 +25,10 @@ export function WorkbenchPage({ api = workbenchApi }: WorkbenchPageProps) {
     queryKey: ["workbench", "tasks"],
     queryFn: api.listTasks,
   });
+  const modelsQuery = useQuery({
+    queryKey: ["workbench", "models"],
+    queryFn: api.listModels,
+  });
   const tasks = tasksQuery.data ?? [];
   const effectiveTaskId = selectedTaskId ?? tasks[0]?.id ?? null;
   const lanesQuery = useQuery({
@@ -45,6 +49,13 @@ export function WorkbenchPage({ api = workbenchApi }: WorkbenchPageProps) {
 
   const openLane = useMutation({
     mutationFn: api.openLane,
+    onSuccess: (lane) => {
+      storeActions.upsertLane(lane);
+      storeActions.selectLane(lane.laneId);
+    },
+  });
+  const ensureLane = useMutation({
+    mutationFn: api.ensureLane,
     onSuccess: (lane) => {
       storeActions.upsertLane(lane);
       storeActions.selectLane(lane.laneId);
@@ -73,16 +84,21 @@ export function WorkbenchPage({ api = workbenchApi }: WorkbenchPageProps) {
   const composer = (
     <Composer
       activeRunId={activeRunId}
-      error={queryError(sendTurn.error ?? cancelRun.error ?? openLane.error)}
+      error={queryError(
+        sendTurn.error ?? cancelRun.error ?? openLane.error ?? ensureLane.error,
+      )}
       isCancelling={cancelRun.isPending}
-      isOpeningLane={openLane.isPending}
+      isOpeningLane={openLane.isPending || ensureLane.isPending}
       isSending={sendTurn.isPending}
       lane={selectedLane}
-      lanes={lanes}
+      catalog={modelsQuery.data ?? []}
       onCancel={async (runId) => {
         await cancelRun.mutateAsync({ runId });
       }}
-      onSelectLane={(laneId) => openLane.mutate({ laneId })}
+      onSelectModel={(runtimeKind, model) => {
+        if (!effectiveTaskId) return;
+        ensureLane.mutate({ taskId: effectiveTaskId, runtimeKind, model });
+      }}
       onSend={async (input) => {
         if (!selectedLane) return;
         await sendTurn.mutateAsync({ laneId: selectedLane.laneId, input });

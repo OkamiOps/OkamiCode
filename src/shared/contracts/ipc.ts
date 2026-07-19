@@ -91,6 +91,31 @@ export const laneSummarySchema = z
   .strict();
 
 export const laneListSchema = z.array(laneSummarySchema);
+
+export const laneEnsureRequestSchema = z
+  .object({
+    taskId: entityIdSchema,
+    runtimeKind: runtimeKindSchema,
+    model: z.string().trim().min(1).max(120),
+  })
+  .strict();
+
+export const modelCatalogSchema = z.array(
+  z
+    .object({
+      runtimeKind: runtimeKindSchema,
+      providerLabel: z.string().min(1),
+      routeKind: z.enum([
+        "direct",
+        "compatible",
+        "bridged",
+        "native",
+        "unavailable",
+      ]),
+      models: z.array(z.string().min(1)).min(1),
+    })
+    .strict(),
+);
 export const openedLaneSchema = laneSummarySchema;
 
 export const laneSendTurnRequestSchema = z
@@ -338,9 +363,11 @@ function notImplementedSchema<C extends IpcChannel>(channel: C) {
 
 export const ipcRequestSchemas = {
   "system:doctor": emptyRequestSchema,
+  "models:list": emptyRequestSchema,
   "task:create": taskCreateRequestSchema,
   "task:list": emptyRequestSchema,
   "lane:list": laneListRequestSchema,
+  "lane:ensure": laneEnsureRequestSchema,
   "lane:open": laneOpenRequestSchema,
   "lane:sendTurn": laneSendTurnRequestSchema,
   "run:cancel": runCancelRequestSchema,
@@ -357,9 +384,11 @@ export const ipcRequestSchemas = {
 
 export const ipcResponseSchemas = {
   "system:doctor": systemDoctorSchema,
+  "models:list": modelCatalogSchema,
   "task:create": taskSchema,
   "task:list": taskListSchema,
   "lane:list": laneListSchema,
+  "lane:ensure": openedLaneSchema,
   "lane:open": openedLaneSchema,
   "lane:sendTurn": runSummarySchema,
   "run:cancel": runCancelResultSchema,

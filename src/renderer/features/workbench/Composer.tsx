@@ -1,6 +1,6 @@
 import { ArrowUp, Square } from "lucide-react";
 import { useState, type FormEvent, type KeyboardEvent } from "react";
-import type { WorkbenchLane } from "./api";
+import type { ModelCatalog, WorkbenchLane } from "./api";
 import { ModelPicker } from "./ModelPicker";
 
 interface ComposerProps {
@@ -10,9 +10,9 @@ interface ComposerProps {
   isOpeningLane: boolean;
   isSending: boolean;
   lane: WorkbenchLane | null;
-  lanes: WorkbenchLane[];
+  catalog: ModelCatalog;
   onCancel: (runId: string) => Promise<void>;
-  onSelectLane: (laneId: string) => void;
+  onSelectModel: (runtimeKind: "claude" | "codex", model: string) => void;
   onSend: (input: string) => Promise<void>;
 }
 
@@ -23,9 +23,9 @@ export function Composer({
   isOpeningLane,
   isSending,
   lane,
-  lanes,
+  catalog,
   onCancel,
-  onSelectLane,
+  onSelectModel,
   onSend,
 }: ComposerProps) {
   const [input, setInput] = useState("");
@@ -62,11 +62,11 @@ export function Composer({
       />
       <div className="chat-composer__row">
         <ModelPicker
+          catalog={catalog}
           disabled={Boolean(activeRunId) || isSending}
           isOpening={isOpeningLane}
-          lanes={lanes}
-          onSelect={onSelectLane}
-          selectedLaneId={lane?.laneId ?? null}
+          onSelectModel={onSelectModel}
+          selectedLane={lane}
         />
         <span className="chat-composer__spacer" />
         {activeRunId ? (

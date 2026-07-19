@@ -126,8 +126,12 @@ export function resolveRoute(options: ResolveRouteOptions): ResolvedRoute {
   };
 }
 
+// The Claude CLI accepts these aliases without the "claude-" prefix.
+const CLAUDE_MODEL_ALIASES = new Set(["opus", "sonnet", "haiku", "opusplan"]);
+
 function isClaudeModel(model: string): boolean {
-  return model.toLowerCase().includes("claude");
+  const normalized = model.toLowerCase();
+  return normalized.includes("claude") || CLAUDE_MODEL_ALIASES.has(normalized);
 }
 
 function providerForModel(model: string): GatewayProvider | undefined {

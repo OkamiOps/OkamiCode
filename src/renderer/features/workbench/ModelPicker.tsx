@@ -1,21 +1,24 @@
 import { Check, ChevronDown } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
-import type { WorkbenchLane } from "./api";
+import type { ModelCatalog, WorkbenchLane } from "./api";
 
 interface ModelPickerProps {
+  catalog: ModelCatalog;
   disabled?: boolean;
   isOpening: boolean;
-  lanes: WorkbenchLane[];
-  onSelect: (laneId: string) => void;
-  selectedLaneId: string | null;
+  onSelectModel: (runtimeKind: "claude" | "codex", model: string) => void;
+  selectedLane: WorkbenchLane | null;
 }
 
-export function modelLabel(lane: WorkbenchLane): string {
-  const model = lane.model
+export function formatModel(model: string): string {
+  return model
     .replace(/^claude-/u, "Claude ")
     .replace(/^gpt-?/iu, "GPT-")
     .replace(/\b\w/u, (char) => char.toUpperCase());
-  return model;
+}
+
+export function modelLabel(lane: WorkbenchLane): string {
+  return formatModel(lane.model);
 }
 
 export function modelDetail(lane: WorkbenchLane): string {
@@ -27,16 +30,14 @@ export function modelDetail(lane: WorkbenchLane): string {
 }
 
 export function ModelPicker({
+  catalog,
   disabled,
   isOpening,
-  lanes,
-  onSelect,
-  selectedLaneId,
+  onSelectModel,
+  selectedLane,
 }: ModelPickerProps) {
   const [open, setOpen] = useState(false);
   const rootRef = useRef<HTMLDivElement>(null);
-  const selected =
-    lanes.find((lane) => lane.laneId === selectedLaneId) ?? lanes[0] ?? null;
 
   useEffect(() => {
     if (!open) return;
@@ -54,6 +55,8 @@ export function ModelPicker({
     };
   }, [open]);
 
+  const hasModels = catalog.some((entry) => entry.models.length > 0);
+
   return (
     <div className="model-picker" ref={rootRef}>
       <button
@@ -61,20 +64,20 @@ export function ModelPicker({
         aria-haspopup="listbox"
         aria-label="Selecionar modelo"
         className="model-picker__button"
-        disabled={disabled || lanes.length === 0}
+        disabled={disabled || !hasModels}
         onClick={() => setOpen((value) => !value)}
         type="button"
       >
-        {selected ? (
+        {selectedLane ? (
           <>
             <span
               aria-hidden="true"
-              className={`route-dot route-dot--${selected.routeKind}`}
+              className={`route-dot route-dot--${selectedLane.routeKind}`}
             />
-            {isOpening ? "Trocando…" : modelLabel(selected)}
+            {isOpening ? "Trocando…" : modelLabel(selectedLane)}
           </>
         ) : (
-          "Sem modelos"
+          "Escolher modelo"
         )}
         <ChevronDown aria-hidden="true" size={13} />
       </button>
@@ -84,34 +87,47 @@ export function ModelPicker({
           className="model-picker__menu"
           role="listbox"
         >
-          {lanes.map((lane) => (
-            <button
-              aria-selected={lane.laneId === selected?.laneId}
-              className="model-picker__option"
-              key={lane.laneId}
-              onClick={() => {
-                setOpen(false);
-                if (lane.laneId !== selectedLaneId) onSelect(lane.laneId);
-              }}
-              role="option"
-              type="button"
-            >
-              <span
-                aria-hidden="true"
-                className={`route-dot route-dot--${lane.routeKind}`}
-              />
-              <span className="model-picker__option-meta">
-                {modelLabel(lane)}
-                <small>{modelDetail(lane)}</small>
-              </span>
-              {lane.laneId === selected?.laneId && (
-                <Check
-                  aria-hidden="true"
-                  className="model-picker__check"
-                  size={14}
-                />
-              )}
-            </button>
+          {catalog.map((entry) => (
+            <div key={`${entry.runtimeKind}-${entry.providerLabel}`}>
+              <div className="model-picker__group">
+                {entry.providerLabel}
+                {entry.routeKind === "bridged" && " · via harness Claude"}
+              </div>
+              {entry.models.map((model) => {
+                const isSelected =
+                  selectedLane?.runtimeKind === entry.runtimeKind &&
+                  selectedLane.model === model;
+                return (
+                  <button
+                    aria-selected={isSelected}
+                    className="model-picker__option"
+                    key={model}
+                    onClick={() => {
+                      setOpen(false);
+                      if (!isSelected) onSelectModel(entry.runtimeKind, model);
+                    }}
+                    role="option"
+                    type="button"
+                  >
+                    <span
+                      aria-hidden="true"
+                      className={`route-dot route-dot--${entry.routeKind}`}
+                    />
+                    <span className="model-picker__option-meta">
+                      {formatModel(model)}
+                      <small>{entry.providerLabel}</small>
+                    </span>
+                    {isSelected && (
+                      <Check
+                        aria-hidden="true"
+                        className="model-picker__check"
+                        size={14}
+                      />
+                    )}
+                  </button>
+                );
+              })}
+            </div>
           ))}
         </div>
       )}

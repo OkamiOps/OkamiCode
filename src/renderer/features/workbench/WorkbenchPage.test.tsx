@@ -4,7 +4,7 @@ import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { MemoryRouter, Route, Routes } from "react-router-dom";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import type { CanonicalEvent } from "../../../shared/contracts/event";
-import type { IpcResponse } from "../../../shared/contracts/ipc";
+import type { IpcRequest, IpcResponse } from "../../../shared/contracts/ipc";
 import { AppShell } from "../../app/layout/AppShell";
 import type { WorkbenchApi } from "./api";
 import { reduceCanonicalEvent, type WorkbenchState } from "./store";
@@ -73,12 +73,31 @@ function renderWorkbenchFixture({
   let eventListener: ((event: CanonicalEvent) => void) | undefined;
   const calls = {
     laneOpen: [] as Array<{ laneId: string; inheritTask?: boolean }>,
+    laneEnsure: [] as IpcRequest<"lane:ensure">[],
     laneClose: [] as Array<{ laneId: string }>,
     laneSendTurn: [] as Array<{ laneId: string; input: string }>,
     runCancel: [] as Array<{ runId: string }>,
   };
   const api: WorkbenchApi = {
     listTasks: vi.fn(async () => [task]),
+    listModels: vi.fn(async () => [
+      {
+        runtimeKind: "claude" as const,
+        providerLabel: "Claude Max",
+        routeKind: "direct" as const,
+        models: ["opus", "sonnet", "haiku"],
+      },
+      {
+        runtimeKind: "codex" as const,
+        providerLabel: "ChatGPT",
+        routeKind: "bridged" as const,
+        models: ["gpt-5.6-sol", "gpt-5.6-terra", "gpt-5.5"],
+      },
+    ]),
+    ensureLane: vi.fn(async (request: IpcRequest<"lane:ensure">) => {
+      calls.laneEnsure.push(request);
+      return { ...codexLane, model: request.model };
+    }),
     listLanes: vi.fn(async () => lanes),
     openLane: vi.fn(async (request) => {
       calls.laneOpen.push(request);
@@ -154,9 +173,13 @@ describe("WorkbenchPage", () => {
     await userEvent.click(
       screen.getByRole("button", { name: "Selecionar modelo" }),
     );
-    await userEvent.click(screen.getByRole("option", { name: /GPT-5\.6/i }));
-    expect(runtime.calls.laneOpen.at(-1)).toMatchObject({
-      laneId: codexLane.laneId,
+    await userEvent.click(
+      screen.getByRole("option", { name: /GPT-5\.6-sol/i }),
+    );
+    expect(runtime.calls.laneEnsure.at(-1)).toMatchObject({
+      taskId,
+      runtimeKind: "codex",
+      model: "gpt-5.6-sol",
     });
     expect(runtime.calls.laneClose).toHaveLength(0);
   });
@@ -168,7 +191,7 @@ describe("WorkbenchPage", () => {
     await user.click(
       await screen.findByRole("button", { name: "Selecionar modelo" }),
     );
-    expect(screen.getAllByText("ChatGPT Plus").length).toBeGreaterThan(0);
+    expect(screen.getAllByText("ChatGPT").length).toBeGreaterThan(0);
     await user.keyboard("{Escape}");
     expect(screen.queryByText("Não informado")).toBeNull();
 
