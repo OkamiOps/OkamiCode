@@ -47,20 +47,31 @@ export function EffortPicker({
     };
   }, [open]);
 
-  // A vanished chip reads as broken; models without effort levels keep the
-  // chip visible but inert, with the reason on hover.
+  // A vanished or dead chip reads as broken; models without effort levels
+  // keep the chip clickable and answer with the reason instead of silence.
   if (efforts.length === 0 || !selected) {
     return (
-      <button
-        aria-label="Effort indisponível para este modelo"
-        className="model-picker__button model-picker__button--inert"
-        disabled
-        title="Este modelo não expõe níveis de effort"
-        type="button"
-      >
-        <Gauge aria-hidden="true" size={13} />
-        Effort —
-      </button>
+      <div className="model-picker" ref={rootRef}>
+        <button
+          aria-expanded={open}
+          aria-label="Effort indisponível para este modelo"
+          className="model-picker__button model-picker__button--inert"
+          onClick={() => setOpen((value) => !value)}
+          type="button"
+        >
+          <Gauge aria-hidden="true" size={13} />
+          Effort —
+          <ChevronDown aria-hidden="true" size={13} />
+        </button>
+        {open && (
+          <div className="model-picker__menu model-picker__menu--compact">
+            <p className="effort-picker__note">
+              Este modelo não expõe níveis de effort no CLI. Escolha Opus,
+              Fable, Sonnet ou um modelo GPT para ajustar.
+            </p>
+          </div>
+        )}
+      </div>
     );
   }
 

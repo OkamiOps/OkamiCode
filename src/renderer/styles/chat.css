@@ -819,3 +819,12 @@ textarea:focus-visible {
   opacity: 0.55;
   cursor: default;
 }
+
+.effort-picker__note {
+  margin: 0;
+  padding: 8px 10px;
+  font-size: 12px;
+  line-height: 1.45;
+  color: var(--chat-text-mid);
+  max-width: 230px;
+}
