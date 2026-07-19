@@ -80,8 +80,12 @@ describe("LaneService", () => {
       expect(h.runtimes.codex.startRequests).toHaveLength(0);
       expect(h.runtimes.claude.startRequests[0]?.env).toMatchObject({
         ANTHROPIC_BASE_URL: "http://127.0.0.1:43123/chatgpt-lane",
-        ANTHROPIC_AUTH_TOKEN: "gateway-session-token",
       });
+      // The bearer carries the lane id as a suffix so the gateway can resolve
+      // per-lane options such as reasoning effort.
+      expect(
+        h.runtimes.claude.startRequests[0]?.env?.ANTHROPIC_AUTH_TOKEN,
+      ).toMatch(/^gateway-session-token\.[0-9a-f-]{36}$/u);
       expect(
         h.runtimes.claude.startRequests[0]?.env?.ANTHROPIC_API_KEY,
       ).toBeUndefined();
