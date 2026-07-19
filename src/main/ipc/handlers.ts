@@ -18,18 +18,15 @@ import type { RunHandle, RuntimeHealth } from "../runtime/adapter";
 import { createUsageCommands, type UsageCommands } from "../usage/service";
 import type { AppState } from "./app-state";
 
-export interface ModelCatalogEntry {
-  runtimeKind: "claude" | "codex";
-  providerLabel: string;
-  routeKind: "direct" | "compatible" | "bridged" | "native" | "unavailable";
-  models: string[];
-}
+import type { ModelCatalogEntry } from "../runtime/model-catalog";
+
+export type { ModelCatalogEntry };
 
 interface RegisterIpcHandlersOptions {
   ipcMain: Pick<IpcMain, "handle">;
   rendererUrl: string;
   state: AppState;
-  modelCatalog?: ModelCatalogEntry[];
+  modelCatalog?: () => ModelCatalogEntry[];
 }
 
 interface TaskRow {
@@ -48,7 +45,7 @@ export function registerIpcHandlers({
   ipcMain,
   rendererUrl,
   state,
-  modelCatalog = [],
+  modelCatalog = () => [],
 }: RegisterIpcHandlersOptions): void {
   const openedLanes = new Map<string, OpenedLane>();
   let quickChat: QuickChatService | undefined;
@@ -95,13 +92,13 @@ async function dispatch(
   openedLanes: Map<string, OpenedLane>,
   quickChatService: () => QuickChatService,
   usageService: () => UsageCommands,
-  modelCatalog: ModelCatalogEntry[],
+  modelCatalog: () => ModelCatalogEntry[],
 ): Promise<unknown> {
   switch (channel) {
     case "system:doctor":
       return systemDoctor(state);
     case "models:list":
-      return modelCatalog;
+      return modelCatalog();
     case "task:create":
       return createTask(state, request as IpcRequest<"task:create">);
     case "task:list":

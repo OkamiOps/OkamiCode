@@ -85,13 +85,23 @@ function renderWorkbenchFixture({
         runtimeKind: "claude" as const,
         providerLabel: "Claude Max",
         routeKind: "direct" as const,
-        models: ["opus", "sonnet", "haiku"],
+        source: "aliases do Claude Code (/model)",
+        models: [
+          { id: "opus", label: "Opus" },
+          { id: "sonnet", label: "Sonnet" },
+          { id: "haiku", label: "Haiku" },
+        ],
       },
       {
         runtimeKind: "codex" as const,
         providerLabel: "ChatGPT",
         routeKind: "bridged" as const,
-        models: ["gpt-5.6-sol", "gpt-5.6-terra", "gpt-5.5"],
+        source: "catálogo do Codex CLI (models_cache.json)",
+        models: [
+          { id: "gpt-5.6-sol", label: "GPT-5.6-Sol" },
+          { id: "gpt-5.6-terra", label: "GPT-5.6-Terra" },
+          { id: "gpt-5.5", label: "GPT-5.5" },
+        ],
       },
     ]),
     ensureLane: vi.fn(async (request: IpcRequest<"lane:ensure">) => {

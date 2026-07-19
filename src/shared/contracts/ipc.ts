@@ -112,7 +112,16 @@ export const modelCatalogSchema = z.array(
         "native",
         "unavailable",
       ]),
-      models: z.array(z.string().min(1)).min(1),
+      source: z.string().min(1),
+      models: z.array(
+        z
+          .object({
+            id: z.string().min(1),
+            label: z.string().min(1),
+            description: z.string().min(1).optional(),
+          })
+          .strict(),
+      ),
     })
     .strict(),
 );

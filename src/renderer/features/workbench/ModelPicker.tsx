@@ -56,6 +56,11 @@ export function ModelPicker({
   }, [open]);
 
   const hasModels = catalog.some((entry) => entry.models.length > 0);
+  const selectedCatalogModel = selectedLane
+    ? catalog
+        .find((entry) => entry.runtimeKind === selectedLane.runtimeKind)
+        ?.models.find((model) => model.id === selectedLane.model)
+    : undefined;
 
   return (
     <div className="model-picker" ref={rootRef}>
@@ -74,7 +79,9 @@ export function ModelPicker({
               aria-hidden="true"
               className={`route-dot route-dot--${selectedLane.routeKind}`}
             />
-            {isOpening ? "Trocando…" : modelLabel(selectedLane)}
+            {isOpening
+              ? "Trocando…"
+              : (selectedCatalogModel?.label ?? modelLabel(selectedLane))}
           </>
         ) : (
           "Escolher modelo"
@@ -93,18 +100,22 @@ export function ModelPicker({
                 {entry.providerLabel}
                 {entry.routeKind === "bridged" && " · via harness Claude"}
               </div>
+              {entry.models.length === 0 && (
+                <div className="model-picker__empty">{entry.source}</div>
+              )}
               {entry.models.map((model) => {
                 const isSelected =
                   selectedLane?.runtimeKind === entry.runtimeKind &&
-                  selectedLane.model === model;
+                  selectedLane.model === model.id;
                 return (
                   <button
                     aria-selected={isSelected}
                     className="model-picker__option"
-                    key={model}
+                    key={model.id}
                     onClick={() => {
                       setOpen(false);
-                      if (!isSelected) onSelectModel(entry.runtimeKind, model);
+                      if (!isSelected)
+                        onSelectModel(entry.runtimeKind, model.id);
                     }}
                     role="option"
                     type="button"
@@ -114,8 +125,8 @@ export function ModelPicker({
                       className={`route-dot route-dot--${entry.routeKind}`}
                     />
                     <span className="model-picker__option-meta">
-                      {formatModel(model)}
-                      <small>{entry.providerLabel}</small>
+                      {model.label}
+                      <small>{model.description ?? entry.providerLabel}</small>
                     </span>
                     {isSelected && (
                       <Check

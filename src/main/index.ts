@@ -12,6 +12,7 @@ import { createGatewayProfile } from "./gateway/profile";
 import { startGatewayServer } from "./gateway/server";
 import { LeaseRepository, type CapabilityLease } from "./policy/lease";
 import { RepositoryApprovalBroker } from "./runtime/codex/adapter";
+import { buildModelCatalog } from "./runtime/model-catalog";
 import { createRuntimeRegistry } from "./runtime/registry";
 import { getOrCreateDatabaseKey } from "./secrets";
 import { secureWebPreferences } from "./window";
@@ -213,21 +214,7 @@ async function bootstrap(): Promise<void> {
   seedInitialWorkspace(state);
   registerIpcHandlers({
     ipcMain,
-    modelCatalog: [
-      {
-        runtimeKind: "claude",
-        providerLabel: "Claude Max",
-        routeKind: "direct",
-        models: ["opus", "sonnet", "haiku"],
-      },
-      {
-        runtimeKind: "codex",
-        providerLabel: "ChatGPT",
-        routeKind: "bridged",
-        // Verified against the ChatGPT Codex backend for this subscription.
-        models: ["gpt-5.6-sol", "gpt-5.6-terra", "gpt-5.5"],
-      },
-    ],
+    modelCatalog: buildModelCatalog,
     rendererUrl:
       process.env.ELECTRON_RENDERER_URL ??
       `file://${path.join(import.meta.dirname, "../renderer/index.html")}`,
