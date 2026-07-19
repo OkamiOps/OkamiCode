@@ -41,7 +41,8 @@ export function reduceCanonicalEvent(
     appliedEventIds: { ...state.appliedEventIds, [event.id]: true as const },
   };
   if (event.kind === "message_delta") {
-    const key = `${event.runId}:${String(event.nativeEventId)}`;
+    const anchor = event.payload.messageAnchor ?? event.nativeEventId;
+    const key = `${event.runId}:${String(anchor)}`;
     next.streams = {
       ...state.streams,
       [key]: `${state.streams[key] ?? ""}${String(event.payload.delta ?? "")}`,
@@ -52,6 +53,7 @@ export function reduceCanonicalEvent(
       ...state.runStatus,
       [event.runId]: event.kind === "run_completed" ? "completed" : "failed",
     };
+    if (state.activeRunId === event.runId) next.activeRunId = null;
   }
   return next;
 }

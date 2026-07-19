@@ -144,7 +144,7 @@ describe("WorkbenchPage", () => {
     const runtime = renderWorkbenchFixture({
       lanes: [claudeLane, codexLane],
     });
-    await screen.findByRole("button", { name: "Mudar para Codex" });
+    await screen.findByRole("button", { name: "Selecionar modelo" });
 
     runtime.emit(messageDelta("Olá "));
     runtime.emit(messageDelta("mundo"));
@@ -152,8 +152,9 @@ describe("WorkbenchPage", () => {
 
     expect(await screen.findByText("Olá mundo")).toBeVisible();
     await userEvent.click(
-      screen.getByRole("button", { name: "Mudar para Codex" }),
+      screen.getByRole("button", { name: "Selecionar modelo" }),
     );
+    await userEvent.click(screen.getByRole("option", { name: /GPT-5\.6/i }));
     expect(runtime.calls.laneOpen.at(-1)).toMatchObject({
       laneId: codexLane.laneId,
     });
@@ -164,18 +165,15 @@ describe("WorkbenchPage", () => {
     const runtime = renderWorkbenchFixture({ lanes: [codexLane] });
     const user = userEvent.setup();
 
-    expect((await screen.findAllByText("Claude Code")).length).toBeGreaterThan(
-      0,
+    await user.click(
+      await screen.findByRole("button", { name: "Selecionar modelo" }),
     );
-    expect((await screen.findAllByText("ChatGPT")).length).toBeGreaterThan(0);
-    expect(screen.getAllByText("gpt-5.6").length).toBeGreaterThan(0);
-    expect(screen.getAllByText("bridged").length).toBeGreaterThan(0);
     expect(screen.getAllByText("ChatGPT Plus").length).toBeGreaterThan(0);
-    expect(screen.getByText("3 eventos pendentes")).toBeVisible();
-    expect(screen.getAllByText("Não informado").length).toBeGreaterThan(0);
+    await user.keyboard("{Escape}");
+    expect(screen.queryByText("Não informado")).toBeNull();
 
     await user.type(
-      screen.getByRole("textbox", { name: "Mensagem para a lane" }),
+      screen.getByRole("textbox", { name: "Mensagem" }),
       "Continue a implementação",
     );
     await user.click(screen.getByRole("button", { name: "Enviar" }));

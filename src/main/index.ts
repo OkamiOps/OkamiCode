@@ -127,7 +127,7 @@ function seedInitialWorkspace(state: AppState): void {
       createdAt: now,
       updatedAt: now,
     });
-  insertLane("claude", "claude_max", "claude-opus");
+  insertLane("claude", "claude_max", "opus");
   insertLane("codex", "chatgpt", GPT_BACKEND_MODEL);
 }
 
@@ -190,6 +190,7 @@ async function bootstrap(): Promise<void> {
     gateway: {
       port: gateway.port,
       bearerToken: gateway.bearerToken,
+      gatewayConfigRoot: path.join(app.getPath("userData"), "gateway-config"),
       accounts: [
         {
           provider: "chatgpt",
@@ -203,6 +204,12 @@ async function bootstrap(): Promise<void> {
     },
   });
   box.state = state;
+  // Repairs an earlier seed that used an invalid Claude model id.
+  database
+    .prepare(
+      "UPDATE runtime_lanes SET model = 'opus' WHERE model = 'claude-opus'",
+    )
+    .run();
   seedInitialWorkspace(state);
   registerIpcHandlers({
     ipcMain,

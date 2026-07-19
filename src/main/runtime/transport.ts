@@ -84,7 +84,15 @@ export class JsonlProcess<T = JsonEnvelope> {
     });
     stderrLines.on("line", (line) => {
       writeDiagnostic(this.stderrDiagnosticWriter, line);
+      if (process.env.OKAMI_DEBUG_CHILD === "1") {
+        console.error("[okami child stderr]", line.slice(0, 400));
+      }
     });
+    if (process.env.OKAMI_DEBUG_CHILD === "1") {
+      child.once("exit", (code, signal) => {
+        console.error("[okami child exit]", { code, signal });
+      });
+    }
     stderrLines.once("close", () => this.stderrDiagnosticWriter.end());
 
     child.stdin.on("error", (error) => {

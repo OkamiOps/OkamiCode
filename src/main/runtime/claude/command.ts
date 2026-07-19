@@ -1,5 +1,5 @@
 import { execFile } from "node:child_process";
-import { chmodSync, mkdtempSync } from "node:fs";
+import { chmodSync, mkdirSync, mkdtempSync } from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import { promisify } from "node:util";
@@ -60,6 +60,9 @@ export interface ClaudeGatewayEnvironmentOptions {
   port: number;
   bearerToken: string;
   model: string;
+  // Stable per-lane config dir: required for native session resume to work,
+  // since the conversation history lives inside CLAUDE_CONFIG_DIR.
+  stableConfigDirectory?: string;
 }
 
 export interface ClaudeSettings {
@@ -137,9 +140,15 @@ export function claudeGatewayEnvironment(
   }
   if (!options.bearerToken) throw new Error("Gateway bearer token is required");
   if (!options.model) throw new Error("Gateway model is required");
-  const configDirectory = mkdtempSync(
-    path.join(os.tmpdir(), GATEWAY_CONFIG_DIRECTORY_PREFIX),
-  );
+  let configDirectory: string;
+  if (options.stableConfigDirectory) {
+    configDirectory = path.resolve(options.stableConfigDirectory);
+    mkdirSync(configDirectory, { mode: 0o700, recursive: true });
+  } else {
+    configDirectory = mkdtempSync(
+      path.join(os.tmpdir(), GATEWAY_CONFIG_DIRECTORY_PREFIX),
+    );
+  }
   chmodSync(configDirectory, 0o700);
   return {
     ...claudeEnvironment(options.profile.env),

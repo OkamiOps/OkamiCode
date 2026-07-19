@@ -8,6 +8,7 @@ import {
   type ResolvedRoute,
 } from "../gateway/route-resolver";
 import type { RunHandle } from "../runtime/adapter";
+import path from "node:path";
 import { claudeGatewayEnvironment } from "../runtime/claude/command";
 import type { RuntimeRegistry } from "../runtime/registry";
 import {
@@ -20,6 +21,7 @@ import type { RunService } from "./run-service";
 export interface LaneGatewayRouting {
   port: number;
   bearerToken: string;
+  gatewayConfigRoot?: string;
   accounts: GatewayAccount[];
   health?: Partial<Record<string, GatewayHealthStatus>>;
   preferNative?: (lane: LaneRecord) => boolean;
@@ -169,6 +171,13 @@ export class LaneService {
               port: this.dependencies.gateway!.port,
               bearerToken: this.dependencies.gateway!.bearerToken,
               model: lane.model,
+              stableConfigDirectory: this.dependencies.gateway!
+                .gatewayConfigRoot
+                ? path.join(
+                    this.dependencies.gateway!.gatewayConfigRoot,
+                    lane.id,
+                  )
+                : undefined,
             }),
           }
         : {}),

@@ -1,57 +1,24 @@
-import {
-  QueryClient,
-  QueryClientProvider,
-  useMutation,
-  useQuery,
-} from "@tanstack/react-query";
-import { useEffect, useState } from "react";
-import { createPortal } from "react-dom";
-import { useOutletContext } from "react-router-dom";
+import { useMutation, useQuery } from "@tanstack/react-query";
+import { Sparkle } from "lucide-react";
+import { useEffect } from "react";
 import { useShallow } from "zustand/react/shallow";
-import type { AppShellOutletContext } from "../../app/layout/AppShell";
 import { Composer } from "./Composer";
 import { Conversation } from "./Conversation";
-import { LaneSelector, laneDisplayName } from "./LaneSelector";
-import { TaskListPane } from "./TaskListPane";
 import { workbenchApi, type WorkbenchApi } from "./api";
-import {
-  createWorkbenchStore,
-  WorkbenchStoreContext,
-  useWorkbenchStore,
-  type WorkbenchState,
-} from "./store";
+import { modelDetail, modelLabel } from "./ModelPicker";
+import { useWorkbenchStore, type WorkbenchState } from "./store";
 
 interface WorkbenchPageProps {
   api?: WorkbenchApi;
 }
 
 export function WorkbenchPage({ api = workbenchApi }: WorkbenchPageProps) {
-  const [queryClient] = useState(
-    () =>
-      new QueryClient({
-        defaultOptions: {
-          queries: { retry: false, staleTime: 5_000 },
-          mutations: { retry: false },
-        },
-      }),
-  );
-  const [store] = useState(createWorkbenchStore);
-
-  return (
-    <QueryClientProvider client={queryClient}>
-      <WorkbenchStoreContext.Provider value={store}>
-        <WorkbenchContent api={api} />
-      </WorkbenchStoreContext.Provider>
-    </QueryClientProvider>
-  );
-}
-
-function WorkbenchContent({ api }: { api: WorkbenchApi }) {
-  const shell = useOutletContext<AppShellOutletContext>();
   const selectedTaskId = useWorkbenchStore((state) => state.selectedTaskId);
   const selectedLaneId = useWorkbenchStore((state) => state.selectedLaneId);
   const openedLanes = useWorkbenchStore((state) => state.openedLanes);
   const activeRunId = useWorkbenchStore((state) => state.activeRunId);
+  const sentMessages = useWorkbenchStore((state) => state.sentMessages);
+  const streams = useWorkbenchStore((state) => state.streams);
   const storeActions = useWorkbenchStore(useShallow(workbenchActions));
 
   const tasksQuery = useQuery({
@@ -65,15 +32,16 @@ function WorkbenchContent({ api }: { api: WorkbenchApi }) {
     queryFn: () => api.listLanes(effectiveTaskId ?? undefined),
     enabled: effectiveTaskId !== null,
   });
-  const lanes = lanesQuery.data ?? [];
+  const lanes = (lanesQuery.data ?? []).map(
+    (lane) => openedLanes[lane.laneId] ?? lane,
+  );
   const effectiveLaneId = selectedLaneId ?? lanes[0]?.laneId ?? null;
-  const selectedLane = effectiveLaneId
-    ? (openedLanes[effectiveLaneId] ??
-      lanes.find((lane) => lane.laneId === effectiveLaneId) ??
-      null)
-    : null;
+  const selectedLane =
+    lanes.find((lane) => lane.laneId === effectiveLaneId) ?? null;
   const selectedTask =
     tasks.find((task) => task.id === effectiveTaskId) ?? null;
+  const hasConversation =
+    sentMessages.length > 0 || Object.keys(streams).length > 0;
 
   const openLane = useMutation({
     mutationFn: api.openLane,
@@ -102,77 +70,83 @@ function WorkbenchContent({ api }: { api: WorkbenchApi }) {
 
   useEffect(() => api.subscribe(storeActions.applyEvent), [api, storeActions]);
 
-  const taskPane = (
-    <TaskListPane
-      error={queryError(tasksQuery.error)}
-      isLoading={tasksQuery.isLoading}
-      onCollapse={shell.collapseList}
-      onSelect={storeActions.selectTask}
-      selectedLane={selectedLane}
-      selectedTaskId={effectiveTaskId}
-      tasks={tasks}
-    />
-  );
-  const laneDetails = (
-    <LaneSelector
-      error={queryError(lanesQuery.error ?? openLane.error)}
-      isLoading={lanesQuery.isLoading}
-      isOpening={openLane.isPending}
-      lanes={lanes.map((lane) => openedLanes[lane.laneId] ?? lane)}
-      onCollapse={shell.collapseDetails}
-      onOpen={(laneId) => openLane.mutate({ laneId })}
-      selectedLane={selectedLane}
+  const composer = (
+    <Composer
+      activeRunId={activeRunId}
+      error={queryError(sendTurn.error ?? cancelRun.error ?? openLane.error)}
+      isCancelling={cancelRun.isPending}
+      isOpeningLane={openLane.isPending}
+      isSending={sendTurn.isPending}
+      lane={selectedLane}
+      lanes={lanes}
+      onCancel={async (runId) => {
+        await cancelRun.mutateAsync({ runId });
+      }}
+      onSelectLane={(laneId) => openLane.mutate({ laneId })}
+      onSend={async (input) => {
+        if (!selectedLane) return;
+        await sendTurn.mutateAsync({ laneId: selectedLane.laneId, input });
+      }}
     />
   );
 
-  return (
-    <>
-      {shell.listTarget && createPortal(taskPane, shell.listTarget)}
-      {shell.detailsTarget && createPortal(laneDetails, shell.detailsTarget)}
-      {shell.detailsDrawerTarget &&
-        createPortal(laneDetails, shell.detailsDrawerTarget)}
-      <section aria-labelledby="workbench-heading" className="workbench-view">
-        <header className="conversation-header">
-          <div className="conversation-header__title">
-            <h1 id="workbench-heading">
-              {selectedTask?.title ?? "Okami Workbench"}
-            </h1>
-            <p>
-              {selectedLane
-                ? `lane ${laneDisplayName(selectedLane)} · sessão ${selectedLane.nativeSessionIdPrefix ?? "não iniciada"} · ${selectedLane.workspacePath ?? "workspace não informado"}`
-                : "Selecione uma lane para iniciar a sessão"}
-            </p>
-          </div>
+  if (!hasConversation) {
+    return (
+      <section aria-label="Nova conversa" className="chat-view">
+        <div className="chat-topbar">
           {selectedLane && (
-            <div className="conversation-header__meta">
+            <>
               <span
-                className={`route-badge route-badge--${selectedLane.routeKind}`}
-              >
-                {selectedLane.routeKind}
-              </span>
-              <span className="conversation-header__status">
-                {selectedLane.status}
-              </span>
-            </div>
+                aria-hidden="true"
+                className={`route-dot route-dot--${selectedLane.routeKind}`}
+              />
+              <strong>{modelLabel(selectedLane)}</strong>
+              <span>{modelDetail(selectedLane)}</span>
+            </>
           )}
-        </header>
-        <Conversation lane={selectedLane} />
-        <Composer
-          activeRunId={activeRunId}
-          error={queryError(sendTurn.error ?? cancelRun.error)}
-          isCancelling={cancelRun.isPending}
-          isSending={sendTurn.isPending}
-          lane={selectedLane}
-          onCancel={async (nextRunId) => {
-            await cancelRun.mutateAsync({ runId: nextRunId });
-          }}
-          onSend={async (input) => {
-            if (!selectedLane) return;
-            await sendTurn.mutateAsync({ laneId: selectedLane.laneId, input });
-          }}
-        />
+        </div>
+        <div className="chat-greeting">
+          <h1>
+            <Sparkle aria-hidden="true" size={26} />O que vem a seguir, Marcos?
+          </h1>
+          {composer}
+        </div>
       </section>
-    </>
+    );
+  }
+
+  return (
+    <section
+      aria-label={selectedTask?.title ?? "Conversa"}
+      className="chat-view"
+    >
+      <div className="chat-topbar">
+        <strong>{selectedTask?.title ?? "Conversa"}</strong>
+        {selectedLane && (
+          <>
+            <span
+              aria-hidden="true"
+              className={`route-dot route-dot--${selectedLane.routeKind}`}
+            />
+            <span>{modelLabel(selectedLane)}</span>
+          </>
+        )}
+      </div>
+      <div className="chat-scroll">
+        <div className="chat-column">
+          <Conversation lane={selectedLane} />
+        </div>
+      </div>
+      <div className="chat-composer-dock">
+        {activeRunId && (
+          <div className="chat-status-line">
+            <span aria-hidden="true" className="pulse" />
+            Executando…
+          </div>
+        )}
+        {composer}
+      </div>
+    </section>
   );
 }
 

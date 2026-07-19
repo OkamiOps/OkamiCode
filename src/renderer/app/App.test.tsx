@@ -10,8 +10,6 @@ describe("App", () => {
 
   it("renders the Workbench product identity", () => {
     render(<App />);
-    expect(
-      screen.getByRole("heading", { name: "Okami Workbench" }),
-    ).toBeVisible();
+    expect(screen.getByRole("button", { name: "Nova conversa" })).toBeVisible();
   });
 });

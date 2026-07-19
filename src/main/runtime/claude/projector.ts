@@ -25,6 +25,7 @@ export function claudeSessionIdFromInit(message: unknown): string | undefined {
 
 export class ClaudeProjector {
   private sequence = 0;
+  private assistantMessageOrdinal = 0;
   private readonly startedTools = new Set<string>();
   private readonly now: () => string;
 
@@ -94,6 +95,10 @@ export class ClaudeProjector {
     const event = record(native.event);
     if (!event) return [];
     const eventType = string(event.type);
+    if (eventType === "message_start") {
+      this.assistantMessageOrdinal += 1;
+      return [];
+    }
     if (eventType === "content_block_delta") {
       const delta = record(event.delta);
       if (delta?.type === "text_delta") {
@@ -101,6 +106,9 @@ export class ClaudeProjector {
           this.event("message_delta", native, {
             delta: string(delta.text) ?? "",
             index: event.index,
+            // Stable per-message key so the renderer can merge streamed chunks
+            // (nativeEventId must stay unique for persistence idempotency).
+            messageAnchor: `assistant-${this.assistantMessageOrdinal}`,
           }),
         ];
       }

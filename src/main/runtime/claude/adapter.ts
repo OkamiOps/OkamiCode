@@ -60,6 +60,7 @@ interface ClaudeSessionState {
   gatewayConfigDirectory?: string;
   degraded: boolean;
   resumed: boolean;
+  respawnFresh?: (sessionId: string) => Promise<JsonlProcess<NativeRecord>>;
 }
 
 interface ActiveClaudeRun {
@@ -119,17 +120,39 @@ export class ClaudeAdapter implements RuntimeAdapter {
     });
     const run = { request, session };
     this.activeRuns.set(request.runId, run);
+    const turnMessage = (sessionId: string) => ({
+      type: "user",
+      session_id: sessionId,
+      parent_tool_use_id: null,
+      message: {
+        role: "user",
+        content: [{ type: "text", text: request.input }],
+      },
+    });
     try {
-      await session.process.send({
-        type: "user",
-        session_id: session.authoritativeSessionId ?? session.launchSessionId,
-        parent_tool_use_id: null,
-        message: {
-          role: "user",
-          content: [{ type: "text", text: request.input }],
-        },
-      });
-      await this.bindAuthoritativeSessionId(session);
+      try {
+        await session.process.send(
+          turnMessage(
+            session.authoritativeSessionId ?? session.launchSessionId,
+          ),
+        );
+        await this.bindAuthoritativeSessionId(session);
+      } catch (error) {
+        // A resumed session can die at spawn when its native conversation no
+        // longer exists (e.g. gateway config recreated). Fall back to a fresh
+        // session in place instead of failing the turn.
+        if (!session.resumed || !session.respawnFresh) throw error;
+        const freshSessionId = randomUUID();
+        session.process = await session.respawnFresh(freshSessionId);
+        session.resumed = false;
+        session.launchSessionId = freshSessionId;
+        session.authoritativeSessionId = undefined;
+        session.initBinding = undefined;
+        session.initialMessages.length = 0;
+        this.sessions.set(freshSessionId, session);
+        await session.process.send(turnMessage(freshSessionId));
+        await this.bindAuthoritativeSessionId(session);
+      }
     } catch (error) {
       this.activeRuns.delete(request.runId);
       session.setHookContext(undefined);
@@ -227,24 +250,32 @@ export class ClaudeAdapter implements RuntimeAdapter {
       const candidateSessionId = resume
         ? (request as ResumeSessionRequest).nativeSessionId
         : randomUUID();
-      const process = await JsonlProcess.spawn<NativeRecord>(
-        this.dependencies.command ?? "claude",
-        [
-          ...claudeArgs({
-            settingsPath,
-            sessionId: resume ? undefined : candidateSessionId,
-            resumeId: resume ? candidateSessionId : undefined,
-            model: request.model,
-          }),
-          // Claude 2.1.214 rejects stream-json output without this compatibility flag.
-          "--verbose",
-        ],
-        {
-          cwd: request.cwd,
-          env: sessionHookServer.hookEnvironment(
-            request.env ?? claudeEnvironment(this.dependencies.env),
-          ),
-        },
+      const spawnSession = (binding: {
+        sessionId?: string;
+        resumeId?: string;
+      }) =>
+        JsonlProcess.spawn<NativeRecord>(
+          this.dependencies.command ?? "claude",
+          [
+            ...claudeArgs({
+              settingsPath,
+              ...binding,
+              model: request.model,
+            }),
+            // Claude 2.1.214 rejects stream-json output without this compatibility flag.
+            "--verbose",
+          ],
+          {
+            cwd: request.cwd,
+            env: sessionHookServer.hookEnvironment(
+              request.env ?? claudeEnvironment(this.dependencies.env),
+            ),
+          },
+        );
+      const process = await spawnSession(
+        resume
+          ? { resumeId: candidateSessionId }
+          : { sessionId: candidateSessionId },
       );
       spawnedProcess = process;
       const initialMessages: NativeRecord[] = [];
@@ -263,6 +294,7 @@ export class ClaudeAdapter implements RuntimeAdapter {
         gatewayConfigDirectory,
         degraded: capabilities.mode === "degraded",
         resumed: resume,
+        respawnFresh: (sessionId) => spawnSession({ sessionId }),
       };
       this.sessions.set(candidateSessionId, state);
       return {

@@ -27,14 +27,14 @@ describe("AppShell", () => {
     expect(usage).toHaveAttribute("aria-current", "page");
   });
 
-  it("lets the workbench populate the list and details regions", async () => {
+  it("shows the chat sidebar with the new conversation action", async () => {
     renderApp("/workbench");
 
     expect(
-      await screen.findByRole("region", { name: "Lista de tarefas" }),
+      await screen.findByRole("button", { name: "Nova conversa" }),
     ).toBeVisible();
     expect(
-      screen.getByRole("complementary", { name: "Detalhes da lane" }),
+      screen.getByRole("navigation", { name: "Histórico de conversas" }),
     ).toBeVisible();
   });
 });
