@@ -18,6 +18,15 @@ export interface WorkbenchApi {
   ): Promise<IpcResponse<"lane:ensure">>;
   listTasks(): Promise<IpcResponse<"task:list">>;
   pickWorkspace(): Promise<IpcResponse<"workspace:pick">>;
+  pickFiles(
+    request: IpcRequest<"file:pick">,
+  ): Promise<IpcResponse<"file:pick">>;
+  renameTask(
+    request: IpcRequest<"task:rename">,
+  ): Promise<IpcResponse<"task:rename">>;
+  deleteTask(
+    request: IpcRequest<"task:delete">,
+  ): Promise<IpcResponse<"task:delete">>;
   createTask(
     request: IpcRequest<"task:create">,
   ): Promise<IpcResponse<"task:create">>;
@@ -38,6 +47,9 @@ export const workbenchApi: WorkbenchApi = {
   ensureLane: (request) => workbenchClient.laneEnsure(request),
   listTasks: () => workbenchClient.taskList(),
   pickWorkspace: () => workbenchClient.workspacePick(),
+  pickFiles: (request) => workbenchClient.filePick(request),
+  renameTask: (request) => workbenchClient.taskRename(request),
+  deleteTask: (request) => workbenchClient.taskDelete(request),
   createTask: (request) => workbenchClient.taskCreate(request),
   history: (request) => workbenchClient.conversationHistory(request),
   openLane: (request) => workbenchClient.laneOpen(request),

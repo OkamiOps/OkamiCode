@@ -50,6 +50,12 @@ export const workbenchClient = {
   taskCreate: (request: IpcRequest<"task:create">) =>
     invokeCommand("task:create", request),
   taskList: () => invokeCommand("task:list", {}),
+  taskRename: (request: IpcRequest<"task:rename">) =>
+    invokeCommand("task:rename", request),
+  taskDelete: (request: IpcRequest<"task:delete">) =>
+    invokeCommand("task:delete", request),
+  filePick: (request: IpcRequest<"file:pick">) =>
+    invokeCommand("file:pick", request),
   workspacePick: () => invokeCommand("workspace:pick", {}),
   conversationHistory: (request: IpcRequest<"conversation:history">) =>
     invokeCommand("conversation:history", request),

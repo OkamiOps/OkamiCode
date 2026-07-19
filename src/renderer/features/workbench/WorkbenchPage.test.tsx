@@ -82,6 +82,9 @@ function renderWorkbenchFixture({
   const api: WorkbenchApi = {
     listTasks: vi.fn(async () => [task]),
     pickWorkspace: vi.fn(async () => ({ path: "/workspace/okami" })),
+    pickFiles: vi.fn(async () => ({ paths: [] })),
+    renameTask: vi.fn(async () => task),
+    deleteTask: vi.fn(async () => ({ taskId: task.id, deleted: true })),
     createTask: vi.fn(async () => task),
     history: vi.fn(async () => ({ userMessages: [], events: [] })),
     listModels: vi.fn(async () => [

@@ -21,6 +21,9 @@ export function WorkbenchPage({ api = workbenchApi }: WorkbenchPageProps) {
   const sentMessages = useWorkbenchStore((state) => state.sentMessages);
   const streams = useWorkbenchStore((state) => state.streams);
   const effortByLane = useWorkbenchStore((state) => state.effortByLane);
+  const slashCommandsByLane = useWorkbenchStore(
+    (state) => state.slashCommandsByLane,
+  );
   const lastUsageByLane = useWorkbenchStore((state) => state.lastUsageByLane);
   const storeActions = useWorkbenchStore(useShallow(workbenchActions));
 
@@ -158,6 +161,17 @@ export function WorkbenchPage({ api = workbenchApi }: WorkbenchPageProps) {
       effort={efforts.length > 0 ? effort : null}
       efforts={efforts}
       contextNote={contextNote}
+      slashCommands={
+        selectedLane ? (slashCommandsByLane[selectedLane.laneId] ?? []) : []
+      }
+      onPickFiles={async () => {
+        const picked = await api.pickFiles(
+          selectedTask?.workspacePath
+            ? { defaultPath: selectedTask.workspacePath }
+            : {},
+        );
+        return picked.paths;
+      }}
       onSelectEffort={(nextEffort) => {
         if (selectedLane)
           storeActions.setEffort(selectedLane.laneId, nextEffort);

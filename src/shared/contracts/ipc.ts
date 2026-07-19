@@ -55,6 +55,29 @@ export const taskCreateRequestSchema = z
 
 export const taskListSchema = z.array(taskSchema);
 
+export const taskRenameRequestSchema = z
+  .object({
+    taskId: entityIdSchema,
+    title: z.string().trim().min(1).max(240),
+  })
+  .strict();
+
+export const taskDeleteRequestSchema = z
+  .object({ taskId: entityIdSchema })
+  .strict();
+
+export const taskDeleteResultSchema = z
+  .object({ taskId: entityIdSchema, deleted: z.boolean() })
+  .strict();
+
+export const filePickRequestSchema = z
+  .object({ defaultPath: z.string().min(1).max(4_096).optional() })
+  .strict();
+
+export const filePickSchema = z
+  .object({ paths: z.array(z.string().min(1)) })
+  .strict();
+
 export const workspacePickSchema = z
   .object({ path: z.string().min(1).nullable() })
   .strict();
@@ -404,7 +427,10 @@ export const ipcRequestSchemas = {
   "system:doctor": emptyRequestSchema,
   "models:list": emptyRequestSchema,
   "task:create": taskCreateRequestSchema,
+  "task:rename": taskRenameRequestSchema,
+  "task:delete": taskDeleteRequestSchema,
   "workspace:pick": emptyRequestSchema,
+  "file:pick": filePickRequestSchema,
   "task:list": emptyRequestSchema,
   "lane:list": laneListRequestSchema,
   "conversation:history": conversationHistoryRequestSchema,
@@ -427,7 +453,10 @@ export const ipcResponseSchemas = {
   "system:doctor": systemDoctorSchema,
   "models:list": modelCatalogSchema,
   "task:create": taskSchema,
+  "task:rename": taskSchema,
+  "task:delete": taskDeleteResultSchema,
   "workspace:pick": workspacePickSchema,
+  "file:pick": filePickSchema,
   "task:list": taskListSchema,
   "lane:list": laneListSchema,
   "conversation:history": conversationHistorySchema,

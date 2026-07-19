@@ -107,6 +107,12 @@ async function dispatch(
       return modelCatalog();
     case "task:create":
       return createTask(state, request as IpcRequest<"task:create">);
+    case "task:rename":
+      return renameTask(state, request as IpcRequest<"task:rename">);
+    case "task:delete":
+      return deleteTask(state, request as IpcRequest<"task:delete">);
+    case "file:pick":
+      return pickFiles(request as IpcRequest<"file:pick">);
     case "workspace:pick":
       return pickWorkspace();
     case "task:list":
@@ -259,6 +265,75 @@ function createTask(
   };
   state.tasks.insert(task);
   return task;
+}
+
+function renameTask(
+  state: AppState,
+  request: IpcRequest<"task:rename">,
+): TaskRecord {
+  state.database
+    .prepare(`UPDATE tasks SET title = ?, updated_at = ? WHERE id = ?`)
+    .run(request.title, state.clock().toISOString(), request.taskId);
+  const task = listTasks(state).find((row) => row.id === request.taskId);
+  if (!task) throw new Error(`Task ${request.taskId} not found`);
+  return task;
+}
+
+// Removes the task and every dependent row, children first so the foreign
+// keys hold throughout the transaction.
+function deleteTask(state: AppState, request: IpcRequest<"task:delete">) {
+  const existing = state.database
+    .prepare(`SELECT id FROM tasks WHERE id = ?`)
+    .get(request.taskId);
+  if (!existing) return { taskId: request.taskId, deleted: false };
+  const run = state.database.transaction((taskId: string) => {
+    const byRun = `run_id IN (SELECT id FROM runs WHERE task_id = ?)`;
+    const byLane = `lane_id IN (SELECT id FROM runtime_lanes WHERE task_id = ?)`;
+    state.database.prepare(`DELETE FROM artifacts WHERE ${byRun}`).run(taskId);
+    state.database.prepare(`DELETE FROM approvals WHERE ${byRun}`).run(taskId);
+    state.database.prepare(`DELETE FROM events WHERE task_id = ?`).run(taskId);
+    state.database
+      .prepare(
+        `DELETE FROM event_cursors WHERE ${byLane}
+         OR source_lane_id IN (SELECT id FROM runtime_lanes WHERE task_id = ?)`,
+      )
+      .run(taskId, taskId);
+    state.database
+      .prepare(`DELETE FROM capability_leases WHERE task_id = ?`)
+      .run(taskId);
+    state.database
+      .prepare(`DELETE FROM usage_activity_buckets WHERE ${byLane}`)
+      .run(taskId);
+    state.database
+      .prepare(`DELETE FROM native_session_bindings WHERE ${byLane}`)
+      .run(taskId);
+    state.database.prepare(`DELETE FROM runs WHERE task_id = ?`).run(taskId);
+    state.database
+      .prepare(`DELETE FROM runtime_lanes WHERE task_id = ?`)
+      .run(taskId);
+    state.database
+      .prepare(
+        `DELETE FROM messages WHERE conversation_id IN
+         (SELECT id FROM conversations WHERE task_id = ?)`,
+      )
+      .run(taskId);
+    state.database
+      .prepare(`DELETE FROM conversations WHERE task_id = ?`)
+      .run(taskId);
+    state.database.prepare(`DELETE FROM tasks WHERE id = ?`).run(taskId);
+  });
+  run(request.taskId);
+  return { taskId: request.taskId, deleted: true };
+}
+
+async function pickFiles(request: IpcRequest<"file:pick">) {
+  const result = await dialog.showOpenDialog({
+    title: "Anexar arquivos à mensagem",
+    buttonLabel: "Anexar",
+    ...(request.defaultPath ? { defaultPath: request.defaultPath } : {}),
+    properties: ["openFile", "multiSelections"],
+  });
+  return { paths: result.canceled ? [] : result.filePaths };
 }
 
 // The Claude/Codex workflow anchors every conversation to a folder the user

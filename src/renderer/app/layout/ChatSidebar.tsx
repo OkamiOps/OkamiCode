@@ -1,7 +1,8 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { Gauge, Link2, Plug, Plus } from "lucide-react";
+import { Gauge, Link2, Pencil, Plug, Plus, Trash2 } from "lucide-react";
+import { useState, type KeyboardEvent } from "react";
 import { NavLink, useNavigate } from "react-router-dom";
-import { workbenchApi } from "../../features/workbench/api";
+import { workbenchApi, type WorkbenchTask } from "../../features/workbench/api";
 import { workbenchClient } from "../../lib/ipc/client";
 import { useWorkbenchStore } from "../../features/workbench/store";
 
@@ -10,11 +11,17 @@ export function ChatSidebar() {
   const navigate = useNavigate();
   const selectedTaskId = useWorkbenchStore((state) => state.selectedTaskId);
   const selectTask = useWorkbenchStore((state) => state.selectTask);
+  const [renamingId, setRenamingId] = useState<string | null>(null);
+  const [renameDraft, setRenameDraft] = useState("");
 
   const tasksQuery = useQuery({
     queryKey: ["sessions"],
     queryFn: () => workbenchClient.taskList(),
   });
+  const invalidateTasks = () => {
+    void queryClient.invalidateQueries({ queryKey: ["sessions"] });
+    void queryClient.invalidateQueries({ queryKey: ["workbench", "tasks"] });
+  };
   const createTask = useMutation({
     // Mirrors the Claude/Codex workflow: a conversation is anchored to a
     // folder the user picks before anything runs.
@@ -30,12 +37,42 @@ export function ChatSidebar() {
     },
     onSuccess: (task) => {
       if (!task) return;
-      void queryClient.invalidateQueries({ queryKey: ["sessions"] });
-      void queryClient.invalidateQueries({ queryKey: ["workbench", "tasks"] });
+      invalidateTasks();
       selectTask(task.id);
       navigate("/workbench");
     },
   });
+  const renameTask = useMutation({
+    mutationFn: workbenchApi.renameTask,
+    onSuccess: () => {
+      setRenamingId(null);
+      invalidateTasks();
+    },
+  });
+  const deleteTask = useMutation({
+    mutationFn: workbenchApi.deleteTask,
+    onSuccess: (result) => {
+      invalidateTasks();
+      if (selectedTaskId === result.taskId) selectTask(null);
+    },
+  });
+
+  function commitRename(task: WorkbenchTask) {
+    const title = renameDraft.trim();
+    if (!title || title === task.title) {
+      setRenamingId(null);
+      return;
+    }
+    renameTask.mutate({ taskId: task.id, title });
+  }
+
+  function handleRenameKeys(
+    event: KeyboardEvent<HTMLInputElement>,
+    task: WorkbenchTask,
+  ) {
+    if (event.key === "Enter") commitRename(task);
+    if (event.key === "Escape") setRenamingId(null);
+  }
 
   const tasks = tasksQuery.data ?? [];
 
@@ -75,21 +112,69 @@ export function ChatSidebar() {
           </p>
         )}
         {tasks.map((task) => (
-          <button
+          <div
             className="chat-session"
             data-active={task.id === selectedTaskId || undefined}
             key={task.id}
-            onClick={() => {
-              selectTask(task.id);
-              navigate("/workbench");
-            }}
-            type="button"
           >
-            <span className="chat-session__title">{task.title}</span>
-            {task.workspacePath && (
-              <span className="chat-session__path">{task.workspacePath}</span>
+            {renamingId === task.id ? (
+              <input
+                aria-label="Novo nome da conversa"
+                className="chat-session__rename"
+                ref={(node) => node?.focus()}
+                onBlur={() => commitRename(task)}
+                onChange={(event) => setRenameDraft(event.target.value)}
+                onKeyDown={(event) => handleRenameKeys(event, task)}
+                value={renameDraft}
+              />
+            ) : (
+              <button
+                className="chat-session__open"
+                onClick={() => {
+                  selectTask(task.id);
+                  navigate("/workbench");
+                }}
+                type="button"
+              >
+                <span className="chat-session__title">{task.title}</span>
+                {task.workspacePath && (
+                  <span className="chat-session__path">
+                    {task.workspacePath}
+                  </span>
+                )}
+              </button>
             )}
-          </button>
+            <span className="chat-session__actions">
+              <button
+                aria-label={`Renomear ${task.title}`}
+                onClick={() => {
+                  setRenamingId(task.id);
+                  setRenameDraft(task.title);
+                }}
+                title="Renomear"
+                type="button"
+              >
+                <Pencil aria-hidden="true" size={12} />
+              </button>
+              <button
+                aria-label={`Apagar ${task.title}`}
+                disabled={deleteTask.isPending}
+                onClick={() => {
+                  if (
+                    window.confirm(
+                      `Apagar a conversa "${task.title}"? O histórico dela será removido.`,
+                    )
+                  ) {
+                    deleteTask.mutate({ taskId: task.id });
+                  }
+                }}
+                title="Apagar"
+                type="button"
+              >
+                <Trash2 aria-hidden="true" size={12} />
+              </button>
+            </span>
+          </div>
         ))}
       </nav>
 

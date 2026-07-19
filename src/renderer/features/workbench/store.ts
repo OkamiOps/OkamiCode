@@ -31,6 +31,7 @@ export interface WorkbenchState {
   selectedLaneId: string | null;
   selectedTaskId: string | null;
   sentMessages: SentMessage[];
+  slashCommandsByLane: Record<string, string[]>;
   streams: Record<string, string>;
   addSentMessage(message: SentMessage): void;
   applyEvent(event: CanonicalEvent): void;
@@ -38,7 +39,7 @@ export interface WorkbenchState {
   selectLane(laneId: string | null): void;
   setEffort(laneId: string, effort: string): void;
   hydrateConversation(messages: SentMessage[], events: CanonicalEvent[]): void;
-  selectTask(taskId: string): void;
+  selectTask(taskId: string | null): void;
   setActiveRun(runId: string, laneId: string): void;
   upsertLane(lane: WorkbenchLane): void;
 }
@@ -68,6 +69,20 @@ export function reduceCanonicalEvent(
     if (state.activeRunId === event.runId) {
       next.activeRunId = null;
       next.activeRunLaneId = null;
+    }
+  }
+  if (event.kind === "session_started" || event.kind === "session_resumed") {
+    const commands = event.payload.slashCommands;
+    if (Array.isArray(commands)) {
+      const names = commands.filter(
+        (item): item is string => typeof item === "string" && item.length > 0,
+      );
+      if (names.length > 0) {
+        next.slashCommandsByLane = {
+          ...state.slashCommandsByLane,
+          [event.laneId]: names,
+        };
+      }
     }
   }
   if (event.kind === "usage_reported") {
@@ -112,6 +127,7 @@ export function createWorkbenchStore(): StoreApi<WorkbenchState> {
     selectedLaneId: null,
     selectedTaskId: null,
     sentMessages: [],
+    slashCommandsByLane: {},
     streams: {},
     addSentMessage: (message) =>
       set((state) => ({ sentMessages: [...state.sentMessages, message] })),

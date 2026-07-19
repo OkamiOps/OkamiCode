@@ -65,6 +65,7 @@ export class ClaudeProjector {
             authSource: native.apiKeySource,
             runtimeVersion: native.claude_code_version,
             model: native.model,
+            slashCommands: native.slash_commands,
           },
         ),
       ];

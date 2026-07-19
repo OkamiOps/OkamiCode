@@ -14,6 +14,58 @@ import { useWorkbenchStore } from "./store";
 
 const TEXT_EVENT_KINDS = new Set(["message_delta", "message_completed"]);
 
+// Lifecycle chatter that Claude/Codex desktop apps do not surface as cards.
+const HIDDEN_EVENT_KINDS = new Set([
+  "session_started",
+  "session_resumed",
+  "usage_reported",
+  "rate_limit_updated",
+  "run_completed",
+]);
+
+function isVisibleEvent(event: EventCardEvent): boolean {
+  if (!event.kind) return false;
+  if (TEXT_EVENT_KINDS.has(event.kind)) return false;
+  if (HIDDEN_EVENT_KINDS.has(event.kind)) return false;
+  // Hook plumbing and streamed tool-input chunks are audit detail, not
+  // conversation; the started/completed pair carries the whole story.
+  if (event.kind === "tool_call_updated") return false;
+  return true;
+}
+
+// A tool call is one card: the completed event folds into its started card
+// instead of appearing as a second entry.
+function mergeToolLifecycle(events: EventCardEvent[]): EventCardEvent[] {
+  const merged: EventCardEvent[] = [];
+  const cardByToolUse = new Map<string, number>();
+  for (const event of events) {
+    const toolUseId =
+      typeof event.payload?.toolUseId === "string"
+        ? event.payload.toolUseId
+        : null;
+    if (toolUseId && event.kind === "tool_call_started") {
+      cardByToolUse.set(toolUseId, merged.length);
+      merged.push(event);
+      continue;
+    }
+    if (toolUseId && event.kind === "tool_call_completed") {
+      const index = cardByToolUse.get(toolUseId);
+      if (index !== undefined) {
+        const started = merged[index];
+        merged[index] = {
+          ...started,
+          kind: "tool_call_completed",
+          occurredAt: event.occurredAt ?? started.occurredAt,
+          payload: { ...started.payload, ...event.payload },
+        };
+        continue;
+      }
+    }
+    merged.push(event);
+  }
+  return merged;
+}
+
 function eventForCard(raw: unknown): EventCardEvent {
   const parsed = canonicalEventSchema.safeParse(raw);
   if (parsed.success) return parsed.data;
@@ -46,20 +98,21 @@ export function Conversation({
   const sentMessages = useWorkbenchStore((state) => state.sentMessages);
   const streams = useWorkbenchStore((state) => state.streams);
   const [events, setEvents] = useState<EventCardEvent[]>(() =>
-    initialEvents.filter((event) => !TEXT_EVENT_KINDS.has(event.kind ?? "")),
+    initialEvents.filter(isVisibleEvent),
   );
+  const visibleEvents = mergeToolLifecycle(events);
   const streamedMessages = Object.entries(streams);
   const isEmpty =
     sentMessages.length === 0 &&
     streamedMessages.length === 0 &&
-    events.length === 0;
+    visibleEvents.length === 0;
   const runtime = runtimePresentation(lane);
 
   useEffect(() => {
     if (!window.okami?.onEvent) return;
     return window.okami.onEvent((raw) => {
       const event = eventForCard(raw);
-      if (TEXT_EVENT_KINDS.has(event.kind)) return;
+      if (!isVisibleEvent(event)) return;
       setEvents((current) => {
         if (event.id && current.some((item) => item.id === event.id)) {
           return current;
@@ -124,7 +177,7 @@ export function Conversation({
               <div className="message-stamp">agora · streaming</div>
             </article>
           ))}
-          {events.map((event, index) => (
+          {visibleEvents.map((event, index) => (
             <article
               className="conversation-event"
               key={event.id ?? `${event.kind}-${index}`}
