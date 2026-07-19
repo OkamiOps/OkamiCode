@@ -1,7 +1,9 @@
-import { execFileSync } from "node:child_process";
-import { readFileSync, realpathSync, statSync } from "node:fs";
+import { execFileSync, spawn } from "node:child_process";
+import { randomUUID } from "node:crypto";
+import { mkdirSync, readFileSync, realpathSync, writeFileSync } from "node:fs";
 import { homedir } from "node:os";
 import path from "node:path";
+import readline from "node:readline";
 
 export interface CatalogModel {
   id: string;
@@ -24,121 +26,10 @@ interface CodexCachedModel {
   visibility?: string;
 }
 
-interface ClaudeFamilyVersions {
-  fable?: string;
-  opus?: string;
-  sonnet?: string;
-  haiku?: string;
-}
-
-let claudeScanCache: { key: string; versions: ClaudeFamilyVersions } | null =
-  null;
-
-function familyVersionLabel(suffix: string): string {
-  return suffix.replace(/-/gu, ".");
-}
-
-// Scans the installed Claude Code binary for current model ids so the picker
-// mirrors what this CLI version actually ships (updates with the CLI).
-function locateClaudeBinary(): string | null {
-  const candidates = [
-    path.join(homedir(), ".local", "bin", "claude"),
-    "/usr/local/bin/claude",
-    "/opt/homebrew/bin/claude",
-  ];
-  try {
-    candidates.unshift(
-      execFileSync("/usr/bin/which", ["claude"], { encoding: "utf8" }).trim(),
-    );
-  } catch {
-    // PATH lookups fail inside the packaged app; the fixed candidates cover it.
-  }
-  for (const candidate of candidates) {
-    if (!candidate) continue;
-    try {
-      return realpathSync(candidate);
-    } catch {
-      continue;
-    }
-  }
-  return null;
-}
-
-function scanClaudeBinaryVersions(): ClaudeFamilyVersions {
-  try {
-    const binary = locateClaudeBinary();
-    if (!binary) return {};
-    const cacheKey = `${binary}:${statSync(binary).mtimeMs}`;
-    if (claudeScanCache?.key === cacheKey) return claudeScanCache.versions;
-    const contents = readFileSync(binary).toString("latin1");
-    const versions: ClaudeFamilyVersions = {};
-    for (const family of ["fable", "opus", "sonnet", "haiku"] as const) {
-      const pattern = new RegExp(`claude-${family}-(\\d+(?:-\\d+)?)\\b`, "gu");
-      let best: [number, number] | null = null;
-      let bestSuffix: string | undefined;
-      for (const match of contents.matchAll(pattern)) {
-        const [major, minor = 0] = match[1].split("-").map(Number);
-        // Segments above 99 are date-stamped snapshot ids, not versions.
-        if (major > 99 || minor > 99) continue;
-        if (
-          !best ||
-          major > best[0] ||
-          (major === best[0] && minor > best[1])
-        ) {
-          best = [major, minor];
-          bestSuffix = match[1];
-        }
-      }
-      if (bestSuffix) versions[family] = bestSuffix;
-    }
-    claudeScanCache = { key: cacheKey, versions };
-    console.log("[okami] claude model scan", versions);
-    return versions;
-  } catch (error) {
-    console.error("[okami] claude model scan failed", error);
-    return {};
-  }
-}
-
-function claudeModels(): CatalogModel[] {
-  const versions = scanClaudeBinaryVersions();
-  const models: CatalogModel[] = [];
-  if (versions.fable) {
-    models.push({
-      id: `claude-fable-${versions.fable}`,
-      label: `Fable ${familyVersionLabel(versions.fable)}`,
-      description: "Classe Mythos — modelo mais avançado",
-    });
-  }
-  models.push(
-    {
-      id: "opus",
-      label: versions.opus
-        ? `Opus ${familyVersionLabel(versions.opus)}`
-        : "Opus",
-      description: "Melhor para tarefas complexas do dia a dia",
-    },
-    {
-      id: "sonnet",
-      label: versions.sonnet
-        ? `Sonnet ${familyVersionLabel(versions.sonnet)}`
-        : "Sonnet",
-      description: "Eficiente para tarefas rotineiras",
-    },
-    {
-      id: "haiku",
-      label: versions.haiku
-        ? `Haiku ${familyVersionLabel(versions.haiku)}`
-        : "Haiku",
-      description: "Mais rápido, para respostas curtas",
-    },
-    {
-      id: "opusplan",
-      label: "Opus Plan",
-      description: "Opus para planejar, Sonnet para executar",
-    },
-  );
-  return models;
+interface ClaudeListedModel {
+  value?: string;
+  displayName?: string;
+  description?: string;
 }
 
 export function readCodexModelsCache(
@@ -163,28 +54,187 @@ export function readCodexModelsCache(
   }
 }
 
-// Built fresh on every models:list call so a CLI update that changes the
-// available models is reflected without restarting the app.
-export function buildModelCatalog(): ModelCatalogEntry[] {
-  const entries: ModelCatalogEntry[] = [
-    {
-      runtimeKind: "claude",
-      providerLabel: "Claude",
-      routeKind: "direct",
-      source: "catálogo do Claude Code instalado",
-      models: claudeModels(),
-    },
+function locateClaudeBinary(): string | null {
+  const candidates = [
+    path.join(homedir(), ".local", "bin", "claude"),
+    "/usr/local/bin/claude",
+    "/opt/homebrew/bin/claude",
   ];
-  const codexModels = readCodexModelsCache();
-  entries.push({
-    runtimeKind: "codex",
-    providerLabel: "ChatGPT",
-    routeKind: "bridged",
-    source:
-      codexModels.length > 0
-        ? "catálogo do Codex CLI (models_cache.json)"
-        : "indisponível — cache do Codex não encontrado",
-    models: codexModels,
+  try {
+    candidates.unshift(
+      execFileSync("/usr/bin/which", ["claude"], { encoding: "utf8" }).trim(),
+    );
+  } catch {
+    // PATH lookups fail inside the packaged app; the fixed candidates cover it.
+  }
+  for (const candidate of candidates) {
+    if (!candidate) continue;
+    try {
+      return realpathSync(candidate);
+    } catch {
+      continue;
+    }
+  }
+  return null;
+}
+
+// Asks the running CLI for its real model picker via the stream-json control
+// protocol (`list_models`). Costs no turn: the session is killed right after
+// the control response arrives.
+export function fetchClaudeModelsFromCli(
+  timeoutMs = 150_000,
+): Promise<CatalogModel[]> {
+  return new Promise((resolve, reject) => {
+    const requestId = `okami-models-${randomUUID()}`;
+    const child = spawn(
+      "claude",
+      [
+        "--print",
+        "--input-format",
+        "stream-json",
+        "--output-format",
+        "stream-json",
+        "--verbose",
+        "--session-id",
+        randomUUID(),
+      ],
+      { stdio: ["pipe", "pipe", "ignore"], env: process.env },
+    );
+    const timer = setTimeout(() => {
+      child.kill("SIGKILL");
+      reject(new Error("list_models timed out"));
+    }, timeoutMs);
+    const finish = (result: CatalogModel[] | Error) => {
+      clearTimeout(timer);
+      child.kill("SIGTERM");
+      if (result instanceof Error) reject(result);
+      else resolve(result);
+    };
+    readline
+      .createInterface({ input: child.stdout, crlfDelay: Infinity })
+      .on("line", (line) => {
+        let parsed: Record<string, unknown>;
+        try {
+          parsed = JSON.parse(line) as Record<string, unknown>;
+        } catch {
+          return;
+        }
+        if (parsed.type !== "control_response") return;
+        const response = parsed.response as
+          | {
+              subtype?: string;
+              request_id?: string;
+              response?: { models?: ClaudeListedModel[] };
+              error?: string;
+            }
+          | undefined;
+        if (response?.request_id !== requestId) return;
+        if (response.subtype !== "success") {
+          finish(new Error(response.error ?? "list_models failed"));
+          return;
+        }
+        const models = (response.response?.models ?? [])
+          .filter(
+            (model): model is ClaudeListedModel & { value: string } =>
+              typeof model.value === "string",
+          )
+          .map((model) => ({
+            id: model.value,
+            label: model.displayName ?? model.value,
+            ...(model.description ? { description: model.description } : {}),
+          }));
+        finish(models);
+      });
+    child.on("error", (error) => finish(error));
+    child.on("exit", () =>
+      finish(new Error("claude exited before answering list_models")),
+    );
+    child.stdin.write(
+      `${JSON.stringify({
+        type: "control_request",
+        request_id: requestId,
+        request: { subtype: "list_models" },
+      })}\n`,
+    );
   });
-  return entries;
+}
+
+interface PersistedClaudeCatalog {
+  cliPath: string;
+  fetchedAt: string;
+  models: CatalogModel[];
+}
+
+export interface ModelCatalogService {
+  list(): ModelCatalogEntry[];
+  refreshClaude(): Promise<void>;
+}
+
+// Serves the catalog instantly from cache while a background refresh asks the
+// CLI for the authoritative list (which reflects the account's entitlements).
+export function createModelCatalogService(options: {
+  cachePath: string;
+}): ModelCatalogService {
+  let claude: PersistedClaudeCatalog | null = null;
+  let refreshing: Promise<void> | null = null;
+  try {
+    claude = JSON.parse(
+      readFileSync(options.cachePath, "utf8"),
+    ) as PersistedClaudeCatalog;
+  } catch {
+    claude = null;
+  }
+
+  const refreshClaude = async () => {
+    refreshing ??= (async () => {
+      try {
+        const models = await fetchClaudeModelsFromCli();
+        if (models.length === 0) return;
+        claude = {
+          cliPath: locateClaudeBinary() ?? "claude",
+          fetchedAt: new Date().toISOString(),
+          models,
+        };
+        mkdirSync(path.dirname(options.cachePath), { recursive: true });
+        writeFileSync(options.cachePath, JSON.stringify(claude, null, 2));
+        console.log(
+          "[okami] claude list_models refreshed:",
+          models.map((model) => model.id).join(", "),
+        );
+      } catch (error) {
+        console.error("[okami] claude list_models failed", error);
+      } finally {
+        refreshing = null;
+      }
+    })();
+    await refreshing;
+  };
+
+  return {
+    refreshClaude,
+    list() {
+      const codexModels = readCodexModelsCache();
+      return [
+        {
+          runtimeKind: "claude",
+          providerLabel: "Claude",
+          routeKind: "direct",
+          source: claude
+            ? `list_models do Claude Code · ${claude.fetchedAt}`
+            : "consultando o Claude Code (list_models)…",
+          models: claude?.models ?? [],
+        },
+        {
+          runtimeKind: "codex",
+          providerLabel: "ChatGPT",
+          routeKind: "bridged",
+          source:
+            codexModels.length > 0
+              ? "catálogo do Codex CLI (models_cache.json)"
+              : "indisponível — cache do Codex não encontrado",
+          models: codexModels,
+        },
+      ];
+    },
+  };
 }

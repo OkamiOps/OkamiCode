@@ -126,11 +126,18 @@ export function resolveRoute(options: ResolveRouteOptions): ResolvedRoute {
   };
 }
 
-// The Claude CLI accepts these aliases without the "claude-" prefix.
-const CLAUDE_MODEL_ALIASES = new Set(["opus", "sonnet", "haiku", "opusplan"]);
+// The Claude CLI accepts these aliases without the "claude-" prefix, plus a
+// "[1m]" long-context suffix and the literal "default".
+const CLAUDE_MODEL_ALIASES = new Set([
+  "default",
+  "opus",
+  "sonnet",
+  "haiku",
+  "opusplan",
+]);
 
 function isClaudeModel(model: string): boolean {
-  const normalized = model.toLowerCase();
+  const normalized = model.toLowerCase().replace(/\[1m\]$/u, "");
   return normalized.includes("claude") || CLAUDE_MODEL_ALIASES.has(normalized);
 }
 

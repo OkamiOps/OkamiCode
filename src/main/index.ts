@@ -12,7 +12,7 @@ import { createGatewayProfile } from "./gateway/profile";
 import { startGatewayServer } from "./gateway/server";
 import { LeaseRepository, type CapabilityLease } from "./policy/lease";
 import { RepositoryApprovalBroker } from "./runtime/codex/adapter";
-import { buildModelCatalog } from "./runtime/model-catalog";
+import { createModelCatalogService } from "./runtime/model-catalog";
 import { createRuntimeRegistry } from "./runtime/registry";
 import { getOrCreateDatabaseKey } from "./secrets";
 import { secureWebPreferences } from "./window";
@@ -185,6 +185,11 @@ async function bootstrap(): Promise<void> {
     ],
   });
 
+  const modelCatalogService = createModelCatalogService({
+    cachePath: path.join(app.getPath("userData"), "claude-models.json"),
+  });
+  void modelCatalogService.refreshClaude();
+
   const state = createAppState({
     database,
     runtimes,
@@ -214,7 +219,7 @@ async function bootstrap(): Promise<void> {
   seedInitialWorkspace(state);
   registerIpcHandlers({
     ipcMain,
-    modelCatalog: buildModelCatalog,
+    modelCatalog: () => modelCatalogService.list(),
     rendererUrl:
       process.env.ELECTRON_RENDERER_URL ??
       `file://${path.join(import.meta.dirname, "../renderer/index.html")}`,
