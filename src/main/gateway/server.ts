@@ -110,9 +110,11 @@ async function handleRequest(
   try {
     const body = await requestJson(request);
     const effort = laneId ? effortResolver?.(laneId) : undefined;
-    const iterator = mount.bridge
-      .handleMessages(body, effort ? { effort } : undefined)
-      [Symbol.asyncIterator]();
+    const stream = mount.bridge.handleMessages(
+      body,
+      effort ? { effort } : undefined,
+    );
+    const iterator = stream[Symbol.asyncIterator]();
     const first = await iterator.next();
     response.writeHead(200, {
       Connection: "keep-alive",
