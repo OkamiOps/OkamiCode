@@ -1,3 +1,4 @@
+import { dialog } from "electron";
 import type { IpcMain, IpcMainInvokeEvent, WebContents } from "electron";
 import { canonicalEventSchema } from "../../shared/contracts/event";
 import {
@@ -36,6 +37,7 @@ interface TaskRow {
   title: string;
   objective: string;
   status: string;
+  workspace_path: string | null;
   created_at: string;
   updated_at: string;
 }
@@ -105,10 +107,17 @@ async function dispatch(
       return modelCatalog();
     case "task:create":
       return createTask(state, request as IpcRequest<"task:create">);
+    case "workspace:pick":
+      return pickWorkspace();
     case "task:list":
       return listTasks(state);
     case "lane:list":
       return listLanes(state, request as IpcRequest<"lane:list">);
+    case "conversation:history":
+      return conversationHistory(
+        state,
+        request as IpcRequest<"conversation:history">,
+      );
     case "lane:ensure":
       return ensureLane(
         state,
@@ -244,6 +253,7 @@ function createTask(
     title: request.title,
     objective: request.objective,
     status: "active",
+    workspacePath: request.workspacePath ?? null,
     createdAt: now,
     updatedAt: now,
   };
@@ -251,10 +261,132 @@ function createTask(
   return task;
 }
 
+// The Claude/Codex workflow anchors every conversation to a folder the user
+// picks; sessions and leases stay scoped to it.
+async function pickWorkspace() {
+  const result = await dialog.showOpenDialog({
+    title: "Escolha a pasta da conversa",
+    buttonLabel: "Usar esta pasta",
+    properties: ["openDirectory", "createDirectory"],
+  });
+  return { path: result.canceled ? null : (result.filePaths[0] ?? null) };
+}
+
+function conversationHistory(
+  state: AppState,
+  request: IpcRequest<"conversation:history">,
+) {
+  const userMessages = (
+    state.database
+      .prepare(
+        `SELECT messages.id, messages.content_json, messages.created_at
+         FROM messages
+         JOIN conversations ON conversations.id = messages.conversation_id
+         WHERE conversations.task_id = ? AND messages.role = 'user'
+         ORDER BY messages.sequence`,
+      )
+      .all(request.taskId) as Array<{
+      id: string;
+      content_json: string;
+      created_at: string;
+    }>
+  ).map((row) => {
+    const content = JSON.parse(row.content_json) as {
+      body?: string;
+      laneId?: string;
+    };
+    return {
+      id: row.id,
+      laneId: content.laneId ?? null,
+      body: content.body ?? "",
+      at: row.created_at,
+    };
+  });
+  const events = (
+    state.database
+      .prepare(
+        `SELECT payload_json, id, task_id, lane_id, run_id, sequence,
+                occurred_at, kind, native_event_id
+         FROM events WHERE task_id = ? ORDER BY occurred_at, sequence`,
+      )
+      .all(request.taskId) as Array<{
+      payload_json: string;
+      id: string;
+      task_id: string;
+      lane_id: string;
+      run_id: string;
+      sequence: number;
+      occurred_at: string;
+      kind: string;
+      native_event_id: string | null;
+    }>
+  ).map((row) =>
+    canonicalEventSchema.parse({
+      schemaVersion: 1,
+      id: row.id,
+      taskId: row.task_id,
+      laneId: row.lane_id,
+      runId: row.run_id,
+      sequence: row.sequence,
+      occurredAt: row.occurred_at,
+      kind: row.kind,
+      nativeEventId: row.native_event_id,
+      payload: sanitizePayload(
+        JSON.parse(row.payload_json) as Record<string, unknown>,
+      ),
+    }),
+  );
+  return { userMessages, events };
+}
+
+function conversationForTask(state: AppState, taskId: string): string {
+  const existing = state.database
+    .prepare(
+      `SELECT id FROM conversations WHERE task_id = ? AND kind = 'workbench' LIMIT 1`,
+    )
+    .get(taskId) as { id: string } | undefined;
+  if (existing) return existing.id;
+  const id = state.createId();
+  const now = state.clock().toISOString();
+  state.database
+    .prepare(
+      `INSERT INTO conversations (id, task_id, kind, created_at, updated_at)
+       VALUES (?, ?, 'workbench', ?, ?)`,
+    )
+    .run(id, taskId, now, now);
+  return id;
+}
+
+function persistUserMessage(
+  state: AppState,
+  taskId: string,
+  laneId: string,
+  body: string,
+): void {
+  const conversationId = conversationForTask(state, taskId);
+  const next = state.database
+    .prepare(
+      `SELECT COALESCE(MAX(sequence), 0) + 1 AS seq FROM messages WHERE conversation_id = ?`,
+    )
+    .get(conversationId) as { seq: number };
+  state.database
+    .prepare(
+      `INSERT INTO messages (id, conversation_id, sequence, role, content_json, created_at)
+       VALUES (?, ?, ?, 'user', ?, ?)`,
+    )
+    .run(
+      state.createId(),
+      conversationId,
+      next.seq,
+      JSON.stringify({ body, laneId }),
+      state.clock().toISOString(),
+    );
+}
+
 function listTasks(state: AppState): TaskRecord[] {
   const rows = state.database
     .prepare(
-      `SELECT id, kind, title, objective, status, created_at, updated_at
+      `SELECT id, kind, title, objective, status, workspace_path, created_at, updated_at
        FROM tasks
        ORDER BY updated_at DESC, id ASC`,
     )
@@ -265,6 +397,7 @@ function listTasks(state: AppState): TaskRecord[] {
     title: row.title,
     objective: row.objective,
     status: row.status,
+    workspacePath: row.workspace_path ?? null,
     createdAt: row.created_at,
     updatedAt: row.updated_at,
   }));
@@ -355,6 +488,15 @@ async function sendLaneTurn(
     (await state.laneService.open(request.laneId));
   openedLanes.set(opened.laneId, opened);
   if (request.effort) laneEffort.set(request.laneId, request.effort);
+  const laneForTask = state.lanes.findById(request.laneId);
+  if (laneForTask) {
+    persistUserMessage(
+      state,
+      laneForTask.taskId,
+      request.laneId,
+      request.input,
+    );
+  }
   const run = await state.laneService.sendTurn(
     opened,
     request.input,

@@ -6,12 +6,14 @@ export interface TaskRecord {
   title: string;
   objective: string;
   status: string;
+  workspacePath: string | null;
   createdAt: string;
   updatedAt: string;
 }
 
 interface TaskRow {
   id: string;
+  workspace_path: string | null;
   kind: TaskRecord["kind"];
   title: string;
   objective: string;
@@ -34,8 +36,8 @@ export class TaskRepository {
     this.db
       .prepare(
         `INSERT INTO tasks
-         (id, kind, title, objective, status, created_at, updated_at)
-         VALUES (@id, @kind, @title, @objective, @status, @createdAt, @updatedAt)`,
+         (id, kind, title, objective, status, workspace_path, created_at, updated_at)
+         VALUES (@id, @kind, @title, @objective, @status, @workspacePath, @createdAt, @updatedAt)`,
       )
       .run(task);
   }
@@ -68,6 +70,7 @@ function rowToTask(row: TaskRow): TaskRecord {
     title: row.title,
     objective: row.objective,
     status: row.status,
+    workspacePath: row.workspace_path ?? null,
     createdAt: row.created_at,
     updatedAt: row.updated_at,
   };

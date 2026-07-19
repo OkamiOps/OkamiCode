@@ -36,10 +36,18 @@ function eventForCard(raw: unknown): EventCardEvent {
   };
 }
 
-export function Conversation({ lane }: { lane: WorkbenchLane | null }) {
+export function Conversation({
+  initialEvents = [],
+  lane,
+}: {
+  initialEvents?: EventCardEvent[];
+  lane: WorkbenchLane | null;
+}) {
   const sentMessages = useWorkbenchStore((state) => state.sentMessages);
   const streams = useWorkbenchStore((state) => state.streams);
-  const [events, setEvents] = useState<EventCardEvent[]>([]);
+  const [events, setEvents] = useState<EventCardEvent[]>(() =>
+    initialEvents.filter((event) => !TEXT_EVENT_KINDS.has(event.kind ?? "")),
+  );
   const streamedMessages = Object.entries(streams);
   const isEmpty =
     sentMessages.length === 0 &&

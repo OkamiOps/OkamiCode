@@ -108,6 +108,7 @@ function seedInitialWorkspace(state: AppState): void {
     title: "Primeira tarefa",
     objective: "Explorar o Okami Workbench",
     status: "open",
+    workspacePath: workspace,
     createdAt: now,
     updatedAt: now,
   });

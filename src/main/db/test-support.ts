@@ -53,6 +53,7 @@ export function createTestDatabase(): TestDatabase {
     title: "Test task",
     objective: "Exercise repositories",
     status: "active",
+    workspacePath: null,
     createdAt: now,
     updatedAt: now,
   });

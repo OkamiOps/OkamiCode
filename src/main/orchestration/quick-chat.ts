@@ -67,6 +67,7 @@ export class QuickChatService {
         title: "Chat rápido",
         objective: "Conversa independente sem workspace",
         status: "active",
+        workspacePath: null,
         createdAt: now,
         updatedAt: now,
       });
@@ -176,6 +177,7 @@ export class QuickChatService {
       title: request.title,
       objective: request.objective,
       status: "active",
+      workspacePath: null,
       createdAt: now,
       updatedAt: now,
     };

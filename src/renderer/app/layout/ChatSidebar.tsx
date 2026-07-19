@@ -1,6 +1,7 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { Gauge, Link2, Plug, Plus } from "lucide-react";
 import { NavLink, useNavigate } from "react-router-dom";
+import { workbenchApi } from "../../features/workbench/api";
 import { workbenchClient } from "../../lib/ipc/client";
 import { useWorkbenchStore } from "../../features/workbench/store";
 
@@ -15,13 +16,22 @@ export function ChatSidebar() {
     queryFn: () => workbenchClient.taskList(),
   });
   const createTask = useMutation({
-    mutationFn: () =>
-      workbenchClient.taskCreate({
-        title: "Nova conversa",
-        objective: "Conversa iniciada no Okami Workbench",
-      }),
+    // Mirrors the Claude/Codex workflow: a conversation is anchored to a
+    // folder the user picks before anything runs.
+    mutationFn: async () => {
+      const picked = await workbenchApi.pickWorkspace();
+      if (!picked.path) return null;
+      const basename = picked.path.split("/").filter(Boolean).at(-1) ?? "pasta";
+      return workbenchApi.createTask({
+        title: basename,
+        objective: `Conversa na pasta ${picked.path}`,
+        workspacePath: picked.path,
+      });
+    },
     onSuccess: (task) => {
+      if (!task) return;
       void queryClient.invalidateQueries({ queryKey: ["sessions"] });
+      void queryClient.invalidateQueries({ queryKey: ["workbench", "tasks"] });
       selectTask(task.id);
       navigate("/workbench");
     },
@@ -75,7 +85,10 @@ export function ChatSidebar() {
             }}
             type="button"
           >
-            {task.title}
+            <span className="chat-session__title">{task.title}</span>
+            {task.workspacePath && (
+              <span className="chat-session__path">{task.workspacePath}</span>
+            )}
           </button>
         ))}
       </nav>

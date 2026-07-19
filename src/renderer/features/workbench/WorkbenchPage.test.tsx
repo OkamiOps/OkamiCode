@@ -23,6 +23,7 @@ const task: IpcResponse<"task:list">[number] = {
   title: "Implementar Workbench",
   objective: "Entregar conversa e lanes",
   status: "active",
+  workspacePath: "/workspace/okami",
   createdAt: "2026-07-18T12:00:00.000Z",
   updatedAt: "2026-07-18T12:00:00.000Z",
 };
@@ -80,6 +81,9 @@ function renderWorkbenchFixture({
   };
   const api: WorkbenchApi = {
     listTasks: vi.fn(async () => [task]),
+    pickWorkspace: vi.fn(async () => ({ path: "/workspace/okami" })),
+    createTask: vi.fn(async () => task),
+    history: vi.fn(async () => ({ userMessages: [], events: [] })),
     listModels: vi.fn(async () => [
       {
         runtimeKind: "claude" as const,

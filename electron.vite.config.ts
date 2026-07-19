@@ -1,32 +1,30 @@
 import tailwindcss from "@tailwindcss/vite";
 import react from "@vitejs/plugin-react";
 import { defineConfig, externalizeDepsPlugin } from "electron-vite";
-import { readFileSync } from "node:fs";
+import { readdirSync, readFileSync } from "node:fs";
 import { resolve } from "node:path";
 import type { Plugin } from "vite";
 
-function phaseOneSchemaAsset(): Plugin {
+function schemaAssets(): Plugin {
   return {
-    name: "phase-one-schema-asset",
+    name: "schema-assets",
     generateBundle() {
-      this.emitFile({
-        type: "asset",
-        fileName: "schema/001-phase1-core.sql",
-        source: readFileSync(
-          resolve(
-            import.meta.dirname,
-            "src/main/db/schema/001-phase1-core.sql",
-          ),
-          "utf8",
-        ),
-      });
+      const dir = resolve(import.meta.dirname, "src/main/db/schema");
+      for (const file of readdirSync(dir)) {
+        if (!file.endsWith(".sql")) continue;
+        this.emitFile({
+          type: "asset",
+          fileName: `schema/${file}`,
+          source: readFileSync(resolve(dir, file), "utf8"),
+        });
+      }
     },
   };
 }
 
 export default defineConfig({
   main: {
-    plugins: [externalizeDepsPlugin(), phaseOneSchemaAsset()],
+    plugins: [externalizeDepsPlugin(), schemaAssets()],
   },
   preload: {
     // No externalizeDepsPlugin here: a sandboxed preload cannot require

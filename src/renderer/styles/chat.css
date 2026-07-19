@@ -166,6 +166,32 @@ body {
   color: var(--chat-text);
 }
 
+.chat-session__title {
+  display: block;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.chat-session__path {
+  display: block;
+  font-size: 10px;
+  color: var(--chat-text-dim);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  direction: rtl;
+  text-align: left;
+}
+
+.chat-topbar__path {
+  font-size: 11px;
+  color: var(--chat-text-dim);
+  max-width: 34ch;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  direction: rtl;
+}
+
 .chat-sessions__empty {
   color: var(--chat-text-dim);
   font-size: 12.5px;

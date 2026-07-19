@@ -79,6 +79,7 @@ function renderQuickChat({
           title: request.title,
           objective: request.objective,
           status: "active",
+          workspacePath: null,
           createdAt: "2026-07-18T12:00:00.000Z",
           updatedAt: "2026-07-18T12:00:00.000Z",
         },

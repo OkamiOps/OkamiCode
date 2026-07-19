@@ -1,4 +1,5 @@
 import { z } from "zod";
+import { canonicalEventSchema } from "./event";
 import {
   laneStatusSchema,
   providerKindSchema,
@@ -38,6 +39,7 @@ export const taskSchema = z
     title: z.string().min(1),
     objective: z.string(),
     status: z.string().min(1),
+    workspacePath: z.string().min(1).nullable(),
     createdAt: z.iso.datetime({ offset: true }),
     updatedAt: z.iso.datetime({ offset: true }),
   })
@@ -47,10 +49,35 @@ export const taskCreateRequestSchema = z
   .object({
     title: z.string().trim().min(1).max(240),
     objective: z.string().trim().min(1).max(20_000),
+    workspacePath: z.string().min(1).max(4_096).optional(),
   })
   .strict();
 
 export const taskListSchema = z.array(taskSchema);
+
+export const workspacePickSchema = z
+  .object({ path: z.string().min(1).nullable() })
+  .strict();
+
+export const conversationHistoryRequestSchema = z
+  .object({ taskId: entityIdSchema })
+  .strict();
+
+export const conversationHistorySchema = z
+  .object({
+    userMessages: z.array(
+      z
+        .object({
+          id: z.string().min(1),
+          laneId: entityIdSchema.nullable(),
+          body: z.string(),
+          at: z.iso.datetime({ offset: true }),
+        })
+        .strict(),
+    ),
+    events: z.array(canonicalEventSchema),
+  })
+  .strict();
 
 export const laneOpenRequestSchema = z
   .object({
@@ -377,8 +404,10 @@ export const ipcRequestSchemas = {
   "system:doctor": emptyRequestSchema,
   "models:list": emptyRequestSchema,
   "task:create": taskCreateRequestSchema,
+  "workspace:pick": emptyRequestSchema,
   "task:list": emptyRequestSchema,
   "lane:list": laneListRequestSchema,
+  "conversation:history": conversationHistoryRequestSchema,
   "lane:ensure": laneEnsureRequestSchema,
   "lane:open": laneOpenRequestSchema,
   "lane:sendTurn": laneSendTurnRequestSchema,
@@ -398,8 +427,10 @@ export const ipcResponseSchemas = {
   "system:doctor": systemDoctorSchema,
   "models:list": modelCatalogSchema,
   "task:create": taskSchema,
+  "workspace:pick": workspacePickSchema,
   "task:list": taskListSchema,
   "lane:list": laneListSchema,
+  "conversation:history": conversationHistorySchema,
   "lane:ensure": openedLaneSchema,
   "lane:open": openedLaneSchema,
   "lane:sendTurn": runSummarySchema,

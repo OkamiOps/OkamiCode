@@ -17,6 +17,13 @@ export interface WorkbenchApi {
     request: IpcRequest<"lane:ensure">,
   ): Promise<IpcResponse<"lane:ensure">>;
   listTasks(): Promise<IpcResponse<"task:list">>;
+  pickWorkspace(): Promise<IpcResponse<"workspace:pick">>;
+  createTask(
+    request: IpcRequest<"task:create">,
+  ): Promise<IpcResponse<"task:create">>;
+  history(
+    request: IpcRequest<"conversation:history">,
+  ): Promise<IpcResponse<"conversation:history">>;
   openLane(request: IpcRequest<"lane:open">): Promise<IpcResponse<"lane:open">>;
   sendTurn(
     request: IpcRequest<"lane:sendTurn">,
@@ -30,6 +37,9 @@ export const workbenchApi: WorkbenchApi = {
   listModels: () => workbenchClient.modelsList(),
   ensureLane: (request) => workbenchClient.laneEnsure(request),
   listTasks: () => workbenchClient.taskList(),
+  pickWorkspace: () => workbenchClient.workspacePick(),
+  createTask: (request) => workbenchClient.taskCreate(request),
+  history: (request) => workbenchClient.conversationHistory(request),
   openLane: (request) => workbenchClient.laneOpen(request),
   sendTurn: (request) => workbenchClient.laneSendTurn(request),
   subscribe: subscribeToWorkbenchEvents,

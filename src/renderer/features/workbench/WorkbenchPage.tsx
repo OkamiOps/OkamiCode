@@ -1,6 +1,6 @@
 import { useMutation, useQuery } from "@tanstack/react-query";
 import { Sparkle } from "lucide-react";
-import { useEffect } from "react";
+import { useEffect, useRef } from "react";
 import { useShallow } from "zustand/react/shallow";
 import { Composer } from "./Composer";
 import { Conversation } from "./Conversation";
@@ -34,6 +34,12 @@ export function WorkbenchPage({ api = workbenchApi }: WorkbenchPageProps) {
   });
   const tasks = tasksQuery.data ?? [];
   const effectiveTaskId = selectedTaskId ?? tasks[0]?.id ?? null;
+  const historyQuery = useQuery({
+    queryKey: ["workbench", "history", effectiveTaskId],
+    queryFn: () => api.history({ taskId: effectiveTaskId! }),
+    enabled: effectiveTaskId !== null,
+    staleTime: Infinity,
+  });
   const lanesQuery = useQuery({
     queryKey: ["workbench", "lanes", effectiveTaskId],
     queryFn: () => api.listLanes(effectiveTaskId ?? undefined),
@@ -108,6 +114,31 @@ export function WorkbenchPage({ api = workbenchApi }: WorkbenchPageProps) {
 
   useEffect(() => api.subscribe(storeActions.applyEvent), [api, storeActions]);
 
+  // Restores the persisted conversation once per task; an empty history never
+  // clobbers a conversation already streaming live.
+  const historyData = historyQuery.data;
+  const hydratedTaskRef = useRef<string | null>(null);
+  useEffect(() => {
+    if (!historyData || effectiveTaskId === null) return;
+    if (hydratedTaskRef.current === effectiveTaskId) return;
+    const isTaskSwitch = hydratedTaskRef.current !== null;
+    hydratedTaskRef.current = effectiveTaskId;
+    if (
+      !isTaskSwitch &&
+      historyData.userMessages.length === 0 &&
+      historyData.events.length === 0
+    )
+      return;
+    storeActions.hydrateConversation(
+      historyData.userMessages.map((message) => ({
+        id: message.id,
+        body: message.body,
+        laneId: message.laneId ?? "",
+      })),
+      historyData.events,
+    );
+  }, [historyData, effectiveTaskId, storeActions]);
+
   // A running turn only gates the lane it belongs to.
   const laneActiveRunId =
     activeRunLaneId !== null && activeRunLaneId === selectedLane?.laneId
@@ -181,6 +212,11 @@ export function WorkbenchPage({ api = workbenchApi }: WorkbenchPageProps) {
     >
       <div className="chat-topbar">
         <strong>{selectedTask?.title ?? "Conversa"}</strong>
+        {selectedTask?.workspacePath && (
+          <span className="chat-topbar__path">
+            {selectedTask.workspacePath}
+          </span>
+        )}
         {selectedLane && (
           <>
             <span
@@ -193,7 +229,11 @@ export function WorkbenchPage({ api = workbenchApi }: WorkbenchPageProps) {
       </div>
       <div className="chat-scroll">
         <div className="chat-column">
-          <Conversation lane={selectedLane} />
+          <Conversation
+            initialEvents={historyData?.events ?? []}
+            key={effectiveTaskId ?? "none"}
+            lane={selectedLane}
+          />
         </div>
       </div>
       <div className="chat-composer-dock">
@@ -211,18 +251,25 @@ export function WorkbenchPage({ api = workbenchApi }: WorkbenchPageProps) {
 
 function sessionContextNote(
   usage:
-    | { inputTokens: number; cacheReadTokens: number; outputTokens: number }
+    | {
+        inputTokens: number;
+        cacheReadTokens: number;
+        outputTokens: number;
+        contextWindow: number | null;
+      }
     | undefined,
   model: string,
 ): string | null {
   if (!usage) return null;
   const used = usage.inputTokens + usage.cacheReadTokens + usage.outputTokens;
   if (used === 0) return null;
-  const window = model.includes("[1m]")
-    ? 1_000_000
-    : /claude|opus|sonnet|haiku|default/iu.test(model)
-      ? 200_000
-      : null;
+  const window = usage.contextWindow
+    ? usage.contextWindow
+    : model.includes("[1m]")
+      ? 1_000_000
+      : /claude|opus|sonnet|haiku|default/iu.test(model)
+        ? 200_000
+        : null;
   const compact = (value: number) =>
     value >= 1000 ? `${Math.round(value / 1000)}k` : `${value}`;
   if (!window) return `contexto ~${compact(used)} tokens`;
@@ -237,6 +284,7 @@ function workbenchActions(state: WorkbenchState) {
     cancelActiveRun: state.cancelActiveRun,
     selectLane: state.selectLane,
     setEffort: state.setEffort,
+    hydrateConversation: state.hydrateConversation,
     selectTask: state.selectTask,
     setActiveRun: state.setActiveRun,
     upsertLane: state.upsertLane,

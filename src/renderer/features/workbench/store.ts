@@ -17,6 +17,7 @@ export interface SessionUsage {
   inputTokens: number;
   cacheReadTokens: number;
   outputTokens: number;
+  contextWindow: number | null;
 }
 
 export interface WorkbenchState {
@@ -36,6 +37,7 @@ export interface WorkbenchState {
   cancelActiveRun(runId: string): void;
   selectLane(laneId: string | null): void;
   setEffort(laneId: string, effort: string): void;
+  hydrateConversation(messages: SentMessage[], events: CanonicalEvent[]): void;
   selectTask(taskId: string): void;
   setActiveRun(runId: string, laneId: string): void;
   upsertLane(lane: WorkbenchLane): void;
@@ -73,12 +75,24 @@ export function reduceCanonicalEvent(
     if (usage && typeof usage === "object") {
       const toCount = (value: unknown) =>
         typeof value === "number" && Number.isFinite(value) ? value : 0;
+      const modelUsage = event.payload.modelUsage as
+        Record<string, { contextWindow?: unknown }> | undefined;
+      const contextWindow = modelUsage
+        ? Object.values(modelUsage)
+            .map((entry) =>
+              typeof entry?.contextWindow === "number"
+                ? entry.contextWindow
+                : 0,
+            )
+            .reduce((max, value) => Math.max(max, value), 0) || null
+        : null;
       next.lastUsageByLane = {
         ...state.lastUsageByLane,
         [event.laneId]: {
           inputTokens: toCount(usage.input_tokens),
           cacheReadTokens: toCount(usage.cache_read_input_tokens),
           outputTokens: toCount(usage.output_tokens),
+          contextWindow,
         },
       };
     }
@@ -110,6 +124,20 @@ export function createWorkbenchStore(): StoreApi<WorkbenchState> {
         runStatus: { ...state.runStatus, [runId]: "cancelled" },
       })),
     selectLane: (laneId) => set({ selectedLaneId: laneId }),
+    hydrateConversation: (messages, events) =>
+      set((state) => {
+        let next: WorkbenchState = {
+          ...state,
+          sentMessages: messages,
+          streams: {},
+          appliedEventIds: {},
+          runStatus: {},
+          activeRunId: null,
+          activeRunLaneId: null,
+        };
+        for (const event of events) next = reduceCanonicalEvent(next, event);
+        return next;
+      }),
     setEffort: (laneId, effort) =>
       set((state) => ({
         effortByLane: { ...state.effortByLane, [laneId]: effort },
