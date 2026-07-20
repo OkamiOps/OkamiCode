@@ -1,6 +1,6 @@
 import { Surface } from "@heroui/react";
 import { ChevronRight, MessageSquareText, Wrench } from "lucide-react";
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { canonicalEventSchema } from "../../../shared/contracts/event";
 import { MessageMarkdown } from "./MessageMarkdown";
 import type { WorkbenchLane } from "./api";
@@ -253,6 +253,37 @@ export function Conversation({
     timeline.push(item);
   }
 
+  // Follow the conversation: stick to the bottom while the user is there,
+  // release when they scroll up to read, re-stick when they return.
+  const bottomRef = useRef<HTMLDivElement>(null);
+  const stickRef = useRef(true);
+  useEffect(() => {
+    const scroller = bottomRef.current?.closest(".chat-scroll");
+    if (!scroller) return;
+    const onScroll = () => {
+      stickRef.current =
+        scroller.scrollHeight - scroller.scrollTop - scroller.clientHeight < 90;
+    };
+    scroller.addEventListener("scroll", onScroll, { passive: true });
+    return () => scroller.removeEventListener("scroll", onScroll);
+  }, []);
+  const lastAgent = [...items].reverse().find((item) => item.type === "agent");
+  const followSignal = `${timeline.length}:${
+    lastAgent?.type === "agent" ? lastAgent.text.length : 0
+  }:${sentMessages.length}`;
+  const sentCountRef = useRef(sentMessages.length);
+  useEffect(() => {
+    // Sending a message always jumps to the bottom; streamed growth only
+    // follows while the user is already there.
+    const sentNow = sentMessages.length;
+    const userJustSent = sentNow > sentCountRef.current;
+    sentCountRef.current = sentNow;
+    if (userJustSent) stickRef.current = true;
+    if (stickRef.current) {
+      bottomRef.current?.scrollIntoView?.({ block: "end" });
+    }
+  }, [followSignal, sentMessages.length]);
+
   const laneById = new Map(lanes.map((entry) => [entry.laneId, entry]));
   const runningTool = visibleEvents
     .filter((event) => event.kind === "tool_call_started")
@@ -294,9 +325,11 @@ export function Conversation({
             if (item.type === "agent") {
               const owner = laneById.get(item.laneId) ?? lane;
               const runtime = runtimePresentation(owner);
+              const isLiveTail = isRunning && item.key === lastAgent?.key;
               return (
                 <article
                   className="message-group message-group--agent"
+                  data-tone={runtime.tone}
                   key={item.key}
                 >
                   <header className="message-agent-header">
@@ -318,6 +351,9 @@ export function Conversation({
                   </header>
                   <Surface className="message-bubble" variant="secondary">
                     <MessageMarkdown>{item.text}</MessageMarkdown>
+                    {isLiveTail && (
+                      <span aria-hidden="true" className="stream-caret" />
+                    )}
                   </Surface>
                 </article>
               );
@@ -345,6 +381,7 @@ export function Conversation({
               </span>
             </div>
           )}
+          <div aria-hidden="true" ref={bottomRef} />
         </div>
       )}
     </div>

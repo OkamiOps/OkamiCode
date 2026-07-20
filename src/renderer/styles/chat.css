@@ -1311,3 +1311,79 @@ textarea:focus-visible {
   align-items: center;
   gap: 8px;
 }
+
+/* ── Chat life: color, motion ─────────────────────── */
+.message-group,
+.conversation-event {
+  animation: msg-in 0.28s cubic-bezier(0.2, 0.8, 0.3, 1);
+}
+
+@keyframes msg-in {
+  from {
+    opacity: 0;
+    transform: translateY(7px);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+
+/* User turns carry the accent, not gray */
+.message-group--user .message-bubble {
+  background: linear-gradient(
+    135deg,
+    rgba(255, 122, 26, 0.16),
+    rgba(255, 122, 26, 0.07)
+  ) !important;
+  border: 1px solid rgba(255, 122, 26, 0.22) !important;
+}
+
+/* Each runtime speaks with its own color */
+.message-group--agent[data-tone="claude"] .message-agent-header strong {
+  color: #ff9a4d;
+}
+.message-group--agent[data-tone="gpt"] .message-agent-header strong {
+  color: #68ddeb;
+}
+.message-group--agent[data-tone="grok"] .message-agent-header strong {
+  color: #e8e9ed;
+}
+
+.message-group--agent[data-tone="claude"] .message-bubble {
+  border-left: 2px solid rgba(255, 122, 26, 0.25) !important;
+  padding-left: 14px !important;
+}
+.message-group--agent[data-tone="gpt"] .message-bubble {
+  border-left: 2px solid rgba(104, 221, 235, 0.25) !important;
+  padding-left: 14px !important;
+}
+.message-group--agent[data-tone="grok"] .message-bubble {
+  border-left: 2px solid rgba(232, 233, 237, 0.2) !important;
+  padding-left: 14px !important;
+}
+
+/* Blinking caret while the reply streams */
+.stream-caret {
+  display: inline-block;
+  width: 7px;
+  height: 15px;
+  margin-top: 4px;
+  border-radius: 2px;
+  background: var(--chat-accent);
+  animation: caret-blink 0.9s steps(2, start) infinite;
+}
+
+@keyframes caret-blink {
+  50% {
+    opacity: 0;
+  }
+}
+
+/* Tool summary picks up state color */
+.chat-toolgroup__summary svg:first-child {
+  color: var(--chat-accent);
+}
+.chat-toolgroup__summary[data-running="true"] svg:first-child {
+  color: var(--chat-yellow);
+}
