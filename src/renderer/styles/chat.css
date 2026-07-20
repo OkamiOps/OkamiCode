@@ -976,3 +976,220 @@ textarea:focus-visible {
 .chat-composer {
   background: linear-gradient(180deg, #1a1c22 0%, #14161b 100%);
 }
+
+/* ── Rich markdown ─────────────────────────────────── */
+.message-bubble h1,
+.message-bubble h2,
+.message-bubble h3,
+.message-bubble h4 {
+  color: var(--chat-text);
+  font-weight: 650;
+  line-height: 1.3;
+  margin: 1.1em 0 0.45em;
+}
+.message-bubble h1 {
+  font-size: 1.3em;
+}
+.message-bubble h2 {
+  font-size: 1.18em;
+}
+.message-bubble h3 {
+  font-size: 1.06em;
+}
+.message-bubble h4 {
+  font-size: 1em;
+}
+.message-bubble h1:first-child,
+.message-bubble h2:first-child,
+.message-bubble h3:first-child {
+  margin-top: 0;
+}
+
+.message-bubble ul,
+.message-bubble ol {
+  margin: 0.4em 0 0.7em;
+  padding-left: 1.4em;
+  display: flex;
+  flex-direction: column;
+  gap: 0.28em;
+}
+.message-bubble li::marker {
+  color: var(--chat-accent);
+}
+
+.message-bubble a {
+  color: var(--chat-accent);
+  text-decoration: none;
+  border-bottom: 1px solid rgba(255, 122, 26, 0.35);
+  transition: border-color 0.12s ease;
+}
+.message-bubble a:hover {
+  border-bottom-color: var(--chat-accent);
+}
+
+.message-bubble blockquote {
+  margin: 0.6em 0;
+  padding: 4px 14px;
+  border-left: 3px solid var(--chat-accent);
+  background: rgba(255, 122, 26, 0.05);
+  border-radius: 0 8px 8px 0;
+  color: var(--chat-text-mid);
+}
+
+.message-bubble hr {
+  border: none;
+  border-top: 1px solid var(--chat-border-soft);
+  margin: 1em 0;
+}
+
+.message-bubble table {
+  border-collapse: collapse;
+  margin: 0.7em 0;
+  font-size: 0.92em;
+  display: block;
+  max-width: 100%;
+  overflow-x: auto;
+}
+.message-bubble th,
+.message-bubble td {
+  border: 1px solid var(--chat-border-soft);
+  padding: 6px 12px;
+  text-align: left;
+}
+.message-bubble th {
+  background: var(--chat-surface-2);
+  color: var(--chat-text);
+  font-weight: 600;
+}
+.message-bubble tr:nth-child(even) td {
+  background: rgba(255, 255, 255, 0.015);
+}
+
+.message-bubble code {
+  background: rgba(255, 122, 26, 0.09);
+  color: #ffb478;
+  border-radius: 5px;
+  padding: 1.5px 6px;
+  font-size: 0.88em;
+}
+
+/* Block code resets the inline chip treatment */
+.message-bubble pre code,
+.md-code code {
+  background: transparent;
+  color: inherit;
+  border-radius: 0;
+  padding: 0;
+  font-size: inherit;
+}
+
+/* Code blocks: framed console with language + copy */
+.md-code {
+  margin: 0.7em 0;
+  border: 1px solid var(--chat-border-soft);
+  border-radius: 12px;
+  overflow: hidden;
+  background: #0a0b0e;
+}
+.md-code__bar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 6px 12px;
+  background: rgba(255, 255, 255, 0.025);
+  border-bottom: 1px solid var(--chat-border-soft);
+}
+.md-code__lang {
+  font: 600 10.5px/1 var(--chat-mono);
+  letter-spacing: 0.07em;
+  text-transform: uppercase;
+  color: var(--chat-text-dim);
+}
+.md-code__copy {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  border: none;
+  background: transparent;
+  color: var(--chat-text-dim);
+  font: 500 11px/1 inherit;
+  font-family: inherit;
+  padding: 3px 7px;
+  border-radius: 6px;
+  cursor: pointer;
+  transition:
+    color 0.12s ease,
+    background 0.12s ease;
+}
+.md-code__copy:hover {
+  color: var(--chat-text);
+  background: var(--chat-surface-2);
+}
+.md-code pre {
+  margin: 0;
+  border: none;
+  border-radius: 0;
+  background: transparent;
+  padding: 12px 14px;
+  overflow-x: auto;
+  font: 12px/1.65 var(--chat-mono);
+}
+
+/* Syntax palette tuned to the Okami identity */
+.hljs-keyword,
+.hljs-selector-tag,
+.hljs-built_in,
+.hljs-tag {
+  color: #ff9a4d;
+}
+.hljs-string,
+.hljs-attr,
+.hljs-template-string {
+  color: #9ad27c;
+}
+.hljs-number,
+.hljs-literal,
+.hljs-symbol {
+  color: #ffc26b;
+}
+.hljs-title,
+.hljs-title.function_,
+.hljs-title.class_,
+.hljs-function {
+  color: #68ddeb;
+}
+.hljs-comment,
+.hljs-quote {
+  color: #6a6f7e;
+  font-style: italic;
+}
+.hljs-variable,
+.hljs-template-variable,
+.hljs-property {
+  color: #e8e9ed;
+}
+.hljs-type,
+.hljs-class {
+  color: #7cc7ff;
+}
+.hljs-regexp,
+.hljs-link {
+  color: #d6a5ff;
+}
+.hljs-meta,
+.hljs-selector-id,
+.hljs-selector-class {
+  color: #ffc26b;
+}
+.hljs-deletion {
+  color: #fb6b75;
+}
+.hljs-addition {
+  color: #9ad27c;
+}
+.hljs-emphasis {
+  font-style: italic;
+}
+.hljs-strong {
+  font-weight: 700;
+}

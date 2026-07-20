@@ -1,9 +1,8 @@
 import { Surface } from "@heroui/react";
 import { ChevronRight, MessageSquareText, Wrench } from "lucide-react";
 import { useEffect, useState } from "react";
-import ReactMarkdown from "react-markdown";
-import remarkGfm from "remark-gfm";
 import { canonicalEventSchema } from "../../../shared/contracts/event";
+import { MessageMarkdown } from "./MessageMarkdown";
 import type { WorkbenchLane } from "./api";
 import {
   EventCardRegistry,
@@ -287,9 +286,7 @@ export function Conversation({
                   key={item.key}
                 >
                   <Surface className="message-bubble" variant="secondary">
-                    <ReactMarkdown remarkPlugins={[remarkGfm]}>
-                      {item.body}
-                    </ReactMarkdown>
+                    <MessageMarkdown>{item.body}</MessageMarkdown>
                   </Surface>
                 </article>
               );
@@ -320,9 +317,7 @@ export function Conversation({
                     </span>
                   </header>
                   <Surface className="message-bubble" variant="secondary">
-                    <ReactMarkdown remarkPlugins={[remarkGfm]}>
-                      {item.text}
-                    </ReactMarkdown>
+                    <MessageMarkdown>{item.text}</MessageMarkdown>
                   </Surface>
                 </article>
               );
