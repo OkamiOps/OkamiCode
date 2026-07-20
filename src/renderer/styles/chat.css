@@ -1851,8 +1851,6 @@ textarea:focus-visible {
 
 .workspace-panel {
   flex: none;
-  /* A width saved on a wider window must never push the panel off-screen. */
-  max-width: 62%;
   min-width: 220px;
 }
 
@@ -2191,7 +2189,8 @@ textarea:focus-visible {
 /* Stacked panel rail */
 .workspace-rail {
   flex: none;
-  max-width: 62%;
+  /* Only the conversation's minimum keeps the rail in check now. */
+  max-width: calc(100% - 320px);
   min-width: 220px;
   border-left: 1px solid var(--chat-border-soft);
   background: var(--chat-surface);
@@ -2564,4 +2563,108 @@ textarea:focus-visible {
   font-size: 10.5px;
   line-height: 1.45;
   color: var(--chat-text-dim);
+}
+
+/* Background-task rows and their detail */
+.ws-task {
+  width: 100%;
+  border: none;
+  background: transparent;
+  text-align: left;
+  cursor: pointer;
+  font-family: inherit;
+}
+
+.ws-task__chevron {
+  margin-left: auto;
+  color: var(--chat-text-dim);
+  transition: transform 0.14s ease;
+  flex: none;
+}
+
+.ws-task[aria-expanded="true"] .ws-task__chevron {
+  transform: rotate(90deg);
+}
+
+.ws-task__detail {
+  margin: 2px 0 12px 17px;
+  padding: 8px 0 8px 12px;
+  border-left: 2px solid var(--chat-border-soft);
+  display: flex;
+  flex-direction: column;
+  gap: 7px;
+}
+
+.ws-task__tool {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+  min-width: 0;
+}
+
+.ws-task__tool strong {
+  font: 600 11.5px/1.3 inherit;
+  color: var(--chat-cyan);
+  flex: none;
+}
+
+.ws-task__tool code {
+  font-family: var(--chat-mono);
+  font-size: 10.5px;
+  color: var(--chat-text-dim);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.ws-task__reply {
+  margin: 2px 0 0;
+  font-size: 11.5px;
+  line-height: 1.5;
+  color: var(--chat-text-mid);
+  border-top: 1px solid var(--chat-border-soft);
+  padding-top: 7px;
+}
+
+/* File tree: filter field and denser rows */
+.fs-filter {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  margin: 8px 10px 4px;
+  padding: 6px 10px;
+  border-radius: 9px;
+  background: var(--chat-bg);
+  border: 1px solid var(--chat-border-soft);
+  color: var(--chat-text-dim);
+}
+
+.fs-filter input {
+  flex: 1;
+  min-width: 0;
+  border: none;
+  background: transparent;
+  color: var(--chat-text);
+  font: 12px/1.4 inherit;
+  font-family: inherit;
+  outline: none;
+}
+
+.fs-root {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  padding: 4px 12px 6px;
+  font: 500 11px/1.3 var(--chat-mono);
+  color: var(--chat-text-dim);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  direction: rtl;
+  text-align: left;
+}
+
+.fs-row {
+  font-size: 12px;
+  line-height: 1.6;
 }

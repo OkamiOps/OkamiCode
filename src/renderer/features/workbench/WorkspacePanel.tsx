@@ -6,6 +6,7 @@ import {
   Folder,
   Globe,
   RotateCw,
+  Search,
   X,
 } from "lucide-react";
 import { useState, type KeyboardEvent } from "react";
@@ -46,19 +47,23 @@ function DirNode({
   dir,
   name,
   depth,
+  filter,
   onOpenFile,
 }: {
   taskId: string;
   dir: string;
   name: string | null;
   depth: number;
+  filter: string;
   onOpenFile: (file: string) => void;
 }) {
+  // A filter expands the tree so matches are reachable without clicking.
   const [open, setOpen] = useState(name === null);
+  const expanded = open || filter.length > 0;
   const listing = useQuery({
     queryKey: ["workspace-fs", taskId, dir],
     queryFn: () => workbenchClient.fsList({ taskId, dir }),
-    enabled: open,
+    enabled: expanded,
   });
 
   return (
@@ -70,7 +75,7 @@ function DirNode({
           style={{ paddingLeft: 8 + depth * 14 }}
           type="button"
         >
-          {open ? (
+          {expanded ? (
             <ChevronDown aria-hidden="true" size={12} />
           ) : (
             <ChevronRight aria-hidden="true" size={12} />
@@ -79,35 +84,43 @@ function DirNode({
           {name}
         </button>
       )}
-      {open &&
-        (listing.data?.entries ?? []).map((entry) => {
-          const childPath = dir ? `${dir}/${entry.name}` : entry.name;
-          if (entry.kind === "dir") {
+      {expanded &&
+        (listing.data?.entries ?? [])
+          .filter(
+            (entry) =>
+              filter === "" ||
+              entry.kind === "dir" ||
+              entry.name.toLowerCase().includes(filter),
+          )
+          .map((entry) => {
+            const childPath = dir ? `${dir}/${entry.name}` : entry.name;
+            if (entry.kind === "dir") {
+              return (
+                <DirNode
+                  depth={depth + 1}
+                  dir={childPath}
+                  filter={filter}
+                  key={childPath}
+                  name={entry.name}
+                  onOpenFile={onOpenFile}
+                  taskId={taskId}
+                />
+              );
+            }
             return (
-              <DirNode
-                depth={depth + 1}
-                dir={childPath}
+              <button
+                className="fs-row fs-row--file"
                 key={childPath}
-                name={entry.name}
-                onOpenFile={onOpenFile}
-                taskId={taskId}
-              />
+                onClick={() => onOpenFile(childPath)}
+                style={{ paddingLeft: 8 + (depth + 1) * 14 }}
+                type="button"
+              >
+                <FileCode2 aria-hidden="true" size={12} />
+                {entry.name}
+              </button>
             );
-          }
-          return (
-            <button
-              className="fs-row fs-row--file"
-              key={childPath}
-              onClick={() => onOpenFile(childPath)}
-              style={{ paddingLeft: 8 + (depth + 1) * 14 }}
-              type="button"
-            >
-              <FileCode2 aria-hidden="true" size={12} />
-              {entry.name}
-            </button>
-          );
-        })}
-      {open && name === null && listing.data?.entries.length === 0 && (
+          })}
+      {expanded && name === null && listing.data?.entries.length === 0 && (
         <p className="fs-empty">Pasta vazia.</p>
       )}
     </div>
@@ -339,6 +352,7 @@ function BrowserPane({ initialUrl }: { initialUrl: string | null }) {
 
 export function WorkspacePanel({
   taskId,
+  workspacePath,
   mode,
   openFile,
   onOpenFile,
@@ -346,12 +360,14 @@ export function WorkspacePanel({
   initialUrl = null,
 }: {
   taskId: string;
+  workspacePath?: string | null;
   mode: WorkspacePanelMode;
   openFile: string | null;
   onOpenFile: (file: string | null) => void;
   onClose: () => void;
   initialUrl?: string | null;
 }) {
+  const [filter, setFilter] = useState("");
   return (
     <section aria-label={PANEL_TITLES[mode]} className="workspace-pane">
       <header className="workspace-panel__header">
@@ -386,15 +402,32 @@ export function WorkspacePanel({
         ) : openFile ? (
           <FileView file={openFile} taskId={taskId} />
         ) : (
-          <div className="fs-tree">
-            <DirNode
-              depth={0}
-              dir=""
-              name={null}
-              onOpenFile={onOpenFile}
-              taskId={taskId}
-            />
-          </div>
+          <>
+            <label className="fs-filter">
+              <Search aria-hidden="true" size={12} />
+              <input
+                aria-label="Filtrar arquivos"
+                onChange={(event) => setFilter(event.target.value)}
+                placeholder="Filtrar arquivos…"
+                value={filter}
+              />
+            </label>
+            {workspacePath && (
+              <span className="fs-root" title={workspacePath}>
+                {workspacePath}
+              </span>
+            )}
+            <div className="fs-tree">
+              <DirNode
+                depth={0}
+                dir=""
+                filter={filter.trim().toLowerCase()}
+                name={null}
+                onOpenFile={onOpenFile}
+                taskId={taskId}
+              />
+            </div>
+          </>
         )}
       </div>
     </section>

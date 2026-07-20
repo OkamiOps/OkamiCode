@@ -55,7 +55,8 @@ export function WorkbenchPage({ api = workbenchApi }: WorkbenchPageProps) {
     storageKey: "okami.width.panel",
     initial: 420,
     min: 260,
-    max: 900,
+    // The rail can take most of the window: a browser preview needs room.
+    max: 1800,
   });
 
   const tasksQuery = useQuery({
@@ -436,6 +437,7 @@ export function WorkbenchPage({ api = workbenchApi }: WorkbenchPageProps) {
                 onOpenFile={setPanelFile}
                 openFile={panelFile}
                 taskId={effectiveTaskId}
+                workspacePath={selectedTask?.workspacePath ?? null}
               />
             ))}
           </aside>

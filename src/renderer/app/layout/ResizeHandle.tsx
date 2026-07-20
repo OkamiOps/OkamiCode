@@ -62,7 +62,7 @@ export function ResizeHandle({
     document.body.style.cursor = "col-resize";
     const container = handle.parentElement;
     const ceiling = container
-      ? Math.min(pane.max, Math.max(pane.min, container.clientWidth - 340))
+      ? Math.min(pane.max, Math.max(pane.min, container.clientWidth - 320))
       : pane.max;
 
     // The drag tracks its own latest value: the closure would otherwise
