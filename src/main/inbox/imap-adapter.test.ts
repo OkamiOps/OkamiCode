@@ -5,8 +5,11 @@ import type { ConnectorCredential } from "../connectors/credential-vault";
 import {
   ImapSyncAdapter,
   ImapSyncError,
+  createProductionImapClient,
   type ImapClient,
+  type ImapClientConstructor,
   type ImapClientFactory,
+  type ImapClientOptions,
 } from "./imap-adapter";
 
 const account: ConnectorAccount = {
@@ -116,6 +119,24 @@ function adapter(
 }
 
 describe("ImapSyncAdapter", () => {
+  it("creates the production client with logging disabled", () => {
+    const constructed = vi.fn();
+    class FakeImapFlow {
+      constructor(options: ImapClientOptions) {
+        constructed(options);
+        return fakeClient().client;
+      }
+    }
+    const options: ImapClientOptions = {
+      host: "mail.example.com",
+      port: 993,
+      secure: true,
+      auth: { user: "me@example.com", pass: "secret" },
+    };
+    createProductionImapClient(options, FakeImapFlow as ImapClientConstructor);
+    expect(constructed).toHaveBeenCalledWith({ ...options, logger: false });
+  });
+
   it("validates configuration and uses bounded defaults", async () => {
     const { client } = fakeClient();
     const { adapter: subject } = adapter(client);
@@ -221,6 +242,18 @@ describe("ImapSyncAdapter", () => {
     ).rejects.not.toThrow(
       /mail\.example|user@example|leaked-secret|server failure/,
     );
+    const oauthFailure = adapter(client, {
+      version: 1,
+      kind: "oauth",
+      username: "user@example.com",
+      accessToken: "leaked-access-token",
+    });
+    await expect(
+      oauthFailure.adapter.sync({
+        account,
+        configuration: { host: "mail.example.com", port: 993, secure: true },
+      }),
+    ).rejects.not.toThrow(/leaked-access-token/);
   });
 
   it("syncs an initial limited window, fetches metadata before downloads, and normalizes output", async () => {
@@ -316,6 +349,19 @@ describe("ImapSyncAdapter", () => {
     });
     expect(noOpResult.messages).toEqual([]);
     expect(noOp.client.fetchAll).not.toHaveBeenCalled();
+    const incremental = fakeClient({
+      mailbox: { uidValidity: 99, uidNext: 7, exists: 6 },
+      fetchAll: vi.fn().mockResolvedValue([message(5), message(6)]),
+    });
+    await adapter(incremental.client).adapter.sync({
+      account: { ...account, syncCursor: cursor },
+      configuration: { host: "mail.example.com", port: 993, secure: true },
+    });
+    expect(incremental.client.fetchAll).toHaveBeenCalledWith(
+      "5:*",
+      expect.any(Object),
+      { uid: true },
+    );
     const reset = fakeClient({
       mailbox: { uidValidity: 100, uidNext: 5, exists: 4 },
     });
@@ -392,5 +438,74 @@ describe("ImapSyncAdapter", () => {
       uid: true,
       maxBytes: 10,
     });
+  });
+
+  it("sanitizes release and logout failures after an otherwise successful sync", async () => {
+    const releaseFailure = fakeClient();
+    releaseFailure.lock.release.mockImplementation(() => {
+      throw new Error("release leaked-secret from mail.example.com");
+    });
+    await expect(
+      adapter(releaseFailure.client).adapter.sync({
+        account,
+        configuration: { host: "mail.example.com", port: 993, secure: true },
+      }),
+    ).rejects.toThrow("IMAP synchronization failed");
+    expect(releaseFailure.client.logout).toHaveBeenCalledOnce();
+
+    const logoutFailure = fakeClient({
+      logout: vi.fn().mockRejectedValue(new Error("logout leaked-secret")),
+    });
+    await expect(
+      adapter(logoutFailure.client).adapter.sync({
+        account,
+        configuration: { host: "mail.example.com", port: 993, secure: true },
+      }),
+    ).rejects.toThrow("IMAP synchronization failed");
+  });
+
+  it("preserves a sanitized primary error while attempting failing cleanup", async () => {
+    const { client, lock } = fakeClient({
+      download: vi
+        .fn()
+        .mockRejectedValue(new Error("primary leaked-secret server detail")),
+      logout: vi.fn().mockRejectedValue(new Error("logout leaked-secret")),
+    });
+    lock.release.mockImplementation(() => {
+      throw new Error("release leaked-secret");
+    });
+    await expect(
+      adapter(client).adapter.sync({
+        account,
+        configuration: { host: "mail.example.com", port: 993, secure: true },
+      }),
+    ).rejects.toThrow("IMAP synchronization failed");
+    await expect(
+      adapter(client).adapter.sync({
+        account,
+        configuration: { host: "mail.example.com", port: 993, secure: true },
+      }),
+    ).rejects.not.toThrow(/primary|release|logout|leaked-secret/);
+    expect(lock.release).toHaveBeenCalledTimes(2);
+    expect(client.logout).toHaveBeenCalledTimes(2);
+  });
+
+  it("fails closed when neither parsed nor envelope data identifies a sender", async () => {
+    const { client } = fakeClient({
+      fetchAll: vi
+        .fn()
+        .mockResolvedValue([
+          { ...message(3), envelope: { subject: "No sender" } },
+        ]),
+      download: vi.fn().mockResolvedValue({
+        content: Readable.from([rfc822({ from: "" })]),
+      }),
+    });
+    await expect(
+      adapter(client).adapter.sync({
+        account,
+        configuration: { host: "mail.example.com", port: 993, secure: true },
+      }),
+    ).rejects.toBeInstanceOf(ImapSyncError);
   });
 });

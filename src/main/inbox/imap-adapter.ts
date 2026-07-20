@@ -74,9 +74,13 @@ export type ImapClientOptions = {
   port: number;
   secure: boolean;
   auth: { user: string; pass?: string; accessToken?: string };
+  logger?: false;
 };
 
 export type ImapClientFactory = (options: ImapClientOptions) => ImapClient;
+export type ImapClientConstructor = new (
+  options: ImapClientOptions & { logger: false },
+) => ImapClient;
 
 export interface CredentialReader {
   get(accountId: string): Promise<ConnectorCredential | null>;
@@ -151,6 +155,7 @@ export class ImapSyncAdapter {
     }
 
     let lock: { release(): void } | undefined;
+    let primaryFailed = false;
     try {
       await client.connect();
       lock = await client.getMailboxLock(configuration.mailbox, {
@@ -222,18 +227,21 @@ export class ImapSyncAdapter {
         syncedAt: this.clock().toISOString(),
       };
     } catch {
+      primaryFailed = true;
       throw new ImapSyncError();
     } finally {
+      let cleanupFailed = false;
       try {
         lock?.release();
       } catch {
-        // Cleanup must never replace the public error.
+        cleanupFailed = true;
       }
       try {
         await client.logout();
       } catch {
-        // A failed logout carries no safe detail for the caller.
+        cleanupFailed = true;
       }
+      if (!primaryFailed && cleanupFailed) throw new ImapSyncError();
     }
   }
 }
@@ -251,7 +259,14 @@ type ThreadInput = {
 };
 
 function productionClientFactory(options: ImapClientOptions): ImapClient {
-  return new ImapFlow(options) as unknown as ImapClient;
+  return createProductionImapClient(options);
+}
+
+export function createProductionImapClient(
+  options: ImapClientOptions,
+  ImapFlowConstructor: ImapClientConstructor = ImapFlow as unknown as ImapClientConstructor,
+): ImapClient {
+  return new ImapFlowConstructor({ ...options, logger: false });
 }
 
 function validateConfiguration(
@@ -364,6 +379,7 @@ function normalizeMessage(
     firstAddress(parsed.from) ||
     envelopeAddresses(item.envelope?.from)[0] ||
     "";
+  if (!sender) throw new Error("missing sender");
   const recipients = unique([
     ...addresses(parsed.to),
     ...addresses(parsed.cc),
