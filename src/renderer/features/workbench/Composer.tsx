@@ -19,6 +19,8 @@ import {
   type FormEvent,
   type KeyboardEvent,
 } from "react";
+import { useQuery } from "@tanstack/react-query";
+import { workbenchClient } from "../../lib/ipc/client";
 import type { ModelCatalog, WorkbenchLane } from "./api";
 import { EffortPicker } from "./EffortPicker";
 import { ModelPicker } from "./ModelPicker";
@@ -41,6 +43,7 @@ interface ComposerProps {
     tone: string;
   }> | null;
   draftKey: string | null;
+  taskId: string | null;
   slashCommands: string[];
   suggestions: string[];
   onOpenPanel: (mode: "files" | "terminal" | "browser" | "tasks") => void;
@@ -223,6 +226,7 @@ export function Composer({
   contextPercent,
   contextBreakdown,
   draftKey,
+  taskId,
   slashCommands,
   suggestions,
   onOpenPanel,
@@ -246,6 +250,7 @@ export function Composer({
   });
   const [slashIndex, setSlashIndex] = useState(0);
   const [contextOpen, setContextOpen] = useState(false);
+  const [mentionIndex, setMentionIndex] = useState(0);
   const [attachments, setAttachments] = useState<string[]>([]);
   const [queued, setQueued] = useState<string[]>([]);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
@@ -288,6 +293,29 @@ export function Composer({
     }, 0);
     return () => window.clearTimeout(timer);
   }, [activeRunId, isSending, queued, onSend]);
+
+  // "@" opens a file picker over the conversation folder, the way Claude and
+  // Cursor let you point at a file without leaving the keyboard.
+  const mentionTerm = /(?:^|\s)@([^\s@]*)$/u.exec(input)?.[1] ?? null;
+  const mentions = useQuery({
+    queryKey: ["fs-search", taskId, mentionTerm],
+    queryFn: () =>
+      workbenchClient.fsSearch({ taskId: taskId!, query: mentionTerm ?? "" }),
+    enabled: mentionTerm !== null && taskId !== null,
+  });
+  const mentionMatches =
+    mentionTerm !== null ? (mentions.data?.files ?? []) : [];
+  const mentionHighlight = Math.min(
+    mentionIndex,
+    Math.max(mentionMatches.length - 1, 0),
+  );
+
+  function applyMention(file: string) {
+    const next = input.replace(/(^|\s)@[^\s@]*$/u, `$1@${file} `);
+    updateInput(next);
+    setMentionIndex(0);
+    textareaRef.current?.focus();
+  }
 
   // The menu tracks the first token only: once a space lands, the command is
   // chosen and the rest of the message is free text.
@@ -346,6 +374,26 @@ export function Composer({
   }
 
   function handleKeyDown(event: KeyboardEvent<HTMLTextAreaElement>) {
+    if (mentionMatches.length > 0) {
+      if (event.key === "ArrowDown") {
+        event.preventDefault();
+        setMentionIndex((mentionHighlight + 1) % mentionMatches.length);
+        return;
+      }
+      if (event.key === "ArrowUp") {
+        event.preventDefault();
+        setMentionIndex(
+          (mentionHighlight - 1 + mentionMatches.length) %
+            mentionMatches.length,
+        );
+        return;
+      }
+      if (event.key === "Tab" || event.key === "Enter") {
+        event.preventDefault();
+        applyMention(mentionMatches[mentionHighlight]);
+        return;
+      }
+    }
     if (slashMatches.length > 0) {
       if (event.key === "ArrowDown") {
         event.preventDefault();
@@ -383,6 +431,21 @@ export function Composer({
 
   return (
     <form className="chat-composer" onSubmit={handleSubmit}>
+      {mentionMatches.length > 0 && (
+        <ul aria-label="Arquivos da pasta" className="chat-slash-menu">
+          {mentionMatches.slice(0, 8).map((file, index) => (
+            <li key={file}>
+              <button
+                data-active={index === mentionHighlight || undefined}
+                onClick={() => applyMention(file)}
+                type="button"
+              >
+                {file}
+              </button>
+            </li>
+          ))}
+        </ul>
+      )}
       {slashMatches.length > 0 && (
         <ul aria-label="Comandos disponíveis" className="chat-slash-menu">
           {slashMatches.map((name, index) => (

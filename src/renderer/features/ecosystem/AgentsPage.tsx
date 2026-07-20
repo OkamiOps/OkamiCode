@@ -1,6 +1,7 @@
 import { useQuery } from "@tanstack/react-query";
-import { Bot } from "lucide-react";
+import { Bot, Play } from "lucide-react";
 import { useState } from "react";
+import { useNavigate } from "react-router-dom";
 import { workbenchClient } from "../../lib/ipc/client";
 import { useWorkbenchStore } from "../workbench/store";
 
@@ -21,6 +22,23 @@ export function AgentsPage() {
       workbenchClient.ecoAgents(workspacePath ? { workspacePath } : {}),
   });
   const [filter, setFilter] = useState("");
+  const navigate = useNavigate();
+
+  // Dispatching is the harness's job: we hand the conversation a prompt that
+  // names the agent, so the model routes it through its own Task tool.
+  const dispatch = (name: string) => {
+    if (!selectedTaskId) return;
+    try {
+      localStorage.setItem(
+        `okami.draft.${selectedTaskId}`,
+        `Use o subagente ${name} para: `,
+      );
+    } catch {
+      // The draft is a convenience; navigation still helps.
+    }
+    navigate("/workbench");
+    window.location.reload();
+  };
 
   const term = filter.trim().toLowerCase();
   const visible = (agents.data ?? []).filter(
@@ -69,6 +87,20 @@ export function AgentsPage() {
               </span>
               {agent.model && <span className="eco-tag">{agent.model}</span>}
               <span className="eco-tag eco-tag--muted">{agent.source}</span>
+              <button
+                className="eco-action"
+                disabled={!selectedTaskId}
+                onClick={() => dispatch(agent.name)}
+                title={
+                  selectedTaskId
+                    ? "Preenche o composer da conversa aberta"
+                    : "Abra uma conversa primeiro"
+                }
+                type="button"
+              >
+                <Play aria-hidden="true" size={11} />
+                Acionar
+              </button>
             </li>
           ))}
         </ul>

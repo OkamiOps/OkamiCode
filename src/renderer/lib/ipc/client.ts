@@ -59,6 +59,8 @@ export const workbenchClient = {
     invokeCommand("file:pick", request),
   fsList: (request: IpcRequest<"fs:list">) => invokeCommand("fs:list", request),
   fsRead: (request: IpcRequest<"fs:read">) => invokeCommand("fs:read", request),
+  fsSearch: (request: IpcRequest<"fs:search">) =>
+    invokeCommand("fs:search", request),
   terminalOpen: (request: IpcRequest<"terminal:open">) =>
     invokeCommand("terminal:open", request),
   terminalWrite: (request: IpcRequest<"terminal:write">) =>

@@ -127,6 +127,7 @@ it("exposes exactly the enumerated command surface", () => {
     "file:pick",
     "fs:list",
     "fs:read",
+    "fs:search",
     "terminal:open",
     "terminal:write",
     "terminal:resize",

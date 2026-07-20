@@ -115,6 +115,17 @@ export const fsReadSchema = z
   })
   .strict();
 
+export const fsSearchRequestSchema = z
+  .object({
+    taskId: entityIdSchema,
+    query: z.string().max(200).default(""),
+  })
+  .strict();
+
+export const fsSearchSchema = z
+  .object({ files: z.array(z.string().min(1)) })
+  .strict();
+
 export const terminalOpenRequestSchema = z
   .object({ taskId: entityIdSchema })
   .strict();
@@ -632,6 +643,7 @@ export const ipcRequestSchemas = {
   "file:pick": filePickRequestSchema,
   "fs:list": fsListRequestSchema,
   "fs:read": fsReadRequestSchema,
+  "fs:search": fsSearchRequestSchema,
   "terminal:open": terminalOpenRequestSchema,
   "terminal:write": terminalWriteRequestSchema,
   "terminal:resize": terminalResizeRequestSchema,
@@ -677,6 +689,7 @@ export const ipcResponseSchemas = {
   "file:pick": filePickSchema,
   "fs:list": fsListSchema,
   "fs:read": fsReadSchema,
+  "fs:search": fsSearchSchema,
   "terminal:open": terminalOpenSchema,
   "terminal:write": terminalAckSchema,
   "terminal:resize": terminalAckSchema,

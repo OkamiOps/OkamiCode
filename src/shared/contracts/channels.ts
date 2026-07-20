@@ -10,6 +10,7 @@ export const ipcChannels = [
   "file:pick",
   "fs:list",
   "fs:read",
+  "fs:search",
   "terminal:open",
   "terminal:write",
   "terminal:resize",

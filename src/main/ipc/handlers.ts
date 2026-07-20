@@ -139,6 +139,8 @@ async function dispatch(
       return listWorkspaceDir(state, request as IpcRequest<"fs:list">);
     case "fs:read":
       return readWorkspaceFile(state, request as IpcRequest<"fs:read">);
+    case "fs:search":
+      return searchWorkspaceFiles(state, request as IpcRequest<"fs:search">);
     case "terminal:open":
       return openTerminal(
         state,
@@ -658,7 +660,15 @@ function listRuns(state: AppState, request: IpcRequest<"run:list">) {
   }));
 }
 
-const FS_IGNORED = new Set([".git", "node_modules", ".DS_Store"]);
+const FS_IGNORED = new Set([
+  ".git",
+  "node_modules",
+  ".DS_Store",
+  "dist",
+  "out",
+  ".next",
+  "target",
+]);
 const FS_READ_LIMIT = 256 * 1024;
 
 // Every fs access resolves inside the task's workspace; anything that
@@ -679,6 +689,40 @@ function resolveInsideWorkspace(
     throw new Error("Caminho fora da pasta da conversa");
   }
   return real;
+}
+
+// Feeds the composer's @ menu: a bounded walk of the conversation folder.
+function searchWorkspaceFiles(
+  state: AppState,
+  request: IpcRequest<"fs:search">,
+) {
+  const root = resolveInsideWorkspace(state, request.taskId, "");
+  const term = (request.query ?? "").trim().toLowerCase();
+  const matches: string[] = [];
+  const walk = (dir: string, depth: number): void => {
+    if (matches.length >= 40 || depth > 6) return;
+    let entries;
+    try {
+      entries = readdirSync(dir, { withFileTypes: true });
+    } catch {
+      return;
+    }
+    for (const entry of entries) {
+      if (matches.length >= 40) return;
+      if (FS_IGNORED.has(entry.name) || entry.name.startsWith(".")) continue;
+      const full = nodePath.join(dir, entry.name);
+      if (entry.isDirectory()) {
+        walk(full, depth + 1);
+        continue;
+      }
+      const relative = nodePath.relative(root, full);
+      if (term === "" || relative.toLowerCase().includes(term)) {
+        matches.push(relative);
+      }
+    }
+  };
+  walk(root, 0);
+  return { files: matches };
 }
 
 function listWorkspaceDir(state: AppState, request: IpcRequest<"fs:list">) {

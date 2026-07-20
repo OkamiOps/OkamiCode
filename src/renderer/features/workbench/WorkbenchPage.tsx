@@ -30,6 +30,42 @@ interface WorkbenchPageProps {
 
 // Kept outside the component so the immutability rule sees a plain helper
 // rather than a render-scope mutation.
+const LAYOUT_KEY = "okami.panelLayout";
+
+// The arrangement belongs to the user, so it survives reloads.
+function loadLayout(): {
+  panels: WorkspacePanelMode[];
+  columns: number | null;
+} {
+  try {
+    const raw = localStorage.getItem(LAYOUT_KEY);
+    const parsed: unknown = raw ? JSON.parse(raw) : null;
+    if (!parsed || typeof parsed !== "object") {
+      return { panels: [], columns: null };
+    }
+    const value = parsed as { panels?: unknown; columns?: unknown };
+    return {
+      panels: Array.isArray(value.panels)
+        ? (value.panels as WorkspacePanelMode[])
+        : [],
+      columns: typeof value.columns === "number" ? value.columns : null,
+    };
+  } catch {
+    return { panels: [], columns: null };
+  }
+}
+
+function persistLayout(
+  panels: WorkspacePanelMode[],
+  columns: number | null,
+): void {
+  try {
+    localStorage.setItem(LAYOUT_KEY, JSON.stringify({ panels, columns }));
+  } catch {
+    // Layout persistence is a convenience, never a hard requirement.
+  }
+}
+
 function setBodySelectable(selectable: boolean): void {
   document.body.style.userSelect = selectable ? "" : "none";
 }
@@ -48,21 +84,36 @@ export function WorkbenchPage({ api = workbenchApi }: WorkbenchPageProps) {
   );
   const lastUsageByLane = useWorkbenchStore((state) => state.lastUsageByLane);
   const storeActions = useWorkbenchStore(useShallow(workbenchActions));
-  const [openPanels, setOpenPanels] = useState<WorkspacePanelMode[]>([]);
-  const togglePanel = (mode: WorkspacePanelMode) =>
-    setOpenPanels((current) =>
-      current.includes(mode)
-        ? current.filter((entry) => entry !== mode)
-        : [...current, mode],
-    );
+  const [initialLayout] = useState(loadLayout);
+  const [openPanels, setOpenPanels] = useState<WorkspacePanelMode[]>(
+    initialLayout.panels,
+  );
   const [panelFile, setPanelFile] = useState<string | null>(null);
   const [previewUrl, setPreviewUrl] = useState<string | null>(null);
   const [maximizedPanel, setMaximizedPanel] =
     useState<WorkspacePanelMode | null>(null);
   // null = balanced automatically; a number pins the column count so panels
   // can stack in rows instead of always sitting side by side.
-  const [panelColumns, setPanelColumns] = useState<number | null>(null);
+  const [panelColumns, setPanelColumns] = useState<number | null>(
+    initialLayout.columns,
+  );
   const [dropTarget, setDropTarget] = useState<WorkspacePanelMode | null>(null);
+  // Kept in a ref so the persist helpers always see the current choice.
+  const panelColumnsRef = useRef<number | null>(initialLayout.columns);
+  const updateOpenPanels = (
+    update: (current: WorkspacePanelMode[]) => WorkspacePanelMode[],
+  ) =>
+    setOpenPanels((current) => {
+      const next = update(current);
+      if (next !== current) persistLayout(next, panelColumnsRef.current);
+      return next;
+    });
+  const togglePanel = (mode: WorkspacePanelMode) =>
+    updateOpenPanels((current) =>
+      current.includes(mode)
+        ? current.filter((entry) => entry !== mode)
+        : [...current, mode],
+    );
 
   // Dragging a panel header onto another panel swaps their slots, so the
   // arrangement is the user's rather than the order things were opened in.
@@ -85,7 +136,7 @@ export function WorkbenchPage({ api = workbenchApi }: WorkbenchPageProps) {
       setDropTarget(null);
       const target = panelUnder(event);
       if (!target || target === source) return;
-      setOpenPanels((current) => {
+      updateOpenPanels((current) => {
         const next = [...current];
         const from = next.indexOf(source);
         const to = next.indexOf(target);
@@ -259,9 +310,10 @@ export function WorkbenchPage({ api = workbenchApi }: WorkbenchPageProps) {
       contextPercent={context?.percent ?? null}
       contextBreakdown={context?.breakdown ?? null}
       draftKey={effectiveTaskId}
+      taskId={effectiveTaskId}
       suggestions={suggestedUrls}
       onOpenPanel={(mode) =>
-        setOpenPanels((current) =>
+        updateOpenPanels((current) =>
           current.includes(mode) ? current : [...current, mode],
         )
       }
@@ -276,7 +328,7 @@ export function WorkbenchPage({ api = workbenchApi }: WorkbenchPageProps) {
       }}
       onOpenUrl={(url) => {
         setPreviewUrl(url);
-        setOpenPanels((current) =>
+        updateOpenPanels((current) =>
           current.includes("browser") ? current : [...current, "browser"],
         );
       }}
@@ -343,7 +395,7 @@ export function WorkbenchPage({ api = workbenchApi }: WorkbenchPageProps) {
     workspacePath: selectedTask?.workspacePath ?? null,
     open: (relative: string) => {
       setPanelFile(relative);
-      setOpenPanels((current) =>
+      updateOpenPanels((current) =>
         current.includes("files") ? current : [...current, "files"],
       );
     },
@@ -496,9 +548,12 @@ export function WorkbenchPage({ api = workbenchApi }: WorkbenchPageProps) {
                   data-active={panelColumns === count || undefined}
                   key={count}
                   onClick={() =>
-                    setPanelColumns((current) =>
-                      current === count ? null : count,
-                    )
+                    setPanelColumns((current) => {
+                      const next = current === count ? null : count;
+                      panelColumnsRef.current = next;
+                      persistLayout(openPanels, next);
+                      return next;
+                    })
                   }
                   title={`${count} coluna${count > 1 ? "s" : ""}`}
                   type="button"
@@ -508,7 +563,11 @@ export function WorkbenchPage({ api = workbenchApi }: WorkbenchPageProps) {
               ))}
               <button
                 data-active={panelColumns === null || undefined}
-                onClick={() => setPanelColumns(null)}
+                onClick={() => {
+                  panelColumnsRef.current = null;
+                  setPanelColumns(null);
+                  persistLayout(openPanels, null);
+                }}
                 title="Automático"
                 type="button"
               >
@@ -534,7 +593,7 @@ export function WorkbenchPage({ api = workbenchApi }: WorkbenchPageProps) {
                   isDropTarget={dropTarget === mode}
                   onDragStart={() => beginPanelDrag(mode)}
                   onMoveByKeyboard={(offset) =>
-                    setOpenPanels((current) => {
+                    updateOpenPanels((current) => {
                       const next = [...current];
                       const from = next.indexOf(mode);
                       const to = from + offset;

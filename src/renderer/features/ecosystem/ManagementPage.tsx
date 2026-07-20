@@ -13,6 +13,7 @@ export function ManagementPage() {
   const selectTask = useWorkbenchStore((state) => state.selectTask);
   const [filter, setFilter] = useState("");
   const [showArchived, setShowArchived] = useState(false);
+  const [selected, setSelected] = useState<string[]>([]);
 
   const tasks = useQuery({
     queryKey: ["workbench", "tasks"],
@@ -81,6 +82,44 @@ export function ManagementPage() {
           </label>
         </div>
 
+        {selected.length > 0 && (
+          <div className="eco-bulk">
+            <span>{selected.length} selecionadas</span>
+            <button
+              onClick={() => {
+                for (const id of selected) {
+                  archive.mutate({ taskId: id, archived: true });
+                }
+                setSelected([]);
+              }}
+              type="button"
+            >
+              <Archive aria-hidden="true" size={12} />
+              Arquivar
+            </button>
+            <button
+              className="eco-bulk__danger"
+              onClick={() => {
+                if (
+                  window.confirm(
+                    `Apagar ${selected.length} conversas? O histórico delas será removido.`,
+                  )
+                ) {
+                  for (const id of selected) remove.mutate({ taskId: id });
+                  setSelected([]);
+                }
+              }}
+              type="button"
+            >
+              <Trash2 aria-hidden="true" size={12} />
+              Apagar
+            </button>
+            <button onClick={() => setSelected([])} type="button">
+              Limpar seleção
+            </button>
+          </div>
+        )}
+
         {rows.length === 0 && (
           <p className="eco-empty">Nenhuma conversa com esse filtro.</p>
         )}
@@ -94,6 +133,18 @@ export function ManagementPage() {
             );
             return (
               <li key={task.id}>
+                <input
+                  aria-label={`Selecionar ${task.title}`}
+                  checked={selected.includes(task.id)}
+                  onChange={(event) =>
+                    setSelected((current) =>
+                      event.target.checked
+                        ? [...current, task.id]
+                        : current.filter((id) => id !== task.id),
+                    )
+                  }
+                  type="checkbox"
+                />
                 <button
                   className="eco-list__main eco-list__open"
                   onClick={() => {

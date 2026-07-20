@@ -3232,3 +3232,54 @@ textarea:focus-visible {
   opacity: 0.4;
   cursor: default;
 }
+
+/* Bulk actions in management */
+.eco-bulk {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 10px;
+  padding: 8px 10px;
+  border: 1px solid var(--chat-cyan);
+  border-radius: 10px;
+  background: rgba(104, 221, 235, 0.06);
+  font-size: 12px;
+  color: var(--chat-text);
+}
+
+.eco-bulk span {
+  margin-right: auto;
+}
+
+.eco-bulk button {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  border: 1px solid var(--chat-border-soft);
+  border-radius: 8px;
+  background: transparent;
+  color: var(--chat-text-mid);
+  font: 600 11.5px/1 inherit;
+  font-family: inherit;
+  padding: 6px 10px;
+  cursor: pointer;
+}
+
+.eco-bulk button:hover {
+  color: var(--chat-text);
+  border-color: var(--chat-border);
+}
+
+.eco-bulk__danger:hover {
+  color: var(--chat-red);
+  border-color: var(--chat-red);
+}
+
+.eco-list input[type="checkbox"] {
+  flex: none;
+  accent-color: var(--chat-cyan);
+}
+
+.eco-action svg {
+  margin-right: 2px;
+}
