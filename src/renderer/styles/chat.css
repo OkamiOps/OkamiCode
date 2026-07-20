@@ -1387,3 +1387,67 @@ textarea:focus-visible {
 .chat-toolgroup__summary[data-running="true"] svg:first-child {
   color: var(--chat-yellow);
 }
+
+/* ── Palette rebalance: orange is Claude's voice, not the whole app ── */
+
+/* User turns: violet, clearly "you" */
+.message-group--user .message-bubble {
+  background: linear-gradient(
+    135deg,
+    rgba(214, 165, 255, 0.13),
+    rgba(214, 165, 255, 0.05)
+  ) !important;
+  border: 1px solid rgba(214, 165, 255, 0.2) !important;
+}
+
+/* Links read cyan */
+.message-bubble a {
+  color: var(--chat-cyan);
+  border-bottom-color: rgba(104, 221, 235, 0.35);
+}
+.message-bubble a:hover {
+  border-bottom-color: var(--chat-cyan);
+}
+
+/* Inline code: cyan chip */
+.message-bubble code {
+  background: rgba(104, 221, 235, 0.08);
+  color: #8fe3ee;
+}
+.message-bubble pre code,
+.md-code code {
+  background: transparent;
+  color: inherit;
+}
+
+/* Blockquote: violet voice */
+.message-bubble blockquote {
+  border-left-color: #d6a5ff;
+  background: rgba(214, 165, 255, 0.05);
+}
+
+/* List markers: green ticks of progress */
+.message-bubble li::marker {
+  color: var(--chat-green);
+}
+
+/* Queue chips: amber wait, attachments: cyan file */
+.chat-queue__item svg:first-child {
+  color: var(--chat-yellow);
+}
+.chat-attachment svg:first-child {
+  color: var(--chat-cyan);
+}
+
+/* Tool wrench: neutral until it runs (amber), green when the group is done */
+.chat-toolgroup__summary svg:first-child {
+  color: var(--chat-text-dim);
+}
+.chat-toolgroup__summary[data-running="true"] svg:first-child {
+  color: var(--chat-yellow);
+}
+.chat-toolgroup:not(:has([data-running="true"]))
+  .chat-toolgroup__summary
+  svg:first-child {
+  color: var(--chat-green);
+}
