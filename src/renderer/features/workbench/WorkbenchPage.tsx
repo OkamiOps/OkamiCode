@@ -88,6 +88,10 @@ export function WorkbenchPage({ api = workbenchApi }: WorkbenchPageProps) {
   const [openPanels, setOpenPanels] = useState<WorkspacePanelMode[]>(
     initialLayout.panels,
   );
+  // The ref is the authoritative value during navigation. React may discard a
+  // queued state updater when this route unmounts, but closing a panel must be
+  // persisted before the user can leave the conversation.
+  const openPanelsRef = useRef<WorkspacePanelMode[]>(initialLayout.panels);
   const [panelFile, setPanelFile] = useState<string | null>(null);
   const [previewUrl, setPreviewUrl] = useState<string | null>(null);
   const [maximizedPanel, setMaximizedPanel] =
@@ -102,12 +106,15 @@ export function WorkbenchPage({ api = workbenchApi }: WorkbenchPageProps) {
   const panelColumnsRef = useRef<number | null>(initialLayout.columns);
   const updateOpenPanels = (
     update: (current: WorkspacePanelMode[]) => WorkspacePanelMode[],
-  ) =>
-    setOpenPanels((current) => {
-      const next = update(current);
-      if (next !== current) persistLayout(next, panelColumnsRef.current);
-      return next;
-    });
+  ) => {
+    const current = openPanelsRef.current;
+    const next = update(current);
+    if (next === current) return;
+
+    openPanelsRef.current = next;
+    persistLayout(next, panelColumnsRef.current);
+    setOpenPanels(next);
+  };
   const togglePanel = (mode: WorkspacePanelMode) =>
     updateOpenPanels((current) =>
       current.includes(mode)

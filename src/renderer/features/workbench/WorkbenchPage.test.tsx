@@ -8,7 +8,7 @@ import {
 } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
-import { MemoryRouter, Route, Routes } from "react-router-dom";
+import { Link, MemoryRouter, Route, Routes } from "react-router-dom";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import type { CanonicalEvent } from "../../../shared/contracts/event";
 import type { IpcRequest, IpcResponse } from "../../../shared/contracts/ipc";
@@ -162,6 +162,10 @@ function renderWorkbenchFixture({
         <Routes>
           <Route element={<AppShell />}>
             <Route path="/workbench" element={<WorkbenchPage api={api} />} />
+            <Route
+              path="/settings"
+              element={<Link to="/workbench">Voltar à conversa</Link>}
+            />
           </Route>
         </Routes>
       </MemoryRouter>
@@ -193,7 +197,7 @@ function messageDelta(delta: string): CanonicalEvent {
 }
 
 describe("WorkbenchPage", () => {
-  it("keeps every workspace panel closed after the page remounts", async () => {
+  it("keeps every workspace panel closed after navigating away and back", async () => {
     localStorage.setItem(
       "okami.panelLayout",
       JSON.stringify({
@@ -213,7 +217,7 @@ describe("WorkbenchPage", () => {
       events: [],
     };
 
-    const first = renderWorkbenchFixture({ lanes: [claudeLane], history });
+    renderWorkbenchFixture({ lanes: [claudeLane], history });
     await screen.findByRole("complementary", { name: "Painel de trabalho" });
 
     for (let remaining = 4; remaining > 0; remaining -= 1) {
@@ -231,8 +235,10 @@ describe("WorkbenchPage", () => {
       JSON.parse(localStorage.getItem("okami.panelLayout") ?? "null"),
     ).toEqual({ panels: [], columns: 2 });
 
-    first.unmount();
-    renderWorkbenchFixture({ lanes: [claudeLane], history });
+    await userEvent.click(screen.getByRole("link", { name: "Configurações" }));
+    await userEvent.click(
+      screen.getByRole("link", { name: "Voltar à conversa" }),
+    );
     await screen.findByText("Conversa persistida");
 
     expect(
