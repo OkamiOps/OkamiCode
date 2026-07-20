@@ -2742,3 +2742,24 @@ textarea:focus-visible {
     order: 11;
   }
 }
+
+/* Panels are rearranged by dragging their header onto another panel */
+.workspace-panel__header {
+  cursor: grab;
+  user-select: none;
+}
+
+.workspace-panel__header:active {
+  cursor: grabbing;
+}
+
+.workspace-panel__grip {
+  color: var(--chat-text-dim);
+  flex: none;
+}
+
+.workspace-pane[data-drop-target="true"] {
+  outline: 2px dashed var(--chat-accent);
+  outline-offset: -3px;
+  background: rgba(255, 122, 26, 0.05);
+}

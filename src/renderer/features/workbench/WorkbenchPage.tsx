@@ -28,6 +28,12 @@ interface WorkbenchPageProps {
   api?: WorkbenchApi;
 }
 
+// Kept outside the component so the immutability rule sees a plain helper
+// rather than a render-scope mutation.
+function setBodySelectable(selectable: boolean): void {
+  document.body.style.userSelect = selectable ? "" : "none";
+}
+
 export function WorkbenchPage({ api = workbenchApi }: WorkbenchPageProps) {
   const selectedTaskId = useWorkbenchStore((state) => state.selectedTaskId);
   const selectedLaneId = useWorkbenchStore((state) => state.selectedLaneId);
@@ -53,6 +59,43 @@ export function WorkbenchPage({ api = workbenchApi }: WorkbenchPageProps) {
   const [previewUrl, setPreviewUrl] = useState<string | null>(null);
   const [maximizedPanel, setMaximizedPanel] =
     useState<WorkspacePanelMode | null>(null);
+  const [dropTarget, setDropTarget] = useState<WorkspacePanelMode | null>(null);
+
+  // Dragging a panel header onto another panel swaps their slots, so the
+  // arrangement is the user's rather than the order things were opened in.
+  const beginPanelDrag = (source: WorkspacePanelMode) => {
+    const panelUnder = (event: MouseEvent): WorkspacePanelMode | null => {
+      const element = document
+        .elementFromPoint(event.clientX, event.clientY)
+        ?.closest("[data-panel]");
+      const value = element?.getAttribute("data-panel");
+      return (value as WorkspacePanelMode | null) ?? null;
+    };
+    const move = (event: MouseEvent) => {
+      const target = panelUnder(event);
+      setDropTarget(target && target !== source ? target : null);
+    };
+    const up = (event: MouseEvent) => {
+      window.removeEventListener("mousemove", move);
+      window.removeEventListener("mouseup", up);
+      setBodySelectable(true);
+      setDropTarget(null);
+      const target = panelUnder(event);
+      if (!target || target === source) return;
+      setOpenPanels((current) => {
+        const next = [...current];
+        const from = next.indexOf(source);
+        const to = next.indexOf(target);
+        if (from === -1 || to === -1) return current;
+        next[from] = target;
+        next[to] = source;
+        return next;
+      });
+    };
+    setBodySelectable(false);
+    window.addEventListener("mousemove", move);
+    window.addEventListener("mouseup", up);
+  };
   const panelPane = useResizablePane({
     storageKey: "okami.width.panel",
     initial: 420,
@@ -446,6 +489,21 @@ export function WorkbenchPage({ api = workbenchApi }: WorkbenchPageProps) {
                   )
                 }
                 onClose={() => togglePanel(mode)}
+                isDropTarget={dropTarget === mode}
+                onDragStart={() => beginPanelDrag(mode)}
+                onMoveByKeyboard={(offset) =>
+                  setOpenPanels((current) => {
+                    const next = [...current];
+                    const from = next.indexOf(mode);
+                    const to = from + offset;
+                    if (from === -1 || to < 0 || to >= next.length) {
+                      return current;
+                    }
+                    next[from] = next[to];
+                    next[to] = mode;
+                    return next;
+                  })
+                }
                 onOpenFile={setPanelFile}
                 openFile={panelFile}
                 taskId={effectiveTaskId}

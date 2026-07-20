@@ -5,6 +5,7 @@ import {
   FileCode2,
   Folder,
   Globe,
+  GripVertical,
   Maximize2,
   Minimize2,
   RotateCw,
@@ -362,6 +363,9 @@ export function WorkspacePanel({
   initialUrl = null,
   isMaximized = false,
   onToggleMaximize,
+  onDragStart,
+  onMoveByKeyboard,
+  isDropTarget = false,
 }: {
   taskId: string;
   workspacePath?: string | null;
@@ -372,11 +376,45 @@ export function WorkspacePanel({
   initialUrl?: string | null;
   isMaximized?: boolean;
   onToggleMaximize?: () => void;
+  onDragStart?: () => void;
+  onMoveByKeyboard?: (offset: number) => void;
+  isDropTarget?: boolean;
 }) {
   const [filter, setFilter] = useState("");
   return (
-    <section aria-label={PANEL_TITLES[mode]} className="workspace-pane">
-      <header className="workspace-panel__header">
+    <section
+      aria-label={PANEL_TITLES[mode]}
+      className="workspace-pane"
+      data-drop-target={isDropTarget || undefined}
+      data-panel={mode}
+    >
+      <header
+        aria-label={`Mover ${PANEL_TITLES[mode]}`}
+        className="workspace-panel__header"
+        role={onDragStart ? "toolbar" : undefined}
+        tabIndex={onDragStart ? 0 : undefined}
+        onKeyDown={(event) => {
+          // Keyboard parity: the arrows move the panel between slots.
+          if (event.key === "ArrowLeft" || event.key === "ArrowRight") {
+            event.preventDefault();
+            onMoveByKeyboard?.(event.key === "ArrowLeft" ? -1 : 1);
+          }
+        }}
+        onMouseDown={(event) => {
+          // Pointer-driven rather than HTML5 drag-and-drop: the same
+          // mechanism as the pane divider, and one that actually fires.
+          if (event.button !== 0 || !onDragStart) return;
+          // Without this the browser starts a text selection and the drag
+          // never gets the pointer.
+          event.preventDefault();
+          onDragStart();
+        }}
+      >
+        <GripVertical
+          aria-hidden="true"
+          className="workspace-panel__grip"
+          size={12}
+        />
         <strong>{PANEL_TITLES[mode]}</strong>
         {mode === "files" && openFile && (
           <button
