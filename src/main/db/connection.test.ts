@@ -11,7 +11,24 @@ describe("openDatabase", () => {
     const key = Buffer.alloc(32, 7);
     const db = openDatabase(file, key);
     expect(db.prepare("SELECT sqlite3mc_version()").pluck().get()).toBeTruthy();
-    expect(db.pragma("user_version", { simple: true })).toBe(9);
+    expect(db.pragma("user_version", { simple: true })).toBe(10);
+    const settingsSql = db
+      .prepare(
+        "SELECT sql FROM sqlite_master WHERE type = 'table' AND name = 'inbox_account_settings'",
+      )
+      .pluck()
+      .get() as string;
+    expect(settingsSql).toContain("ON DELETE CASCADE");
+    expect(() =>
+      db
+        .prepare(
+          `INSERT INTO inbox_account_settings
+           (account_id, host, port, secure, mailbox, max_initial_messages,
+            max_message_bytes, created_at, updated_at)
+           VALUES ('missing', 'mail.example.com', 0, 2, 'INBOX', 0, 0, 'now', 'now')`,
+        )
+        .run(),
+    ).toThrow();
     db.close();
     expect(() => openDatabase(file, Buffer.alloc(32, 8))).toThrow();
   });

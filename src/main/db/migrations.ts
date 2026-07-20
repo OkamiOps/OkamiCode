@@ -12,6 +12,7 @@ const MIGRATIONS = [
   "schema/007-kanban-cards.sql",
   "schema/008-external-outbox.sql",
   "schema/009-inbox-core.sql",
+  "schema/010-inbox-account-settings.sql",
 ];
 
 export function runMigrations(db: InstanceType<typeof SqliteDatabase>): void {
