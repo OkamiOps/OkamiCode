@@ -827,6 +827,88 @@ export const memorySearchResultSchema = z
   })
   .strict();
 
+export const kanbanStatuses = [
+  "backlog",
+  "in_progress",
+  "review",
+  "done",
+] as const;
+export const kanbanActivationPolicies = [
+  "manual",
+  "relevant_change",
+  "status_transition",
+] as const;
+
+export const kanbanCardSchema = z
+  .object({
+    id: entityIdSchema,
+    taskId: entityIdSchema.nullable(),
+    title: z.string().min(1).max(240),
+    description: z.string().max(8_000),
+    status: z.enum(kanbanStatuses),
+    ownerKind: z.enum(["human", "lane"]),
+    laneId: entityIdSchema.nullable(),
+    activationPolicy: z.enum(kanbanActivationPolicies),
+    position: z.number().int().nonnegative(),
+    stateHash: z.string().min(1),
+    lastProcessedHash: z.string().min(1),
+    lastProcessedCursor: z.number().int().nonnegative(),
+    createdAt: z.iso.datetime({ offset: true }),
+    updatedAt: z.iso.datetime({ offset: true }),
+  })
+  .strict();
+
+export type KanbanCardContract = z.output<typeof kanbanCardSchema>;
+
+export const kanbanWakeDecisionSchema = z
+  .object({
+    shouldWake: z.boolean(),
+    reason: z.string().min(1),
+    delta: z
+      .object({
+        stateChanged: z.boolean(),
+        statusChanged: z.boolean(),
+        ownerChanged: z.boolean(),
+        laneChanged: z.boolean(),
+      })
+      .strict(),
+  })
+  .strict();
+
+export const kanbanMutationSchema = z
+  .object({ card: kanbanCardSchema, wake: kanbanWakeDecisionSchema })
+  .strict();
+
+export const kanbanCreateRequestSchema = z
+  .object({
+    title: z.string().trim().min(1).max(240),
+    description: z.string().max(8_000),
+    status: z.enum(kanbanStatuses),
+    ownerKind: z.enum(["human", "lane"]),
+    laneId: entityIdSchema.nullable(),
+    activationPolicy: z.enum(kanbanActivationPolicies),
+  })
+  .strict();
+
+export const kanbanMoveRequestSchema = z
+  .object({
+    cardId: entityIdSchema,
+    status: z.enum(kanbanStatuses),
+    position: z.number().int().nonnegative(),
+    idempotencyKey: entityIdSchema,
+  })
+  .strict();
+
+export const kanbanAssignRequestSchema = z
+  .object({
+    cardId: entityIdSchema,
+    ownerKind: z.enum(["human", "lane"]),
+    laneId: entityIdSchema.nullable(),
+    activationPolicy: z.enum(kanbanActivationPolicies),
+    idempotencyKey: entityIdSchema,
+  })
+  .strict();
+
 export const ipcRequestSchemas = {
   "system:doctor": emptyRequestSchema,
   "models:list": emptyRequestSchema,
@@ -857,6 +939,10 @@ export const ipcRequestSchemas = {
   "eco:settings": emptyRequestSchema,
   "eco:agents": workspaceScopedRequestSchema,
   "task:list": emptyRequestSchema,
+  "kanban:list": emptyRequestSchema,
+  "kanban:create": kanbanCreateRequestSchema,
+  "kanban:move": kanbanMoveRequestSchema,
+  "kanban:assign": kanbanAssignRequestSchema,
   "lane:list": laneListRequestSchema,
   "conversation:history": conversationHistoryRequestSchema,
   "lane:ensure": laneEnsureRequestSchema,
@@ -905,6 +991,10 @@ export const ipcResponseSchemas = {
   "eco:settings": cliSettingsSchema,
   "eco:agents": agentsSchema,
   "task:list": taskListSchema,
+  "kanban:list": z.array(kanbanCardSchema),
+  "kanban:create": kanbanMutationSchema,
+  "kanban:move": kanbanMutationSchema,
+  "kanban:assign": kanbanMutationSchema,
   "lane:list": laneListSchema,
   "conversation:history": conversationHistorySchema,
   "lane:ensure": openedLaneSchema,

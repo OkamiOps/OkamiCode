@@ -55,6 +55,11 @@ import {
   LeaseRepository,
   resourceMatches,
 } from "../policy/lease";
+import {
+  KanbanCardRepository,
+  KanbanCardService,
+  type KanbanCardMutationResult,
+} from "../kanban/service";
 
 export type { ModelCatalogEntry };
 
@@ -111,6 +116,14 @@ export function registerIpcHandlers({
     if (usage === undefined) usage = createUsageCommands(state);
     return usage;
   };
+  let kanban: KanbanCardService | undefined;
+  const kanbanService = () =>
+    (kanban ??= new KanbanCardService({
+      cards: new KanbanCardRepository(state.database),
+      lanes: state.lanes,
+      createId: state.createId,
+      clock: () => state.clock().toISOString(),
+    }));
 
   for (const channel of ipcChannels) {
     ipcMain.handle(channel, async (event, payload) => {
@@ -128,6 +141,7 @@ export function registerIpcHandlers({
         laneEffort,
         clientCapabilities,
         getMemoryService,
+        kanbanService,
       );
       return ipcResponseSchemas[channel].parse(response);
     });
@@ -146,6 +160,7 @@ async function dispatch(
   laneEffort: Map<string, string>,
   clientCapabilities: () => Promise<CliCapability[]>,
   getMemoryService: () => MemoryService,
+  kanbanService: () => KanbanCardService,
 ): Promise<unknown> {
   switch (channel) {
     case "system:doctor":
@@ -248,6 +263,37 @@ async function dispatch(
       return pickWorkspace(request as IpcRequest<"workspace:pick">);
     case "task:list":
       return listTasks(state);
+    case "kanban:list":
+      return kanbanService().list();
+    case "kanban:create":
+      return createKanbanCard(
+        state,
+        openedLanes,
+        event.sender,
+        laneEffort,
+        kanbanService(),
+        request as IpcRequest<"kanban:create">,
+      );
+    case "kanban:move":
+      return mutateKanbanCard(
+        state,
+        openedLanes,
+        event.sender,
+        laneEffort,
+        kanbanService(),
+        request as IpcRequest<"kanban:move">,
+        (input) => kanbanService().move(input),
+      );
+    case "kanban:assign":
+      return mutateKanbanCard(
+        state,
+        openedLanes,
+        event.sender,
+        laneEffort,
+        kanbanService(),
+        request as IpcRequest<"kanban:assign">,
+        (input) => kanbanService().assign(input),
+      );
     case "lane:list":
       return listLanes(state, request as IpcRequest<"lane:list">);
     case "conversation:history":
@@ -763,6 +809,109 @@ async function exportAuditLog(
     redaction: { filesystemPaths },
   });
   return { path: result.filePath, entryCount: exported.entryCount };
+}
+
+async function createKanbanCard(
+  state: AppState,
+  openedLanes: Map<string, OpenedLane>,
+  sender: Pick<WebContents, "send">,
+  laneEffort: Map<string, string>,
+  kanban: KanbanCardService,
+  request: IpcRequest<"kanban:create">,
+) {
+  if (
+    request.ownerKind === "lane" &&
+    (!request.laneId || !state.lanes.findById(request.laneId))
+  ) {
+    throw new Error("A delegated Kanban card requires an available lane");
+  }
+  const card = kanban.create({
+    title: request.title,
+    description: request.description,
+    status: request.status,
+  });
+  if (request.ownerKind === "human") {
+    return {
+      card,
+      wake: {
+        shouldWake: false,
+        reason: "manual_policy",
+        delta: {
+          stateChanged: false,
+          statusChanged: false,
+          ownerChanged: false,
+          laneChanged: false,
+        },
+      },
+    };
+  }
+  const idempotencyKey = state.createId();
+  const assigned = kanban.assign({
+    cardId: card.id,
+    ownerKind: "lane",
+    laneId: request.laneId as string,
+    activationPolicy: request.activationPolicy,
+    idempotencyKey,
+  });
+  return dispatchKanbanWake(
+    state,
+    openedLanes,
+    sender,
+    laneEffort,
+    kanban,
+    assigned,
+    idempotencyKey,
+  );
+}
+
+async function mutateKanbanCard<T extends { idempotencyKey: string }>(
+  state: AppState,
+  openedLanes: Map<string, OpenedLane>,
+  sender: Pick<WebContents, "send">,
+  laneEffort: Map<string, string>,
+  kanban: KanbanCardService,
+  request: T,
+  operation: (input: T) => KanbanCardMutationResult,
+) {
+  return dispatchKanbanWake(
+    state,
+    openedLanes,
+    sender,
+    laneEffort,
+    kanban,
+    operation(request),
+    request.idempotencyKey,
+  );
+}
+
+async function dispatchKanbanWake(
+  state: AppState,
+  openedLanes: Map<string, OpenedLane>,
+  sender: Pick<WebContents, "send">,
+  laneEffort: Map<string, string>,
+  kanban: KanbanCardService,
+  result: KanbanCardMutationResult,
+  idempotencyKey: string,
+) {
+  if (!result.wake.shouldWake || !result.card.laneId) return result;
+  const delta = JSON.stringify(result.wake.delta);
+  await sendLaneTurn(
+    state,
+    openedLanes,
+    sender,
+    {
+      laneId: result.card.laneId,
+      input:
+        `[Kanban] O card "${result.card.title}" foi atualizado. ` +
+        `Status atual: ${result.card.status}. Delta: ${delta}. ` +
+        "Verifique a atualização e aja somente se houver trabalho novo dentro do escopo do card.",
+    },
+    laneEffort,
+  );
+  return {
+    ...result,
+    card: kanban.acknowledgeWake(result.card.id, idempotencyKey),
+  };
 }
 
 interface RunRow {

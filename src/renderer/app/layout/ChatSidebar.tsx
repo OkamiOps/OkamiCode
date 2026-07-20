@@ -2,6 +2,7 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import {
   Bot,
   ChevronDown,
+  Columns3,
   Cog,
   FolderGit2,
   Gauge,
@@ -240,6 +241,10 @@ export function ChatSidebar() {
         <NavLink className="chat-footer-link" to="/usage">
           <Gauge aria-hidden="true" size={15} />
           Uso e limites
+        </NavLink>
+        <NavLink className="chat-footer-link" to="/kanban">
+          <Columns3 aria-hidden="true" size={15} />
+          Kanban
         </NavLink>
         <NavLink className="chat-footer-link" to="/connections">
           <Plug aria-hidden="true" size={15} />

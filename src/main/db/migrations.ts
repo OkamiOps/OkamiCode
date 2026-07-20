@@ -9,6 +9,7 @@ const MIGRATIONS = [
   "schema/004-events-run-scoped-sequence.sql",
   "schema/005-close-orphan-runs.sql",
   "schema/006-lane-permission-mode.sql",
+  "schema/007-kanban-cards.sql",
 ];
 
 export function runMigrations(db: InstanceType<typeof SqliteDatabase>): void {
