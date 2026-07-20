@@ -489,7 +489,7 @@ export function WorkbenchPage({ api = workbenchApi }: WorkbenchPageProps) {
               } as CSSProperties
             }
           >
-            <div className="workspace-rail__layout">
+            <div className="workspace-rail__bar">
               <span>Colunas</span>
               {[1, 2, 3].map((count) => (
                 <button
@@ -515,42 +515,44 @@ export function WorkbenchPage({ api = workbenchApi }: WorkbenchPageProps) {
                 auto
               </button>
             </div>
-            {(maximizedPanel
-              ? openPanels.filter((mode) => mode === maximizedPanel)
-              : openPanels
-            ).map((mode) => (
-              <WorkspacePanel
-                key={mode}
-                initialUrl={previewUrl}
-                isMaximized={maximizedPanel === mode}
-                mode={mode}
-                onToggleMaximize={() =>
-                  setMaximizedPanel((current) =>
-                    current === mode ? null : mode,
-                  )
-                }
-                onClose={() => togglePanel(mode)}
-                isDropTarget={dropTarget === mode}
-                onDragStart={() => beginPanelDrag(mode)}
-                onMoveByKeyboard={(offset) =>
-                  setOpenPanels((current) => {
-                    const next = [...current];
-                    const from = next.indexOf(mode);
-                    const to = from + offset;
-                    if (from === -1 || to < 0 || to >= next.length) {
-                      return current;
-                    }
-                    next[from] = next[to];
-                    next[to] = mode;
-                    return next;
-                  })
-                }
-                onOpenFile={setPanelFile}
-                openFile={panelFile}
-                taskId={effectiveTaskId}
-                workspacePath={selectedTask?.workspacePath ?? null}
-              />
-            ))}
+            <div className="workspace-rail__grid">
+              {(maximizedPanel
+                ? openPanels.filter((mode) => mode === maximizedPanel)
+                : openPanels
+              ).map((mode) => (
+                <WorkspacePanel
+                  key={mode}
+                  initialUrl={previewUrl}
+                  isMaximized={maximizedPanel === mode}
+                  mode={mode}
+                  onToggleMaximize={() =>
+                    setMaximizedPanel((current) =>
+                      current === mode ? null : mode,
+                    )
+                  }
+                  onClose={() => togglePanel(mode)}
+                  isDropTarget={dropTarget === mode}
+                  onDragStart={() => beginPanelDrag(mode)}
+                  onMoveByKeyboard={(offset) =>
+                    setOpenPanels((current) => {
+                      const next = [...current];
+                      const from = next.indexOf(mode);
+                      const to = from + offset;
+                      if (from === -1 || to < 0 || to >= next.length) {
+                        return current;
+                      }
+                      next[from] = next[to];
+                      next[to] = mode;
+                      return next;
+                    })
+                  }
+                  onOpenFile={setPanelFile}
+                  openFile={panelFile}
+                  taskId={effectiveTaskId}
+                  workspacePath={selectedTask?.workspacePath ?? null}
+                />
+              ))}
+            </div>
           </aside>
         )}
       </div>
