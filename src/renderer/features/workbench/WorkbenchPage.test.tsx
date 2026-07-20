@@ -1,4 +1,11 @@
-import { act, cleanup, render, screen, waitFor } from "@testing-library/react";
+import {
+  act,
+  cleanup,
+  fireEvent,
+  render,
+  screen,
+  waitFor,
+} from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { MemoryRouter, Route, Routes } from "react-router-dom";
@@ -10,12 +17,19 @@ import type { WorkbenchApi } from "./api";
 import { reduceCanonicalEvent, type WorkbenchState } from "./store";
 import { WorkbenchPage } from "./WorkbenchPage";
 
+vi.mock("./TerminalPane", () => ({
+  TerminalPane: () => <div data-testid="terminal-pane" />,
+}));
+
 const taskId = "27ee79a7-d3c3-48dd-84c6-cb589a4cb606";
 const claudeLaneId = "50df72f3-cc11-42d2-87be-c928a9ae2cbf";
 const codexLaneId = "b672d2e8-688b-48ac-a618-3294bfc96a99";
 const runId = "4d32d86d-3199-4327-9d0c-e283268ed239";
 
-afterEach(cleanup);
+afterEach(() => {
+  cleanup();
+  localStorage.clear();
+});
 
 const task: IpcResponse<"task:list">[number] = {
   id: taskId,
@@ -68,8 +82,10 @@ const codexLane: IpcResponse<"lane:list">[number] = {
 
 function renderWorkbenchFixture({
   lanes,
+  history = { userMessages: [], events: [] },
 }: {
   lanes: IpcResponse<"lane:list">;
+  history?: IpcResponse<"conversation:history">;
 }) {
   let eventListener: ((event: CanonicalEvent) => void) | undefined;
   const calls = {
@@ -86,7 +102,7 @@ function renderWorkbenchFixture({
     renameTask: vi.fn(async () => task),
     deleteTask: vi.fn(async () => ({ taskId: task.id, deleted: true })),
     createTask: vi.fn(async () => task),
-    history: vi.fn(async () => ({ userMessages: [], events: [] })),
+    history: vi.fn(async () => history),
     listModels: vi.fn(async () => [
       {
         runtimeKind: "claude" as const,
@@ -140,7 +156,7 @@ function renderWorkbenchFixture({
     },
   };
 
-  render(
+  const view = render(
     <QueryClientProvider client={new QueryClient()}>
       <MemoryRouter initialEntries={["/workbench"]}>
         <Routes>
@@ -153,6 +169,7 @@ function renderWorkbenchFixture({
   );
 
   return {
+    ...view,
     calls,
     emit(event: CanonicalEvent) {
       act(() => eventListener?.(event));
@@ -176,6 +193,53 @@ function messageDelta(delta: string): CanonicalEvent {
 }
 
 describe("WorkbenchPage", () => {
+  it("keeps every workspace panel closed after the page remounts", async () => {
+    localStorage.setItem(
+      "okami.panelLayout",
+      JSON.stringify({
+        panels: ["files", "terminal", "browser", "tasks"],
+        columns: 2,
+      }),
+    );
+    const history: IpcResponse<"conversation:history"> = {
+      userMessages: [
+        {
+          id: "message-1",
+          laneId: claudeLaneId,
+          body: "Conversa persistida",
+          at: "2026-07-18T12:00:00.000Z",
+        },
+      ],
+      events: [],
+    };
+
+    const first = renderWorkbenchFixture({ lanes: [claudeLane], history });
+    await screen.findByRole("complementary", { name: "Painel de trabalho" });
+
+    for (let remaining = 4; remaining > 0; remaining -= 1) {
+      const closeButtons = screen.getAllByRole("button", {
+        name: "Fechar painel",
+      });
+      expect(closeButtons).toHaveLength(remaining);
+      fireEvent.click(closeButtons[0]);
+    }
+
+    expect(
+      screen.queryByRole("complementary", { name: "Painel de trabalho" }),
+    ).toBeNull();
+    expect(
+      JSON.parse(localStorage.getItem("okami.panelLayout") ?? "null"),
+    ).toEqual({ panels: [], columns: 2 });
+
+    first.unmount();
+    renderWorkbenchFixture({ lanes: [claudeLane], history });
+    await screen.findByText("Conversa persistida");
+
+    expect(
+      screen.queryByRole("complementary", { name: "Painel de trabalho" }),
+    ).toBeNull();
+  });
+
   it("merges deltas once and preserves both lanes when the user switches", async () => {
     const runtime = renderWorkbenchFixture({
       lanes: [claudeLane, codexLane],
