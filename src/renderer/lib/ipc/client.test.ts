@@ -176,8 +176,91 @@ it("exposes exactly the enumerated command surface", () => {
     "memory:list",
     "memory:search",
     "memory:reindex",
+    "inbox:accounts:list",
+    "inbox:account:add",
+    "inbox:account:remove",
+    "inbox:account:sync",
+    "inbox:threads:list",
+    "inbox:thread:get",
+    "inbox:thread:markRead",
   ]);
   expect(Object.keys(window.okami.invoke)).toEqual(ipcChannels);
+});
+
+it("provides typed Inbox account and thread commands through the bridge", async () => {
+  const accountId = "b672d2e8-688b-48ac-a618-3294bfc96a99";
+  const threadId = "4d32d86d-3199-4327-9d0c-e283268ed239";
+  const now = "2026-07-21T12:00:00.000Z";
+  const account = {
+    id: accountId,
+    provider: "imap",
+    displayName: "Primary",
+    address: "me@example.com",
+    status: "connected",
+    syncCursor: null,
+    lastError: null,
+    lastSyncedAt: null,
+    createdAt: now,
+    updatedAt: now,
+  };
+  const summary = {
+    account,
+    configuration: {
+      host: "imap.example.com",
+      port: 993,
+      secure: true,
+      mailbox: "INBOX",
+      maxInitialMessages: 100,
+      maxMessageBytes: 2_097_152,
+    },
+    hasCredential: true,
+  };
+  installOkamiMock({
+    "inbox:accounts:list": [summary],
+    "inbox:account:add": summary,
+    "inbox:account:sync": {
+      account,
+      counts: { inserted: 1, updated: 0, unchanged: 0 },
+    },
+    "inbox:thread:get": {
+      thread: {
+        id: threadId,
+        accountId,
+        externalThreadId: "x",
+        subject: "Subject",
+        snippet: "",
+        participants: [],
+        unreadCount: 0,
+        lastMessageAt: now,
+        labels: [],
+        createdAt: now,
+        updatedAt: now,
+      },
+      messages: [],
+    },
+  });
+
+  await expect(workbenchClient.inboxAccountsList()).resolves.toEqual([summary]);
+  await expect(
+    workbenchClient.inboxAccountAdd({
+      provider: "imap",
+      displayName: "Primary",
+      address: "me@example.com",
+      configuration: { host: "imap.example.com", port: 993, secure: true },
+      credential: {
+        version: 1,
+        kind: "imap_password",
+        username: "me@example.com",
+        password: "secret",
+      },
+    }),
+  ).resolves.toEqual(summary);
+  await expect(
+    workbenchClient.inboxAccountSync({ accountId }),
+  ).resolves.toMatchObject({ counts: { inserted: 1 } });
+  await expect(
+    workbenchClient.inboxThreadGet({ threadId }),
+  ).resolves.toMatchObject({ thread: { id: threadId } });
 });
 
 it("parses events before notifying consumers", () => {

@@ -50,6 +50,13 @@ export const ipcChannels = [
   "memory:list",
   "memory:search",
   "memory:reindex",
+  "inbox:accounts:list",
+  "inbox:account:add",
+  "inbox:account:remove",
+  "inbox:account:sync",
+  "inbox:threads:list",
+  "inbox:thread:get",
+  "inbox:thread:markRead",
 ] as const;
 
 export type IpcChannel = (typeof ipcChannels)[number];

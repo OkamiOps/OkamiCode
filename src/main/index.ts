@@ -2,7 +2,8 @@ import { randomUUID } from "node:crypto";
 import { mkdirSync } from "node:fs";
 import { homedir } from "node:os";
 import path from "node:path";
-import { app, BrowserWindow, ipcMain } from "electron";
+import { app, BrowserWindow, ipcMain, safeStorage } from "electron";
+import { ConnectorCredentialVault } from "./connectors/credential-vault";
 import { openDatabase } from "./db/connection";
 import { createAppState, type AppState } from "./ipc/app-state";
 import { registerIpcHandlers } from "./ipc/handlers";
@@ -20,6 +21,8 @@ import { MemoryService } from "./memory/indexer";
 import { StartupRecovery } from "./orchestration/recovery";
 import { AuditRepository } from "./db/repositories/audit";
 import { secureWebPreferences } from "./window";
+import { InboxApplicationService } from "./inbox/application-service";
+import { ImapSyncAdapter } from "./inbox/imap-adapter";
 import type { Capability } from "./policy/action";
 import type { TaskId } from "../shared/ids";
 
@@ -251,6 +254,16 @@ async function bootstrap(): Promise<void> {
   for (const failure of memoryStart.failed) {
     console.warn("[okami] memory source unavailable", failure);
   }
+  const inboxService = new InboxApplicationService({
+    db: database,
+    vault: new ConnectorCredentialVault(
+      path.join(app.getPath("userData"), "inbox-credentials"),
+      safeStorage,
+    ),
+    createAdapter: (vault) => new ImapSyncAdapter(vault),
+    createId: randomUUID,
+    clock: () => new Date(),
+  });
   registerIpcHandlers({
     ipcMain,
     laneEffort,
@@ -260,6 +273,7 @@ async function bootstrap(): Promise<void> {
       `file://${path.join(import.meta.dirname, "../renderer/index.html")}`,
     state,
     memoryService,
+    inboxService,
   });
 }
 

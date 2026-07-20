@@ -133,4 +133,17 @@ export const workbenchClient = {
     invokeCommand("memory:search", request),
   memoryReindex: (request: IpcRequest<"memory:reindex">) =>
     invokeCommand("memory:reindex", request),
+  inboxAccountsList: () => invokeCommand("inbox:accounts:list", {}),
+  inboxAccountAdd: (request: IpcRequest<"inbox:account:add">) =>
+    invokeCommand("inbox:account:add", request),
+  inboxAccountRemove: (request: IpcRequest<"inbox:account:remove">) =>
+    invokeCommand("inbox:account:remove", request),
+  inboxAccountSync: (request: IpcRequest<"inbox:account:sync">) =>
+    invokeCommand("inbox:account:sync", request),
+  inboxThreadsList: (request: IpcRequest<"inbox:threads:list"> = {}) =>
+    invokeCommand("inbox:threads:list", request),
+  inboxThreadGet: (request: IpcRequest<"inbox:thread:get">) =>
+    invokeCommand("inbox:thread:get", request),
+  inboxThreadMarkRead: (request: IpcRequest<"inbox:thread:markRead">) =>
+    invokeCommand("inbox:thread:markRead", request),
 } as const;

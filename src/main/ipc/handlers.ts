@@ -60,8 +60,20 @@ import {
   KanbanCardService,
   type KanbanCardMutationResult,
 } from "../kanban/service";
+import type { InboxApplicationService } from "../inbox/application-service";
 
 export type { ModelCatalogEntry };
+
+export type InboxIpcService = Pick<
+  InboxApplicationService,
+  | "listAccounts"
+  | "addImapAccount"
+  | "removeAccount"
+  | "syncAccount"
+  | "listThreads"
+  | "getThread"
+  | "markThreadRead"
+>;
 
 interface RegisterIpcHandlersOptions {
   ipcMain: Pick<IpcMain, "handle">;
@@ -71,6 +83,7 @@ interface RegisterIpcHandlersOptions {
   laneEffort?: Map<string, string>;
   clientCapabilities?: () => Promise<CliCapability[]>;
   memoryService?: MemoryService;
+  inboxService?: InboxIpcService;
 }
 
 interface TaskRow {
@@ -94,6 +107,7 @@ export function registerIpcHandlers({
   laneEffort = new Map<string, string>(),
   clientCapabilities = createCliCapabilityDetector(),
   memoryService,
+  inboxService,
 }: RegisterIpcHandlersOptions): void {
   const openedLanes = new Map<string, OpenedLane>();
   let memory = memoryService;
@@ -124,6 +138,10 @@ export function registerIpcHandlers({
       createId: state.createId,
       clock: () => state.clock().toISOString(),
     }));
+  const getInboxService = () => {
+    if (!inboxService) throw new Error("Inbox is unavailable.");
+    return inboxService;
+  };
 
   for (const channel of ipcChannels) {
     ipcMain.handle(channel, async (event, payload) => {
@@ -142,6 +160,7 @@ export function registerIpcHandlers({
         clientCapabilities,
         getMemoryService,
         kanbanService,
+        getInboxService,
       );
       return ipcResponseSchemas[channel].parse(response);
     });
@@ -161,6 +180,7 @@ async function dispatch(
   clientCapabilities: () => Promise<CliCapability[]>,
   getMemoryService: () => MemoryService,
   kanbanService: () => KanbanCardService,
+  inboxService: () => InboxIpcService,
 ): Promise<unknown> {
   switch (channel) {
     case "system:doctor":
@@ -356,6 +376,32 @@ async function dispatch(
     case "memory:reindex":
       return getMemoryService().reindex(
         (request as IpcRequest<"memory:reindex">).sourceId,
+      );
+    case "inbox:accounts:list":
+      return inboxService().listAccounts();
+    case "inbox:account:add":
+      return inboxService().addImapAccount(
+        request as IpcRequest<"inbox:account:add">,
+      );
+    case "inbox:account:remove":
+      return inboxService().removeAccount(
+        (request as IpcRequest<"inbox:account:remove">).accountId,
+      );
+    case "inbox:account:sync":
+      return inboxService().syncAccount(
+        (request as IpcRequest<"inbox:account:sync">).accountId,
+      );
+    case "inbox:threads:list":
+      return inboxService().listThreads(
+        request as IpcRequest<"inbox:threads:list">,
+      );
+    case "inbox:thread:get":
+      return inboxService().getThread(
+        (request as IpcRequest<"inbox:thread:get">).threadId,
+      );
+    case "inbox:thread:markRead":
+      return inboxService().markThreadRead(
+        (request as IpcRequest<"inbox:thread:markRead">).threadId,
       );
   }
 }

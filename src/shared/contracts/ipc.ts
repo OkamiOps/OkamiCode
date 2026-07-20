@@ -827,6 +827,184 @@ export const memorySearchResultSchema = z
   })
   .strict();
 
+const inboxAccountStatusSchema = z.enum([
+  "connected",
+  "syncing",
+  "degraded",
+  "auth_required",
+  "paused",
+  "unavailable",
+]);
+const inboxBodyFormatSchema = z.enum(["text", "html"]);
+const inboxDirectionSchema = z.enum(["incoming", "outgoing", "draft"]);
+const inboxAccountSchema = z
+  .object({
+    id: entityIdSchema,
+    provider: z.enum(["imap", "zoho"]),
+    displayName: z.string().min(1).max(240),
+    address: z.string().min(1).max(320),
+    status: inboxAccountStatusSchema,
+    syncCursor: z.string().max(8_192).nullable(),
+    lastError: z.string().max(2_000).nullable(),
+    lastSyncedAt: z.iso.datetime({ offset: true }).nullable(),
+    createdAt: z.iso.datetime({ offset: true }),
+    updatedAt: z.iso.datetime({ offset: true }),
+  })
+  .strict();
+const inboxConfigurationSchema = z
+  .object({
+    host: z.string().trim().min(1).max(255),
+    port: z.number().int().min(1).max(65_535),
+    secure: z.boolean(),
+    mailbox: z.string().trim().min(1).max(512).optional(),
+    maxInitialMessages: z.number().int().min(1).max(500).optional(),
+    maxMessageBytes: z
+      .number()
+      .int()
+      .min(1)
+      .max(10 * 1024 * 1024)
+      .optional(),
+  })
+  .strict();
+const storedInboxConfigurationSchema = inboxConfigurationSchema.extend({
+  mailbox: z.string().trim().min(1).max(512),
+  maxInitialMessages: z.number().int().min(1).max(500),
+  maxMessageBytes: z
+    .number()
+    .int()
+    .min(1)
+    .max(10 * 1024 * 1024),
+});
+const inboxCredentialSchema = z.discriminatedUnion("kind", [
+  z
+    .object({
+      version: z.literal(1),
+      kind: z.literal("imap_password"),
+      username: z.string().trim().min(1).max(512),
+      password: z.string().min(1).max(4_096),
+    })
+    .strict(),
+  z
+    .object({
+      version: z.literal(1),
+      kind: z.literal("oauth"),
+      username: z.string().trim().min(1).max(512),
+      accessToken: z.string().min(1).max(16_384),
+      refreshToken: z.string().min(1).max(16_384).optional(),
+      expiresAt: z.iso.datetime({ offset: true }).optional(),
+    })
+    .strict(),
+]);
+const inboxAccountSummarySchema = z
+  .object({
+    account: inboxAccountSchema,
+    configuration: storedInboxConfigurationSchema,
+    hasCredential: z.boolean(),
+  })
+  .strict();
+const inboxThreadSchema = z
+  .object({
+    id: entityIdSchema,
+    accountId: entityIdSchema,
+    externalThreadId: z.string().min(1).max(4_096),
+    subject: z.string().max(2_000),
+    snippet: z.string().max(8_000),
+    participants: z.array(z.string().min(1).max(512)).max(100),
+    unreadCount: z.number().int().nonnegative(),
+    lastMessageAt: z.iso.datetime({ offset: true }),
+    labels: z.array(z.string().min(1).max(240)).max(100),
+    createdAt: z.iso.datetime({ offset: true }),
+    updatedAt: z.iso.datetime({ offset: true }),
+  })
+  .strict();
+const inboxAttachmentSchema = z
+  .object({
+    providerAttachmentId: z.string().min(1).max(4_096).optional(),
+    filename: z.string().min(1).max(1_024).optional(),
+    mimeType: z.string().min(1).max(255).optional(),
+    size: z
+      .number()
+      .int()
+      .nonnegative()
+      .max(10 * 1024 * 1024)
+      .optional(),
+    contentId: z.string().min(1).max(4_096).optional(),
+    disposition: z.enum(["attachment", "inline"]).optional(),
+  })
+  .strict();
+const inboxMessageSchema = z
+  .object({
+    id: entityIdSchema,
+    accountId: entityIdSchema,
+    threadId: entityIdSchema,
+    externalMessageId: z.string().min(1).max(4_096),
+    direction: inboxDirectionSchema,
+    sender: z.string().min(1).max(512),
+    recipients: z.array(z.string().min(1).max(512)).max(100),
+    body: z.string().max(2_000_000),
+    bodyFormat: inboxBodyFormatSchema,
+    sentAt: z.iso.datetime({ offset: true }).nullable(),
+    receivedAt: z.iso.datetime({ offset: true }).nullable(),
+    attachments: z.array(inboxAttachmentSchema).max(100),
+    untrustedContent: z.literal(true),
+    createdAt: z.iso.datetime({ offset: true }),
+    updatedAt: z.iso.datetime({ offset: true }),
+  })
+  .strict();
+const inboxThreadCursorSchema = z
+  .object({
+    lastMessageAt: z.iso.datetime({ offset: true }),
+    id: entityIdSchema,
+  })
+  .strict();
+const inboxThreadsListRequestSchema = z
+  .object({
+    accountIds: z.array(entityIdSchema).min(1).max(50).optional(),
+    unreadOnly: z.boolean().optional(),
+    limit: z.number().int().min(1).max(100).optional(),
+    cursor: inboxThreadCursorSchema.optional(),
+  })
+  .strict();
+const inboxThreadPageSchema = z
+  .object({
+    threads: z.array(inboxThreadSchema),
+    nextCursor: inboxThreadCursorSchema.nullable(),
+  })
+  .strict();
+const inboxThreadDetailSchema = z
+  .object({ thread: inboxThreadSchema, messages: z.array(inboxMessageSchema) })
+  .strict();
+const inboxSyncResultSchema = z
+  .object({
+    account: inboxAccountSchema,
+    counts: z
+      .object({
+        inserted: z.number().int().nonnegative(),
+        updated: z.number().int().nonnegative(),
+        unchanged: z.number().int().nonnegative(),
+      })
+      .strict(),
+  })
+  .strict();
+const inboxRemoveAccountResultSchema = z
+  .object({ accountId: entityIdSchema, removed: z.literal(true) })
+  .strict();
+const inboxAddAccountRequestSchema = z
+  .object({
+    provider: z.enum(["imap", "zoho"]),
+    displayName: z.string().trim().min(1).max(240),
+    address: z.string().trim().min(1).max(320),
+    configuration: inboxConfigurationSchema,
+    credential: inboxCredentialSchema,
+  })
+  .strict();
+const inboxAccountIdRequestSchema = z
+  .object({ accountId: entityIdSchema })
+  .strict();
+const inboxThreadIdRequestSchema = z
+  .object({ threadId: entityIdSchema })
+  .strict();
+
 export const kanbanStatuses = [
   "backlog",
   "in_progress",
@@ -959,6 +1137,13 @@ export const ipcRequestSchemas = {
   "memory:list": emptyRequestSchema,
   "memory:search": memorySearchRequestSchema,
   "memory:reindex": memoryReindexRequestSchema,
+  "inbox:accounts:list": emptyRequestSchema,
+  "inbox:account:add": inboxAddAccountRequestSchema,
+  "inbox:account:remove": inboxAccountIdRequestSchema,
+  "inbox:account:sync": inboxAccountIdRequestSchema,
+  "inbox:threads:list": inboxThreadsListRequestSchema,
+  "inbox:thread:get": inboxThreadIdRequestSchema,
+  "inbox:thread:markRead": inboxThreadIdRequestSchema,
 } satisfies Record<IpcChannel, z.ZodType>;
 
 export const ipcResponseSchemas = {
@@ -1016,6 +1201,13 @@ export const ipcResponseSchemas = {
       removed: z.number().int().nonnegative(),
     })
     .strict(),
+  "inbox:accounts:list": z.array(inboxAccountSummarySchema),
+  "inbox:account:add": inboxAccountSummarySchema,
+  "inbox:account:remove": inboxRemoveAccountResultSchema,
+  "inbox:account:sync": inboxSyncResultSchema,
+  "inbox:threads:list": inboxThreadPageSchema,
+  "inbox:thread:get": inboxThreadDetailSchema,
+  "inbox:thread:markRead": inboxThreadSchema,
 } satisfies Record<IpcChannel, z.ZodType>;
 
 export type IpcRequest<C extends IpcChannel> = z.input<
