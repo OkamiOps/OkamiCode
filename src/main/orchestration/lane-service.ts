@@ -121,7 +121,7 @@ export class LaneService {
         routeKind: route.kind,
         routeReason: route.reason,
         displayQuotaAccount: route.displayQuotaAccount,
-        permissionMode: null,
+        permissionMode: lane.permissionMode ?? "manual",
         workspacePath: lane.workspacePath,
         nativeSessionIdPrefix: binding
           ? nativeSessionIdPrefix(binding.nativeSessionId)
@@ -164,6 +164,9 @@ export class LaneService {
       laneId: lane.id as LaneId,
       cwd: lane.workspacePath ?? options.workspaceFallbackPath ?? process.cwd(),
       model: lane.model,
+      // The lane's stored mode is what the CLI is spawned with; "manual"
+      // stays the default for lanes that never chose one.
+      permissionMode: lane.permissionMode ?? "manual",
       ...(route.kind === "compatible" || route.kind === "bridged"
         ? {
             env: claudeGatewayEnvironment({

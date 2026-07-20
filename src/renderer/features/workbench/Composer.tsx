@@ -200,7 +200,8 @@ function PermissionModeMenu({
             </button>
           ))}
           <p className="conv-menu__note">
-            Vale a partir da próxima sessão desta lane.
+            A sessão desta lane é reiniciada no próximo turno para aplicar o
+            modo.
           </p>
         </div>
       )}

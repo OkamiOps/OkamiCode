@@ -273,6 +273,7 @@ export class ClaudeAdapter implements RuntimeAdapter {
               settingsPath,
               ...binding,
               model: request.model,
+              permissionMode: request.permissionMode,
             }),
             // Claude 2.1.214 rejects stream-json output without this compatibility flag.
             "--verbose",

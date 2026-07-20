@@ -13,6 +13,7 @@ export interface StartSessionRequest {
   laneId: LaneId;
   cwd: string;
   model?: string;
+  permissionMode?: string;
   env?: NodeJS.ProcessEnv;
 }
 

@@ -152,9 +152,17 @@ async function dispatch(
       return listRunEvents(state, request as IpcRequest<"run:events">);
     case "lane:setPermissionMode": {
       const set = request as IpcRequest<"lane:setPermissionMode">;
-      state.database
-        .prepare(`UPDATE runtime_lanes SET permission_mode = ? WHERE id = ?`)
-        .run(set.mode, set.laneId);
+      const result = state.database
+        .prepare(
+          `UPDATE runtime_lanes SET permission_mode = ?, updated_at = ?
+           WHERE id = ?`,
+        )
+        .run(set.mode, state.clock().toISOString(), set.laneId);
+      if (result.changes !== 1) {
+        throw new Error(`Lane ${set.laneId} not found`);
+      }
+      // Dropping the opened lane forces the next turn to spawn the CLI again,
+      // which is what actually applies the mode.
       openedLanes.delete(set.laneId);
       return set;
     }

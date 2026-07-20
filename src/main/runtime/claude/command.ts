@@ -39,6 +39,8 @@ export interface ClaudeArgsOptions {
   sessionId?: string;
   resumeId?: string;
   model?: string;
+  /** Lane's mode; the CLI decides what each one allows. */
+  permissionMode?: string;
 }
 
 export interface ClaudeCapabilities {
@@ -105,7 +107,7 @@ export function claudeArgs(options: ClaudeArgsOptions): string[] {
     "--include-hook-events",
     "--replay-user-messages",
     "--permission-mode",
-    "manual",
+    options.permissionMode ?? "manual",
     "--settings",
     options.settingsPath,
     ...binding,

@@ -8,6 +8,7 @@ const MIGRATIONS = [
   "schema/003-lane-workspace-repair.sql",
   "schema/004-events-run-scoped-sequence.sql",
   "schema/005-close-orphan-runs.sql",
+  "schema/006-lane-permission-mode.sql",
 ];
 
 export function runMigrations(db: InstanceType<typeof SqliteDatabase>): void {

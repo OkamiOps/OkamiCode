@@ -10,6 +10,7 @@ export interface LaneRecord {
   model: string;
   status: LaneStatus;
   workspacePath: string | null;
+  permissionMode?: string | null;
   lastEventCursor: number;
   createdAt: string;
   updatedAt: string;
@@ -31,6 +32,7 @@ interface LaneRow {
   model: string;
   status: LaneStatus;
   workspace_path: string | null;
+  permission_mode: string | null;
   last_event_cursor: number;
   created_at: string;
   updated_at: string;
@@ -52,11 +54,12 @@ export class LaneRepository {
       .prepare(
         `INSERT INTO runtime_lanes
          (id, task_id, runtime_kind, provider_kind, model, status, workspace_path,
-          last_event_cursor, created_at, updated_at)
+          permission_mode, last_event_cursor, created_at, updated_at)
          VALUES (@id, @taskId, @runtimeKind, @providerKind, @model, @status,
-                 @workspacePath, @lastEventCursor, @createdAt, @updatedAt)`,
+                 @workspacePath, @permissionMode, @lastEventCursor, @createdAt,
+                 @updatedAt)`,
       )
-      .run(lane);
+      .run({ permissionMode: null, ...lane });
   }
 
   findById(id: string): LaneRecord | undefined {
@@ -154,6 +157,7 @@ function rowToLane(row: LaneRow): LaneRecord {
     model: row.model,
     status: row.status,
     workspacePath: row.workspace_path,
+    permissionMode: row.permission_mode,
     lastEventCursor: row.last_event_cursor,
     createdAt: row.created_at,
     updatedAt: row.updated_at,

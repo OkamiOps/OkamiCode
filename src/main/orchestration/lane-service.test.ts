@@ -40,7 +40,8 @@ describe("LaneService", () => {
         model: "gpt-test",
         routeKind: "bridged",
         displayQuotaAccount: "ChatGPT Plus",
-        permissionMode: null,
+        // Lanes report the mode the CLI will actually be spawned with.
+        permissionMode: "manual",
         workspacePath: null,
         nativeSessionIdPrefix: "thread-1…",
         status: "ready",
