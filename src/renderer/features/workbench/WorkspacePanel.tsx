@@ -5,6 +5,8 @@ import {
   FileCode2,
   Folder,
   Globe,
+  Maximize2,
+  Minimize2,
   RotateCw,
   Search,
   X,
@@ -358,6 +360,8 @@ export function WorkspacePanel({
   onOpenFile,
   onClose,
   initialUrl = null,
+  isMaximized = false,
+  onToggleMaximize,
 }: {
   taskId: string;
   workspacePath?: string | null;
@@ -366,6 +370,8 @@ export function WorkspacePanel({
   onOpenFile: (file: string | null) => void;
   onClose: () => void;
   initialUrl?: string | null;
+  isMaximized?: boolean;
+  onToggleMaximize?: () => void;
 }) {
   const [filter, setFilter] = useState("");
   return (
@@ -383,6 +389,21 @@ export function WorkspacePanel({
           </button>
         )}
         <span className="workspace-panel__spacer" />
+        {onToggleMaximize && (
+          <button
+            aria-label={isMaximized ? "Restaurar painel" : "Expandir painel"}
+            className="workspace-panel__close"
+            onClick={onToggleMaximize}
+            title={isMaximized ? "Restaurar" : "Ocupar todo o painel"}
+            type="button"
+          >
+            {isMaximized ? (
+              <Minimize2 aria-hidden="true" size={12} />
+            ) : (
+              <Maximize2 aria-hidden="true" size={12} />
+            )}
+          </button>
+        )}
         <button
           aria-label="Fechar painel"
           className="workspace-panel__close"

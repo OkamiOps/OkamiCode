@@ -2235,22 +2235,32 @@ textarea:focus-visible {
   min-width: 220px;
   border-left: 1px solid var(--chat-border-soft);
   background: var(--chat-surface);
-  display: flex;
-  flex-direction: column;
+  /* Panels tile: a wide rail puts them side by side instead of stacking
+     four useless slivers on top of each other. */
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(320px, 1fr));
+  align-content: stretch;
   min-height: 0;
-  overflow-y: auto;
+  overflow: auto;
+}
+
+.workspace-rail[data-solo="true"] {
+  grid-template-columns: 1fr;
 }
 
 .workspace-pane {
   display: flex;
   flex-direction: column;
-  min-height: 160px;
-  flex: 1 1 0;
+  /* Enough room to actually read the panel, never a four-line sliver. */
+  min-height: 260px;
   border-bottom: 1px solid var(--chat-border-soft);
+  border-right: 1px solid var(--chat-border-soft);
+  min-width: 0;
+  overflow: hidden;
 }
 
-.workspace-pane:last-child {
-  border-bottom: none;
+.workspace-rail[data-solo="true"] .workspace-pane {
+  min-height: 0;
 }
 
 .workspace-rail .workspace-panel__body {

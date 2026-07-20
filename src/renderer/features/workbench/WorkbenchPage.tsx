@@ -51,6 +51,8 @@ export function WorkbenchPage({ api = workbenchApi }: WorkbenchPageProps) {
     );
   const [panelFile, setPanelFile] = useState<string | null>(null);
   const [previewUrl, setPreviewUrl] = useState<string | null>(null);
+  const [maximizedPanel, setMaximizedPanel] =
+    useState<WorkspacePanelMode | null>(null);
   const panelPane = useResizablePane({
     storageKey: "okami.width.panel",
     initial: 420,
@@ -426,13 +428,23 @@ export function WorkbenchPage({ api = workbenchApi }: WorkbenchPageProps) {
           <aside
             aria-label="Painel de trabalho"
             className="workspace-rail"
+            data-solo={maximizedPanel ? "true" : undefined}
             style={{ width: panelPane.width }}
           >
-            {openPanels.map((mode) => (
+            {(maximizedPanel
+              ? openPanels.filter((mode) => mode === maximizedPanel)
+              : openPanels
+            ).map((mode) => (
               <WorkspacePanel
                 key={mode}
                 initialUrl={previewUrl}
+                isMaximized={maximizedPanel === mode}
                 mode={mode}
+                onToggleMaximize={() =>
+                  setMaximizedPanel((current) =>
+                    current === mode ? null : mode,
+                  )
+                }
                 onClose={() => togglePanel(mode)}
                 onOpenFile={setPanelFile}
                 openFile={panelFile}
