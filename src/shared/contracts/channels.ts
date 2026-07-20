@@ -42,6 +42,7 @@ export const ipcChannels = [
   "usage:refresh",
   "usage:alertSet",
   "memory:configure",
+  "memory:list",
   "memory:search",
   "memory:reindex",
 ] as const;

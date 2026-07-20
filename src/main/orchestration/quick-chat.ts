@@ -13,8 +13,13 @@ interface QuickChatDependencies {
   lanes: Pick<LaneRepository, "findById" | "insert" | "update">;
   audit: Pick<AuditRepository, "record">;
   laneService?: Pick<LaneService, "open" | "sendTurn">;
+  memory?: Pick<MemoryContextResolver, "resolveContextRefs">;
   createId: () => string;
   clock?: () => Date;
+}
+
+export interface MemoryContextResolver {
+  resolveContextRefs(refs: string[]): string;
 }
 
 export interface QuickChatConversation {
@@ -147,7 +152,13 @@ export class QuickChatService {
       inheritTask: false,
       workspaceFallbackPath: tmpdir(),
     });
-    const run = await laneService.sendTurn(opened, JSON.stringify(turn));
+    const memoryContext = this.dependencies.memory?.resolveContextRefs(
+      turn.contextRefs,
+    );
+    const runtimeInput = memoryContext
+      ? `${memoryContext}\n\n--- OKAMI QUICK CHAT ---\n${JSON.stringify(turn)}`
+      : JSON.stringify(turn);
+    const run = await laneService.sendTurn(opened, runtimeInput);
     return { laneId: chat.laneId, messageId: message.id, run };
   }
 

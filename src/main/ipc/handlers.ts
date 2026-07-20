@@ -28,6 +28,7 @@ import { AuditRepository } from "../db/repositories/audit";
 import type { TaskRecord } from "../db/repositories/tasks";
 import type { OpenedLane } from "../orchestration/lane-service";
 import { QuickChatService } from "../orchestration/quick-chat";
+import { MemoryService } from "../memory/indexer";
 import type { RunHandle, RuntimeHealth } from "../runtime/adapter";
 import { createUsageCommands, type UsageCommands } from "../usage/service";
 import type { AppState } from "./app-state";
@@ -56,6 +57,7 @@ interface RegisterIpcHandlersOptions {
   modelCatalog?: () => ModelCatalogEntry[];
   laneEffort?: Map<string, string>;
   clientCapabilities?: () => Promise<CliCapability[]>;
+  memoryService?: MemoryService;
 }
 
 interface TaskRow {
@@ -78,8 +80,12 @@ export function registerIpcHandlers({
   modelCatalog = () => [],
   laneEffort = new Map<string, string>(),
   clientCapabilities = createCliCapabilityDetector(),
+  memoryService,
 }: RegisterIpcHandlersOptions): void {
   const openedLanes = new Map<string, OpenedLane>();
+  let memory = memoryService;
+  const getMemoryService = () =>
+    (memory ??= new MemoryService({ db: state.database }));
   let quickChat: QuickChatService | undefined;
   const quickChatService = () =>
     (quickChat ??= new QuickChatService({
@@ -88,6 +94,7 @@ export function registerIpcHandlers({
       lanes: state.lanes,
       audit: new AuditRepository(state.database),
       laneService: state.laneService,
+      memory: getMemoryService(),
       createId: state.createId,
       clock: state.clock,
     }));
@@ -112,6 +119,7 @@ export function registerIpcHandlers({
         modelCatalog,
         laneEffort,
         clientCapabilities,
+        getMemoryService,
       );
       return ipcResponseSchemas[channel].parse(response);
     });
@@ -129,6 +137,7 @@ async function dispatch(
   modelCatalog: () => ModelCatalogEntry[],
   laneEffort: Map<string, string>,
   clientCapabilities: () => Promise<CliCapability[]>,
+  getMemoryService: () => MemoryService,
 ): Promise<unknown> {
   switch (channel) {
     case "system:doctor":
@@ -226,7 +235,7 @@ async function dispatch(
       return { ok: true as const };
     }
     case "workspace:pick":
-      return pickWorkspace();
+      return pickWorkspace(request as IpcRequest<"workspace:pick">);
     case "task:list":
       return listTasks(state);
     case "lane:list":
@@ -278,9 +287,20 @@ async function dispatch(
     case "usage:alertSet":
       return usageService().setAlert(request as IpcRequest<"usage:alertSet">);
     case "memory:configure":
+      return getMemoryService().configure(
+        (request as IpcRequest<"memory:configure">).paths,
+      );
+    case "memory:list":
+      return getMemoryService().listSources();
     case "memory:search":
+      return getMemoryService().search(
+        (request as IpcRequest<"memory:search">).query,
+        (request as IpcRequest<"memory:search">).limit,
+      );
     case "memory:reindex":
-      return { status: "not_implemented", channel };
+      return getMemoryService().reindex(
+        (request as IpcRequest<"memory:reindex">).sourceId,
+      );
   }
 }
 
@@ -772,10 +792,13 @@ function readWorkspaceFile(state: AppState, request: IpcRequest<"fs:read">) {
 
 // The Claude/Codex workflow anchors every conversation to a folder the user
 // picks; sessions and leases stay scoped to it.
-async function pickWorkspace() {
+async function pickWorkspace(request: IpcRequest<"workspace:pick">) {
+  const memoryPicker = request.purpose === "memory";
   const result = await dialog.showOpenDialog({
-    title: "Escolha a pasta da conversa",
-    buttonLabel: "Usar esta pasta",
+    title: memoryPicker
+      ? "Escolha a pasta Obsidian para indexar"
+      : "Escolha a pasta da conversa",
+    buttonLabel: memoryPicker ? "Indexar esta pasta" : "Usar esta pasta",
     properties: ["openDirectory", "createDirectory"],
   });
   return { path: result.canceled ? null : (result.filePaths[0] ?? null) };

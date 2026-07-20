@@ -453,6 +453,10 @@ export const runListSchema = z.array(
     .strict(),
 );
 
+export const workspacePickRequestSchema = z
+  .object({ purpose: z.enum(["workspace", "memory"]).optional() })
+  .strict();
+
 export const workspacePickSchema = z
   .object({ path: z.string().min(1).nullable() })
   .strict();
@@ -773,8 +777,7 @@ export type UsageActivityBucketContract = z.output<
 
 export const memoryConfigureRequestSchema = z
   .object({
-    sourceId: entityIdSchema.optional(),
-    scopeRefs: z.array(opaqueReferenceSchema).max(100),
+    paths: z.array(z.string().min(1).max(4_096)).min(1).max(20),
   })
   .strict();
 
@@ -789,14 +792,29 @@ export const memoryReindexRequestSchema = z
   .object({ sourceId: entityIdSchema })
   .strict();
 
-function notImplementedSchema<C extends IpcChannel>(channel: C) {
-  return z
-    .object({
-      status: z.literal("not_implemented"),
-      channel: z.literal(channel),
-    })
-    .strict();
-}
+export const memorySourceSchema = z
+  .object({
+    id: entityIdSchema,
+    rootPath: z.string().min(1),
+    scopePath: z.string().min(1),
+    accessMode: z.enum(["read", "excluded"]),
+    createdAt: z.iso.datetime({ offset: true }),
+    updatedAt: z.iso.datetime({ offset: true }),
+  })
+  .strict();
+
+export const memorySearchResultSchema = z
+  .object({
+    id: z.number().int().positive(),
+    sourceId: entityIdSchema,
+    title: z.string().min(1),
+    path: z.string().min(1),
+    excerpt: z.string(),
+    heading: z.string().min(1).nullable(),
+    citation: z.string().min(1),
+    score: z.number(),
+  })
+  .strict();
 
 export const ipcRequestSchemas = {
   "system:doctor": emptyRequestSchema,
@@ -804,7 +822,7 @@ export const ipcRequestSchemas = {
   "task:create": taskCreateRequestSchema,
   "task:rename": taskRenameRequestSchema,
   "task:delete": taskDeleteRequestSchema,
-  "workspace:pick": emptyRequestSchema,
+  "workspace:pick": workspacePickRequestSchema,
   "file:pick": filePickRequestSchema,
   "fs:list": fsListRequestSchema,
   "fs:read": fsReadRequestSchema,
@@ -840,6 +858,7 @@ export const ipcRequestSchemas = {
   "usage:refresh": emptyRequestSchema,
   "usage:alertSet": usageAlertSetRequestSchema,
   "memory:configure": memoryConfigureRequestSchema,
+  "memory:list": emptyRequestSchema,
   "memory:search": memorySearchRequestSchema,
   "memory:reindex": memoryReindexRequestSchema,
 } satisfies Record<IpcChannel, z.ZodType>;
@@ -885,9 +904,15 @@ export const ipcResponseSchemas = {
   "usage:overview": usageOverviewSchema,
   "usage:refresh": usageOverviewSchema,
   "usage:alertSet": usageAlertSchema,
-  "memory:configure": notImplementedSchema("memory:configure"),
-  "memory:search": notImplementedSchema("memory:search"),
-  "memory:reindex": notImplementedSchema("memory:reindex"),
+  "memory:configure": z.array(memorySourceSchema),
+  "memory:list": z.array(memorySourceSchema),
+  "memory:search": z.array(memorySearchResultSchema),
+  "memory:reindex": z
+    .object({
+      indexed: z.number().int().nonnegative(),
+      removed: z.number().int().nonnegative(),
+    })
+    .strict(),
 } satisfies Record<IpcChannel, z.ZodType>;
 
 export type IpcRequest<C extends IpcChannel> = z.input<

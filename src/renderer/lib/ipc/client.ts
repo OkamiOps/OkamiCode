@@ -92,7 +92,8 @@ export const workbenchClient = {
   ecoSettings: () => invokeCommand("eco:settings", {}),
   ecoAgents: (request: IpcRequest<"eco:agents">) =>
     invokeCommand("eco:agents", request),
-  workspacePick: () => invokeCommand("workspace:pick", {}),
+  workspacePick: (request: IpcRequest<"workspace:pick"> = {}) =>
+    invokeCommand("workspace:pick", request),
   conversationHistory: (request: IpcRequest<"conversation:history">) =>
     invokeCommand("conversation:history", request),
   laneList: (request: IpcRequest<"lane:list">) =>
@@ -118,6 +119,7 @@ export const workbenchClient = {
     invokeCommand("usage:alertSet", request),
   memoryConfigure: (request: IpcRequest<"memory:configure">) =>
     invokeCommand("memory:configure", request),
+  memoryList: () => invokeCommand("memory:list", {}),
   memorySearch: (request: IpcRequest<"memory:search">) =>
     invokeCommand("memory:search", request),
   memoryReindex: (request: IpcRequest<"memory:reindex">) =>

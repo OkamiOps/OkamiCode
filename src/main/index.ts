@@ -15,6 +15,7 @@ import { RepositoryApprovalBroker } from "./runtime/codex/adapter";
 import { createModelCatalogService } from "./runtime/model-catalog";
 import { createRuntimeRegistry } from "./runtime/registry";
 import { getOrCreateDatabaseKey } from "./secrets";
+import { MemoryService } from "./memory/indexer";
 import { secureWebPreferences } from "./window";
 import type { Capability } from "./policy/action";
 import type { TaskId } from "../shared/ids";
@@ -26,6 +27,7 @@ const LEASED_CAPABILITIES: Capability[] = [
   "terminal.exec",
   "browser.open",
 ];
+let memoryService: MemoryService | undefined;
 
 export function createMainWindow(): BrowserWindow {
   const window = new BrowserWindow({
@@ -226,6 +228,7 @@ async function bootstrap(): Promise<void> {
     )
     .run();
   seedInitialWorkspace(state);
+  memoryService = new MemoryService({ db: database });
   registerIpcHandlers({
     ipcMain,
     laneEffort,
@@ -234,6 +237,7 @@ async function bootstrap(): Promise<void> {
       process.env.ELECTRON_RENDERER_URL ??
       `file://${path.join(import.meta.dirname, "../renderer/index.html")}`,
     state,
+    memoryService,
   });
 }
 
@@ -246,3 +250,6 @@ app.whenReady().then(async () => {
   createMainWindow();
 });
 app.on("window-all-closed", () => app.quit());
+app.on("before-quit", () => {
+  void memoryService?.close();
+});

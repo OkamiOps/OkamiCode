@@ -26,6 +26,7 @@ import type { IpcResponse } from "../../../shared/contracts/ipc";
 import type { RuntimeKind } from "../../../shared/contracts/lane";
 import { workbenchClient } from "../../lib/ipc/client";
 import { ContextChips, type ContextChipItem } from "./ContextChips";
+import { MemoryPicker } from "./MemoryPicker";
 
 export interface QuickChatMessage {
   id: string;
@@ -74,6 +75,7 @@ interface QuickChatUiState {
   messages: QuickChatMessage[];
   selectedMessageIds: Record<string, true>;
   addMessage: (message: QuickChatMessage) => void;
+  addChip: (chip: ContextChipItem) => void;
   removeChip: (ref: string) => void;
   setInput: (input: string) => void;
   toggleMessage: (id: string) => void;
@@ -288,21 +290,28 @@ function QuickChatContent({
       >
         <div className="mx-auto w-full max-w-4xl">
           <div className="mb-2 flex min-h-7 items-center justify-between gap-3">
-            <ContextChips
-              chips={chips}
-              onRemove={(ref) => store.getState().removeChip(ref)}
-            />
-            <Button
-              className="shrink-0 border border-[var(--ok-border)] text-[var(--ok-text-muted)]"
-              isDisabled={!chat || selectedCount === 0 || promote.isPending}
-              size="sm"
-              type="button"
-              variant="ghost"
-              onPress={() => void handlePromote()}
-            >
-              <ArrowUpRight aria-hidden="true" size={13} />
-              Promover para tarefa
-            </Button>
+            <div className="min-w-0">
+              <ContextChips
+                chips={chips}
+                onRemove={(ref) => store.getState().removeChip(ref)}
+              />
+            </div>
+            <div className="flex shrink-0 items-center gap-1.5">
+              <MemoryPicker
+                onSelect={(chip) => store.getState().addChip(chip)}
+              />
+              <Button
+                className="border border-[var(--ok-border)] text-[var(--ok-text-muted)]"
+                isDisabled={!chat || selectedCount === 0 || promote.isPending}
+                size="sm"
+                type="button"
+                variant="ghost"
+                onPress={() => void handlePromote()}
+              >
+                <ArrowUpRight aria-hidden="true" size={13} />
+                Promover para tarefa
+              </Button>
+            </div>
           </div>
           <div className="flex items-end gap-2">
             <TextField className="min-w-0 flex-1" fullWidth>
@@ -365,6 +374,12 @@ function createQuickChatStore(
           ...state.selectedMessageIds,
           [message.id]: true,
         },
+      })),
+    addChip: (chip) =>
+      set((state) => ({
+        chips: state.chips.some((current) => current.ref === chip.ref)
+          ? state.chips
+          : [...state.chips, chip],
       })),
     removeChip: (ref) =>
       set((state) => ({

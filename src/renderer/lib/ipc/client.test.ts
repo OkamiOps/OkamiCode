@@ -166,6 +166,7 @@ it("exposes exactly the enumerated command surface", () => {
     "usage:refresh",
     "usage:alertSet",
     "memory:configure",
+    "memory:list",
     "memory:search",
     "memory:reindex",
   ]);
@@ -546,21 +547,4 @@ it("returns honest unavailable usage data when collectors have no database", asy
     remainingPercent: 20,
     enabled: true,
   });
-});
-
-it("returns validated not_implemented results for later-task commands", async () => {
-  const handlers = ipcHarness(stateFixture());
-  const requests: Partial<Record<IpcChannel, unknown>> = {
-    "memory:configure": { scopeRefs: [] },
-    "memory:search": { query: "gateway" },
-    "memory:reindex": {
-      sourceId: "b672d2e8-688b-48ac-a618-3294bfc96a99",
-    },
-  };
-
-  for (const [channel, request] of Object.entries(requests)) {
-    await expect(
-      handlers.get(channel as IpcChannel)?.(trustedEvent(), request),
-    ).resolves.toEqual({ status: "not_implemented", channel });
-  }
 });

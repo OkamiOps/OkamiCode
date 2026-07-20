@@ -1,5 +1,6 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { FileText, Save } from "lucide-react";
+import { Button } from "@heroui/react";
+import { FileText, FolderOpen, RefreshCw, Save } from "lucide-react";
 import { useState } from "react";
 import { workbenchClient } from "../../lib/ipc/client";
 import { useWorkbenchStore } from "../workbench/store";
@@ -24,6 +25,10 @@ export function MemoryPage() {
   });
   const [openPath, setOpenPath] = useState<string | null>(null);
   const [draft, setDraft] = useState<string | null>(null);
+  const sources = useQuery({
+    queryKey: ["memory", "sources"],
+    queryFn: () => workbenchClient.memoryList(),
+  });
 
   const content = useQuery({
     queryKey: ["eco", "memory-file", openPath],
@@ -39,18 +44,74 @@ export function MemoryPage() {
       void queryClient.invalidateQueries({ queryKey: ["eco", "memory"] });
     },
   });
+  const configure = useMutation({
+    mutationFn: async () => {
+      const selected = await workbenchClient.workspacePick({
+        purpose: "memory",
+      });
+      if (!selected.path) return [];
+      return workbenchClient.memoryConfigure({ paths: [selected.path] });
+    },
+    onSuccess: (sources) => {
+      if (sources.length > 0) {
+        void queryClient.invalidateQueries({ queryKey: ["memory", "sources"] });
+      }
+    },
+  });
+  const reindex = useMutation({
+    mutationFn: (sourceId: string) =>
+      workbenchClient.memoryReindex({ sourceId }),
+  });
 
   const current = draft ?? content.data?.content ?? "";
 
   return (
     <section aria-label="Memória" className="eco-page">
       <header className="eco-page__header">
-        <h1>Memória</h1>
-        <p>
-          Instruções que os runtimes leem a cada sessão. Editar aqui altera o
-          arquivo real no disco.
-        </p>
+        <div>
+          <h1>Memória</h1>
+          <p>
+            Instruções que os runtimes leem a cada sessão. Editar aqui altera o
+            arquivo real no disco.
+          </p>
+        </div>
+        <div className="flex flex-wrap gap-2">
+          <Button
+            size="sm"
+            type="button"
+            variant="primary"
+            onPress={() => configure.mutate()}
+          >
+            <FolderOpen aria-hidden="true" size={14} />
+            {configure.isPending ? "Escolhendo…" : "Indexar pasta Obsidian"}
+          </Button>
+          {(sources.data ?? []).map((source) => (
+            <Button
+              aria-label={`Reindexar ${source.scopePath}`}
+              key={source.id}
+              size="sm"
+              type="button"
+              variant="ghost"
+              onPress={() => reindex.mutate(source.id)}
+            >
+              <RefreshCw aria-hidden="true" size={14} />
+              Reindexar
+            </Button>
+          ))}
+        </div>
       </header>
+
+      {configure.error && (
+        <p className="eco-empty" role="alert">
+          Não foi possível indexar a pasta selecionada.
+        </p>
+      )}
+      {(sources.data ?? []).length > 0 && (
+        <p className="eco-empty" role="status">
+          Indexando apenas:{" "}
+          {(sources.data ?? []).map((source) => source.scopePath).join(", ")}.
+        </p>
+      )}
 
       <div className="eco-memory">
         <aside className="eco-memory__list">
