@@ -6,7 +6,7 @@ import {
   SquareTerminal,
   Sparkle,
 } from "lucide-react";
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useRef, useState, type CSSProperties } from "react";
 import { useShallow } from "zustand/react/shallow";
 import { Composer } from "./Composer";
 import { Conversation } from "./Conversation";
@@ -59,6 +59,9 @@ export function WorkbenchPage({ api = workbenchApi }: WorkbenchPageProps) {
   const [previewUrl, setPreviewUrl] = useState<string | null>(null);
   const [maximizedPanel, setMaximizedPanel] =
     useState<WorkspacePanelMode | null>(null);
+  // null = balanced automatically; a number pins the column count so panels
+  // can stack in rows instead of always sitting side by side.
+  const [panelColumns, setPanelColumns] = useState<number | null>(null);
   const [dropTarget, setDropTarget] = useState<WorkspacePanelMode | null>(null);
 
   // Dragging a panel header onto another panel swaps their slots, so the
@@ -472,8 +475,46 @@ export function WorkbenchPage({ api = workbenchApi }: WorkbenchPageProps) {
             aria-label="Painel de trabalho"
             className="workspace-rail"
             data-solo={maximizedPanel ? "true" : undefined}
-            style={{ width: panelPane.width }}
+            style={
+              {
+                width: panelPane.width,
+                // Balanced by default (4 panels → 2×2), overridable below.
+                "--rail-columns": maximizedPanel
+                  ? 1
+                  : (panelColumns ??
+                    Math.min(
+                      Math.max(1, Math.floor(panelPane.width / 320)),
+                      Math.ceil(Math.sqrt(openPanels.length)),
+                    )),
+              } as CSSProperties
+            }
           >
+            <div className="workspace-rail__layout">
+              <span>Colunas</span>
+              {[1, 2, 3].map((count) => (
+                <button
+                  data-active={panelColumns === count || undefined}
+                  key={count}
+                  onClick={() =>
+                    setPanelColumns((current) =>
+                      current === count ? null : count,
+                    )
+                  }
+                  title={`${count} coluna${count > 1 ? "s" : ""}`}
+                  type="button"
+                >
+                  {count}
+                </button>
+              ))}
+              <button
+                data-active={panelColumns === null || undefined}
+                onClick={() => setPanelColumns(null)}
+                title="Automático"
+                type="button"
+              >
+                auto
+              </button>
+            </div>
             {(maximizedPanel
               ? openPanels.filter((mode) => mode === maximizedPanel)
               : openPanels
