@@ -202,15 +202,21 @@ export function WorkspacePanel({
   openFile,
   onOpenFile,
   onClose,
+  width,
 }: {
   taskId: string;
   mode: WorkspacePanelMode;
   openFile: string | null;
   onOpenFile: (file: string | null) => void;
   onClose: () => void;
+  width: number;
 }) {
   return (
-    <aside aria-label="Painel de trabalho" className="workspace-panel">
+    <aside
+      aria-label="Painel de trabalho"
+      className="workspace-panel"
+      style={{ width }}
+    >
       <header className="workspace-panel__header">
         <strong>
           {mode === "files"

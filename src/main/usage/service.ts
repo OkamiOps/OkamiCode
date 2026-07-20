@@ -16,6 +16,61 @@ export interface UsageCommands {
   setAlert(request: IpcRequest<"usage:alertSet">): UsageAlert;
 }
 
+interface HarnessRateLimit {
+  rateLimitType?: string;
+  resetsAt?: number;
+  status?: string;
+}
+
+// The Claude CLI opens with trust/renderer modals, so scraping /usage is
+// unreliable. Our own harness sessions already receive rate_limit events;
+// when the scrape yields nothing, that real signal fills the snapshot.
+function claudeWithHarnessLimits(
+  state: AppState,
+  snapshot: UsageSnapshot,
+): UsageSnapshot {
+  if (snapshot.windows.length > 0) return snapshot;
+  const row = state.database
+    .prepare(
+      `SELECT payload_json, occurred_at FROM events
+       WHERE kind = 'rate_limit_updated'
+       ORDER BY occurred_at DESC LIMIT 1`,
+    )
+    .get() as { payload_json: string; occurred_at: string } | undefined;
+  if (!row) return snapshot;
+  let info: HarnessRateLimit | undefined;
+  try {
+    const payload = JSON.parse(row.payload_json) as {
+      rateLimit?: { rate_limit_info?: HarnessRateLimit };
+    };
+    info = payload.rateLimit?.rate_limit_info;
+  } catch {
+    return snapshot;
+  }
+  if (!info?.rateLimitType) return snapshot;
+  const weekly = info.rateLimitType === "weekly";
+  return {
+    ...snapshot,
+    error: null,
+    freshness: "partial",
+    windows: [
+      {
+        durationMinutes: weekly ? 10_080 : 300,
+        kind: weekly ? "weekly" : "five_hour",
+        label: weekly ? "Semanal" : "5 horas",
+        modelGroup: null,
+        // The event reports the window and its reset, never a percentage.
+        remainingPercent: info.status === "allowed" ? 100 : 0,
+        resetsAt:
+          typeof info.resetsAt === "number"
+            ? new Date(info.resetsAt * 1000).toISOString()
+            : null,
+        usedPercent: info.status === "allowed" ? 0 : 100,
+      },
+    ],
+  };
+}
+
 export function createUsageCommands(state: AppState): UsageCommands {
   if (
     typeof (state.database as unknown as { transaction?: unknown })
@@ -41,7 +96,7 @@ export function createUsageCommands(state: AppState): UsageCommands {
         }),
       ]);
       snapshots.save(codexSnapshot);
-      snapshots.save(claudeSnapshot);
+      snapshots.save(claudeWithHarnessLimits(state, claudeSnapshot));
       activity.rebuild();
       const latest = snapshots.readLatest();
       const localContext = activity.readSessionContext();

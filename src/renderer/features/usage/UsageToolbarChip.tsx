@@ -20,14 +20,20 @@ export function UsageToolbarChip() {
   useEffect(() => {
     if (!window.okami?.invoke) return;
     let active = true;
-    void workbenchClient
-      .usageOverview()
-      .then((value) => {
-        if (active && "generatedAt" in value) setOverview(value);
-      })
-      .catch(() => undefined);
+    const load = () => {
+      void workbenchClient
+        .usageOverview()
+        .then((value) => {
+          if (active && "generatedAt" in value) setOverview(value);
+        })
+        .catch(() => undefined);
+    };
+    load();
+    // A number that never moves reads as broken; refresh while the app runs.
+    const timer = window.setInterval(load, 60_000);
     return () => {
       active = false;
+      window.clearInterval(timer);
     };
   }, []);
 

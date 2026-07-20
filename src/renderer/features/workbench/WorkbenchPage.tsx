@@ -6,6 +6,7 @@ import { Composer } from "./Composer";
 import { Conversation } from "./Conversation";
 import { workbenchApi, type WorkbenchApi } from "./api";
 import { modelDetail, modelLabel } from "./ModelPicker";
+import { ResizeHandle, useResizablePane } from "../../app/layout/ResizeHandle";
 import { UsageToolbarChip } from "../usage/UsageToolbarChip";
 import { FileOpenContext } from "./file-open";
 import { WorkspacePanel, type WorkspacePanelMode } from "./WorkspacePanel";
@@ -31,6 +32,12 @@ export function WorkbenchPage({ api = workbenchApi }: WorkbenchPageProps) {
   const storeActions = useWorkbenchStore(useShallow(workbenchActions));
   const [panelMode, setPanelMode] = useState<WorkspacePanelMode | null>(null);
   const [panelFile, setPanelFile] = useState<string | null>(null);
+  const panelPane = useResizablePane({
+    storageKey: "okami.width.panel",
+    initial: 420,
+    min: 260,
+    max: 900,
+  });
 
   const tasksQuery = useQuery({
     queryKey: ["workbench", "tasks"],
@@ -287,7 +294,7 @@ export function WorkbenchPage({ api = workbenchApi }: WorkbenchPageProps) {
         {panelToggle("browser")}
       </div>
       <div className="chat-split">
-        <div className="chat-main">
+        <div className="chat-workarea">
           <div className="chat-scroll">
             <div className="chat-column">
               <FileOpenContext.Provider value={fileOpener}>
@@ -304,12 +311,20 @@ export function WorkbenchPage({ api = workbenchApi }: WorkbenchPageProps) {
           <div className="chat-composer-dock">{composer}</div>
         </div>
         {panelMode && effectiveTaskId && (
+          <ResizeHandle
+            ariaLabel="Redimensionar o painel de trabalho"
+            edge="left"
+            pane={panelPane}
+          />
+        )}
+        {panelMode && effectiveTaskId && (
           <WorkspacePanel
             mode={panelMode}
             onClose={() => setPanelMode(null)}
             onOpenFile={setPanelFile}
             openFile={panelFile}
             taskId={effectiveTaskId}
+            width={panelPane.width}
           />
         )}
       </div>

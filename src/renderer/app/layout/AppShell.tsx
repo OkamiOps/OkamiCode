@@ -1,11 +1,12 @@
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
-import { useState } from "react";
+import { useState, type CSSProperties } from "react";
 import { Outlet } from "react-router-dom";
 import {
   createWorkbenchStore,
   WorkbenchStoreContext,
 } from "../../features/workbench/store";
 import { ChatSidebar } from "./ChatSidebar";
+import { ResizeHandle, useResizablePane } from "./ResizeHandle";
 
 // Kept for route components that still type their outlet context.
 export interface AppShellOutletContext {
@@ -35,12 +36,26 @@ export function AppShell() {
       }),
   );
   const [store] = useState(createWorkbenchStore);
+  const sidebar = useResizablePane({
+    storageKey: "okami.width.sidebar",
+    initial: 236,
+    min: 170,
+    max: 620,
+  });
 
   return (
     <QueryClientProvider client={queryClient}>
       <WorkbenchStoreContext.Provider value={store}>
-        <div className="chat-shell">
+        <div
+          className="chat-shell"
+          style={{ "--chat-sidebar-w": `${sidebar.width}px` } as CSSProperties}
+        >
           <ChatSidebar />
+          <ResizeHandle
+            ariaLabel="Redimensionar a lista de conversas"
+            edge="right"
+            pane={sidebar}
+          />
           <main className="chat-main">
             <Outlet context={emptyOutletContext} />
           </main>

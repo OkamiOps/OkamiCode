@@ -1808,3 +1808,50 @@ textarea:focus-visible {
 .usage-toolbar-chip__fill--gpt {
   background: var(--chat-cyan);
 }
+
+/* Draggable pane dividers */
+.chat-shell {
+  grid-template-columns: var(--chat-sidebar-w, 236px) auto 1fr;
+}
+
+.resize-handle {
+  /* Sits next to the window drag regions, which swallow mouse input at the
+     OS level; the divider must opt out or it can never be grabbed. */
+  -webkit-app-region: no-drag;
+  width: 11px;
+  cursor: col-resize;
+  background: transparent;
+  border: none;
+  flex: none;
+  position: relative;
+  z-index: 5;
+  transition: background 0.12s ease;
+}
+
+.resize-handle::after {
+  content: "";
+  position: absolute;
+  inset: 0 5px;
+  background: transparent;
+  transition: background 0.12s ease;
+}
+
+.resize-handle:hover::after,
+.resize-handle[data-dragging="true"]::after {
+  background: var(--chat-accent);
+}
+
+.chat-workarea {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+  min-height: 0;
+}
+
+.workspace-panel {
+  flex: none;
+  /* A width saved on a wider window must never push the panel off-screen. */
+  max-width: 62%;
+  min-width: 220px;
+}
