@@ -2667,28 +2667,45 @@ textarea:focus-visible {
   min-width: 0;
 }
 
-.ws-task__tool strong {
-  font: 600 11.5px/1.3 inherit;
-  color: var(--chat-cyan);
+/* The action is quiet; what it touched carries the weight. */
+.ws-task__verb {
+  font: 400 11.5px/1.4 inherit;
+  color: var(--chat-text-dim);
   flex: none;
 }
 
-.ws-task__tool code {
+.ws-task__target {
   font-family: var(--chat-mono);
-  font-size: 10.5px;
-  color: var(--chat-text-dim);
+  font-size: 11px;
+  color: var(--chat-text);
+  background: var(--chat-surface-2);
+  border-radius: 5px;
+  padding: 1px 6px;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
+  min-width: 0;
 }
 
 .ws-task__reply {
-  margin: 2px 0 0;
+  margin: 4px 0 0;
   font-size: 11.5px;
-  line-height: 1.5;
+  line-height: 1.55;
   color: var(--chat-text-mid);
   border-top: 1px solid var(--chat-border-soft);
-  padding-top: 7px;
+  padding-top: 8px;
+}
+
+.ws-task__reply p {
+  margin: 0 0 0.5em;
+}
+
+.ws-task__reply p:last-child {
+  margin-bottom: 0;
+}
+
+.ws-task__reply strong {
+  color: var(--chat-text);
 }
 
 /* File tree: filter field and denser rows */

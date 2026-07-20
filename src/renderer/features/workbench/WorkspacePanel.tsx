@@ -159,6 +159,46 @@ function FileView({ taskId, file }: { taskId: string; file: string }) {
   );
 }
 
+// Reads as what happened, not as the tool that did it: the action is plain
+// language and the emphasis sits on the file or command it touched.
+function describeToolCall(
+  name: string,
+  detail: string | null,
+): { verb: string; target: string | null } {
+  const file = detail?.split("/").filter(Boolean).at(-1) ?? detail;
+  // Older runs stored no tool input, so each phrase stands on its own when
+  // there is nothing to point at — "Criou" alone tells the reader nothing.
+  const phrase = (withTarget: string, alone: string, target: string | null) =>
+    target ? { verb: withTarget, target } : { verb: alone, target: null };
+
+  switch (name) {
+    case "Read":
+      return phrase("Leu", "Leu um arquivo", file);
+    case "Write":
+      return phrase("Criou", "Criou um arquivo", file);
+    case "Edit":
+    case "MultiEdit":
+    case "NotebookEdit":
+      return phrase("Editou", "Editou um arquivo", file);
+    case "Bash":
+      return phrase("Rodou", "Rodou um comando", detail);
+    case "Glob":
+      return phrase("Procurou arquivos", "Procurou arquivos", detail);
+    case "Grep":
+      return phrase("Buscou no código", "Buscou no código", detail);
+    case "WebFetch":
+      return phrase("Abriu", "Abriu uma página", detail);
+    case "WebSearch":
+      return phrase("Pesquisou", "Fez uma busca na web", detail);
+    case "Task":
+      return phrase("Subagente", "Chamou um subagente", detail);
+    case "TodoWrite":
+      return { verb: "Atualizou o plano", target: null };
+    default:
+      return phrase(`Usou ${name}`, `Usou ${name}`, detail);
+  }
+}
+
 function duration(startedAt: string, finishedAt: string | null): string {
   const end = finishedAt ? Date.parse(finishedAt) : Date.now();
   const seconds = Math.max(0, Math.round((end - Date.parse(startedAt)) / 1000));
@@ -198,7 +238,11 @@ function RunDetail({ runId }: { runId: string }) {
         ? input.command
         : typeof input?.file_path === "string"
           ? input.file_path
-          : null;
+          : typeof input?.pattern === "string"
+            ? input.pattern
+            : typeof input?.description === "string"
+              ? input.description
+              : null;
     const existing = byTool.get(id);
     byTool.set(id, {
       name: named ?? existing?.name ?? "ferramenta",
@@ -216,16 +260,21 @@ function RunDetail({ runId }: { runId: string }) {
       {byTool.size === 0 && !reply && (
         <p className="fs-empty">Este turno não registrou ferramentas.</p>
       )}
-      {[...byTool.values()].map((tool, index) => (
-        <div className="ws-task__tool" key={`${tool.name}-${index}`}>
-          <strong>{tool.name}</strong>
-          {tool.detail && <code>{tool.detail}</code>}
-        </div>
-      ))}
+      {[...byTool.values()].map((tool, index) => {
+        const action = describeToolCall(tool.name, tool.detail);
+        return (
+          <div className="ws-task__tool" key={`${tool.name}-${index}`}>
+            <span className="ws-task__verb">{action.verb}</span>
+            {action.target && (
+              <code className="ws-task__target">{action.target}</code>
+            )}
+          </div>
+        );
+      })}
       {reply && (
-        <p className="ws-task__reply">
-          {reply.length > 400 ? `${reply.slice(0, 400)}…` : reply}
-        </p>
+        <div className="ws-task__reply">
+          <MessageMarkdown>{reply}</MessageMarkdown>
+        </div>
       )}
     </div>
   );
