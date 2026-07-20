@@ -1,12 +1,17 @@
-[2J[HClaude Code v2.1.214
+[2J[HClaude Code v2.1.214
 
-Current session
-Context window: 38% used
+Currentsession████████████▌29%usedResets6:39pm(Europe/Berlin)
 
-5-hour limit
-17% used
-Resets Jul 18, 2026 14:30 UTC
+Contextwindow:38%used
 
-Weekly limit
-42% used
-Resets Jul 23, 2026 00:00 UTC
+Currentweek(allmodels)███████████████████▌53%usedResetsJul22at9:59am(Europe/Berlin)
+
+Currentweek(Fable)█████████████████████████████████████████████▌91%usedResetsJul22at9:59am(Europe/Berlin)
+
+What'scontributingtoyourlimitsusage?
+Approximate,basedonlocalsessionsonthismachine
+
+Usagecredits
+Usagecreditsareoff·/usage-creditstoturnthemon
+
+Esctocancel

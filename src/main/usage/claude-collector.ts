@@ -2,8 +2,6 @@ import { spawn as nativeSpawnPty } from "node-pty";
 import { claudeEnvironment } from "../runtime/claude/command";
 import { UsageSourceKind, type UsageSnapshot, type UsageWindow } from "./model";
 
-const SUPPORTED_PARSERS = new Set(["2.1.214"]);
-
 export interface ClaudeUsageScreenResult {
   cliVersion: string;
   exitCode: number;
@@ -65,11 +63,8 @@ export function parseClaudeUsage(
   raw: string,
   options: { cliVersion: string; collectedAt?: string },
 ): UsageSnapshot {
-  if (!SUPPORTED_PARSERS.has(options.cliVersion)) {
-    throw new ClaudeUsageParserError(
-      `No /usage parser for Claude CLI ${options.cliVersion}`,
-    );
-  }
+  // The version banner is cosmetic; refusing to parse without it left the
+  // whole panel empty. The screen shape is what matters.
   const text = stripAnsi(raw);
   const windows = parseWindows(text);
   if (windows.length === 0) {
@@ -83,8 +78,8 @@ export function parseClaudeUsage(
     kind: UsageSourceKind.NativePresentational,
     method: "native /usage screen",
   };
-  const contextUsed = /Context window:\s*(\d+(?:\.\d+)?)% used/iu.exec(
-    text,
+  const contextUsed = /Contextwindow:(\d+(?:\.\d+)?)%used/iu.exec(
+    text.replace(/\s+/gu, ""),
   )?.[1];
   return {
     accountLabel: "Claude Max",
@@ -190,7 +185,7 @@ export function runClaudeUsageScreen(
     timeoutMs?: number;
   } = {},
 ): Promise<ClaudeUsageScreenResult> {
-  return new Promise((resolve, reject) => {
+  return new Promise((resolve) => {
     const terminal = (options.spawnPty ?? nativeSpawnPty)(
       options.command ?? "claude",
       [],
@@ -204,8 +199,12 @@ export function runClaudeUsageScreen(
     );
     let output = "";
     let settled = false;
+    // The CLI boots through optional modals (fullscreen renderer, folder
+    // trust) and only then shows a prompt, so the scrape is a small state
+    // machine instead of a blind write.
+    let stage: "boot" | "asked" | "done" = "boot";
     let quietTimer: ReturnType<typeof setTimeout> | undefined;
-    const hardTimer = setTimeout(() => finish(0), options.timeoutMs ?? 3_000);
+    const hardTimer = setTimeout(() => finish(0), options.timeoutMs ?? 45_000);
 
     const finish = (exitCode: number) => {
       if (settled) return;
@@ -218,46 +217,114 @@ export function runClaudeUsageScreen(
         // The PTY may have exited between its final data and this cleanup.
       }
       const clean = stripAnsi(output);
-      const cliVersion = /Claude Code v([\w.-]+)/u.exec(clean)?.[1];
-      if (!cliVersion) {
-        reject(
-          new ClaudeUsageParserError("Claude /usage omitted its CLI version"),
-        );
-        return;
-      }
+      const cliVersion =
+        /Claude Code v([\w.-]+)/u.exec(clean)?.[1] ?? "unknown";
       resolve({ cliVersion, exitCode, output });
+    };
+
+    const ask = () => {
+      if (stage !== "boot") return;
+      stage = "asked";
+      setTimeout(() => terminal.write("/usage\r"), 400);
     };
 
     terminal.onData((data) => {
       output += data;
-      if (/\blimit\b[\s\S]*\bResets\b/iu.test(stripAnsi(output))) {
+      // Cursor-positioned redraws drop the spaces, so markers are matched
+      // against a whitespace-free copy of the screen.
+      const compact = stripAnsi(output).replace(/\s+/gu, "");
+      if (stage === "boot") {
+        if (/Notnow|trustthisfolder/iu.test(compact)) {
+          terminal.write("2\r");
+          setTimeout(ask, 900);
+          return;
+        }
+        if (/forshortcuts|manualmodeon/iu.test(compact)) ask();
+      }
+      if (stage === "asked" && /%used/u.test(compact)) {
+        stage = "done";
         if (quietTimer) clearTimeout(quietTimer);
-        quietTimer = setTimeout(() => finish(0), 250);
+        quietTimer = setTimeout(() => finish(0), 600);
       }
     });
     terminal.onExit(({ exitCode }) => finish(exitCode));
-    terminal.write("/usage\r");
   });
 }
 
-function parseWindows(text: string): UsageWindow[] {
+// The /usage screen is redrawn with cursor moves, so the PTY stream loses
+// its spaces ("91% used" arrives as "91%used"). Matching a compacted copy is
+// what makes this parseable at all.
+export function parseWindows(text: string): UsageWindow[] {
+  const compact = text.replace(/\s+/gu, "");
   const pattern =
-    /(?:^|\n)(5-hour|Weekly) limit\s*\n\s*(\d+(?:\.\d+)?)% used\s*\n\s*Resets ([^\n]+)/giu;
-  return [...text.matchAll(pattern)].map((match) => {
-    const used = Number(match[2]);
-    const resetText = match[3]?.trim() ?? "";
-    const reset = Date.parse(resetText);
-    const weekly = match[1]?.toLowerCase() === "weekly";
-    return {
+    /Current(session|week)(?:\(([^)]{0,40})\))?[^%]{0,400}?(\d{1,3})%used(?:Resets([A-Za-z0-9:,]{0,30}))?/giu;
+  const seen = new Set<string>();
+  const windows: UsageWindow[] = [];
+  for (const match of compact.matchAll(pattern)) {
+    const weekly = match[1].toLowerCase() === "week";
+    const rawGroup = match[2] ?? "";
+    const allModels = /allmodels/iu.test(rawGroup) || rawGroup === "";
+    const modelGroup = weekly && !allModels ? rawGroup : null;
+    const used = Number(match[3]);
+    const key = `${weekly ? "weekly" : "session"}:${modelGroup ?? "all"}`;
+    if (seen.has(key) || !Number.isFinite(used)) continue;
+    seen.add(key);
+    windows.push({
       durationMinutes: weekly ? 10_080 : 300,
       kind: weekly ? "weekly" : "five_hour",
-      label: weekly ? "Semanal" : "5 horas",
-      modelGroup: null,
+      label: weekly
+        ? modelGroup
+          ? `Semanal · ${modelGroup}`
+          : "Semanal"
+        : "Sessão (5h)",
+      modelGroup,
       remainingPercent: Math.max(0, Math.min(100, 100 - used)),
-      resetsAt: Number.isNaN(reset) ? null : new Date(reset).toISOString(),
-      usedPercent: used,
-    };
-  });
+      resetsAt: parseResetStamp(match[4]),
+      usedPercent: Math.max(0, Math.min(100, used)),
+    });
+  }
+  return windows;
+}
+
+// Stamps arrive compacted ("Jul22at9:59am", "6:39pm"); anything ambiguous
+// stays null rather than inventing a date.
+function parseResetStamp(value: string | undefined): string | null {
+  if (!value) return null;
+  const now = new Date();
+  const full = /^([A-Za-z]{3})(\d{1,2})at(\d{1,2}):(\d{2})(am|pm)$/iu.exec(
+    value,
+  );
+  const timeOnly = /^(\d{1,2}):(\d{2})(am|pm)$/iu.exec(value);
+  const toHour = (hour: number, suffix: string) => {
+    const lower = suffix.toLowerCase();
+    if (lower === "pm" && hour !== 12) return hour + 12;
+    if (lower === "am" && hour === 12) return 0;
+    return hour;
+  };
+  if (full) {
+    const month = new Date(`${full[1]} 1, 2000`).getMonth();
+    if (Number.isNaN(month)) return null;
+    const date = new Date(
+      now.getFullYear(),
+      month,
+      Number(full[2]),
+      toHour(Number(full[3]), full[5]),
+      Number(full[4]),
+    );
+    return Number.isNaN(date.valueOf()) ? null : date.toISOString();
+  }
+  if (timeOnly) {
+    const date = new Date(now);
+    date.setHours(
+      toHour(Number(timeOnly[1]), timeOnly[3]),
+      Number(timeOnly[2]),
+      0,
+      0,
+    );
+    if (date.getTime() < now.getTime()) date.setDate(date.getDate() + 1);
+    return date.toISOString();
+  }
+  return null;
 }
 
 function unavailableClaude(collectedAt: string, error: string): UsageSnapshot {

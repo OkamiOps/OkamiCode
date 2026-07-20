@@ -23,7 +23,14 @@ describe("usage collectors", () => {
     });
 
     expect(parsed.source.kind).toBe("native_presentational");
-    expect(parsed.windows[0]?.remainingPercent).toBe(83);
+    // Real /usage screens report session, weekly and per-model windows.
+    expect(
+      parsed.windows.map((entry) => [entry.label, entry.usedPercent]),
+    ).toEqual([
+      ["Sessão (5h)", 29],
+      ["Semanal", 53],
+      ["Semanal · Fable", 91],
+    ]);
     expect(parsed.sessionContext).toMatchObject({
       freshness: "live",
       usedPercent: 38,
@@ -117,6 +124,9 @@ describe("usage collectors", () => {
       kill: vi.fn(),
       onData(listener: (data: string) => void) {
         emitData = listener;
+        // The real CLI paints a prompt before accepting a slash command;
+        // the scraper waits for it instead of writing blindly.
+        queueMicrotask(() => listener("⏸ manual mode on · ? for shortcuts"));
         return { dispose: vi.fn() };
       },
       onExit(listener: (event: { exitCode: number; signal: number }) => void) {
@@ -135,7 +145,7 @@ describe("usage collectors", () => {
     const result = await runClaudeUsageScreen({
       command: "claude-stub",
       spawnPty,
-      timeoutMs: 1_000,
+      timeoutMs: 4_000,
     });
 
     expect(spawnPty).toHaveBeenCalledWith(
@@ -201,7 +211,7 @@ describe("usage snapshots", () => {
     repository.save(snapshot);
     repository.save(snapshot);
 
-    expect(repository.readLatest()[0]?.windows).toHaveLength(2);
+    expect(repository.readLatest()[0]?.windows).toHaveLength(3);
   });
 });
 
