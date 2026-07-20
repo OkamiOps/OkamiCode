@@ -1,5 +1,5 @@
 import { useQuery } from "@tanstack/react-query";
-import { Cog, ShieldCheck, Wrench } from "lucide-react";
+import { Cable, Cog, ShieldCheck, Wrench } from "lucide-react";
 import { workbenchClient } from "../../lib/ipc/client";
 import { useWorkbenchStore } from "../workbench/store";
 
@@ -10,6 +10,13 @@ const PERMISSION_LABELS: Record<string, string> = {
   auto: "Automático",
   bypassPermissions: "Ignorar permissões",
 };
+
+const INTEGRATION_LABELS = {
+  ready: "Integração pronta",
+  needs_adapter: "Integração pendente",
+  update_required: "Atualização necessária",
+  unavailable: "Sem integração",
+} as const;
 
 // Settings the app can state truthfully: what this conversation runs with,
 // and what the CLIs have configured on this machine.
@@ -71,6 +78,58 @@ export function SettingsPage() {
             ))}
           </dl>
         )}
+      </section>
+
+      <section className="eco-card eco-clients">
+        <h2>
+          <Cable aria-hidden="true" size={15} />
+          Clientes e capacidades
+        </h2>
+        <p className="eco-empty">
+          Instalado significa que o CLI foi encontrado neste computador.
+          Integrado significa que o Workbench já possui um adapter para usá-lo.
+        </p>
+        <ul className="eco-list eco-clients__list">
+          {(doctor.data?.clients ?? []).map((client) => {
+            const found = client.integrationStatus !== "unavailable";
+            return (
+              <li key={client.client} className="eco-clients__client">
+                <div className="eco-clients__summary">
+                  <span
+                    className={`eco-clients__presence eco-clients__presence--${found ? "found" : "missing"}`}
+                  >
+                    {found ? "CLI encontrado" : "CLI ausente"}
+                  </span>
+                  <span className="eco-list__main">
+                    <strong>{client.label}</strong>
+                    <small className="eco-clients__meta">
+                      {client.version ?? "versão indisponível"}
+                      {client.binaryPath ? ` · ${client.binaryPath}` : ""}
+                    </small>
+                  </span>
+                  <span
+                    className={`eco-clients__integration eco-clients__integration--${client.integrationStatus}`}
+                  >
+                    {INTEGRATION_LABELS[client.integrationStatus]}
+                  </span>
+                </div>
+                <p className="eco-clients__detail">{client.detail}</p>
+                {client.capabilities.length > 0 && (
+                  <div
+                    aria-label={`Capacidades do ${client.label}`}
+                    className="eco-clients__capabilities"
+                  >
+                    {client.capabilities.map((capability) => (
+                      <span className="eco-tag eco-tag--muted" key={capability}>
+                        {capability}
+                      </span>
+                    ))}
+                  </div>
+                )}
+              </li>
+            );
+          })}
+        </ul>
       </section>
 
       <section className="eco-card">

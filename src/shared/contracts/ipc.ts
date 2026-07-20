@@ -25,10 +25,52 @@ export const runtimeHealthSchema = z
   })
   .strict();
 
+export const cliCapabilitySchema = z
+  .object({
+    client: z.enum(["codex", "claude", "cursor", "agy"]),
+    label: z.string().min(1),
+    binaryPath: z.string().min(1).nullable(),
+    version: z.string().min(1).nullable(),
+    role: z.enum(["runtime", "launcher"]),
+    integrationStatus: z.enum([
+      "ready",
+      "needs_adapter",
+      "update_required",
+      "unavailable",
+    ]),
+    detail: z.string().min(1),
+    capabilities: z.array(
+      z.enum([
+        "sessions",
+        "models",
+        "effort",
+        "approvals",
+        "sandbox",
+        "mcp",
+        "hooks",
+        "subagents",
+        "background",
+        "git",
+        "worktrees",
+        "usage",
+        "automations",
+        "structured_output",
+        "app_server",
+        "checkpoints",
+        "browser",
+        "skills",
+        "launcher",
+        "plugins",
+      ]),
+    ),
+  })
+  .strict();
+
 export const systemDoctorSchema = z
   .object({
     database: z.literal("ok"),
     runtimes: z.array(runtimeHealthSchema),
+    clients: z.array(cliCapabilitySchema),
   })
   .strict();
 

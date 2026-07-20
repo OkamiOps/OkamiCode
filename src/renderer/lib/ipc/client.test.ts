@@ -52,11 +52,12 @@ const handlerModule = (await vi.importActual("../../../main/ipc/handlers")) as {
     };
     rendererUrl: string;
     state: TestAppState;
+    clientCapabilities?: () => Promise<unknown[]>;
   }): void;
 };
 const { registerIpcHandlers } = handlerModule;
 
-function ipcHarness(state: TestAppState) {
+function ipcHarness(state: TestAppState, clientCapabilities = async () => []) {
   const handlers = new Map<IpcChannel, RegisteredHandler>();
   registerIpcHandlers({
     ipcMain: {
@@ -66,6 +67,7 @@ function ipcHarness(state: TestAppState) {
     },
     rendererUrl: "http://127.0.0.1:5173/index.html",
     state,
+    clientCapabilities,
   });
   return handlers;
 }
@@ -103,15 +105,20 @@ function stateFixture(overrides: Partial<TestAppState> = {}): TestAppState {
 }
 
 beforeEach(() =>
-  installOkamiMock({ systemDoctor: { database: "ok", runtimes: [] } }),
+  installOkamiMock({
+    systemDoctor: { database: "ok", runtimes: [], clients: [] },
+  }),
 );
 
 it("validates responses before returning them", async () => {
   await expect(workbenchClient.systemDoctor()).resolves.toEqual({
     database: "ok",
     runtimes: [],
+    clients: [],
   });
-  installOkamiMock({ systemDoctor: { database: 42, runtimes: [] } });
+  installOkamiMock({
+    systemDoctor: { database: 42, runtimes: [], clients: [] },
+  });
   await expect(workbenchClient.systemDoctor()).rejects.toThrow(/database/);
 });
 
@@ -315,6 +322,7 @@ it("runs doctor and task handlers through real state dependencies", async () => 
         detail: null,
       },
     ],
+    clients: [],
   });
   await expect(
     handlers.get("task:create")?.(trustedEvent(), {

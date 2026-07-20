@@ -2967,6 +2967,67 @@ textarea:focus-visible {
   white-space: nowrap;
 }
 
+.eco-clients__list {
+  margin-top: 10px;
+}
+
+.eco-list li.eco-clients__client {
+  display: block;
+  padding: 11px 2px;
+}
+
+.eco-clients__summary {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  min-width: 0;
+}
+
+.eco-clients__presence,
+.eco-clients__integration {
+  border-radius: 999px;
+  font-size: 10.5px;
+  line-height: 1.25;
+  padding: 3px 7px;
+  white-space: nowrap;
+}
+
+.eco-clients__presence--found,
+.eco-clients__integration--ready {
+  background: rgba(104, 221, 235, 0.1);
+  color: var(--chat-cyan);
+}
+
+.eco-clients__presence--missing,
+.eco-clients__integration--unavailable {
+  background: rgba(255, 255, 255, 0.05);
+  color: var(--chat-text-dim);
+}
+
+.eco-clients__integration--needs_adapter,
+.eco-clients__integration--update_required {
+  background: rgba(224, 169, 79, 0.12);
+  color: #e0a94f;
+}
+
+.eco-clients__meta {
+  white-space: normal;
+  overflow-wrap: anywhere;
+}
+
+.eco-clients__detail {
+  margin: 7px 0 0 0;
+  font-size: 11px;
+  color: var(--chat-text-dim);
+}
+
+.eco-clients__capabilities {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 5px;
+  margin-top: 8px;
+}
+
 .eco-tag {
   font-size: 10.5px;
   color: var(--chat-cyan);

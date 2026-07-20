@@ -42,6 +42,10 @@ import {
 } from "../ecosystem/readers";
 
 import type { ModelCatalogEntry } from "../runtime/model-catalog";
+import {
+  createCliCapabilityDetector,
+  type CliCapability,
+} from "../ecosystem/cli-capabilities";
 
 export type { ModelCatalogEntry };
 
@@ -51,6 +55,7 @@ interface RegisterIpcHandlersOptions {
   state: AppState;
   modelCatalog?: () => ModelCatalogEntry[];
   laneEffort?: Map<string, string>;
+  clientCapabilities?: () => Promise<CliCapability[]>;
 }
 
 interface TaskRow {
@@ -72,6 +77,7 @@ export function registerIpcHandlers({
   state,
   modelCatalog = () => [],
   laneEffort = new Map<string, string>(),
+  clientCapabilities = createCliCapabilityDetector(),
 }: RegisterIpcHandlersOptions): void {
   const openedLanes = new Map<string, OpenedLane>();
   let quickChat: QuickChatService | undefined;
@@ -105,6 +111,7 @@ export function registerIpcHandlers({
         usageService,
         modelCatalog,
         laneEffort,
+        clientCapabilities,
       );
       return ipcResponseSchemas[channel].parse(response);
     });
@@ -121,10 +128,11 @@ async function dispatch(
   usageService: () => UsageCommands,
   modelCatalog: () => ModelCatalogEntry[],
   laneEffort: Map<string, string>,
+  clientCapabilities: () => Promise<CliCapability[]>,
 ): Promise<unknown> {
   switch (channel) {
     case "system:doctor":
-      return systemDoctor(state);
+      return systemDoctor(state, clientCapabilities);
     case "models:list":
       return modelCatalog();
     case "task:create":
@@ -308,7 +316,10 @@ function listLanes(state: AppState, request: IpcRequest<"lane:list">) {
   return state.laneService.list(request.taskId);
 }
 
-async function systemDoctor(state: AppState) {
+async function systemDoctor(
+  state: AppState,
+  clientCapabilities: () => Promise<CliCapability[]>,
+) {
   state.database.prepare("SELECT 1 AS healthy").get();
   const runtimes = await Promise.all(
     runtimeKinds.map(async (runtime) => {
@@ -324,7 +335,11 @@ async function systemDoctor(state: AppState) {
       return runtimeProjection(runtime, await adapter.detect());
     }),
   );
-  return { database: "ok" as const, runtimes };
+  return {
+    database: "ok" as const,
+    runtimes,
+    clients: await clientCapabilities(),
+  };
 }
 
 function runtimeProjection(runtime: RuntimeKind, health: RuntimeHealth) {
