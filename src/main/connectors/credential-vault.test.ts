@@ -184,6 +184,42 @@ describe("ConnectorCredentialVault", () => {
     );
   });
 
+  it("rejects encrypted blobs copied between accounts without leaking credentials", async () => {
+    const { directory, vault } = await createVault();
+    const sourceAccount = "source-account";
+    const targetAccount = "target-account";
+    await vault.set(sourceAccount, {
+      version: 1,
+      kind: "imap_password",
+      username: "source-user@example.com",
+      password: "source-password",
+    });
+    await vault.set(targetAccount, {
+      version: 1,
+      kind: "oauth",
+      username: "target-user@example.com",
+      accessToken: "target-access-token",
+    });
+    const sourcePath = path.join(
+      directory,
+      `${createHash("sha256").update(sourceAccount).digest("hex")}.enc`,
+    );
+    const targetPath = path.join(
+      directory,
+      `${createHash("sha256").update(targetAccount).digest("hex")}.enc`,
+    );
+    await writeFile(targetPath, await readFile(sourcePath), { mode: 0o600 });
+
+    const error = await vault
+      .get(targetAccount)
+      .catch((reason: unknown) => reason);
+    expect(error).toBeInstanceOf(Error);
+    expect((error as Error).message).toMatch(/get .*\b[a-f0-9]{12}\b/i);
+    expect((error as Error).message).not.toMatch(
+      /source-user|source-password|target-user|target-access-token/i,
+    );
+  });
+
   it("does not touch storage when encryption is unavailable", async () => {
     const safeStorage = new FakeSafeStorage();
     safeStorage.available = false;

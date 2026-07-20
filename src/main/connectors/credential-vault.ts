@@ -49,7 +49,11 @@ export class ConnectorCredentialVault {
       const destination = this.destinationFor(accountId);
       const validated = validateCredential(credential);
       const encrypted = this.safeStorage.encryptString(
-        JSON.stringify(validated),
+        JSON.stringify({
+          version: 1,
+          accountBinding: hashAccountId(accountId),
+          credential: validated,
+        }),
       );
       await this.writeAtomically(destination, encrypted);
     } catch {
@@ -69,8 +73,9 @@ export class ConnectorCredentialVault {
         if (isNotFound(error)) return null;
         throw error;
       }
-      const credential = validateCredential(
+      const credential = validateEnvelope(
         JSON.parse(this.safeStorage.decryptString(encrypted)),
+        hashAccountId(accountId),
       );
       return { ...credential };
     } catch {
@@ -184,6 +189,17 @@ function validateCredential(value: unknown): ConnectorCredential {
     };
   }
   throw new Error("invalid");
+}
+
+function validateEnvelope(
+  value: unknown,
+  expectedAccountBinding: string,
+): ConnectorCredential {
+  if (!isPlainRecord(value) || value.version !== 1) throw new Error("invalid");
+  assertExactKeys(value, ["version", "accountBinding", "credential"]);
+  if (value.accountBinding !== expectedAccountBinding)
+    throw new Error("invalid");
+  return validateCredential(value.credential);
 }
 
 function assertExactKeys(
