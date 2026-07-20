@@ -156,93 +156,103 @@ export class ImapSyncAdapter {
 
     let lock: { release(): void } | undefined;
     let primaryFailed = false;
+    let result: ApplyInboxSyncBatch | undefined;
     try {
       await client.connect();
       lock = await client.getMailboxLock(configuration.mailbox, {
         readOnly: true,
       });
-      const mailbox = validMailbox(client.mailbox);
-      const uidValidity = String(mailbox.uidValidity);
-      const reset = !cursor || cursor.uidValidity !== uidValidity;
-      const lastUid = reset ? 0 : cursor!.lastUid;
-      const nextCursor = (value: number) =>
-        JSON.stringify({ version: 1, uidValidity, lastUid: value });
-
-      if (mailbox.exists === 0) {
-        return emptyBatch(input.account, nextCursor(0), this.clock());
-      }
-      if (!reset && lastUid >= mailbox.uidNext - 1) {
-        return emptyBatch(input.account, nextCursor(lastUid), this.clock());
-      }
-
-      const startUid = reset
-        ? Math.max(1, mailbox.uidNext - configuration.maxInitialMessages)
-        : lastUid + 1;
-      const metadata = await client.fetchAll(
-        `${startUid}:*`,
-        {
-          uid: true,
-          flags: true,
-          envelope: true,
-          bodyStructure: true,
-          internalDate: true,
-          size: true,
-          threadId: true,
-          labels: true,
-        },
-        { uid: true },
-      );
-      const sorted = metadata
-        .filter((item) => Number.isInteger(item.uid) && item.uid > 0)
-        .sort((a, b) => a.uid - b.uid);
-      const messages: SyncMessage[] = [];
-      const threadInputs: ThreadInput[] = [];
-      for (const item of sorted) {
-        const download = await client.download(String(item.uid), undefined, {
-          uid: true,
-          maxBytes: configuration.maxMessageBytes,
-        });
-        const parsed = await simpleParser(
-          await collectLimited(download.content, configuration.maxMessageBytes),
-        );
-        const normalized = normalizeMessage(
-          input.account,
-          item,
-          parsed,
-          uidValidity,
-        );
-        messages.push(normalized.message);
-        threadInputs.push(normalized.thread);
-      }
-      const maxUid = sorted.reduce(
-        (highest, item) => Math.max(highest, item.uid),
-        lastUid,
-      );
-      return {
-        accountId: input.account.id,
-        previousCursor: input.account.syncCursor,
-        nextCursor: nextCursor(maxUid),
-        threads: groupThreads(threadInputs),
-        messages,
-        syncedAt: this.clock().toISOString(),
-      };
+      result = await this.readBatch(input, configuration, cursor, client);
     } catch {
       primaryFailed = true;
-      throw new ImapSyncError();
-    } finally {
-      let cleanupFailed = false;
-      try {
-        lock?.release();
-      } catch {
-        cleanupFailed = true;
-      }
-      try {
-        await client.logout();
-      } catch {
-        cleanupFailed = true;
-      }
-      if (!primaryFailed && cleanupFailed) throw new ImapSyncError();
     }
+
+    let cleanupFailed = false;
+    try {
+      lock?.release();
+    } catch {
+      cleanupFailed = true;
+    }
+    try {
+      await client.logout();
+    } catch {
+      cleanupFailed = true;
+    }
+    if (primaryFailed || cleanupFailed || !result) throw new ImapSyncError();
+    return result;
+  }
+
+  private async readBatch(
+    input: ImapSyncInput,
+    configuration: ValidatedConfiguration,
+    cursor: Cursor | null,
+    client: ImapClient,
+  ): Promise<ApplyInboxSyncBatch> {
+    const mailbox = validMailbox(client.mailbox);
+    const uidValidity = String(mailbox.uidValidity);
+    const reset = !cursor || cursor.uidValidity !== uidValidity;
+    const lastUid = reset ? 0 : cursor.lastUid;
+    const nextCursor = (value: number) =>
+      JSON.stringify({ version: 1, uidValidity, lastUid: value });
+
+    if (mailbox.exists === 0) {
+      return emptyBatch(input.account, nextCursor(0), this.clock());
+    }
+    if (!reset && lastUid >= mailbox.uidNext - 1) {
+      return emptyBatch(input.account, nextCursor(lastUid), this.clock());
+    }
+
+    const startUid = reset
+      ? Math.max(1, mailbox.uidNext - configuration.maxInitialMessages)
+      : lastUid + 1;
+    const metadata = await client.fetchAll(
+      `${startUid}:*`,
+      {
+        uid: true,
+        flags: true,
+        envelope: true,
+        bodyStructure: true,
+        internalDate: true,
+        size: true,
+        threadId: true,
+        labels: true,
+      },
+      { uid: true },
+    );
+    const sorted = metadata
+      .filter((item) => Number.isInteger(item.uid) && item.uid > 0)
+      .sort((a, b) => a.uid - b.uid);
+    const messages: SyncMessage[] = [];
+    const threadInputs: ThreadInput[] = [];
+    for (const item of sorted) {
+      const download = await client.download(String(item.uid), undefined, {
+        uid: true,
+        maxBytes: configuration.maxMessageBytes,
+      });
+      const parsed = await simpleParser(
+        await collectLimited(download.content, configuration.maxMessageBytes),
+      );
+      const normalized = normalizeMessage(
+        input.account,
+        item,
+        parsed,
+        uidValidity,
+      );
+      messages.push(normalized.message);
+      threadInputs.push(normalized.thread);
+    }
+    const maxUid = sorted.reduce(
+      (highest, item) => Math.max(highest, item.uid),
+      lastUid,
+    );
+    return {
+      accountId: input.account.id,
+      previousCursor: input.account.syncCursor,
+      nextCursor: nextCursor(maxUid),
+      threads: groupThreads(threadInputs),
+      messages,
+      syncedAt: this.clock().toISOString(),
+    };
   }
 }
 
