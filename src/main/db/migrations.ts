@@ -10,6 +10,7 @@ const MIGRATIONS = [
   "schema/005-close-orphan-runs.sql",
   "schema/006-lane-permission-mode.sql",
   "schema/007-kanban-cards.sql",
+  "schema/008-external-outbox.sql",
 ];
 
 export function runMigrations(db: InstanceType<typeof SqliteDatabase>): void {
