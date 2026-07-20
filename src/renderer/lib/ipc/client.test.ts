@@ -143,6 +143,7 @@ it("exposes exactly the enumerated command surface", () => {
     "eco:memoryRead",
     "eco:memoryWrite",
     "eco:settings",
+    "eco:agents",
     "task:list",
     "lane:list",
     "conversation:history",

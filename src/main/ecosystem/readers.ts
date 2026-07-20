@@ -144,6 +144,59 @@ export function readSkills(limit = 200): SkillInfo[] {
   return skills;
 }
 
+export interface AgentInfo {
+  name: string;
+  description: string;
+  source: string;
+  model?: string;
+  tools?: string;
+}
+
+// Agents ship inside plugin marketplaces and project folders; both are read
+// from their own definition files so the list matches what the CLI loads.
+export function readAgents(workspacePath?: string | null): AgentInfo[] {
+  const roots: Array<{ dir: string; source: string }> = [
+    { dir: path.join(homedir(), ".claude", "agents"), source: "usuário" },
+    {
+      dir: path.join(homedir(), ".claude", "plugins", "marketplaces"),
+      source: "plugin",
+    },
+  ];
+  if (workspacePath) {
+    roots.push({
+      dir: path.join(workspacePath, ".claude", "agents"),
+      source: "projeto",
+    });
+  }
+  const agents = new Map<string, AgentInfo>();
+  const visit = (dir: string, source: string, depth: number): void => {
+    if (depth > 6 || !existsSync(dir)) return;
+    for (const entry of readdirSync(dir, { withFileTypes: true })) {
+      const full = path.join(dir, entry.name);
+      if (entry.isDirectory()) {
+        visit(full, source, depth + 1);
+        continue;
+      }
+      if (!entry.name.endsWith(".md")) continue;
+      if (!dir.endsWith(`${path.sep}agents`)) continue;
+      const text = readFileSync(full, "utf8").slice(0, 6000);
+      const name = frontmatterField(text, "name") ?? entry.name.slice(0, -3);
+      if (agents.has(name)) continue;
+      agents.set(name, {
+        name,
+        description: frontmatterField(text, "description") ?? "",
+        source,
+        model: frontmatterField(text, "model"),
+        tools: frontmatterField(text, "tools"),
+      });
+    }
+  };
+  for (const root of roots) visit(root.dir, root.source, 0);
+  return [...agents.values()].sort((left, right) =>
+    left.name.localeCompare(right.name),
+  );
+}
+
 export function readMemoryFiles(
   workspacePath?: string | null,
 ): MemoryFileInfo[] {

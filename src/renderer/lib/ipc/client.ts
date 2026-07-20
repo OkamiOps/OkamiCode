@@ -88,6 +88,8 @@ export const workbenchClient = {
   ecoMemoryWrite: (request: IpcRequest<"eco:memoryWrite">) =>
     invokeCommand("eco:memoryWrite", request),
   ecoSettings: () => invokeCommand("eco:settings", {}),
+  ecoAgents: (request: IpcRequest<"eco:agents">) =>
+    invokeCommand("eco:agents", request),
   workspacePick: () => invokeCommand("workspace:pick", {}),
   conversationHistory: (request: IpcRequest<"conversation:history">) =>
     invokeCommand("conversation:history", request),

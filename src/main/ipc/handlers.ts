@@ -32,6 +32,7 @@ import type { RunHandle, RuntimeHealth } from "../runtime/adapter";
 import { createUsageCommands, type UsageCommands } from "../usage/service";
 import type { AppState } from "./app-state";
 import {
+  readAgents,
   readCliSettings,
   readMcpServers,
   readMemoryFile,
@@ -199,6 +200,10 @@ async function dispatch(
     }
     case "eco:settings":
       return readCliSettings();
+    case "eco:agents":
+      return readAgents(
+        (request as IpcRequest<"eco:agents">).workspacePath ?? null,
+      );
     case "conversation:export":
       return exportConversation(
         state,

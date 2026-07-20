@@ -193,6 +193,18 @@ export const memoryWriteRequestSchema = z
 
 export const memoryWriteSchema = z.object({ ok: z.literal(true) }).strict();
 
+export const agentsSchema = z.array(
+  z
+    .object({
+      name: z.string().min(1),
+      description: z.string(),
+      source: z.string().min(1),
+      model: z.string().optional(),
+      tools: z.string().optional(),
+    })
+    .strict(),
+);
+
 export const cliSettingsSchema = z.array(
   z
     .object({
@@ -636,6 +648,7 @@ export const ipcRequestSchemas = {
   "eco:memoryRead": memoryReadRequestSchema,
   "eco:memoryWrite": memoryWriteRequestSchema,
   "eco:settings": emptyRequestSchema,
+  "eco:agents": workspaceScopedRequestSchema,
   "task:list": emptyRequestSchema,
   "lane:list": laneListRequestSchema,
   "conversation:history": conversationHistoryRequestSchema,
@@ -680,6 +693,7 @@ export const ipcResponseSchemas = {
   "eco:memoryRead": memoryReadSchema,
   "eco:memoryWrite": memoryWriteSchema,
   "eco:settings": cliSettingsSchema,
+  "eco:agents": agentsSchema,
   "task:list": taskListSchema,
   "lane:list": laneListSchema,
   "conversation:history": conversationHistorySchema,

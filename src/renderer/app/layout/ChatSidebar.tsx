@@ -1,7 +1,9 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import {
+  Bot,
   ChevronDown,
   Cog,
+  FolderGit2,
   Gauge,
   Link2,
   Pencil,
@@ -9,6 +11,7 @@ import {
   Plus,
   Search,
   Trash2,
+  Zap,
 } from "lucide-react";
 import { useState, type KeyboardEvent } from "react";
 import { NavLink, useNavigate } from "react-router-dom";
@@ -245,6 +248,18 @@ export function ChatSidebar() {
         <NavLink className="chat-footer-link" to="/memory">
           <Link2 aria-hidden="true" size={15} />
           Memória
+        </NavLink>
+        <NavLink className="chat-footer-link" to="/management">
+          <FolderGit2 aria-hidden="true" size={15} />
+          Gestão
+        </NavLink>
+        <NavLink className="chat-footer-link" to="/models">
+          <Zap aria-hidden="true" size={15} />
+          Modelos
+        </NavLink>
+        <NavLink className="chat-footer-link" to="/agents">
+          <Bot aria-hidden="true" size={15} />
+          Agentes
         </NavLink>
         <NavLink className="chat-footer-link" to="/settings">
           <Cog aria-hidden="true" size={15} />

@@ -26,6 +26,7 @@ export const ipcChannels = [
   "eco:memoryRead",
   "eco:memoryWrite",
   "eco:settings",
+  "eco:agents",
   "task:list",
   "lane:list",
   "conversation:history",

@@ -1,6 +1,9 @@
 import { Navigate, Route, Routes } from "react-router-dom";
 import { QuickChatPage } from "../features/quick-chat/QuickChatPage";
+import { AgentsPage } from "../features/ecosystem/AgentsPage";
 import { ConnectionsPage } from "../features/ecosystem/ConnectionsPage";
+import { ManagementPage } from "../features/ecosystem/ManagementPage";
+import { ModelsPage } from "../features/ecosystem/ModelsPage";
 import { MemoryPage } from "../features/ecosystem/MemoryPage";
 import { SettingsPage } from "../features/ecosystem/SettingsPage";
 import { UsagePage } from "../features/usage/UsagePage";
@@ -17,6 +20,9 @@ export function AppRouter() {
         <Route path="/memory" element={<MemoryPage />} />
         <Route path="/connections" element={<ConnectionsPage />} />
         <Route path="/settings" element={<SettingsPage />} />
+        <Route path="/agents" element={<AgentsPage />} />
+        <Route path="/models" element={<ModelsPage />} />
+        <Route path="/management" element={<ManagementPage />} />
       </Route>
       <Route path="*" element={<Navigate to="/workbench" replace />} />
     </Routes>
