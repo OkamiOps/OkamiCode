@@ -14,8 +14,11 @@ import { LeaseRepository, type CapabilityLease } from "./policy/lease";
 import { RepositoryApprovalBroker } from "./runtime/codex/adapter";
 import { createModelCatalogService } from "./runtime/model-catalog";
 import { createRuntimeRegistry } from "./runtime/registry";
+import { RuntimeSupervisor } from "./runtime/supervisor";
 import { getOrCreateDatabaseKey } from "./secrets";
 import { MemoryService } from "./memory/indexer";
+import { StartupRecovery } from "./orchestration/recovery";
+import { AuditRepository } from "./db/repositories/audit";
 import { secureWebPreferences } from "./window";
 import type { Capability } from "./policy/action";
 import type { TaskId } from "../shared/ids";
@@ -221,6 +224,21 @@ async function bootstrap(): Promise<void> {
     },
   });
   box.state = state;
+  const recovery = new StartupRecovery({
+    db: database,
+    runs: state.runs,
+    approvals: state.approvals,
+    audit: new AuditRepository(database),
+    // A freshly booted process cannot own children from the previous process.
+    // Keeping the supervisor explicit preserves the ownership boundary when
+    // adapters are routed through it in a later runtime lifecycle pass.
+    supervisor: new RuntimeSupervisor(),
+    createId: state.createId,
+    clock: state.clock,
+  }).reconcileStartup();
+  if (recovery.interruptedRuns > 0) {
+    console.warn("[okami] recovered interrupted runs", recovery);
+  }
   // Repairs an earlier seed that used an invalid Claude model id.
   database
     .prepare(

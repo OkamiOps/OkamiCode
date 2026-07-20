@@ -9,10 +9,12 @@ const electronMocks = vi.hoisted(() => ({
   invoke: vi.fn(async () => undefined),
   on: vi.fn(),
   removeListener: vi.fn(),
+  showSaveDialog: vi.fn(),
 }));
 
 vi.mock("electron", () => ({
   contextBridge: { exposeInMainWorld: electronMocks.expose },
+  dialog: { showSaveDialog: electronMocks.showSaveDialog },
   ipcRenderer: {
     invoke: electronMocks.invoke,
     on: electronMocks.on,
@@ -145,6 +147,7 @@ it("exposes exactly the enumerated command surface", () => {
     "task:archive",
     "task:fork",
     "conversation:export",
+    "audit:export",
     "eco:mcp",
     "eco:skills",
     "eco:memoryList",

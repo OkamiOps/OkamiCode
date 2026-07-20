@@ -493,6 +493,13 @@ export function WorkbenchPage({ api = workbenchApi }: WorkbenchPageProps) {
               taskId: effectiveTaskId,
             });
           }}
+          onExportAudit={() => {
+            if (!effectiveTaskId || !selectedLane) return;
+            void workbenchClient.auditExport({
+              taskId: effectiveTaskId,
+              laneId: selectedLane.laneId,
+            });
+          }}
           onFork={() => {
             if (!effectiveTaskId) return;
             void workbenchClient

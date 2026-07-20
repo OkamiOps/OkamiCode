@@ -81,6 +81,8 @@ export const workbenchClient = {
     invokeCommand("task:fork", request),
   conversationExport: (request: IpcRequest<"conversation:export">) =>
     invokeCommand("conversation:export", request),
+  auditExport: (request: IpcRequest<"audit:export">) =>
+    invokeCommand("audit:export", request),
   ecoMcp: (request: IpcRequest<"eco:mcp">) => invokeCommand("eco:mcp", request),
   ecoSkills: () => invokeCommand("eco:skills", {}),
   ecoMemoryList: (request: IpcRequest<"eco:memoryList">) =>

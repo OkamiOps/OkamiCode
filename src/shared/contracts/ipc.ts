@@ -435,6 +435,17 @@ export const conversationExportSchema = z
   .object({ path: z.string().min(1).nullable() })
   .strict();
 
+export const auditExportRequestSchema = z
+  .object({ taskId: entityIdSchema, laneId: entityIdSchema })
+  .strict();
+
+export const auditExportSchema = z
+  .object({
+    path: z.string().min(1).nullable(),
+    entryCount: z.number().int().nonnegative(),
+  })
+  .strict();
+
 export const runListRequestSchema = z
   .object({ taskId: entityIdSchema.optional() })
   .strict();
@@ -837,6 +848,7 @@ export const ipcRequestSchemas = {
   "task:archive": taskArchiveRequestSchema,
   "task:fork": taskForkRequestSchema,
   "conversation:export": conversationExportRequestSchema,
+  "audit:export": auditExportRequestSchema,
   "eco:mcp": workspaceScopedRequestSchema,
   "eco:skills": emptyRequestSchema,
   "eco:memoryList": workspaceScopedRequestSchema,
@@ -884,6 +896,7 @@ export const ipcResponseSchemas = {
   "task:archive": taskSchema,
   "task:fork": taskSchema,
   "conversation:export": conversationExportSchema,
+  "audit:export": auditExportSchema,
   "eco:mcp": mcpServersSchema,
   "eco:skills": skillsSchema,
   "eco:memoryList": memoryListSchema,

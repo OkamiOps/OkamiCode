@@ -4,6 +4,7 @@ import { execFileSync } from "node:child_process";
 import { homedir } from "node:os";
 import {
   existsSync,
+  appendFileSync,
   mkdirSync,
   readdirSync,
   readFileSync,
@@ -25,6 +26,7 @@ import {
 import type { RuntimeKind } from "../../shared/contracts/lane";
 import type { RunId } from "../../shared/ids";
 import { AuditRepository } from "../db/repositories/audit";
+import { exportAuditRepository } from "../audit/export";
 import type { TaskRecord } from "../db/repositories/tasks";
 import type { OpenedLane } from "../orchestration/lane-service";
 import { QuickChatService } from "../orchestration/quick-chat";
@@ -47,6 +49,12 @@ import {
   createCliCapabilityDetector,
   type CliCapability,
 } from "../ecosystem/cli-capabilities";
+import {
+  actorsMatch,
+  budgetExceeded,
+  LeaseRepository,
+  resourceMatches,
+} from "../policy/lease";
 
 export type { ModelCatalogEntry };
 
@@ -228,6 +236,8 @@ async function dispatch(
         state,
         request as IpcRequest<"conversation:export">,
       );
+    case "audit:export":
+      return exportAuditLog(state, request as IpcRequest<"audit:export">);
     case "terminal:close": {
       const close = request as IpcRequest<"terminal:close">;
       terminals.get(close.termId)?.kill();
@@ -659,6 +669,100 @@ async function exportConversation(
   if (result.canceled || !result.filePath) return { path: null };
   writeFileSync(result.filePath, lines.join("\n"), "utf8");
   return { path: result.filePath };
+}
+
+// Selecting the destination is the human grant. The main process narrows it
+// to a short-lived, single-use lease before any audit data reaches disk.
+async function exportAuditLog(
+  state: AppState,
+  request: IpcRequest<"audit:export">,
+) {
+  const task = state.tasks.findById(request.taskId);
+  if (!task) throw new Error(`Task ${request.taskId} not found`);
+  const lane = state.lanes.findById(request.laneId);
+  if (!lane || lane.taskId !== task.id) {
+    throw new Error(`Lane ${request.laneId} does not belong to the task`);
+  }
+
+  const result = await dialog.showSaveDialog({
+    title: "Exportar auditoria",
+    defaultPath: `okami-auditoria-${state.clock().toISOString().slice(0, 10)}.jsonl`,
+    filters: [{ name: "JSON Lines", extensions: ["jsonl"] }],
+  });
+  if (result.canceled || !result.filePath) {
+    return { path: null, entryCount: 0 };
+  }
+
+  const now = state.clock();
+  const actor = { kind: "human" as const, id: "local-user" };
+  const leaseId = state.createId();
+  const leases = new LeaseRepository(state.database);
+  leases.insert({
+    id: leaseId,
+    taskId: task.id,
+    laneId: lane.id,
+    actor,
+    capability: "audit.export",
+    resourcePattern: result.filePath,
+    budget: { maxUses: 1, used: 0 },
+    issuedAt: now.toISOString(),
+    expiresAt: new Date(now.getTime() + 5 * 60_000).toISOString(),
+    revokedAt: null,
+  });
+
+  const lease = leases.findById(leaseId);
+  if (
+    !lease ||
+    !actorsMatch(lease.actor, actor) ||
+    lease.taskId !== task.id ||
+    lease.laneId !== lane.id ||
+    lease.capability !== "audit.export" ||
+    !resourceMatches(lease.resourcePattern, result.filePath) ||
+    budgetExceeded(lease.budget, 1)
+  ) {
+    throw new Error("Audit export lease was rejected");
+  }
+
+  state.database
+    .prepare(`UPDATE capability_leases SET budget_json = ? WHERE id = ?`)
+    .run(JSON.stringify({ maxUses: 1, used: 1 }), lease.id);
+
+  const audit = new AuditRepository(state.database);
+  audit.record({
+    id: state.createId(),
+    taskId: task.id,
+    laneId: lane.id,
+    runId: null,
+    actor: JSON.stringify(actor),
+    action: "audit_export_authorized",
+    decision: "allow",
+    capability: "audit.export",
+    resource: { path: result.filePath },
+    metadata: { leaseId: lease.id, maxUses: 1 },
+    occurredAt: now.toISOString(),
+  });
+
+  const filesystemPaths = (
+    state.database
+      .prepare(
+        `SELECT workspace_path AS path FROM tasks WHERE workspace_path IS NOT NULL
+         UNION SELECT root_path AS path FROM memory_sources
+         UNION SELECT scope_path AS path FROM memory_sources`,
+      )
+      .all() as Array<{ path: string }>
+  ).map(({ path }) => path);
+  filesystemPaths.push(result.filePath);
+
+  const exported = await exportAuditRepository(audit, {
+    path: result.filePath,
+    writer: {
+      append(path, contents) {
+        appendFileSync(path, contents, { encoding: "utf8", flag: "a" });
+      },
+    },
+    redaction: { filesystemPaths },
+  });
+  return { path: result.filePath, entryCount: exported.entryCount };
 }
 
 interface RunRow {

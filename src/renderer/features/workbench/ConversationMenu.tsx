@@ -7,6 +7,7 @@ import {
   ListChecks,
   MoreVertical,
   Pencil,
+  ShieldCheck,
   SquareTerminal,
   Trash2,
 } from "lucide-react";
@@ -19,6 +20,7 @@ export function ConversationMenu({
   activePanels,
   onArchive,
   onDelete,
+  onExportAudit,
   onExport,
   onFork,
   onRename,
@@ -27,6 +29,7 @@ export function ConversationMenu({
   activePanels: WorkspacePanelMode[];
   onArchive: () => void;
   onDelete: () => void;
+  onExportAudit: () => void;
   onExport: () => void;
   onFork: () => void;
   onRename: () => void;
@@ -107,6 +110,7 @@ export function ConversationMenu({
           {item("Mudar o nome", Pencil, onRename, { shortcut: "R" })}
           {item("Fork", GitBranch, onFork, { shortcut: "F" })}
           {item("Exportar", Download, onExport)}
+          {item("Exportar auditoria", ShieldCheck, onExportAudit)}
           {item("Arquivar", Archive, onArchive, { shortcut: "A" })}
           {item("Apagar", Trash2, onDelete, { danger: true, shortcut: "D" })}
         </div>

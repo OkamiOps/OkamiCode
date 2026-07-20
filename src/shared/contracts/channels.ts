@@ -21,6 +21,7 @@ export const ipcChannels = [
   "task:archive",
   "task:fork",
   "conversation:export",
+  "audit:export",
   "eco:mcp",
   "eco:skills",
   "eco:memoryList",

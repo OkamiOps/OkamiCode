@@ -87,6 +87,19 @@ export class ApprovalRepository {
 
     return this.findById(id) as ApprovalRecord;
   }
+
+  expirePendingForRuns(runIds: readonly string[], resolvedAt: string): number {
+    if (runIds.length === 0) return 0;
+    const result = this.db
+      .prepare(
+        `UPDATE approvals
+         SET status = 'expired', resolution = 'expired', resolved_at = ?
+         WHERE status = 'pending'
+           AND run_id IN (${runIds.map(() => "?").join(", ")})`,
+      )
+      .run(resolvedAt, ...runIds);
+    return result.changes;
+  }
 }
 
 function normalizeResolution(

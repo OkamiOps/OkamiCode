@@ -83,6 +83,41 @@ export class RunRepository {
       }
     })();
   }
+
+  interruptUnowned(
+    liveOwnedRunIds: readonly string[],
+    interruptedAt: string,
+  ): RunRecord[] {
+    const liveIds = [...liveOwnedRunIds];
+    const excludedRuns = liveIds.length
+      ? ` AND runs.id NOT IN (${liveIds.map(() => "?").join(", ")})`
+      : "";
+    const rows = this.db
+      .prepare(
+        `SELECT runs.*, runtime_lanes.updated_at
+         FROM runs
+         JOIN runtime_lanes ON runtime_lanes.id = runs.lane_id
+         WHERE runs.status IN ('starting', 'running', 'waiting_approval')${excludedRuns}`,
+      )
+      .all(...liveIds) as RunRow[];
+
+    const interrupt = this.db.prepare(
+      `UPDATE runs
+       SET status = 'interrupted', finished_at = ?
+       WHERE id = ? AND status IN ('starting', 'running', 'waiting_approval')`,
+    );
+    const interrupted: RunRecord[] = [];
+    for (const row of rows) {
+      if (interrupt.run(interruptedAt, row.id).changes === 1) {
+        interrupted.push({
+          ...rowToRun(row),
+          status: "interrupted",
+          finishedAt: interruptedAt,
+        });
+      }
+    }
+    return interrupted;
+  }
 }
 
 function encodeJson(value: unknown | null): string | null {
