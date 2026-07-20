@@ -86,20 +86,6 @@ export class ExternalOutboxService {
 
   createDraft(input: CreateExternalOutboxDraft): ExternalOutboxRecord {
     const payloadJson = canonicalJson(input.payload);
-    const existing = this.findByIdempotencyKey(input.idempotencyKey);
-    if (existing) {
-      if (
-        existing.connectorAccountId === input.connectorAccountId &&
-        existing.kind === input.kind &&
-        canonicalJson(existing.payload) === payloadJson &&
-        existing.requiresApproval === input.requiresApproval &&
-        existing.safeRetry === input.safeRetry
-      ) {
-        return existing;
-      }
-      throw new ExternalOutboxConflictError(input.idempotencyKey);
-    }
-
     const now = new Date().toISOString();
     const record: ExternalOutboxRecord = {
       id: randomUUID(),
@@ -117,7 +103,7 @@ export class ExternalOutboxService {
       createdAt: now,
       updatedAt: now,
     };
-    this.db
+    const inserted = this.db
       .prepare(
         `INSERT INTO external_outbox
          (id, connector_account_id, kind, payload_json, idempotency_key, status,
@@ -125,7 +111,8 @@ export class ExternalOutboxService {
           provider_receipt_json, last_error, created_at, updated_at)
          VALUES (@id, @connectorAccountId, @kind, @payloadJson, @idempotencyKey,
                  @status, @requiresApproval, @approvedAt, @safeRetry, @attempts,
-                 @providerReceiptJson, @lastError, @createdAt, @updatedAt)`,
+                 @providerReceiptJson, @lastError, @createdAt, @updatedAt)
+         ON CONFLICT(idempotency_key) DO NOTHING`,
       )
       .run({
         ...record,
@@ -134,7 +121,11 @@ export class ExternalOutboxService {
         safeRetry: boolToInteger(record.safeRetry),
         providerReceiptJson: null,
       });
-    return record;
+    if (inserted.changes === 1) return record;
+
+    const existing = this.findByIdempotencyKey(input.idempotencyKey);
+    if (existing && sameDraft(existing, input, payloadJson)) return existing;
+    throw new ExternalOutboxConflictError(input.idempotencyKey);
   }
 
   requestApproval(id: string): ExternalOutboxRecord {
@@ -161,24 +152,28 @@ export class ExternalOutboxService {
 
   claimDispatch(id: string): DispatchClaim {
     return this.db.transaction(() => {
+      const claimed = this.db
+        .prepare(
+          `UPDATE external_outbox
+           SET status = 'dispatching', attempts = attempts + 1, updated_at = ?
+           WHERE id = ?
+             AND (
+               (status = 'draft' AND requires_approval = 0)
+               OR (status = 'approval_pending' AND approved_at IS NOT NULL)
+             )`,
+        )
+        .run(new Date().toISOString(), id);
+      if (claimed.changes === 1) {
+        return { acquired: true, record: this.requireById(id) };
+      }
+
       const record = this.requireById(id);
       if (record.status === "dispatching") return { acquired: false, record };
-      const readyWithoutApproval =
-        record.status === "draft" && !record.requiresApproval;
-      const readyWithApproval =
-        record.status === "approval_pending" && record.approvedAt !== null;
-      if (!readyWithoutApproval && !readyWithApproval) {
-        throw new ExternalOutboxTransitionError(
-          id,
-          "claim dispatch",
-          record.status,
-        );
-      }
-      const claimed = this.update(id, {
-        status: "dispatching",
-        attempts: record.attempts + 1,
-      });
-      return { acquired: true, record: claimed };
+      throw new ExternalOutboxTransitionError(
+        id,
+        "claim dispatch",
+        record.status,
+      );
     })();
   }
 
@@ -262,22 +257,43 @@ export class ExternalOutboxService {
     providerReceipt: unknown | null | undefined,
     lastError: string | null,
   ): ExternalOutboxRecord {
+    const transitioned = this.db
+      .prepare(
+        `UPDATE external_outbox
+         SET status = @status,
+             provider_receipt_json = CASE
+               WHEN @setProviderReceipt = 1 THEN @providerReceiptJson
+               ELSE provider_receipt_json
+             END,
+             last_error = @lastError,
+             updated_at = @updatedAt
+         WHERE id = @id AND status = 'dispatching'`,
+      )
+      .run({
+        id,
+        status,
+        setProviderReceipt: providerReceipt === undefined ? 0 : 1,
+        providerReceiptJson:
+          providerReceipt === undefined || providerReceipt === null
+            ? null
+            : canonicalJson(providerReceipt),
+        lastError,
+        updatedAt: new Date().toISOString(),
+      });
+    if (transitioned.changes === 1) return this.requireById(id);
+
     const record = this.requireById(id);
-    if (record.status === status) {
-      const receiptMatches =
-        providerReceipt === undefined ||
-        canonicalJson(record.providerReceipt) ===
-          canonicalJson(providerReceipt);
-      if (receiptMatches && record.lastError === lastError) return record;
+    const receiptMatches =
+      providerReceipt === undefined ||
+      canonicalJson(record.providerReceipt) === canonicalJson(providerReceipt);
+    if (
+      record.status === status &&
+      receiptMatches &&
+      record.lastError === lastError
+    ) {
+      return record;
     }
-    if (record.status !== "dispatching") {
-      throw new ExternalOutboxTransitionError(id, operation, record.status);
-    }
-    return this.update(id, {
-      status,
-      ...(providerReceipt === undefined ? {} : { providerReceipt }),
-      lastError,
-    });
+    throw new ExternalOutboxTransitionError(id, operation, record.status);
   }
 
   private requireById(id: string): ExternalOutboxRecord {
@@ -327,6 +343,20 @@ export class ExternalOutboxService {
       });
     return next;
   }
+}
+
+function sameDraft(
+  record: ExternalOutboxRecord,
+  input: CreateExternalOutboxDraft,
+  payloadJson: string,
+): boolean {
+  return (
+    record.connectorAccountId === input.connectorAccountId &&
+    record.kind === input.kind &&
+    canonicalJson(record.payload) === payloadJson &&
+    record.requiresApproval === input.requiresApproval &&
+    record.safeRetry === input.safeRetry
+  );
 }
 
 function rowToRecord(row: ExternalOutboxRow): ExternalOutboxRecord {

@@ -1,4 +1,8 @@
+import { mkdtempSync } from "node:fs";
+import { tmpdir } from "node:os";
+import path from "node:path";
 import { describe, expect, it } from "vitest";
+import { openDatabase } from "../db/connection";
 import { createTestDatabase } from "../db/test-support";
 import {
   ExternalOutboxConflictError,
@@ -9,6 +13,26 @@ import {
 function createService() {
   const fx = createTestDatabase();
   return { fx, service: new ExternalOutboxService(fx.db) };
+}
+
+function createSharedServices() {
+  const file = path.join(
+    mkdtempSync(path.join(tmpdir(), "okami-outbox-")),
+    "outbox.db",
+  );
+  const key = Buffer.alloc(32, 4);
+  const firstDb = openDatabase(file, key);
+  const secondDb = openDatabase(file, key);
+  return {
+    first: new ExternalOutboxService(firstDb),
+    second: new ExternalOutboxService(secondDb),
+    firstDb,
+    secondDb,
+    close() {
+      firstDb.close();
+      secondDb.close();
+    },
+  };
 }
 
 function draftInput(overrides: Record<string, unknown> = {}) {
@@ -139,5 +163,80 @@ describe("ExternalOutboxService", () => {
     expect(() => service.retry(draft.id)).toThrow(
       ExternalOutboxTransitionError,
     );
+  });
+
+  it("keeps one idempotent draft when a second SQLite connection repeats the create", () => {
+    const shared = createSharedServices();
+    try {
+      const created = shared.first.createDraft(
+        draftInput({
+          idempotencyKey: "shared-create",
+          requiresApproval: false,
+        }),
+      );
+
+      expect(
+        shared.second.createDraft(
+          draftInput({
+            idempotencyKey: "shared-create",
+            requiresApproval: false,
+          }),
+        ),
+      ).toEqual(created);
+      expect(shared.second.list()).toHaveLength(1);
+    } finally {
+      shared.close();
+    }
+  });
+
+  it("allows only one SQLite connection to claim a dispatch", () => {
+    const shared = createSharedServices();
+    try {
+      const draft = shared.first.createDraft(
+        draftInput({ idempotencyKey: "shared-claim", requiresApproval: false }),
+      );
+
+      expect(shared.first.claimDispatch(draft.id).acquired).toBe(true);
+      expect(shared.second.claimDispatch(draft.id)).toMatchObject({
+        acquired: false,
+        record: { status: "dispatching", attempts: 1 },
+      });
+    } finally {
+      shared.close();
+    }
+  });
+
+  it("does not overwrite a terminal result when another connection wins the dispatch transition", () => {
+    const shared = createSharedServices();
+    try {
+      const draft = shared.first.createDraft(
+        draftInput({
+          idempotencyKey: "shared-terminal",
+          requiresApproval: false,
+        }),
+      );
+      shared.first.claimDispatch(draft.id);
+      shared.firstDb.exec(`
+        CREATE TRIGGER outbox_terminal_winner
+        BEFORE UPDATE OF status ON external_outbox
+        WHEN OLD.status = 'dispatching' AND NEW.status = 'failed_terminal'
+        BEGIN
+          UPDATE external_outbox
+          SET status = 'confirmed', provider_receipt_json = '{"messageId":"winner"}'
+          WHERE id = OLD.id;
+          SELECT RAISE(IGNORE);
+        END;
+      `);
+
+      expect(() => shared.second.failTerminal(draft.id, "too late")).toThrow(
+        ExternalOutboxTransitionError,
+      );
+      expect(shared.first.findById(draft.id)).toMatchObject({
+        status: "confirmed",
+        providerReceipt: { messageId: "winner" },
+      });
+    } finally {
+      shared.close();
+    }
   });
 });
