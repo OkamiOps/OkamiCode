@@ -179,6 +179,8 @@ export function Composer({
       return;
     }
     await onSend(outgoing);
+    // A disabled/blurred field would swallow whatever the user types next.
+    textareaRef.current?.focus();
   }
 
   function applySlashCommand(name: string) {
@@ -297,7 +299,6 @@ export function Composer({
       )}
       <textarea
         aria-label="Mensagem"
-        disabled={isSending}
         onChange={(event) => updateInput(event.target.value)}
         onKeyDown={handleKeyDown}
         placeholder="Como posso ajudar? Digite / para comandos"
@@ -322,7 +323,11 @@ export function Composer({
           catalog={catalog}
           disabled={isSending}
           isOpening={isOpeningLane}
-          onSelectModel={onSelectModel}
+          onSelectModel={(runtimeKind, model) => {
+            onSelectModel(runtimeKind, model);
+            // Picking a model must hand the keyboard back to the message.
+            textareaRef.current?.focus();
+          }}
           selectedLane={lane}
         />
         {lane && (

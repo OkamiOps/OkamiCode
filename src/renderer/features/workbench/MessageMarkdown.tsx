@@ -4,6 +4,7 @@ import ReactMarkdown from "react-markdown";
 import rehypeHighlight from "rehype-highlight";
 import rehypeRaw from "rehype-raw";
 import rehypeSanitize, { defaultSchema } from "rehype-sanitize";
+import remarkBreaks from "remark-breaks";
 import remarkGfm from "remark-gfm";
 
 // Inline HTML from models renders, but only through the sanitizer; the class
@@ -85,7 +86,9 @@ export function MessageMarkdown({ children }: { children: string }) {
         [rehypeSanitize, sanitizeSchema],
         rehypeHighlight,
       ]}
-      remarkPlugins={[remarkGfm]}
+      // remark-breaks keeps single newlines as line breaks — models answer
+      // "one per line" and chat UIs are expected to honor it.
+      remarkPlugins={[remarkGfm, remarkBreaks]}
     >
       {children}
     </ReactMarkdown>

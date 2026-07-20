@@ -234,7 +234,9 @@ export class CodexProjector {
       sequence,
       occurredAt: occurredAt(params, this.now),
       kind,
-      nativeEventId: `${method}:${nativeAnchor}:${sequence}`,
+      // Same collision guard as the Claude projector: sequence restarts per
+      // turn, so the runId keeps ids unique across turns of one thread.
+      nativeEventId: `${this.context.runId}:${method}:${nativeAnchor}:${sequence}`,
       payload: { runtime: "codex", ...payload },
     });
   }

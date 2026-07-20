@@ -6,6 +6,7 @@ const MIGRATIONS = [
   "schema/001-phase1-core.sql",
   "schema/002-task-workspace.sql",
   "schema/003-lane-workspace-repair.sql",
+  "schema/004-events-run-scoped-sequence.sql",
 ];
 
 export function runMigrations(db: InstanceType<typeof SqliteDatabase>): void {

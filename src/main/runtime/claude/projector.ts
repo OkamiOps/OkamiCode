@@ -226,7 +226,10 @@ export class ClaudeProjector {
       sequence,
       occurredAt: this.now(),
       kind,
-      nativeEventId: `claude:${this.anchor(native)}:${sequence}`,
+      // runId scopes the id: sequence restarts every turn and resumed
+      // sessions reuse the anchor, so without it turn N>1 collides with
+      // turn 1 and the store's dedupe silently drops the whole turn.
+      nativeEventId: `claude:${this.context.runId}:${this.anchor(native)}:${sequence}`,
       payload: { runtime: "claude", ...payload },
     });
   }

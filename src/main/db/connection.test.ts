@@ -11,7 +11,7 @@ describe("openDatabase", () => {
     const key = Buffer.alloc(32, 7);
     const db = openDatabase(file, key);
     expect(db.prepare("SELECT sqlite3mc_version()").pluck().get()).toBeTruthy();
-    expect(db.pragma("user_version", { simple: true })).toBe(3);
+    expect(db.pragma("user_version", { simple: true })).toBe(4);
     db.close();
     expect(() => openDatabase(file, Buffer.alloc(32, 8))).toThrow();
   });
