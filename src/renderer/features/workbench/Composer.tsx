@@ -1,4 +1,12 @@
-import { ArrowUp, Clock3, FileText, Paperclip, Square, X } from "lucide-react";
+import {
+  ArrowUp,
+  Clock3,
+  FileText,
+  Paperclip,
+  ShieldCheck,
+  Square,
+  X,
+} from "lucide-react";
 import {
   useEffect,
   useMemo,
@@ -307,6 +315,15 @@ export function Composer({
         value={input}
       />
       <div className="chat-composer__row">
+        {lane?.permissionMode && (
+          <span
+            className="chat-permission"
+            title="Modo de permissão da lane, vindo do harness"
+          >
+            <ShieldCheck aria-hidden="true" size={12} />
+            {lane.permissionMode === "manual" ? "Manual" : lane.permissionMode}
+          </span>
+        )}
         <button
           aria-label="Anexar arquivos"
           className="chat-attach"

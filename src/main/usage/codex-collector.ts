@@ -37,7 +37,11 @@ export async function collectCodexUsage(
     credits: record(usage.credits),
     error: null,
     freshness: "live",
-    plan: title(string(usage.planType) ?? string(usage.plan_type)),
+    plan: title(
+      string(usage.planType) ??
+        string(usage.plan_type) ??
+        string(record(record(rateLimits)?.rateLimits)?.planType),
+    ),
     provider: "chatgpt",
     runtime: "codex",
     source: {
@@ -130,40 +134,65 @@ async function collectCodexFromCli(
   }
 }
 
-function findRateLimitWindows(value: unknown): UsageWindow[] {
-  const results: UsageWindow[] = [];
-  visit(value, "window", results);
-  return results;
+// The app-server answers with a documented shape: a primary/secondary window
+// for the account limit plus per-model limits under rateLimitsByLimitId. The
+// old generic tree walk picked whichever window it met first, which is how a
+// per-model 0% ended up presented as the account's weekly usage.
+interface CodexWindowPayload {
+  usedPercent?: unknown;
+  used_percent?: unknown;
+  windowDurationMins?: unknown;
+  window_duration_mins?: unknown;
+  resetsAt?: unknown;
+  resets_at?: unknown;
 }
 
-function visit(value: unknown, key: string, results: UsageWindow[]): void {
-  if (Array.isArray(value)) {
-    value.forEach((entry, index) =>
-      visit(entry, `${key}-${index + 1}`, results),
-    );
-    return;
-  }
-  const candidate = record(value);
-  if (!candidate) return;
+function windowFrom(
+  payload: unknown,
+  modelGroup: string | null,
+): UsageWindow | null {
+  const candidate = record(payload) as CodexWindowPayload | undefined;
+  if (!candidate) return null;
   const usedPercent = number(candidate.usedPercent ?? candidate.used_percent);
-  if (usedPercent !== null) {
-    const duration = number(
-      candidate.windowDurationMins ?? candidate.window_duration_mins,
-    );
-    results.push({
-      durationMinutes: duration,
-      kind: windowKind(key, duration),
-      label: windowLabel(key, duration),
-      modelGroup: string(candidate.modelGroup ?? candidate.model_group),
-      remainingPercent: clamp(100 - usedPercent),
-      resetsAt: timestamp(candidate.resetsAt ?? candidate.resets_at),
-      usedPercent: clamp(usedPercent),
-    });
-    return;
-  }
-  Object.entries(candidate).forEach(([nextKey, entry]) =>
-    visit(entry, nextKey, results),
+  if (usedPercent === null) return null;
+  const duration = number(
+    candidate.windowDurationMins ?? candidate.window_duration_mins,
   );
+  const weekly = duration !== null && duration >= 10_080;
+  const base = weekly
+    ? "Semanal"
+    : duration && duration <= 360
+      ? "Sessão"
+      : "Janela";
+  return {
+    durationMinutes: duration,
+    kind: weekly ? "weekly" : "five_hour",
+    label: modelGroup ? `${base} · ${modelGroup}` : base,
+    modelGroup,
+    remainingPercent: clamp(100 - usedPercent),
+    resetsAt: timestamp(candidate.resetsAt ?? candidate.resets_at),
+    usedPercent: clamp(usedPercent),
+  };
+}
+
+export function findRateLimitWindows(value: unknown): UsageWindow[] {
+  const root = record(value);
+  const limits = record(root?.rateLimits) ?? root;
+  const windows: UsageWindow[] = [];
+  for (const key of ["primary", "secondary"]) {
+    const window = windowFrom(limits?.[key], null);
+    if (window) windows.push(window);
+  }
+  // Per-model limits only make sense when the API names them.
+  const byLimitId = record(root?.rateLimitsByLimitId);
+  for (const entry of Object.values(byLimitId ?? {})) {
+    const limit = record(entry);
+    const name = string(limit?.limitName);
+    if (!name) continue;
+    const window = windowFrom(limit?.primary, name);
+    if (window) windows.push(window);
+  }
+  return windows;
 }
 
 function unavailableCodex(collectedAt: string, error: string): UsageSnapshot {
@@ -185,20 +214,6 @@ function unavailableCodex(collectedAt: string, error: string): UsageSnapshot {
     validUntil: null,
     windows: [],
   };
-}
-
-function windowLabel(key: string, minutes: number | null): string {
-  if (minutes === 300) return "5 horas";
-  if (minutes === 10_080) return "Semanal";
-  if (minutes === 43_200) return "Mensal";
-  return key.replaceAll("_", " ");
-}
-
-function windowKind(key: string, minutes: number | null): string {
-  if (minutes === 300) return "five_hour";
-  if (minutes === 10_080) return "weekly";
-  if (minutes === 43_200) return "monthly";
-  return minutes ? `rolling_${minutes}` : key;
 }
 
 function timestamp(value: unknown): string | null {

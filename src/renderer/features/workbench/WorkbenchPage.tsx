@@ -7,7 +7,8 @@ import { Conversation } from "./Conversation";
 import { workbenchApi, type WorkbenchApi } from "./api";
 import { modelDetail, modelLabel } from "./ModelPicker";
 import { ResizeHandle, useResizablePane } from "../../app/layout/ResizeHandle";
-import { UsageToolbarChip } from "../usage/UsageToolbarChip";
+import { UsagePopover } from "../usage/UsagePopover";
+import { ConversationMenu } from "./ConversationMenu";
 import { FileOpenContext } from "./file-open";
 import { WorkspacePanel, type WorkspacePanelMode } from "./WorkspacePanel";
 import { useWorkbenchStore, type WorkbenchState } from "./store";
@@ -288,10 +289,40 @@ export function WorkbenchPage({ api = workbenchApi }: WorkbenchPageProps) {
           </>
         )}
         <span className="chat-topbar__spacer" />
-        <UsageToolbarChip />
+        <UsagePopover />
         {panelToggle("files")}
         {panelToggle("terminal")}
         {panelToggle("browser")}
+        <ConversationMenu
+          activePanel={panelMode}
+          onDelete={() => {
+            if (!effectiveTaskId || !selectedTask) return;
+            if (
+              window.confirm(
+                `Apagar a conversa "${selectedTask.title}"? O histórico dela será removido.`,
+              )
+            ) {
+              void api
+                .deleteTask({ taskId: effectiveTaskId })
+                .then(() => window.location.reload());
+            }
+          }}
+          onRename={() => {
+            if (!effectiveTaskId || !selectedTask) return;
+            const title = window.prompt(
+              "Novo nome da conversa",
+              selectedTask.title,
+            );
+            if (title?.trim()) {
+              void api
+                .renameTask({ taskId: effectiveTaskId, title: title.trim() })
+                .then(() => window.location.reload());
+            }
+          }}
+          onTogglePanel={(mode) =>
+            setPanelMode((value) => (value === mode ? null : mode))
+          }
+        />
       </div>
       <div className="chat-split">
         <div className="chat-workarea">
