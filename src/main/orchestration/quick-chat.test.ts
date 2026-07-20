@@ -9,6 +9,7 @@ import { QuickChatService } from "./quick-chat";
 
 function createQuickChatHarness(
   laneService?: Pick<LaneService, "open" | "sendTurn">,
+  memory?: { resolveContextRefs(refs: string[]): string },
 ) {
   const fx = createTestDatabase();
   const service = new QuickChatService({
@@ -17,6 +18,7 @@ function createQuickChatHarness(
     lanes: fx.lanes,
     audit: fx.audit,
     laneService,
+    memory,
     createId: randomUUID,
     clock: () => new Date("2026-07-18T12:00:00.000Z"),
   });
@@ -93,6 +95,64 @@ describe("QuickChatService", () => {
     expect(openOptions).toEqual([
       { inheritTask: false, workspaceFallbackPath: tmpdir() },
     ]);
+  });
+
+  it("injects only resolved memory inside a visible delimiter", async () => {
+    let runtimeInput = "";
+    const laneService = {
+      async open(laneId: string) {
+        return openedLane(laneId);
+      },
+      async sendTurn(_lane: OpenedLane, input: string): Promise<RunHandle> {
+        runtimeInput = input;
+        return { runId: randomUUID() as RunId, events: emptyEvents() };
+      },
+    } as Pick<LaneService, "open" | "sendTurn">;
+    const h = createQuickChatHarness(laneService, {
+      resolveContextRefs: (refs) =>
+        refs.includes("memory:7")
+          ? "--- OKAMI MEMORY: note.md ---\nContexto permitido\n--- END OKAMI MEMORY ---"
+          : "",
+    });
+    const chat = h.create("claude");
+
+    await h.service.send(chat.id, "Resuma", ["memory:7"]);
+
+    expect(runtimeInput).toContain("--- OKAMI MEMORY: note.md ---");
+    expect(runtimeInput).toContain("--- END OKAMI MEMORY ---");
+    expect(runtimeInput).toContain("--- OKAMI QUICK CHAT ---");
+    expect(runtimeInput).toContain('"contextRefs":["memory:7"]');
+  });
+
+  it("validates memory before recording context or opening a lane", async () => {
+    let opened = 0;
+    const laneService = {
+      async open() {
+        opened += 1;
+        return openedLane(randomUUID());
+      },
+      async sendTurn(): Promise<RunHandle> {
+        return { runId: randomUUID() as RunId, events: emptyEvents() };
+      },
+    } as Pick<LaneService, "open" | "sendTurn">;
+    const h = createQuickChatHarness(laneService, {
+      resolveContextRefs: () => {
+        throw new Error("Referência de memória não autorizada");
+      },
+    });
+    const chat = h.create("codex");
+
+    await expect(
+      h.service.send(chat.id, "Resuma", ["memory:999"]),
+    ).rejects.toThrow(/não autorizada/iu);
+    expect(opened).toBe(0);
+    expect(
+      h.fx.db
+        .prepare(
+          "SELECT count(*) AS count FROM messages WHERE conversation_id = ?",
+        )
+        .get(chat.id),
+    ).toEqual({ count: 0 });
   });
 
   it("promotes only selected messages and context with source audit", async () => {

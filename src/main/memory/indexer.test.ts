@@ -1,6 +1,7 @@
 import {
   mkdirSync,
   mkdtempSync,
+  renameSync,
   symlinkSync,
   unlinkSync,
   writeFileSync,
@@ -45,7 +46,21 @@ describe("MemoryService", () => {
     const outside = path.join(tmpdir(), "outside-memory-note.md");
     writeFileSync(
       inside,
-      "---\nsecret: unsafe\nlabel: safe\n---\n# Inside\npassword: unsafe\nSafe text",
+      [
+        "---",
+        "credentials:",
+        "  username: unsafe-user",
+        "  password: unsafe-password",
+        "private_key: unsafe",
+        "label: safe",
+        "---",
+        "# Inside",
+        "password: unsafe",
+        "-----BEGIN PRIVATE KEY-----",
+        "c2VjcmV0LWtleS1ib2R5",
+        "-----END PRIVATE KEY-----",
+        "Safe text",
+      ].join("\n"),
     );
     writeFileSync(outside, "# Outside\nprivate key fixture");
     symlinkSync(outside, path.join(root, "escaped.md"));
@@ -60,8 +75,13 @@ describe("MemoryService", () => {
       )
       .get(source.id) as { plain_text: string; frontmatter_json: string };
     expect(row.plain_text).toContain("Safe text");
-    expect(row.plain_text).not.toMatch(/password|unsafe|private key/iu);
-    expect(row.frontmatter_json).not.toMatch(/secret|unsafe/iu);
+    expect(row.plain_text).not.toMatch(
+      /password|unsafe|private[_ -]?key|c2VjcmV0LWtleS1ib2R5/iu,
+    );
+    expect(row.frontmatter_json).not.toMatch(
+      /credentials|secret|unsafe|private[_ -]?key/iu,
+    );
+    expect(service.search("private_key")).toHaveLength(0);
     expect(service.search("outside")).toHaveLength(0);
   });
 
@@ -93,5 +113,168 @@ describe("MemoryService", () => {
     const { service } = createMemoryHarness();
 
     expect(() => service.configure([root, nested])).toThrow(/sobrepõem/iu);
+  });
+
+  it("rejects overlapping persisted sources in either configuration order", () => {
+    for (const nestedFirst of [true, false]) {
+      const root = mkdtempSync(path.join(tmpdir(), "okami-memory-"));
+      const nested = path.join(root, "nested");
+      mkdirSync(nested);
+      const { service } = createMemoryHarness();
+      service.configure([nestedFirst ? nested : root]);
+
+      expect(() => service.configure([nestedFirst ? root : nested])).toThrow(
+        /sobrepõem/iu,
+      );
+    }
+  });
+
+  it("rejects relative source paths", () => {
+    const { service } = createMemoryHarness();
+    expect(() => service.configure(["."])).toThrow(/absolut/iu);
+  });
+
+  it("rejects a source replaced by a symlink after configuration", () => {
+    const root = mkdtempSync(path.join(tmpdir(), "okami-memory-"));
+    const outside = mkdtempSync(path.join(tmpdir(), "okami-outside-"));
+    writeFileSync(path.join(root, "inside.md"), "# Inside\ntrusted");
+    writeFileSync(path.join(outside, "outside.md"), "# Outside\nprivate_key");
+    const { service } = createMemoryHarness();
+    const [source] = service.configure([root]);
+    renameSync(root, `${root}-moved`);
+    symlinkSync(outside, root);
+
+    expect(() => service.fullSync(source.id)).toThrow(/symlink|alterada/iu);
+  });
+
+  it("rehydrates one watcher per persisted source on start", async () => {
+    const fx = createTestDatabase();
+    const root = mkdtempSync(path.join(tmpdir(), "okami-memory-"));
+    const watched: string[] = [];
+    const watcher = { close: async () => undefined };
+    const service = new MemoryService({
+      db: fx.db,
+      watchFactory: (source) => {
+        watched.push(source.id);
+        return watcher as never;
+      },
+    });
+    const [source] = service.configure([root]);
+
+    await service.close();
+    watched.length = 0;
+    service.start();
+    expect(watched).toEqual([source.id]);
+    await service.close();
+  });
+
+  it("isolates an unavailable persisted source during watcher rehydration", async () => {
+    const fx = createTestDatabase();
+    const available = mkdtempSync(path.join(tmpdir(), "okami-memory-"));
+    const unavailable = mkdtempSync(path.join(tmpdir(), "okami-memory-"));
+    const watched: string[] = [];
+    const service = new MemoryService({
+      db: fx.db,
+      watchFactory: (source) => {
+        watched.push(source.id);
+        return { close: async () => undefined };
+      },
+    });
+    const [availableSource, unavailableSource] = service.configure([
+      available,
+      unavailable,
+    ]);
+    await service.close();
+    watched.length = 0;
+    renameSync(unavailable, `${unavailable}-moved`);
+
+    const report = service.start();
+
+    expect(watched).toEqual([availableSource.id]);
+    expect(report).toEqual({
+      started: 1,
+      failed: [expect.objectContaining({ sourceId: unavailableSource.id })],
+    });
+    await service.close();
+  });
+
+  it("reindexes only the file reported by the watcher", async () => {
+    const fx = createTestDatabase();
+    const root = mkdtempSync(path.join(tmpdir(), "okami-memory-"));
+    const first = path.join(root, "first.md");
+    const second = path.join(root, "second.md");
+    writeFileSync(first, "# First\noriginal first");
+    writeFileSync(second, "# Second\noriginal second");
+    let notify:
+      | ((event: { kind: "upsert" | "remove"; path: string }) => void)
+      | undefined;
+    const service = new MemoryService({
+      db: fx.db,
+      watchFactory: (_source, reindex) => {
+        notify = reindex as typeof notify;
+        return { close: async () => undefined };
+      },
+    });
+    const [source] = service.configure([root]);
+    const watchedFirst = path.join(source.scopePath, "first.md");
+    const watchedSecond = path.join(source.scopePath, "second.md");
+
+    writeFileSync(first, "# First\nchanged first");
+    writeFileSync(second, "# Second\nchanged second");
+    notify?.({ kind: "upsert", path: watchedFirst });
+
+    expect(
+      fx.db
+        .prepare("SELECT plain_text FROM memory_documents WHERE path = ?")
+        .get(watchedFirst),
+    ).toEqual({ plain_text: "First\nchanged first" });
+    expect(service.search("changed first")).toHaveLength(1);
+    expect(service.search("changed second")).toHaveLength(0);
+    expect(service.search("original second")).toHaveLength(1);
+
+    unlinkSync(second);
+    notify?.({ kind: "remove", path: watchedSecond });
+    expect(service.search("original second")).toHaveLength(0);
+    await service.close();
+  });
+
+  it("delimits authorized context and rejects missing ids or oversized content", () => {
+    const { fx, service } = createMemoryHarness();
+    const root = mkdtempSync(path.join(tmpdir(), "okami-memory-"));
+    writeFileSync(path.join(root, "note.md"), "# Note\ntrusted context");
+    const [source] = service.configure([root]);
+    const row = fx.db
+      .prepare("SELECT id FROM memory_documents WHERE source_id = ?")
+      .get(source.id) as { id: number };
+
+    expect(service.resolveContextRefs([`memory:${row.id}`])).toContain(
+      "--- OKAMI MEMORY:",
+    );
+    expect(() => service.resolveContextRefs(["memory:999999"])).toThrow(
+      /não autorizada/iu,
+    );
+    expect(() => service.resolveContextRefs([`memory:${row.id}`], 8)).toThrow(
+      /64 KiB/iu,
+    );
+  });
+
+  it("counts separators inside the total memory context limit", () => {
+    const { fx, service } = createMemoryHarness();
+    const root = mkdtempSync(path.join(tmpdir(), "okami-memory-"));
+    writeFileSync(path.join(root, "one.md"), "# One\nfirst context");
+    writeFileSync(path.join(root, "two.md"), "# Two\nsecond context");
+    const [source] = service.configure([root]);
+    const refs = (
+      fx.db
+        .prepare(
+          "SELECT id FROM memory_documents WHERE source_id = ? ORDER BY path",
+        )
+        .all(source.id) as Array<{ id: number }>
+    ).map(({ id }) => `memory:${id}`);
+    const complete = service.resolveContextRefs(refs);
+
+    expect(() =>
+      service.resolveContextRefs(refs, Buffer.byteLength(complete) - 1),
+    ).toThrow(/64 KiB/iu);
   });
 });

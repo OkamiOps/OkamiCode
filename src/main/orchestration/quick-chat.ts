@@ -144,7 +144,16 @@ export class QuickChatService {
     const laneService = this.dependencies.laneService;
     if (!laneService)
       throw new Error("Lane service indisponível para quick chat");
-    this.selectContext(chatId, contextRefs);
+    const selectedRefs = unique(contextRefs);
+    const memoryContext =
+      this.dependencies.memory?.resolveContextRefs(selectedRefs);
+    if (
+      selectedRefs.some((ref) => ref.startsWith("memory:")) &&
+      memoryContext === undefined
+    ) {
+      throw new Error("Memória indisponível para quick chat");
+    }
+    this.selectContext(chatId, selectedRefs);
     const turn = this.buildTurn(chatId, input);
     const chat = this.requireQuickChat(chatId);
     const message = this.appendMessage(chatId, "user", input);
@@ -152,9 +161,6 @@ export class QuickChatService {
       inheritTask: false,
       workspaceFallbackPath: tmpdir(),
     });
-    const memoryContext = this.dependencies.memory?.resolveContextRefs(
-      turn.contextRefs,
-    );
     const runtimeInput = memoryContext
       ? `${memoryContext}\n\n--- OKAMI QUICK CHAT ---\n${JSON.stringify(turn)}`
       : JSON.stringify(turn);

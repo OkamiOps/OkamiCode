@@ -37,6 +37,9 @@ importers:
       execa:
         specifier: 10.0.0
         version: 10.0.0
+      gray-matter:
+        specifier: 4.0.3
+        version: 4.0.3
       lucide-react:
         specifier: 1.25.0
         version: 1.25.0(react@19.2.7)
@@ -2425,6 +2428,12 @@ packages:
       dmg-builder: 26.15.3
       electron-builder-squirrel-windows: 26.15.3
 
+  argparse@1.0.10:
+    resolution:
+      {
+        integrity: sha512-o5Roy6tNG4SL/FOkCAN6RzjiakZS25RLYFrcMttJqbdd8BWrnA+fGz57iN5Pb06pvBGvl5gQ0B48dJlslXvoTg==,
+      }
+
   argparse@2.0.1:
     resolution:
       {
@@ -3471,6 +3480,13 @@ packages:
     engines: { node: ">=18" }
     hasBin: true
 
+  esprima@4.0.1:
+    resolution:
+      {
+        integrity: sha512-eGuFFw7Upda+g4p+QHvnW0RyTX/SVeJBDM/gCtMARO0cLuT2HcEKnTPvhjV6aGeqrCB/sbNop0Kszm0jsaWU4A==,
+      }
+    engines: { node: ">=4" }
+
   escalade@3.2.0:
     resolution:
       {
@@ -3938,6 +3954,13 @@ packages:
       {
         integrity: sha512-RbJ5/jmFcNNCcDV5o9eTnBLJ/HszWV0P73bc+Ff4nS/rJj+YaS6IGyiOL0VoBYX+l1Wrl3k63h/KrH+nhJ0XvQ==,
       }
+
+  gray-matter@4.0.3:
+    resolution:
+      {
+        integrity: sha512-5v6yZd4JK3eMI3FqqCouswVqwugaA9r4dNZB1wwcmrD02QkV5H0y7XBQW8QwQqEaZY1pM9aqORSORhJRdNK44Q==,
+      }
+    engines: { node: ">=6.0" }
 
   has-bigints@1.1.0:
     resolution:
@@ -4519,6 +4542,13 @@ packages:
       {
         integrity: sha512-RdJUflcE3cUzKiMqQgsCu06FPu9UdIJO0beYbPhHN4k6apgJtifcoCtT9bcxOpYBtpD2kCM6Sbzg4CausW/PKQ==,
       }
+
+  js-yaml@3.15.0:
+    resolution:
+      {
+        integrity: sha512-ttBQIIQPDeLjpPOohtUdXuXUVoA2uIB6fEH9HyJ7234s5mBJ5wTx20njxplLZQgLaOfpmPQA7X2t5AX6tIPbog==,
+      }
+    hasBin: true
 
   js-yaml@4.3.0:
     resolution:
@@ -6232,6 +6262,12 @@ packages:
         integrity: sha512-PEGlAwrG8yXGXRjW32fGbg66JAlOAwbObuqVoJpv/mRgoWDQfgH1wDPvtzWyUSNAXBGSk8h755YDbbcEy3SH2Q==,
       }
 
+  sprintf-js@1.0.3:
+    resolution:
+      {
+        integrity: sha512-D9cPgkvLlV3t3IzL0D0YLvGA9Ahk4PcvVwUbN0dSGr1aP0Nrt4AEnTUbuGvquEC0mA64Gqt1fzirlRs5ibXx8g==,
+      }
+
   sprintf-js@1.1.3:
     resolution:
       {
@@ -6323,6 +6359,13 @@ packages:
         integrity: sha512-Y38VPSHcqkFrCpFnQ9vuSXmquuv5oXOKpGeT6aGrr3o3Gc9AlVa6JBfUSOCnbxGGZF+/0ooI7KrPuUSztUdU5A==,
       }
     engines: { node: ">=8" }
+
+  strip-bom-string@1.0.0:
+    resolution:
+      {
+        integrity: sha512-uCC2VHvQRYu+lMh4My/sFNmF2klFymLX1wHJeXnbEJERpV/ZsVuonzerjfrGpIGF7LBVa1O7i9kjiWvJiFck8g==,
+      }
+    engines: { node: ">=0.10.0" }
 
   strip-final-newline@4.0.0:
     resolution:
@@ -7125,7 +7168,48 @@ packages:
         integrity: sha512-bXE4cR/kVZhKZX/RjPEflHaKVhUVl85noU3v6b8apfQEc1x4A+zBxjZ4lN8LqGd6WZ3dl98pY4o717VFmoPp+A==,
       }
 
+  extend-shallow@2.0.1:
+    resolution:
+      {
+        integrity: sha512-zCnTtlxNoAiDc3gqY2aYAWFx7XWWiasuF2K8Me5WbN8otHKTUKBwjPtNpRs/rbUZm7KxWAaNj7P1a/p52GbVug==,
+      }
+    engines: { node: ">=0.10.0" }
+
+  is-extendable@0.1.1:
+    resolution:
+      {
+        integrity: sha512-5BMULNob1vgFX6EjQw5izWDxrecWK9AM72rugNr0TFldMOi0fj6Jk+zeKIt0xGj4cEfQIJth4w3OKWOJ4f+AFw==,
+      }
+    engines: { node: ">=0.10.0" }
+
+  kind-of@6.0.3:
+    resolution:
+      {
+        integrity: sha512-dcS1ul+9tmeD95T+x28/ehLgd9mENa3LsvDTtzm3vyBEO7RPptvAD+t44WVXaUjTBRcrpFeFlC8WCruUR456hw==,
+      }
+    engines: { node: ">=0.10.0" }
+
+  section-matter@1.0.0:
+    resolution:
+      {
+        integrity: sha512-vfD3pmTzGpufjScBh50YHKzEu2lxBWhVEHsNGoEXmCmn2hKGfeNLYMzCJpe8cD7gqX7TJluOVpBkAequ6dgMmA==,
+      }
+    engines: { node: ">=4" }
+
 snapshots:
+  extend-shallow@2.0.1:
+    dependencies:
+      is-extendable: 0.1.1
+
+  is-extendable@0.1.1: {}
+
+  kind-of@6.0.3: {}
+
+  section-matter@1.0.0:
+    dependencies:
+      extend-shallow: 2.0.1
+      kind-of: 6.0.3
+
   "@adobe/css-tools@4.5.0": {}
 
   "@adobe/react-spectrum-ui@1.2.1(react-dom@19.2.7(react@19.2.7))(react@19.2.7)":
@@ -8506,6 +8590,10 @@ snapshots:
     transitivePeerDependencies:
       - supports-color
 
+  argparse@1.0.10:
+    dependencies:
+      sprintf-js: 1.0.3
+
   argparse@2.0.1: {}
 
   aria-hidden@1.2.6:
@@ -9223,6 +9311,8 @@ snapshots:
       "@esbuild/win32-ia32": 0.28.1
       "@esbuild/win32-x64": 0.28.1
 
+  esprima@4.0.1: {}
+
   escalade@3.2.0: {}
 
   escape-string-regexp@4.0.0: {}
@@ -9562,6 +9652,13 @@ snapshots:
       responselike: 2.0.1
 
   graceful-fs@4.2.11: {}
+
+  gray-matter@4.0.3:
+    dependencies:
+      js-yaml: 3.15.0
+      kind-of: 6.0.3
+      section-matter: 1.0.0
+      strip-bom-string: 1.0.0
 
   has-bigints@1.1.0: {}
 
@@ -9918,6 +10015,11 @@ snapshots:
   jiti@2.7.0: {}
 
   js-tokens@4.0.0: {}
+
+  js-yaml@3.15.0:
+    dependencies:
+      argparse: 1.0.10
+      esprima: 4.0.1
 
   js-yaml@4.3.0:
     dependencies:
@@ -11198,6 +11300,8 @@ snapshots:
 
   space-separated-tokens@2.0.2: {}
 
+  sprintf-js@1.0.3: {}
+
   sprintf-js@1.1.3:
     optional: true
 
@@ -11264,6 +11368,8 @@ snapshots:
   strip-ansi@6.0.1:
     dependencies:
       ansi-regex: 5.0.1
+
+  strip-bom-string@1.0.0: {}
 
   strip-final-newline@4.0.0: {}
 

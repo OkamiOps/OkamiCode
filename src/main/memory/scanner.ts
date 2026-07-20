@@ -7,11 +7,14 @@ import {
   type Stats,
 } from "node:fs";
 import path from "node:path";
+import matter from "gray-matter";
 import type { MemorySource } from "./config";
 
 const MAX_BYTES = 2 * 1024 * 1024;
 const SENSITIVE_LINE =
-  /private\s*key|-----BEGIN [A-Z ]*PRIVATE KEY-----|token|password|secret|credential|api[_ -]?key/iu;
+  /private[_ -]?key|-----BEGIN [A-Z ]*PRIVATE KEY-----|token|password|secret|credential|api[_ -]?key/iu;
+const PRIVATE_KEY_BLOCK =
+  /-----BEGIN [A-Z0-9 ]*PRIVATE KEY-----[\s\S]*?(?:-----END [A-Z0-9 ]*PRIVATE KEY-----|$)/giu;
 
 export type ScannedDocument = {
   path: string;
@@ -28,6 +31,14 @@ export function scanSource(source: MemorySource): ScannedDocument[] {
   const documents: ScannedDocument[] = [];
   visit(root, root, documents);
   return documents.sort((left, right) => left.path.localeCompare(right.path));
+}
+
+export function scanFile(
+  source: MemorySource,
+  filePath: string,
+): ScannedDocument | null {
+  const root = realpathSync(source.scopePath);
+  return scanCandidate(root, path.resolve(filePath));
 }
 
 function visit(
@@ -49,15 +60,36 @@ function visit(
       visit(root, candidate, documents);
       continue;
     }
-    if (!stat.isFile() || path.extname(entry.name).toLowerCase() !== ".md")
-      continue;
-    if (stat.size > MAX_BYTES) continue;
-    const canonical = realpathSync(candidate);
-    if (!isWithin(root, canonical)) continue;
-    const content = readFileSync(canonical);
-    if (content.includes(0)) continue;
-    documents.push(toDocument(canonical, content.toString("utf8"), stat));
+    const document = scanCandidate(root, candidate, stat);
+    if (document) documents.push(document);
   }
+}
+
+function scanCandidate(
+  root: string,
+  candidate: string,
+  knownStat?: Stats,
+): ScannedDocument | null {
+  const relative = path.relative(root, candidate);
+  if (!isWithin(root, candidate) || hasHiddenSegment(relative)) return null;
+  let stat: Stats;
+  try {
+    stat = knownStat ?? lstatSync(candidate);
+  } catch {
+    return null;
+  }
+  if (
+    stat.isSymbolicLink() ||
+    !stat.isFile() ||
+    path.extname(candidate).toLowerCase() !== ".md" ||
+    stat.size > MAX_BYTES
+  )
+    return null;
+  const canonical = realpathSync(candidate);
+  if (!isWithin(root, canonical)) return null;
+  const content = readFileSync(canonical);
+  if (content.includes(0)) return null;
+  return toDocument(canonical, content.toString("utf8"), stat);
 }
 
 function toDocument(
@@ -65,16 +97,17 @@ function toDocument(
   source: string,
   stat: Stats,
 ): ScannedDocument {
-  const parsed = parseFrontmatter(source);
-  const frontmatter = parsed.data;
-  const plainText = stripMarkdown(parsed.content)
-    .split("\n")
-    .filter((line) => !SENSITIVE_LINE.test(line))
-    .join("\n")
+  // Parse valid YAML first, then sanitize the resulting structure. Removing a
+  // parent key before parsing can leave indented children behind and corrupt
+  // otherwise valid frontmatter.
+  const parsed = matter(source);
+  const frontmatter = sanitizeFrontmatter(parsed.data);
+  const redactedContent = redactSensitiveContent(parsed.content);
+  const plainText = stripMarkdown(redactedContent)
     .replace(/\n{3,}/gu, "\n\n")
     .trim();
   const heading =
-    parsed.content.match(/^#{1,6}\s+(.+)$/mu)?.[1]?.trim() ?? null;
+    redactedContent.match(/^#{1,6}\s+(.+)$/mu)?.[1]?.trim() ?? null;
   const title =
     stringValue(frontmatter.title) ?? heading ?? path.basename(filePath, ".md");
   return {
@@ -107,38 +140,49 @@ function isWithin(root: string, candidate: string): boolean {
   );
 }
 
+function hasHiddenSegment(relative: string): boolean {
+  return relative
+    .split(path.sep)
+    .some((segment) => segment.startsWith(".") || segment === ".trash");
+}
+
 function stringValue(value: unknown): string | null {
   return typeof value === "string" && value.trim() ? value.trim() : null;
 }
 
-function parseFrontmatter(source: string): {
-  content: string;
-  data: Record<string, unknown>;
-} {
-  const match = /^---\r?\n([\s\S]*?)\r?\n---\r?\n?/u.exec(source);
-  if (!match) return { content: source, data: {} };
-  const data: Record<string, unknown> = {};
-  for (const line of (match[1] ?? "").split(/\r?\n/u)) {
-    if (SENSITIVE_LINE.test(line)) continue;
-    const separator = line.indexOf(":");
-    if (separator <= 0) continue;
-    const key = line.slice(0, separator).trim();
-    const rawValue = line.slice(separator + 1).trim();
-    if (!key || SENSITIVE_LINE.test(`${key}: ${rawValue}`)) continue;
-    data[key] = parseFrontmatterValue(rawValue);
-  }
-  return { content: source.slice(match[0].length), data };
+function redactSensitiveContent(source: string): string {
+  return source
+    .replace(PRIVATE_KEY_BLOCK, "")
+    .split(/\r?\n/u)
+    .filter((line) => !SENSITIVE_LINE.test(line))
+    .join("\n");
 }
 
-function parseFrontmatterValue(value: string): unknown {
-  if (/^\[.*\]$/u.test(value)) {
-    return value
-      .slice(1, -1)
-      .split(",")
-      .map((item) => item.trim())
-      .filter(Boolean);
+function sanitizeFrontmatter(value: unknown): Record<string, unknown> {
+  if (!value || typeof value !== "object" || Array.isArray(value)) return {};
+  return Object.fromEntries(
+    Object.entries(value)
+      .filter(
+        ([key, nested]) =>
+          !SENSITIVE_LINE.test(key) && !containsSensitive(nested),
+      )
+      .map(([key, nested]) => [key, sanitizeValue(nested)]),
+  );
+}
+
+function sanitizeValue(value: unknown): unknown {
+  if (Array.isArray(value)) return value.map(sanitizeValue);
+  if (value && typeof value === "object") return sanitizeFrontmatter(value);
+  return value;
+}
+
+function containsSensitive(value: unknown): boolean {
+  if (typeof value === "string") return SENSITIVE_LINE.test(value);
+  if (Array.isArray(value)) return value.some(containsSensitive);
+  if (value && typeof value === "object") {
+    return Object.entries(value).some(
+      ([key, nested]) => SENSITIVE_LINE.test(key) || containsSensitive(nested),
+    );
   }
-  if (value === "true" || value === "false") return value === "true";
-  if (/^-?\d+(?:\.\d+)?$/u.test(value)) return Number(value);
-  return value.replace(/^['"]|['"]$/gu, "");
+  return false;
 }

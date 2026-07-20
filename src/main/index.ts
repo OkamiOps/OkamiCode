@@ -229,6 +229,10 @@ async function bootstrap(): Promise<void> {
     .run();
   seedInitialWorkspace(state);
   memoryService = new MemoryService({ db: database });
+  const memoryStart = memoryService.start();
+  for (const failure of memoryStart.failed) {
+    console.warn("[okami] memory source unavailable", failure);
+  }
   registerIpcHandlers({
     ipcMain,
     laneEffort,

@@ -1,23 +1,37 @@
-import type { FSWatcher } from "chokidar";
+import path from "node:path";
 import type { Database } from "../db/connection";
 import {
+  assertSourceIntact,
   configureSources,
   getSource,
   listSources,
   type MemorySource,
 } from "./config";
-import { scanSource } from "./scanner";
+import { scanFile, scanSource, type ScannedDocument } from "./scanner";
 import { searchMemory, type MemorySearchResult } from "./search";
-import { watchSource } from "./watcher";
+import {
+  watchSource,
+  type MemoryWatcher,
+  type MemoryWatchEvent,
+} from "./watcher";
+
+export type MemoryStartReport = {
+  started: number;
+  failed: Array<{ sourceId: string; message: string }>;
+};
 
 export class MemoryService {
-  private readonly watchers = new Map<string, FSWatcher>();
+  private readonly watchers = new Map<string, MemoryWatcher>();
 
   constructor(
     private readonly dependencies: {
       db: Database;
       clock?: () => Date;
       watch?: boolean;
+      watchFactory?: (
+        source: MemorySource,
+        onChange: (event: MemoryWatchEvent) => void,
+      ) => MemoryWatcher;
     },
   ) {}
 
@@ -38,8 +52,26 @@ export class MemoryService {
     return listSources(this.dependencies.db);
   }
 
+  start(): MemoryStartReport {
+    const report: MemoryStartReport = { started: 0, failed: [] };
+    if (this.dependencies.watch === false) return report;
+    for (const source of this.listSources()) {
+      try {
+        this.startWatching(source);
+        report.started += 1;
+      } catch (error) {
+        report.failed.push({
+          sourceId: source.id,
+          message: error instanceof Error ? error.message : "Erro desconhecido",
+        });
+      }
+    }
+    return report;
+  }
+
   fullSync(sourceId: string): { indexed: number; removed: number } {
     const source = getSource(this.dependencies.db, sourceId);
+    assertSourceIntact(source);
     const scanned = scanSource(source);
     const existing = this.dependencies.db
       .prepare(
@@ -66,27 +98,7 @@ export class MemoryService {
           previous.modified_at === document.modifiedAt
         )
           continue;
-        this.dependencies.db
-          .prepare(
-            `INSERT INTO memory_documents
-           (source_id, path, title, frontmatter_json, plain_text, content_hash, modified_at, indexed_at)
-           VALUES (@sourceId, @path, @title, @frontmatterJson, @plainText, @contentHash, @modifiedAt, @indexedAt)
-           ON CONFLICT(path) DO UPDATE SET
-             source_id = excluded.source_id, title = excluded.title,
-             frontmatter_json = excluded.frontmatter_json, plain_text = excluded.plain_text,
-             content_hash = excluded.content_hash, modified_at = excluded.modified_at,
-             indexed_at = excluded.indexed_at`,
-          )
-          .run({
-            sourceId: source.id,
-            path: document.path,
-            title: document.title,
-            frontmatterJson: JSON.stringify(document.frontmatter),
-            plainText: document.plainText,
-            contentHash: document.contentHash,
-            modifiedAt: document.modifiedAt,
-            indexedAt,
-          });
+        this.upsertDocument(source.id, document, indexedAt);
         indexed += 1;
       }
       const stale = existing.filter((document) => !seen.has(document.path));
@@ -132,16 +144,16 @@ export class MemoryService {
     if (rows.length !== ids.length)
       throw new Error("Referência de memória não autorizada");
     const ordered = new Map(rows.map((row) => [row.id, row]));
-    let usedBytes = 0;
     const blocks = ids.map((id) => {
       const row = ordered.get(id)!;
       const block = `--- OKAMI MEMORY: ${row.path} ---\n${row.plain_text}\n--- END OKAMI MEMORY ---`;
-      usedBytes += Buffer.byteLength(block);
-      if (usedBytes > maxBytes)
-        throw new Error("O contexto de memória excede 64 KiB");
       return block;
     });
-    return blocks.join("\n\n");
+    const context = blocks.join("\n\n");
+    if (Buffer.byteLength(context) > maxBytes) {
+      throw new Error("O contexto de memória excede 64 KiB");
+    }
+    return context;
   }
 
   async close(): Promise<void> {
@@ -153,9 +165,78 @@ export class MemoryService {
 
   private startWatching(source: MemorySource): void {
     if (this.watchers.has(source.id)) return;
+    assertSourceIntact(source);
     this.watchers.set(
       source.id,
-      watchSource(source, () => this.fullSync(source.id)),
+      (this.dependencies.watchFactory ?? watchSource)(source, (event) =>
+        this.applyWatchEvent(source, event),
+      ),
     );
   }
+
+  private applyWatchEvent(source: MemorySource, event: MemoryWatchEvent): void {
+    assertSourceIntact(source);
+    const candidate = path.resolve(event.path);
+    if (!isWithin(source.rootPath, candidate)) return;
+    if (event.kind === "remove") {
+      this.dependencies.db
+        .prepare(
+          "DELETE FROM memory_documents WHERE source_id = ? AND path = ?",
+        )
+        .run(source.id, candidate);
+      return;
+    }
+    const document = scanFile(source, candidate);
+    if (!document) {
+      this.dependencies.db
+        .prepare(
+          "DELETE FROM memory_documents WHERE source_id = ? AND path = ?",
+        )
+        .run(source.id, candidate);
+      return;
+    }
+    this.upsertDocument(
+      source.id,
+      document,
+      (this.dependencies.clock ?? (() => new Date()))().toISOString(),
+    );
+  }
+
+  private upsertDocument(
+    sourceId: string,
+    document: ScannedDocument,
+    indexedAt: string,
+  ): void {
+    this.dependencies.db
+      .prepare(
+        `INSERT INTO memory_documents
+         (source_id, path, title, frontmatter_json, plain_text, content_hash, modified_at, indexed_at)
+         VALUES (@sourceId, @path, @title, @frontmatterJson, @plainText, @contentHash, @modifiedAt, @indexedAt)
+         ON CONFLICT(path) DO UPDATE SET
+           source_id = excluded.source_id, title = excluded.title,
+           frontmatter_json = excluded.frontmatter_json, plain_text = excluded.plain_text,
+           content_hash = excluded.content_hash, modified_at = excluded.modified_at,
+           indexed_at = excluded.indexed_at`,
+      )
+      .run({
+        sourceId,
+        path: document.path,
+        title: document.title,
+        frontmatterJson: JSON.stringify(document.frontmatter),
+        plainText: document.plainText,
+        contentHash: document.contentHash,
+        modifiedAt: document.modifiedAt,
+        indexedAt,
+      });
+  }
+}
+
+function isWithin(root: string, candidate: string): boolean {
+  const relative = path.relative(root, candidate);
+  return (
+    relative !== "" &&
+    relative !== ".." &&
+    !relative.startsWith(`..${path.sep}`) &&
+    !path.isAbsolute(relative)
+  );
 }

@@ -1,5 +1,5 @@
 import { randomUUID } from "node:crypto";
-import { realpathSync, statSync } from "node:fs";
+import { lstatSync, realpathSync, statSync } from "node:fs";
 import path from "node:path";
 import type { Database } from "../db/connection";
 
@@ -35,7 +35,9 @@ export function configureSources(
   for (const candidate of canonicalPaths) {
     if (
       existingPaths.some(
-        (existing) => overlaps(existing, candidate) && existing !== candidate,
+        (existing) =>
+          existing !== candidate &&
+          (overlaps(existing, candidate) || overlaps(candidate, existing)),
       )
     ) {
       throw new Error("Fontes de memória não podem se sobrepõem");
@@ -89,9 +91,24 @@ export function listSources(db: Database): MemorySource[] {
   ).map(toSource);
 }
 
+export function assertSourceIntact(source: MemorySource): void {
+  const stat = lstatSync(source.scopePath);
+  if (stat.isSymbolicLink() || !stat.isDirectory()) {
+    throw new Error("A fonte de memória foi alterada ou é um symlink");
+  }
+  if (realpathSync(source.scopePath) !== source.rootPath) {
+    throw new Error(
+      "A fonte de memória foi alterada fora do escopo autorizado",
+    );
+  }
+}
+
 function uniqueCanonicalDirectories(paths: string[]): string[] {
   if (paths.length === 0) throw new Error("Selecione ao menos uma pasta");
   const canonical = paths.map((candidate) => {
+    if (!path.isAbsolute(candidate)) {
+      throw new Error("A fonte de memória deve usar um caminho absoluto");
+    }
     const resolved = realpathSync(candidate);
     if (!statSync(resolved).isDirectory()) {
       throw new Error("A fonte de memória deve ser uma pasta existente");
