@@ -118,16 +118,36 @@ function locateLocalBinary(client: CliClient): string | null {
   return null;
 }
 
-async function executeProbe(
+function outputFromProbeError(error: unknown): string | null {
+  if (typeof error !== "object" || error === null) return null;
+  const output = error as Record<string, unknown>;
+  const text = [output.stdout, output.stderr]
+    .map((value) => {
+      if (typeof value === "string") return value;
+      if (Buffer.isBuffer(value)) return value.toString("utf8");
+      return "";
+    })
+    .filter(Boolean)
+    .join("\n");
+  return text.trim().length > 0 ? text : null;
+}
+
+export async function executeProbe(
   binaryPath: string,
   args: string[],
 ): Promise<string> {
-  const { stdout, stderr } = await execFileAsync(binaryPath, args, {
-    env: process.env,
-    timeout: 5_000,
-    windowsHide: true,
-  });
-  return `${stdout}\n${stderr}`;
+  try {
+    const { stdout, stderr } = await execFileAsync(binaryPath, args, {
+      env: process.env,
+      timeout: 5_000,
+      windowsHide: true,
+    });
+    return `${stdout}\n${stderr}`;
+  } catch (error) {
+    const output = outputFromProbeError(error);
+    if (output !== null) return output;
+    throw error;
+  }
 }
 
 function versionFrom(output: string): string | null {
@@ -140,9 +160,12 @@ function versionFrom(output: string): string | null {
 }
 
 function cursorAgentNeedsUpdate(help: string): boolean {
-  return /(?:update|upgrade).{0,80}cursor|requires?\s+cursor\s+(?:version\s*)?\d|cursor\s+(?:version\s*)?\d[^\n]*(?:or later|or newer)/iu.test(
-    help,
-  );
+  const marksVersionObsolete = /\b(?:old|outdated|too old)\b/iu.test(help);
+  const identifiesInstalledCursor =
+    /\b(?:current|installed|this)\b.*\b(?:cursor|version)\b|\b(?:cursor|version)\b.*\b(?:current|installed|this)\b|\bcursor\s+version\b/iu.test(
+      help,
+    );
+  return marksVersionObsolete && identifiesInstalledCursor;
 }
 
 async function detectClient(

@@ -1,6 +1,7 @@
 import { expect, it, vi } from "vitest";
 import {
   createCliCapabilityDetector,
+  executeProbe,
   type CliCapabilityDetectorDependencies,
 } from "./cli-capabilities";
 
@@ -111,7 +112,7 @@ it("derives only the verified local capabilities and statuses from harmless prob
       expect.objectContaining({
         client: "cursor",
         role: "launcher",
-        integrationStatus: "update_required",
+        integrationStatus: "needs_adapter",
         capabilities: ["launcher", "mcp"],
       }),
       expect.objectContaining({
@@ -133,4 +134,30 @@ it("derives only the verified local capabilities and statuses from harmless prob
     "agent",
     "--help",
   ]);
+});
+
+it("marks Cursor update_required only when its local help explicitly says it is obsolete", async () => {
+  const injected = dependencies(
+    { cursor: "/bin/cursor" },
+    {
+      "--version": "Cursor 0.44.0\n",
+      "agent --help":
+        "Current Cursor version is outdated. Please update Cursor.\n",
+    },
+  );
+
+  const clients = await createCliCapabilityDetector(injected)();
+
+  expect(clients.find((client) => client.client === "cursor")).toMatchObject({
+    integrationStatus: "update_required",
+  });
+});
+
+it("preserves useful stdout and stderr when a harmless probe exits non-zero", async () => {
+  await expect(
+    executeProbe(process.execPath, [
+      "-e",
+      "process.stdout.write('probe stdout'); process.stderr.write('probe stderr'); process.exit(7)",
+    ]),
+  ).resolves.toBe("probe stdout\nprobe stderr");
 });

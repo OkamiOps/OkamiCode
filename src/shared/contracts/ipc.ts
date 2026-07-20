@@ -25,6 +25,80 @@ export const runtimeHealthSchema = z
   })
   .strict();
 
+const clientCapabilityRules = {
+  codex: {
+    role: "runtime",
+    statuses: ["ready", "unavailable"],
+    capabilities: [
+      "sessions",
+      "models",
+      "effort",
+      "approvals",
+      "sandbox",
+      "mcp",
+      "hooks",
+      "subagents",
+      "background",
+      "git",
+      "worktrees",
+      "usage",
+      "automations",
+      "structured_output",
+      "app_server",
+    ],
+  },
+  claude: {
+    role: "runtime",
+    statuses: ["ready", "unavailable"],
+    capabilities: [
+      "sessions",
+      "checkpoints",
+      "models",
+      "effort",
+      "approvals",
+      "sandbox",
+      "browser",
+      "mcp",
+      "skills",
+      "hooks",
+      "subagents",
+      "background",
+      "git",
+      "worktrees",
+      "usage",
+      "automations",
+      "structured_output",
+    ],
+  },
+  cursor: {
+    role: "launcher",
+    statuses: ["needs_adapter", "update_required", "unavailable"],
+    capabilities: ["launcher", "mcp"],
+  },
+  agy: {
+    role: "launcher",
+    statuses: ["needs_adapter", "unavailable"],
+    capabilities: [
+      "sessions",
+      "models",
+      "approvals",
+      "sandbox",
+      "subagents",
+      "plugins",
+    ],
+  },
+} as const;
+
+function hasExactCapabilities(
+  actual: readonly string[],
+  expected: readonly string[],
+): boolean {
+  return (
+    actual.length === expected.length &&
+    actual.every((capability, index) => capability === expected[index])
+  );
+}
+
 export const cliCapabilitySchema = z
   .object({
     client: z.enum(["codex", "claude", "cursor", "agy"]),
@@ -64,7 +138,56 @@ export const cliCapabilitySchema = z
       ]),
     ),
   })
-  .strict();
+  .strict()
+  .superRefine((client, context) => {
+    const rule = clientCapabilityRules[client.client];
+    if (client.role !== rule.role) {
+      context.addIssue({
+        code: "custom",
+        path: ["role"],
+        message: `${client.client} must be a ${rule.role}`,
+      });
+    }
+    if (
+      !(rule.statuses as readonly string[]).includes(client.integrationStatus)
+    ) {
+      context.addIssue({
+        code: "custom",
+        path: ["integrationStatus"],
+        message: `${client.client} does not support this integration status`,
+      });
+    }
+
+    if (client.integrationStatus === "unavailable") {
+      if (
+        client.binaryPath !== null ||
+        client.version !== null ||
+        client.capabilities.length !== 0
+      ) {
+        context.addIssue({
+          code: "custom",
+          message:
+            "Unavailable clients must not report local metadata or capabilities",
+        });
+      }
+      return;
+    }
+
+    if (client.binaryPath === null) {
+      context.addIssue({
+        code: "custom",
+        path: ["binaryPath"],
+        message: "Installed clients require a binary path",
+      });
+    }
+    if (!hasExactCapabilities(client.capabilities, rule.capabilities)) {
+      context.addIssue({
+        code: "custom",
+        path: ["capabilities"],
+        message: `${client.client} capabilities must match the verified local list`,
+      });
+    }
+  });
 
 export const systemDoctorSchema = z
   .object({
