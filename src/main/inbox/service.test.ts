@@ -229,6 +229,39 @@ describe("InboxService", () => {
     ).toHaveLength(1);
   });
 
+  it("rejects attachment content instead of persisting binary data as metadata", () => {
+    const { service } = createService();
+    const account = service.addAccount(accountInput());
+
+    expect(() =>
+      service.applySyncBatch({
+        accountId: account.id,
+        previousCursor: null,
+        nextCursor: "must-not-advance",
+        threads: [threadInput()],
+        messages: [
+          messageInput({
+            attachments: [
+              {
+                filename: "brief.pdf",
+                mimeType: "application/pdf",
+                content: Buffer.from("binary payload"),
+              },
+            ],
+          }),
+        ],
+        syncedAt: "2026-07-21T10:06:00.000Z",
+      }),
+    ).toThrow(InboxInvalidInputError);
+    expect(service.findAccount(account.id)).toMatchObject({
+      syncCursor: null,
+      lastSyncedAt: null,
+    });
+    expect(service.listThreads({ accountIds: [account.id] }).threads).toEqual(
+      [],
+    );
+  });
+
   it("lists a stable combined inbox with unread filtering and local cursors", () => {
     const { service } = createService();
     const first = service.addAccount(accountInput());

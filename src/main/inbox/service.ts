@@ -40,10 +40,12 @@ export interface InboxThread {
 }
 
 export interface InboxAttachment {
+  providerAttachmentId?: string;
   filename?: string;
   mimeType?: string;
   size?: number;
-  [key: string]: unknown;
+  contentId?: string;
+  disposition?: "attachment" | "inline";
 }
 
 export interface InboxMessage {
@@ -239,6 +241,17 @@ const directions = new Set<InboxMessageDirection>([
   "draft",
 ]);
 const bodyFormats = new Set<InboxBodyFormat>(["text", "html"]);
+const attachmentDispositions = new Set<
+  NonNullable<InboxAttachment["disposition"]>
+>(["attachment", "inline"]);
+const attachmentKeys = new Set<keyof InboxAttachment>([
+  "providerAttachmentId",
+  "filename",
+  "mimeType",
+  "size",
+  "contentId",
+  "disposition",
+]);
 
 export class InboxService {
   constructor(private readonly db: Database) {}
@@ -738,7 +751,56 @@ function validateMessage(input: SyncMessage): void {
   if (!Array.isArray(input.attachments)) {
     throw new InboxInvalidInputError("attachments must be an array");
   }
+  input.attachments.forEach(validateAttachment);
   canonicalJson(input.attachments);
+}
+
+function validateAttachment(value: unknown, index: number): void {
+  if (
+    value === null ||
+    typeof value !== "object" ||
+    Array.isArray(value) ||
+    Object.getPrototypeOf(value) !== Object.prototype
+  ) {
+    throw new InboxInvalidInputError(
+      `attachments[${index}] must be a metadata object`,
+    );
+  }
+  const attachment = value as Record<string, unknown>;
+  for (const key of Object.keys(attachment)) {
+    if (!attachmentKeys.has(key as keyof InboxAttachment)) {
+      throw new InboxInvalidInputError(
+        `attachments[${index}] contains unsupported metadata ${key}`,
+      );
+    }
+  }
+  for (const key of [
+    "providerAttachmentId",
+    "filename",
+    "mimeType",
+    "contentId",
+  ] as const) {
+    const field = attachment[key];
+    if (field !== undefined) requireText(field, `attachments[${index}].${key}`);
+  }
+  if (
+    attachment.size !== undefined &&
+    (!Number.isInteger(attachment.size) || (attachment.size as number) < 0)
+  ) {
+    throw new InboxInvalidInputError(
+      `attachments[${index}].size must be a non-negative integer`,
+    );
+  }
+  if (
+    attachment.disposition !== undefined &&
+    !attachmentDispositions.has(
+      attachment.disposition as NonNullable<InboxAttachment["disposition"]>,
+    )
+  ) {
+    throw new InboxInvalidInputError(
+      `attachments[${index}].disposition is invalid`,
+    );
+  }
 }
 
 function validateTextList(
