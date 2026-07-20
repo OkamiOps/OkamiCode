@@ -11,6 +11,7 @@ const MIGRATIONS = [
   "schema/006-lane-permission-mode.sql",
   "schema/007-kanban-cards.sql",
   "schema/008-external-outbox.sql",
+  "schema/009-inbox-core.sql",
 ];
 
 export function runMigrations(db: InstanceType<typeof SqliteDatabase>): void {
