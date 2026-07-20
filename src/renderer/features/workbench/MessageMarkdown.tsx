@@ -6,6 +6,7 @@ import rehypeRaw from "rehype-raw";
 import rehypeSanitize, { defaultSchema } from "rehype-sanitize";
 import remarkBreaks from "remark-breaks";
 import remarkGfm from "remark-gfm";
+import { toWorkspaceRelative, useFileOpener } from "./file-open";
 
 // Inline HTML from models renders, but only through the sanitizer; the class
 // allowlist is what lets highlight.js tokens keep their colors.
@@ -70,10 +71,31 @@ function CodeBlock({ children, ...props }: ComponentProps<"pre">) {
   );
 }
 
+// File paths written inline open the workspace viewer, like Claude/Codex.
+function InlineCode({ children, ...props }: ComponentProps<"code">) {
+  const opener = useFileOpener();
+  const isBlock = (props.className ?? "").includes("language-");
+  const text = !isBlock && typeof children === "string" ? children : null;
+  const relative =
+    text && opener ? toWorkspaceRelative(text, opener.workspacePath) : null;
+  if (!relative || !opener) return <code {...props}>{children}</code>;
+  return (
+    <button
+      className="md-path"
+      onClick={() => opener.open(relative)}
+      title={`Abrir ${relative}`}
+      type="button"
+    >
+      {children}
+    </button>
+  );
+}
+
 export function MessageMarkdown({ children }: { children: string }) {
   return (
     <ReactMarkdown
       components={{
+        code: InlineCode,
         pre: CodeBlock,
         a: ({ children, ...props }) => (
           <a {...props} rel="noreferrer noopener" target="_blank">

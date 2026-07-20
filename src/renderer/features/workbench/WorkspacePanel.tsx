@@ -199,14 +199,16 @@ function BrowserPane() {
 export function WorkspacePanel({
   taskId,
   mode,
+  openFile,
+  onOpenFile,
   onClose,
 }: {
   taskId: string;
   mode: WorkspacePanelMode;
+  openFile: string | null;
+  onOpenFile: (file: string | null) => void;
   onClose: () => void;
 }) {
-  const [openFile, setOpenFile] = useState<string | null>(null);
-
   return (
     <aside aria-label="Painel de trabalho" className="workspace-panel">
       <header className="workspace-panel__header">
@@ -220,7 +222,7 @@ export function WorkspacePanel({
         {mode === "files" && openFile && (
           <button
             className="workspace-panel__crumb"
-            onClick={() => setOpenFile(null)}
+            onClick={() => onOpenFile(null)}
             title="Voltar para a árvore"
             type="button"
           >
@@ -250,7 +252,7 @@ export function WorkspacePanel({
               depth={0}
               dir=""
               name={null}
-              onOpenFile={setOpenFile}
+              onOpenFile={onOpenFile}
               taskId={taskId}
             />
           </div>

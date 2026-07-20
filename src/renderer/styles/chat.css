@@ -1714,3 +1714,97 @@ textarea:focus-visible {
 .tool-diff__line--ctx {
   color: var(--chat-text-dim);
 }
+
+/* Clickable file paths inside the conversation */
+.md-path {
+  border: none;
+  background: rgba(104, 221, 235, 0.08);
+  color: #8fe3ee;
+  font-family: var(--chat-mono);
+  font-size: 0.88em;
+  border-radius: 5px;
+  padding: 1.5px 6px;
+  cursor: pointer;
+  border-bottom: 1px dashed rgba(104, 221, 235, 0.45);
+  transition: background 0.12s ease;
+}
+
+.md-path:hover {
+  background: rgba(104, 221, 235, 0.16);
+  color: #b6f0f8;
+}
+
+.tool-card__open {
+  display: block;
+  width: 100%;
+  text-align: left;
+  border: none;
+  background: transparent;
+  color: var(--chat-cyan);
+  font: 500 11px/1.4 var(--chat-mono);
+  padding: 7px 12px 0;
+  cursor: pointer;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  direction: rtl;
+}
+
+.tool-card__open:hover {
+  text-decoration: underline;
+}
+
+/* Usage at a glance in the topbar */
+.usage-toolbar-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 12px;
+  padding: 5px 10px;
+  border-radius: 999px;
+  background: var(--chat-surface);
+  border: 1px solid var(--chat-border-soft);
+  color: var(--chat-text-dim);
+  font-size: 11px;
+  text-decoration: none;
+  transition: border-color 0.12s ease;
+}
+
+.usage-toolbar-chip:hover {
+  border-color: var(--chat-border);
+  color: var(--chat-text);
+}
+
+.usage-toolbar-chip__metric {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  white-space: nowrap;
+}
+
+.usage-toolbar-chip__metric strong {
+  color: var(--chat-text);
+  font-variant-numeric: tabular-nums;
+}
+
+.usage-toolbar-chip__bar {
+  display: inline-block;
+  width: 34px;
+  height: 4px;
+  border-radius: 999px;
+  background: var(--chat-surface-2);
+  overflow: hidden;
+}
+
+.usage-toolbar-chip__fill {
+  display: block;
+  height: 100%;
+  border-radius: 999px;
+}
+
+.usage-toolbar-chip__fill--claude {
+  background: var(--chat-accent);
+}
+
+.usage-toolbar-chip__fill--gpt {
+  background: var(--chat-cyan);
+}

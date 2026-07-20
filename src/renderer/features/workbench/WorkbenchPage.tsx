@@ -6,6 +6,8 @@ import { Composer } from "./Composer";
 import { Conversation } from "./Conversation";
 import { workbenchApi, type WorkbenchApi } from "./api";
 import { modelDetail, modelLabel } from "./ModelPicker";
+import { UsageToolbarChip } from "../usage/UsageToolbarChip";
+import { FileOpenContext } from "./file-open";
 import { WorkspacePanel, type WorkspacePanelMode } from "./WorkspacePanel";
 import { useWorkbenchStore, type WorkbenchState } from "./store";
 
@@ -28,6 +30,7 @@ export function WorkbenchPage({ api = workbenchApi }: WorkbenchPageProps) {
   const lastUsageByLane = useWorkbenchStore((state) => state.lastUsageByLane);
   const storeActions = useWorkbenchStore(useShallow(workbenchActions));
   const [panelMode, setPanelMode] = useState<WorkspacePanelMode | null>(null);
+  const [panelFile, setPanelFile] = useState<string | null>(null);
 
   const tasksQuery = useQuery({
     queryKey: ["workbench", "tasks"],
@@ -223,6 +226,15 @@ export function WorkbenchPage({ api = workbenchApi }: WorkbenchPageProps) {
     );
   }
 
+  // Clicking a path anywhere in the conversation opens it in the viewer.
+  const fileOpener = {
+    workspacePath: selectedTask?.workspacePath ?? null,
+    open: (relative: string) => {
+      setPanelFile(relative);
+      setPanelMode("files");
+    },
+  };
+
   const panelToggle = (mode: WorkspacePanelMode) => (
     <button
       className="chat-topbar__tool"
@@ -269,6 +281,7 @@ export function WorkbenchPage({ api = workbenchApi }: WorkbenchPageProps) {
           </>
         )}
         <span className="chat-topbar__spacer" />
+        <UsageToolbarChip />
         {panelToggle("files")}
         {panelToggle("terminal")}
         {panelToggle("browser")}
@@ -277,13 +290,15 @@ export function WorkbenchPage({ api = workbenchApi }: WorkbenchPageProps) {
         <div className="chat-main">
           <div className="chat-scroll">
             <div className="chat-column">
-              <Conversation
-                initialEvents={historyData?.events ?? []}
-                isRunning={laneActiveRunId !== null}
-                key={effectiveTaskId ?? "none"}
-                lane={selectedLane}
-                lanes={lanes}
-              />
+              <FileOpenContext.Provider value={fileOpener}>
+                <Conversation
+                  initialEvents={historyData?.events ?? []}
+                  isRunning={laneActiveRunId !== null}
+                  key={effectiveTaskId ?? "none"}
+                  lane={selectedLane}
+                  lanes={lanes}
+                />
+              </FileOpenContext.Provider>
             </div>
           </div>
           <div className="chat-composer-dock">{composer}</div>
@@ -292,6 +307,8 @@ export function WorkbenchPage({ api = workbenchApi }: WorkbenchPageProps) {
           <WorkspacePanel
             mode={panelMode}
             onClose={() => setPanelMode(null)}
+            onOpenFile={setPanelFile}
+            openFile={panelFile}
             taskId={effectiveTaskId}
           />
         )}

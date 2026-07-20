@@ -8,6 +8,7 @@ import {
   Wrench,
 } from "lucide-react";
 import { TerminalDrawer } from "../advanced/TerminalDrawer";
+import { toWorkspaceRelative, useFileOpener } from "../file-open";
 import type { EventCardEvent } from "./EventCardRegistry";
 
 interface ToolLifecycleCardProps {
@@ -118,10 +119,31 @@ export function ToolLifecycleCard({ event }: ToolLifecycleCardProps) {
   const workspacePath = valueAt(event.payload, ["cwd", "workspacePath"]);
   const { Icon, label, tone } = eventStatus(event.kind);
   const itemId = event.id ?? `${event.kind}-tool`;
+  const opener = useFileOpener();
+  const relativeFile = filePath
+    ? toWorkspaceRelative(filePath, opener?.workspacePath ?? null)
+    : null;
+  // Live while it runs, folded once it finishes — the Claude/Codex rhythm.
+  // The key remounts the accordion on that single transition.
+  const running = !event.kind.endsWith("completed");
 
   return (
     <Card className="tool-card">
-      <Accordion defaultExpandedKeys={output ? [itemId] : []} hideSeparator>
+      {relativeFile && opener && (
+        <button
+          className="tool-card__open"
+          onClick={() => opener.open(relativeFile)}
+          title={`Abrir ${relativeFile}`}
+          type="button"
+        >
+          {relativeFile}
+        </button>
+      )}
+      <Accordion
+        defaultExpandedKeys={running && output ? [itemId] : []}
+        hideSeparator
+        key={running ? "running" : "done"}
+      >
         <Accordion.Item id={itemId}>
           <Accordion.Heading>
             <Accordion.Trigger className="tool-card__header">
