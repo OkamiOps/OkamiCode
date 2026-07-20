@@ -2667,10 +2667,45 @@ textarea:focus-visible {
   min-width: 0;
 }
 
-/* The action is quiet; what it touched carries the weight. */
+/* Each kind of action gets its own colour so a burst of lines is
+   scannable at a glance rather than a uniform block of text. */
+.ws-task__tool {
+  --action: var(--chat-text-dim);
+}
+
+.ws-task__tool[data-tone="read"] {
+  --action: var(--chat-cyan);
+}
+.ws-task__tool[data-tone="create"] {
+  --action: var(--chat-green);
+}
+.ws-task__tool[data-tone="edit"] {
+  --action: var(--chat-accent);
+}
+.ws-task__tool[data-tone="exec"] {
+  --action: #f472b6;
+}
+.ws-task__tool[data-tone="web"] {
+  --action: var(--chat-yellow);
+}
+.ws-task__tool[data-tone="agent"] {
+  --action: #d6a5ff;
+}
+.ws-task__tool[data-tone="plan"] {
+  --action: var(--chat-text-mid);
+}
+
+.ws-task__pip {
+  width: 5px;
+  height: 5px;
+  border-radius: 50%;
+  background: var(--action);
+  flex: none;
+}
+
 .ws-task__verb {
-  font: 400 11.5px/1.4 inherit;
-  color: var(--chat-text-dim);
+  font: 500 11.5px/1.4 inherit;
+  color: var(--action);
   flex: none;
 }
 
@@ -2678,7 +2713,8 @@ textarea:focus-visible {
   font-family: var(--chat-mono);
   font-size: 11px;
   color: var(--chat-text);
-  background: var(--chat-surface-2);
+  background: color-mix(in srgb, var(--action) 12%, transparent);
+  border: 1px solid color-mix(in srgb, var(--action) 28%, transparent);
   border-radius: 5px;
   padding: 1px 6px;
   overflow: hidden;

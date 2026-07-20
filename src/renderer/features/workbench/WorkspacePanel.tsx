@@ -164,38 +164,45 @@ function FileView({ taskId, file }: { taskId: string; file: string }) {
 function describeToolCall(
   name: string,
   detail: string | null,
-): { verb: string; target: string | null } {
+): { verb: string; target: string | null; tone: string } {
   const file = detail?.split("/").filter(Boolean).at(-1) ?? detail;
   // Older runs stored no tool input, so each phrase stands on its own when
   // there is nothing to point at — "Criou" alone tells the reader nothing.
-  const phrase = (withTarget: string, alone: string, target: string | null) =>
-    target ? { verb: withTarget, target } : { verb: alone, target: null };
+  const phrase = (
+    withTarget: string,
+    alone: string,
+    target: string | null,
+    tone: string,
+  ) =>
+    target
+      ? { verb: withTarget, target, tone }
+      : { verb: alone, target: null, tone };
 
   switch (name) {
     case "Read":
-      return phrase("Leu", "Leu um arquivo", file);
+      return phrase("Leu", "Leu um arquivo", file, "read");
     case "Write":
-      return phrase("Criou", "Criou um arquivo", file);
+      return phrase("Criou", "Criou um arquivo", file, "create");
     case "Edit":
     case "MultiEdit":
     case "NotebookEdit":
-      return phrase("Editou", "Editou um arquivo", file);
+      return phrase("Editou", "Editou um arquivo", file, "edit");
     case "Bash":
-      return phrase("Rodou", "Rodou um comando", detail);
+      return phrase("Rodou", "Rodou um comando", detail, "exec");
     case "Glob":
-      return phrase("Procurou arquivos", "Procurou arquivos", detail);
+      return phrase("Procurou arquivos", "Procurou arquivos", detail, "read");
     case "Grep":
-      return phrase("Buscou no código", "Buscou no código", detail);
+      return phrase("Buscou no código", "Buscou no código", detail, "read");
     case "WebFetch":
-      return phrase("Abriu", "Abriu uma página", detail);
+      return phrase("Abriu", "Abriu uma página", detail, "web");
     case "WebSearch":
-      return phrase("Pesquisou", "Fez uma busca na web", detail);
+      return phrase("Pesquisou", "Fez uma busca na web", detail, "web");
     case "Task":
-      return phrase("Subagente", "Chamou um subagente", detail);
+      return phrase("Subagente", "Chamou um subagente", detail, "agent");
     case "TodoWrite":
-      return { verb: "Atualizou o plano", target: null };
+      return { verb: "Atualizou o plano", target: null, tone: "plan" };
     default:
-      return phrase(`Usou ${name}`, `Usou ${name}`, detail);
+      return phrase(`Usou ${name}`, `Usou ${name}`, detail, "read");
   }
 }
 
@@ -263,7 +270,12 @@ function RunDetail({ runId }: { runId: string }) {
       {[...byTool.values()].map((tool, index) => {
         const action = describeToolCall(tool.name, tool.detail);
         return (
-          <div className="ws-task__tool" key={`${tool.name}-${index}`}>
+          <div
+            className="ws-task__tool"
+            data-tone={action.tone}
+            key={`${tool.name}-${index}`}
+          >
+            <span aria-hidden="true" className="ws-task__pip" />
             <span className="ws-task__verb">{action.verb}</span>
             {action.target && (
               <code className="ws-task__target">{action.target}</code>
