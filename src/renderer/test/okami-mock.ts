@@ -28,6 +28,7 @@ export function installOkamiMock(responses: OkamiMockResponses): void {
           if (eventListener === listener) eventListener = undefined;
         };
       },
+      onTerminalData: () => () => {},
     } satisfies RendererOkamiBridge),
   });
 }

@@ -1,5 +1,9 @@
 import { contextBridge, ipcRenderer } from "electron";
-import { eventChannel, ipcChannels } from "../shared/contracts/channels";
+import {
+  eventChannel,
+  ipcChannels,
+  terminalDataChannel,
+} from "../shared/contracts/channels";
 import type { IpcInvokeFacade, OkamiBridge } from "../shared/contracts/ipc";
 
 const invoke = Object.freeze(
@@ -18,6 +22,11 @@ const okami = Object.freeze({
     const wrapped = (_event: unknown, data: unknown) => listener(data);
     ipcRenderer.on(eventChannel, wrapped);
     return () => ipcRenderer.removeListener(eventChannel, wrapped);
+  },
+  onTerminalData: (listener: (chunk: unknown) => void) => {
+    const wrapped = (_event: unknown, data: unknown) => listener(data);
+    ipcRenderer.on(terminalDataChannel, wrapped);
+    return () => ipcRenderer.removeListener(terminalDataChannel, wrapped);
   },
 } satisfies OkamiBridge);
 

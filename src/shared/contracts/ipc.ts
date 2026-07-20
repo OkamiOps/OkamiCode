@@ -115,6 +115,32 @@ export const fsReadSchema = z
   })
   .strict();
 
+export const terminalOpenRequestSchema = z
+  .object({ taskId: entityIdSchema })
+  .strict();
+
+export const terminalOpenSchema = z
+  .object({ termId: z.string().min(1) })
+  .strict();
+
+export const terminalWriteRequestSchema = z
+  .object({ termId: z.string().min(1), data: z.string().max(65_536) })
+  .strict();
+
+export const terminalResizeRequestSchema = z
+  .object({
+    termId: z.string().min(1),
+    cols: z.number().int().min(2).max(500),
+    rows: z.number().int().min(2).max(300),
+  })
+  .strict();
+
+export const terminalCloseRequestSchema = z
+  .object({ termId: z.string().min(1) })
+  .strict();
+
+export const terminalAckSchema = z.object({ ok: z.literal(true) }).strict();
+
 export const workspacePickSchema = z
   .object({ path: z.string().min(1).nullable() })
   .strict();
@@ -470,6 +496,10 @@ export const ipcRequestSchemas = {
   "file:pick": filePickRequestSchema,
   "fs:list": fsListRequestSchema,
   "fs:read": fsReadRequestSchema,
+  "terminal:open": terminalOpenRequestSchema,
+  "terminal:write": terminalWriteRequestSchema,
+  "terminal:resize": terminalResizeRequestSchema,
+  "terminal:close": terminalCloseRequestSchema,
   "task:list": emptyRequestSchema,
   "lane:list": laneListRequestSchema,
   "conversation:history": conversationHistoryRequestSchema,
@@ -498,6 +528,10 @@ export const ipcResponseSchemas = {
   "file:pick": filePickSchema,
   "fs:list": fsListSchema,
   "fs:read": fsReadSchema,
+  "terminal:open": terminalOpenSchema,
+  "terminal:write": terminalAckSchema,
+  "terminal:resize": terminalAckSchema,
+  "terminal:close": terminalAckSchema,
   "task:list": taskListSchema,
   "lane:list": laneListSchema,
   "conversation:history": conversationHistorySchema,
@@ -531,4 +565,5 @@ export interface OkamiBridge {
   readonly bridgeVersion: 1;
   readonly invoke: IpcInvokeFacade;
   onEvent(listener: (event: unknown) => void): () => void;
+  onTerminalData(listener: (chunk: unknown) => void): () => void;
 }

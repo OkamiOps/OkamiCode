@@ -10,6 +10,10 @@ export const ipcChannels = [
   "file:pick",
   "fs:list",
   "fs:read",
+  "terminal:open",
+  "terminal:write",
+  "terminal:resize",
+  "terminal:close",
   "task:list",
   "lane:list",
   "conversation:history",
@@ -31,3 +35,5 @@ export const ipcChannels = [
 export type IpcChannel = (typeof ipcChannels)[number];
 
 export const eventChannel = "workbench:event";
+
+export const terminalDataChannel = "terminal:data";

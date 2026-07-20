@@ -27,8 +27,11 @@ function isVisibleEvent(event: EventCardEvent): boolean {
   if (TEXT_EVENT_KINDS.has(event.kind)) return false;
   if (HIDDEN_EVENT_KINDS.has(event.kind)) return false;
   // Hook plumbing and streamed tool-input chunks are audit detail, not
-  // conversation; the started/completed pair carries the whole story.
-  if (event.kind === "tool_call_updated") return false;
+  // conversation. Updates that carry the full tool input stay: they refresh
+  // the started card (folded in mergeToolLifecycle, never shown standalone).
+  if (event.kind === "tool_call_updated") {
+    return Boolean(event.payload?.toolUseId && event.payload?.input);
+  }
   return true;
 }
 
@@ -47,6 +50,17 @@ function mergeToolLifecycle(events: EventCardEvent[]): EventCardEvent[] {
     if (toolUseId && event.kind === "tool_call_started") {
       cardByToolUse.set(toolUseId, merged.length);
       merged.push(event);
+      continue;
+    }
+    if (toolUseId && event.kind === "tool_call_updated") {
+      const index = cardByToolUse.get(toolUseId);
+      if (index !== undefined) {
+        const started = merged[index];
+        merged[index] = {
+          ...started,
+          payload: { ...started.payload, ...event.payload },
+        };
+      }
       continue;
     }
     if (toolUseId && event.kind === "tool_call_completed") {
@@ -102,11 +116,13 @@ type TimelineItem =
 function toolGroupLabel(events: EventCardEvent[]): string {
   const names = [
     ...new Set(
-      events.map((event) =>
-        typeof event.payload?.toolName === "string"
-          ? event.payload.toolName
-          : "ferramenta",
-      ),
+      events.map((event) => {
+        const name =
+          typeof event.payload?.toolName === "string"
+            ? event.payload.toolName
+            : "ferramenta";
+        return name === "Task" ? "Subagente" : name;
+      }),
     ),
   ];
   const running = events.some((event) => event.kind === "tool_call_started");

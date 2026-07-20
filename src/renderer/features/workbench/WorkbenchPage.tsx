@@ -1,5 +1,5 @@
 import { useMutation, useQuery } from "@tanstack/react-query";
-import { FolderTree, Globe, Sparkle } from "lucide-react";
+import { FolderTree, Globe, SquareTerminal, Sparkle } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
 import { useShallow } from "zustand/react/shallow";
 import { Composer } from "./Composer";
@@ -228,13 +228,21 @@ export function WorkbenchPage({ api = workbenchApi }: WorkbenchPageProps) {
       className="chat-topbar__tool"
       data-active={panelMode === mode || undefined}
       onClick={() => setPanelMode((value) => (value === mode ? null : mode))}
-      title={mode === "files" ? "Arquivos da pasta" : "Navegador embutido"}
+      title={
+        mode === "files"
+          ? "Arquivos da pasta"
+          : mode === "browser"
+            ? "Navegador embutido"
+            : "Terminal na pasta"
+      }
       type="button"
     >
       {mode === "files" ? (
         <FolderTree aria-hidden="true" size={14} />
-      ) : (
+      ) : mode === "browser" ? (
         <Globe aria-hidden="true" size={14} />
+      ) : (
+        <SquareTerminal aria-hidden="true" size={14} />
       )}
     </button>
   );
@@ -262,6 +270,7 @@ export function WorkbenchPage({ api = workbenchApi }: WorkbenchPageProps) {
         )}
         <span className="chat-topbar__spacer" />
         {panelToggle("files")}
+        {panelToggle("terminal")}
         {panelToggle("browser")}
       </div>
       <div className="chat-split">

@@ -1671,3 +1671,46 @@ textarea:focus-visible {
   text-align: center;
   padding: 0 30px;
 }
+
+.ws-terminal {
+  flex: 1;
+  min-height: 0;
+  background: #0a0b0e;
+  padding: 6px 4px 4px 8px;
+}
+
+.ws-terminal .xterm {
+  height: 100%;
+}
+
+.tool-diff {
+  margin: 0 0 8px;
+  padding: 10px 12px;
+  background: #0a0b0e;
+  border: 1px solid var(--chat-border-soft);
+  border-radius: 10px;
+  font: 11.5px/1.6 var(--chat-mono);
+  overflow-x: auto;
+  white-space: pre;
+}
+
+.tool-diff__line {
+  display: block;
+  min-width: 100%;
+  width: max-content;
+  padding: 0 4px;
+}
+
+.tool-diff__line--add {
+  color: #9ad27c;
+  background: rgba(97, 207, 140, 0.08);
+}
+
+.tool-diff__line--del {
+  color: #fb6b75;
+  background: rgba(251, 107, 117, 0.08);
+}
+
+.tool-diff__line--ctx {
+  color: var(--chat-text-dim);
+}

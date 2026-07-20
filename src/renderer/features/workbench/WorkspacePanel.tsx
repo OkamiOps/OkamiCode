@@ -11,8 +11,9 @@ import {
 import { useState, type KeyboardEvent } from "react";
 import { workbenchClient } from "../../lib/ipc/client";
 import { MessageMarkdown } from "./MessageMarkdown";
+import { TerminalPane } from "./TerminalPane";
 
-export type WorkspacePanelMode = "files" | "browser";
+export type WorkspacePanelMode = "files" | "browser" | "terminal";
 
 const LANGUAGE_BY_EXTENSION: Record<string, string> = {
   ts: "typescript",
@@ -209,7 +210,13 @@ export function WorkspacePanel({
   return (
     <aside aria-label="Painel de trabalho" className="workspace-panel">
       <header className="workspace-panel__header">
-        <strong>{mode === "files" ? "Arquivos" : "Navegador"}</strong>
+        <strong>
+          {mode === "files"
+            ? "Arquivos"
+            : mode === "browser"
+              ? "Navegador"
+              : "Terminal"}
+        </strong>
         {mode === "files" && openFile && (
           <button
             className="workspace-panel__crumb"
@@ -231,7 +238,9 @@ export function WorkspacePanel({
         </button>
       </header>
       <div className="workspace-panel__body">
-        {mode === "browser" ? (
+        {mode === "terminal" ? (
+          <TerminalPane taskId={taskId} />
+        ) : mode === "browser" ? (
           <BrowserPane />
         ) : openFile ? (
           <FileView file={openFile} taskId={taskId} />

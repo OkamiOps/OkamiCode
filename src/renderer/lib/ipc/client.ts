@@ -18,6 +18,7 @@ export interface RendererOkamiBridge {
   readonly bridgeVersion: 1;
   readonly invoke: RendererInvokeFacade;
   onEvent(listener: (event: unknown) => void): () => void;
+  onTerminalData(listener: (chunk: unknown) => void): () => void;
 }
 
 declare global {
@@ -58,6 +59,14 @@ export const workbenchClient = {
     invokeCommand("file:pick", request),
   fsList: (request: IpcRequest<"fs:list">) => invokeCommand("fs:list", request),
   fsRead: (request: IpcRequest<"fs:read">) => invokeCommand("fs:read", request),
+  terminalOpen: (request: IpcRequest<"terminal:open">) =>
+    invokeCommand("terminal:open", request),
+  terminalWrite: (request: IpcRequest<"terminal:write">) =>
+    invokeCommand("terminal:write", request),
+  terminalResize: (request: IpcRequest<"terminal:resize">) =>
+    invokeCommand("terminal:resize", request),
+  terminalClose: (request: IpcRequest<"terminal:close">) =>
+    invokeCommand("terminal:close", request),
   workspacePick: () => invokeCommand("workspace:pick", {}),
   conversationHistory: (request: IpcRequest<"conversation:history">) =>
     invokeCommand("conversation:history", request),

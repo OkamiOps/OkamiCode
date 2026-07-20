@@ -1,5 +1,7 @@
 import { dialog } from "electron";
+import { spawn as spawnPty, type IPty } from "node-pty";
 import { execFileSync } from "node:child_process";
+import { homedir } from "node:os";
 import {
   existsSync,
   mkdirSync,
@@ -127,6 +129,28 @@ async function dispatch(
       return listWorkspaceDir(state, request as IpcRequest<"fs:list">);
     case "fs:read":
       return readWorkspaceFile(state, request as IpcRequest<"fs:read">);
+    case "terminal:open":
+      return openTerminal(
+        state,
+        event.sender,
+        request as IpcRequest<"terminal:open">,
+      );
+    case "terminal:write": {
+      const write = request as IpcRequest<"terminal:write">;
+      terminals.get(write.termId)?.write(write.data);
+      return { ok: true as const };
+    }
+    case "terminal:resize": {
+      const resize = request as IpcRequest<"terminal:resize">;
+      terminals.get(resize.termId)?.resize(resize.cols, resize.rows);
+      return { ok: true as const };
+    }
+    case "terminal:close": {
+      const close = request as IpcRequest<"terminal:close">;
+      terminals.get(close.termId)?.kill();
+      terminals.delete(close.termId);
+      return { ok: true as const };
+    }
     case "workspace:pick":
       return pickWorkspace();
     case "task:list":
@@ -374,6 +398,42 @@ async function pickFiles(request: IpcRequest<"file:pick">) {
     properties: ["openFile", "multiSelections"],
   });
   return { paths: result.canceled ? [] : result.filePaths };
+}
+
+// Live shells for the embedded terminal, keyed by termId.
+const terminals = new Map<string, IPty>();
+
+function openTerminal(
+  state: AppState,
+  sender: Pick<WebContents, "send" | "isDestroyed">,
+  request: IpcRequest<"terminal:open">,
+) {
+  const row = state.database
+    .prepare(`SELECT workspace_path FROM tasks WHERE id = ?`)
+    .get(request.taskId) as { workspace_path: string | null } | undefined;
+  const cwd = row?.workspace_path ?? homedir();
+  const shell = process.env.SHELL ?? "/bin/zsh";
+  const termId = state.createId();
+  const pty = spawnPty(shell, ["-l"], {
+    name: "xterm-256color",
+    cols: 80,
+    rows: 24,
+    cwd,
+    env: process.env as Record<string, string>,
+  });
+  pty.onData((data) => {
+    if (!sender.isDestroyed()) {
+      sender.send("terminal:data", { termId, data });
+    }
+  });
+  pty.onExit(() => {
+    terminals.delete(termId);
+    if (!sender.isDestroyed()) {
+      sender.send("terminal:data", { termId, exited: true });
+    }
+  });
+  terminals.set(termId, pty);
+  return { termId };
 }
 
 const FS_IGNORED = new Set([".git", "node_modules", ".DS_Store"]);
@@ -790,22 +850,17 @@ function sanitizeValue(value: unknown, seen: WeakSet<object>): unknown {
   );
 }
 
+// Renderer-facing redaction guards credentials only. Paths, SQL and command
+// output are the user's own working material — hiding them made every tool
+// card read "[redacted]" and the workbench unusable.
 function sensitiveKey(key: string): boolean {
-  return /(?:path|cwd|sql|(?:provider|access|auth|bearer)[_-]?token|api[_-]?key|authorization|secret|executable)$/iu.test(
+  return /(?:(?:provider|access|auth|bearer)[_-]?token|api[_-]?key|authorization|secret)$/iu.test(
     key,
   );
 }
 
 function sensitiveString(value: string): boolean {
-  return (
-    /(?:sk-ant-|sk-[a-zA-Z0-9_-]{16,}|Bearer\s+[a-zA-Z0-9._~-]{8,})/u.test(
-      value,
-    ) ||
-    /(?:^|[\s"'=(])(?:\/(?:Users|home|private|tmp|var|etc|opt|usr)\/|[a-zA-Z]:\\)/u.test(
-      value,
-    ) ||
-    /(?:^|[;\n])\s*(?:SELECT|INSERT|UPDATE|DELETE|DROP|ALTER|CREATE|PRAGMA|ATTACH)\s+/iu.test(
-      value,
-    )
+  return /(?:sk-ant-|sk-[a-zA-Z0-9_-]{16,}|Bearer\s+[a-zA-Z0-9._~-]{8,})/u.test(
+    value,
   );
 }

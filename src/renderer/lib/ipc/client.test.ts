@@ -127,6 +127,10 @@ it("exposes exactly the enumerated command surface", () => {
     "file:pick",
     "fs:list",
     "fs:read",
+    "terminal:open",
+    "terminal:write",
+    "terminal:resize",
+    "terminal:close",
     "task:list",
     "lane:list",
     "conversation:history",
@@ -187,6 +191,7 @@ it("exposes a frozen preload facade and removes wrapped event listeners", async 
     "bridgeVersion",
     "invoke",
     "onEvent",
+    "onTerminalData",
   ]);
   expect(Object.isFrozen(okami)).toBe(true);
   expect(Object.isFrozen(okami.invoke)).toBe(true);
@@ -396,7 +401,9 @@ it("opens lanes, sends turns, and forwards only sanitized canonical events", asy
   expect(event.sender.send).toHaveBeenCalledWith(eventChannel, {
     ...canonicalEvent,
     payload: {
-      cwd: "[redacted]",
+      // Paths are the user's own working material and stay visible; only
+      // credentials are redacted for the renderer.
+      cwd: "/Users/marcos/secret",
       provider_token: "[redacted]",
       input_tokens: 12,
     },

@@ -164,6 +164,16 @@ export class ClaudeProjector {
               input: block.input,
             }),
           );
+        } else {
+          // content_block_start carried an empty input (it streams later);
+          // the assistant message has the complete one — refresh the card.
+          events.push(
+            this.event("tool_call_updated", native, {
+              toolUseId,
+              toolName: block.name,
+              input: block.input,
+            }),
+          );
         }
       }
     }
