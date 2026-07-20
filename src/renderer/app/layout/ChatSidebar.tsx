@@ -1,6 +1,7 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import {
   ChevronDown,
+  Cog,
   Gauge,
   Link2,
   Pencil,
@@ -244,6 +245,10 @@ export function ChatSidebar() {
         <NavLink className="chat-footer-link" to="/memory">
           <Link2 aria-hidden="true" size={15} />
           Memória
+        </NavLink>
+        <NavLink className="chat-footer-link" to="/settings">
+          <Cog aria-hidden="true" size={15} />
+          Configurações
         </NavLink>
       </footer>
     </aside>

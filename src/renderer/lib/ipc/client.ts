@@ -79,6 +79,15 @@ export const workbenchClient = {
     invokeCommand("task:fork", request),
   conversationExport: (request: IpcRequest<"conversation:export">) =>
     invokeCommand("conversation:export", request),
+  ecoMcp: (request: IpcRequest<"eco:mcp">) => invokeCommand("eco:mcp", request),
+  ecoSkills: () => invokeCommand("eco:skills", {}),
+  ecoMemoryList: (request: IpcRequest<"eco:memoryList">) =>
+    invokeCommand("eco:memoryList", request),
+  ecoMemoryRead: (request: IpcRequest<"eco:memoryRead">) =>
+    invokeCommand("eco:memoryRead", request),
+  ecoMemoryWrite: (request: IpcRequest<"eco:memoryWrite">) =>
+    invokeCommand("eco:memoryWrite", request),
+  ecoSettings: () => invokeCommand("eco:settings", {}),
   workspacePick: () => invokeCommand("workspace:pick", {}),
   conversationHistory: (request: IpcRequest<"conversation:history">) =>
     invokeCommand("conversation:history", request),

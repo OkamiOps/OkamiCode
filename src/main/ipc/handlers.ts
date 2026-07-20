@@ -31,6 +31,14 @@ import { QuickChatService } from "../orchestration/quick-chat";
 import type { RunHandle, RuntimeHealth } from "../runtime/adapter";
 import { createUsageCommands, type UsageCommands } from "../usage/service";
 import type { AppState } from "./app-state";
+import {
+  readCliSettings,
+  readMcpServers,
+  readMemoryFile,
+  readMemoryFiles,
+  readSkills,
+  writeMemoryFile,
+} from "../ecosystem/readers";
 
 import type { ModelCatalogEntry } from "../runtime/model-catalog";
 
@@ -170,6 +178,27 @@ async function dispatch(
       return archiveTask(state, request as IpcRequest<"task:archive">);
     case "task:fork":
       return forkTask(state, request as IpcRequest<"task:fork">);
+    case "eco:mcp":
+      return readMcpServers(
+        (request as IpcRequest<"eco:mcp">).workspacePath ?? null,
+      );
+    case "eco:skills":
+      return readSkills();
+    case "eco:memoryList":
+      return readMemoryFiles(
+        (request as IpcRequest<"eco:memoryList">).workspacePath ?? null,
+      );
+    case "eco:memoryRead":
+      return {
+        content: readMemoryFile((request as IpcRequest<"eco:memoryRead">).path),
+      };
+    case "eco:memoryWrite": {
+      const write = request as IpcRequest<"eco:memoryWrite">;
+      writeMemoryFile(write.path, write.content);
+      return { ok: true as const };
+    }
+    case "eco:settings":
+      return readCliSettings();
     case "conversation:export":
       return exportConversation(
         state,

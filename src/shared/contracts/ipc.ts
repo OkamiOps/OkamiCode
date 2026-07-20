@@ -141,6 +141,71 @@ export const terminalCloseRequestSchema = z
 
 export const terminalAckSchema = z.object({ ok: z.literal(true) }).strict();
 
+export const workspaceScopedRequestSchema = z
+  .object({ workspacePath: z.string().min(1).max(4_096).optional() })
+  .strict();
+
+export const mcpServersSchema = z.array(
+  z
+    .object({
+      name: z.string().min(1),
+      scope: z.string().min(1),
+      transport: z.string().min(1),
+      detail: z.string(),
+      runtime: z.enum(["claude", "codex"]),
+    })
+    .strict(),
+);
+
+export const skillsSchema = z.array(
+  z
+    .object({
+      name: z.string().min(1),
+      description: z.string(),
+      source: z.string().min(1),
+    })
+    .strict(),
+);
+
+export const memoryListSchema = z.array(
+  z
+    .object({
+      path: z.string().min(1),
+      label: z.string().min(1),
+      scope: z.enum(["user", "project"]),
+      bytes: z.number().int().nonnegative(),
+    })
+    .strict(),
+);
+
+export const memoryReadRequestSchema = z
+  .object({ path: z.string().min(1).max(4_096) })
+  .strict();
+
+export const memoryReadSchema = z.object({ content: z.string() }).strict();
+
+export const memoryWriteRequestSchema = z
+  .object({
+    path: z.string().min(1).max(4_096),
+    content: z.string().max(1_000_000),
+  })
+  .strict();
+
+export const memoryWriteSchema = z.object({ ok: z.literal(true) }).strict();
+
+export const cliSettingsSchema = z.array(
+  z
+    .object({
+      path: z.string().min(1),
+      exists: z.boolean(),
+      keys: z.array(z.string()),
+      effortLevel: z.string().optional(),
+      theme: z.string().optional(),
+      enabledPlugins: z.array(z.string()).optional(),
+    })
+    .strict(),
+);
+
 export const runEventsRequestSchema = z
   .object({ runId: entityIdSchema })
   .strict();
@@ -565,6 +630,12 @@ export const ipcRequestSchemas = {
   "task:archive": taskArchiveRequestSchema,
   "task:fork": taskForkRequestSchema,
   "conversation:export": conversationExportRequestSchema,
+  "eco:mcp": workspaceScopedRequestSchema,
+  "eco:skills": emptyRequestSchema,
+  "eco:memoryList": workspaceScopedRequestSchema,
+  "eco:memoryRead": memoryReadRequestSchema,
+  "eco:memoryWrite": memoryWriteRequestSchema,
+  "eco:settings": emptyRequestSchema,
   "task:list": emptyRequestSchema,
   "lane:list": laneListRequestSchema,
   "conversation:history": conversationHistoryRequestSchema,
@@ -603,6 +674,12 @@ export const ipcResponseSchemas = {
   "task:archive": taskSchema,
   "task:fork": taskSchema,
   "conversation:export": conversationExportSchema,
+  "eco:mcp": mcpServersSchema,
+  "eco:skills": skillsSchema,
+  "eco:memoryList": memoryListSchema,
+  "eco:memoryRead": memoryReadSchema,
+  "eco:memoryWrite": memoryWriteSchema,
+  "eco:settings": cliSettingsSchema,
   "task:list": taskListSchema,
   "lane:list": laneListSchema,
   "conversation:history": conversationHistorySchema,
