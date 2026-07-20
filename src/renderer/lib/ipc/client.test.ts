@@ -132,6 +132,7 @@ it("exposes exactly the enumerated command surface", () => {
     "terminal:resize",
     "terminal:close",
     "run:list",
+    "run:events",
     "lane:setPermissionMode",
     "task:archive",
     "task:fork",

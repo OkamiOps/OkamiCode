@@ -148,6 +148,8 @@ async function dispatch(
     }
     case "run:list":
       return listRuns(state, request as IpcRequest<"run:list">);
+    case "run:events":
+      return listRunEvents(state, request as IpcRequest<"run:events">);
     case "lane:setPermissionMode": {
       const set = request as IpcRequest<"lane:setPermissionMode">;
       state.database
@@ -454,6 +456,43 @@ function openTerminal(
   });
   terminals.set(termId, pty);
   return { termId };
+}
+
+// What a single background run actually did, for the panel's detail view.
+function listRunEvents(state: AppState, request: IpcRequest<"run:events">) {
+  const rows = state.database
+    .prepare(
+      `SELECT payload_json, id, task_id, lane_id, run_id, sequence,
+              occurred_at, kind, native_event_id
+       FROM events WHERE run_id = ? ORDER BY sequence`,
+    )
+    .all(request.runId) as Array<{
+    payload_json: string;
+    id: string;
+    task_id: string;
+    lane_id: string;
+    run_id: string;
+    sequence: number;
+    occurred_at: string;
+    kind: string;
+    native_event_id: string | null;
+  }>;
+  return rows.map((row) =>
+    canonicalEventSchema.parse({
+      schemaVersion: 1,
+      id: row.id,
+      taskId: row.task_id,
+      laneId: row.lane_id,
+      runId: row.run_id,
+      sequence: row.sequence,
+      occurredAt: row.occurred_at,
+      kind: row.kind,
+      nativeEventId: row.native_event_id,
+      payload: sanitizePayload(
+        JSON.parse(row.payload_json) as Record<string, unknown>,
+      ),
+    }),
+  );
 }
 
 function archiveTask(state: AppState, request: IpcRequest<"task:archive">) {

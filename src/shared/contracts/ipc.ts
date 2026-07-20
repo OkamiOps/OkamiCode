@@ -141,6 +141,12 @@ export const terminalCloseRequestSchema = z
 
 export const terminalAckSchema = z.object({ ok: z.literal(true) }).strict();
 
+export const runEventsRequestSchema = z
+  .object({ runId: entityIdSchema })
+  .strict();
+
+export const runEventsSchema = z.array(canonicalEventSchema);
+
 export const permissionModes = [
   "manual",
   "acceptEdits",
@@ -554,6 +560,7 @@ export const ipcRequestSchemas = {
   "terminal:resize": terminalResizeRequestSchema,
   "terminal:close": terminalCloseRequestSchema,
   "run:list": runListRequestSchema,
+  "run:events": runEventsRequestSchema,
   "lane:setPermissionMode": laneSetPermissionModeRequestSchema,
   "task:archive": taskArchiveRequestSchema,
   "task:fork": taskForkRequestSchema,
@@ -591,6 +598,7 @@ export const ipcResponseSchemas = {
   "terminal:resize": terminalAckSchema,
   "terminal:close": terminalAckSchema,
   "run:list": runListSchema,
+  "run:events": runEventsSchema,
   "lane:setPermissionMode": laneSetPermissionModeSchema,
   "task:archive": taskSchema,
   "task:fork": taskSchema,

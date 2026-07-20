@@ -69,6 +69,8 @@ export const workbenchClient = {
     invokeCommand("terminal:close", request),
   runList: (request: IpcRequest<"run:list">) =>
     invokeCommand("run:list", request),
+  runEvents: (request: IpcRequest<"run:events">) =>
+    invokeCommand("run:events", request),
   laneSetPermissionMode: (request: IpcRequest<"lane:setPermissionMode">) =>
     invokeCommand("lane:setPermissionMode", request),
   taskArchive: (request: IpcRequest<"task:archive">) =>

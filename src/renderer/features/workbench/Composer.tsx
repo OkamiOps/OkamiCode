@@ -35,6 +35,11 @@ interface ComposerProps {
   efforts: string[];
   contextNote: string | null;
   contextPercent: number | null;
+  contextBreakdown: Array<{
+    label: string;
+    value: string;
+    tone: string;
+  }> | null;
   draftKey: string | null;
   slashCommands: string[];
   suggestions: string[];
@@ -46,46 +51,6 @@ interface ComposerProps {
   onSelectEffort: (effort: string) => void;
   onSelectModel: (runtimeKind: "claude" | "codex", model: string) => void;
   onSend: (input: string) => Promise<void>;
-}
-
-// Miniature gauge: the arc fills with the session context, warming from
-// accent to red as the window runs out.
-function ContextRing({ percent }: { percent: number }) {
-  const radius = 6.5;
-  const circumference = 2 * Math.PI * radius;
-  const filled = (Math.min(100, Math.max(0, percent)) / 100) * circumference;
-  const tone =
-    percent >= 85 ? "#fb6b75" : percent >= 60 ? "#ffc26b" : "#ff7a1a";
-  return (
-    <svg
-      aria-hidden="true"
-      className="chat-context-ring"
-      height="16"
-      viewBox="0 0 16 16"
-      width="16"
-    >
-      <circle
-        cx="8"
-        cy="8"
-        fill="none"
-        r={radius}
-        stroke="currentColor"
-        strokeOpacity="0.18"
-        strokeWidth="2"
-      />
-      <circle
-        cx="8"
-        cy="8"
-        fill="none"
-        r={radius}
-        stroke={tone}
-        strokeDasharray={`${filled} ${circumference - filled}`}
-        strokeDashoffset={circumference / 4}
-        strokeLinecap="round"
-        strokeWidth="2"
-      />
-    </svg>
-  );
 }
 
 function ComposerAddMenu({
@@ -255,6 +220,7 @@ export function Composer({
   efforts,
   contextNote,
   contextPercent,
+  contextBreakdown,
   draftKey,
   slashCommands,
   suggestions,
@@ -278,6 +244,7 @@ export function Composer({
     }
   });
   const [slashIndex, setSlashIndex] = useState(0);
+  const [contextOpen, setContextOpen] = useState(false);
   const [attachments, setAttachments] = useState<string[]>([]);
   const [queued, setQueued] = useState<string[]>([]);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
@@ -517,15 +484,65 @@ export function Composer({
         )}
         <span className="chat-composer__spacer" />
         {contextNote && (
-          <span
+          <button
             className="chat-context-note"
-            title={`Contexto da sessão · ${contextNote} (estimativa local)`}
+            data-tone={
+              contextPercent === null
+                ? "ok"
+                : contextPercent >= 85
+                  ? "high"
+                  : contextPercent >= 60
+                    ? "warn"
+                    : "ok"
+            }
+            onClick={() => setContextOpen((value) => !value)}
+            title={`Janela de contexto · ${contextNote}`}
+            type="button"
           >
             {contextPercent !== null && (
-              <ContextRing percent={contextPercent} />
+              <span aria-hidden="true" className="chat-context-bar">
+                <i style={{ width: `${contextPercent}%` }} />
+              </span>
             )}
-            {contextPercent !== null ? `${contextPercent}%` : contextNote}
-          </span>
+            {contextNote}
+            {contextPercent !== null && <strong>{contextPercent}%</strong>}
+          </button>
+        )}
+        {contextOpen && contextBreakdown && (
+          <div className="context-pop">
+            <header>
+              <strong>Janela de contexto</strong>
+              <button
+                aria-label="Fechar"
+                onClick={() => setContextOpen(false)}
+                type="button"
+              >
+                <X aria-hidden="true" size={12} />
+              </button>
+            </header>
+            <p className="context-pop__total">
+              {contextNote}
+              {contextPercent !== null && (
+                <span> · {contextPercent}% cheia</span>
+              )}
+            </p>
+            <ul>
+              {contextBreakdown.map((entry) => (
+                <li key={entry.label}>
+                  <span
+                    aria-hidden="true"
+                    className={`context-pop__swatch context-pop__swatch--${entry.tone}`}
+                  />
+                  {entry.label}
+                  <strong>{entry.value}</strong>
+                </li>
+              ))}
+            </ul>
+            <p className="context-pop__note">
+              Do último relatório de uso do harness: entrada, cache lido e
+              saída. O harness não decompõe além disso.
+            </p>
+          </div>
         )}
         {activeRunId ? (
           <span className="chat-run-actions">

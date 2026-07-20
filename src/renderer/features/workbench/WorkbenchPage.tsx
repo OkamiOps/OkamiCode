@@ -208,6 +208,7 @@ export function WorkbenchPage({ api = workbenchApi }: WorkbenchPageProps) {
       efforts={efforts}
       contextNote={context?.label ?? null}
       contextPercent={context?.percent ?? null}
+      contextBreakdown={context?.breakdown ?? null}
       draftKey={effectiveTaskId}
       suggestions={suggestedUrls}
       onOpenPanel={(mode) =>
@@ -454,7 +455,11 @@ function sessionContext(
       }
     | undefined,
   model: string,
-): { label: string; percent: number | null } | null {
+): {
+  label: string;
+  percent: number | null;
+  breakdown: Array<{ label: string; value: string; tone: string }>;
+} | null {
   if (!usage) return null;
   const used = usage.inputTokens + usage.cacheReadTokens + usage.outputTokens;
   if (used === 0) return null;
@@ -467,11 +472,28 @@ function sessionContext(
         : null;
   const compact = (value: number) =>
     value >= 1000 ? `${Math.round(value / 1000)}k` : `${value}`;
+  const breakdown = [
+    { label: "Entrada", value: compact(usage.inputTokens), tone: "input" },
+    {
+      label: "Cache lido",
+      value: compact(usage.cacheReadTokens),
+      tone: "cache",
+    },
+    { label: "Saída", value: compact(usage.outputTokens), tone: "output" },
+  ];
   if (!window) {
-    return { label: `contexto ~${compact(used)} tokens`, percent: null };
+    return {
+      label: `contexto ~${compact(used)} tokens`,
+      percent: null,
+      breakdown,
+    };
   }
   const percent = Math.min(100, Math.round((used / window) * 100));
-  return { label: `${compact(used)}/${compact(window)} tokens`, percent };
+  return {
+    label: `${compact(used)}/${compact(window)} tokens`,
+    percent,
+    breakdown,
+  };
 }
 
 function workbenchActions(state: WorkbenchState) {

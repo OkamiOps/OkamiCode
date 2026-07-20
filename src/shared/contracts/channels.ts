@@ -15,6 +15,7 @@ export const ipcChannels = [
   "terminal:resize",
   "terminal:close",
   "run:list",
+  "run:events",
   "lane:setPermissionMode",
   "task:archive",
   "task:fork",

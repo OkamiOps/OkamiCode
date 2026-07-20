@@ -150,9 +150,75 @@ function duration(startedAt: string, finishedAt: string | null): string {
   return `${Math.floor(seconds / 60)}m ${seconds % 60}s`;
 }
 
+// What a run did, expanded under its row: the tools it called and the reply
+// it produced.
+function RunDetail({ runId }: { runId: string }) {
+  const events = useQuery({
+    queryKey: ["run-events", runId],
+    queryFn: () => workbenchClient.runEvents({ runId }),
+  });
+  if (events.isLoading) return <p className="fs-empty">Carregando…</p>;
+  if (events.isError) {
+    return <p className="fs-empty">Não foi possível ler este turno.</p>;
+  }
+  const rows = events.data ?? [];
+  const tools = rows.filter(
+    (event) =>
+      event.kind === "tool_call_started" ||
+      event.kind === "tool_call_completed",
+  );
+  const byTool = new Map<string, { name: string; detail: string | null }>();
+  for (const event of tools) {
+    const id = String(event.payload.toolUseId ?? event.id);
+    // Only the "started" event carries the tool name; the completion must
+    // not overwrite it with a placeholder.
+    const named =
+      typeof event.payload.toolName === "string"
+        ? event.payload.toolName
+        : null;
+    const input = event.payload.input as Record<string, unknown> | undefined;
+    const detail =
+      typeof input?.command === "string"
+        ? input.command
+        : typeof input?.file_path === "string"
+          ? input.file_path
+          : null;
+    const existing = byTool.get(id);
+    byTool.set(id, {
+      name: named ?? existing?.name ?? "ferramenta",
+      detail: detail ?? existing?.detail ?? null,
+    });
+  }
+  const reply = rows
+    .filter((event) => event.kind === "message_completed")
+    .map((event) => String(event.payload.text ?? ""))
+    .join("\n")
+    .trim();
+
+  return (
+    <div className="ws-task__detail">
+      {byTool.size === 0 && !reply && (
+        <p className="fs-empty">Este turno não registrou ferramentas.</p>
+      )}
+      {[...byTool.values()].map((tool, index) => (
+        <div className="ws-task__tool" key={`${tool.name}-${index}`}>
+          <strong>{tool.name}</strong>
+          {tool.detail && <code>{tool.detail}</code>}
+        </div>
+      ))}
+      {reply && (
+        <p className="ws-task__reply">
+          {reply.length > 400 ? `${reply.slice(0, 400)}…` : reply}
+        </p>
+      )}
+    </div>
+  );
+}
+
 // Every turn this app has run, with how it ended — the panel Claude keeps
 // as "Tarefas em segundo plano".
 function TasksPane({ taskId }: { taskId: string }) {
+  const [openRun, setOpenRun] = useState<string | null>(null);
   const runs = useQuery({
     queryKey: ["workspace-runs", taskId],
     queryFn: () => workbenchClient.runList({ taskId }),
@@ -179,14 +245,32 @@ function TasksPane({ taskId }: { taskId: string }) {
         <p className="fs-empty">Nenhum turno registrado nesta conversa.</p>
       )}
       {rows.map((row) => (
-        <div className="ws-task" data-status={row.status} key={row.runId}>
-          <span className="ws-task__dot" aria-hidden="true" />
-          <span className="ws-task__meta">
-            <strong>{row.model}</strong>
-            <small>
-              {row.status} · {duration(row.startedAt, row.finishedAt)}
-            </small>
-          </span>
+        <div key={row.runId}>
+          <button
+            aria-expanded={openRun === row.runId}
+            className="ws-task"
+            data-status={row.status}
+            onClick={() =>
+              setOpenRun((current) =>
+                current === row.runId ? null : row.runId,
+              )
+            }
+            type="button"
+          >
+            <span className="ws-task__dot" aria-hidden="true" />
+            <span className="ws-task__meta">
+              <strong>{row.model}</strong>
+              <small>
+                {row.status} · {duration(row.startedAt, row.finishedAt)}
+              </small>
+            </span>
+            <ChevronRight
+              aria-hidden="true"
+              className="ws-task__chevron"
+              size={12}
+            />
+          </button>
+          {openRun === row.runId && <RunDetail runId={row.runId} />}
         </div>
       ))}
     </div>
