@@ -1,5 +1,8 @@
 import {
+  Archive,
+  Download,
   Files,
+  GitBranch,
   Globe,
   ListChecks,
   MoreVertical,
@@ -14,12 +17,18 @@ import type { WorkspacePanelMode } from "./WorkspacePanel";
 // left of the divider, conversation actions on the right.
 export function ConversationMenu({
   activePanels,
+  onArchive,
   onDelete,
+  onExport,
+  onFork,
   onRename,
   onTogglePanel,
 }: {
   activePanels: WorkspacePanelMode[];
+  onArchive: () => void;
   onDelete: () => void;
+  onExport: () => void;
+  onFork: () => void;
   onRename: () => void;
   onTogglePanel: (mode: WorkspacePanelMode) => void;
 }) {
@@ -96,6 +105,9 @@ export function ConversationMenu({
           )}
           <span className="conv-menu__separator" />
           {item("Mudar o nome", Pencil, onRename, { shortcut: "R" })}
+          {item("Fork", GitBranch, onFork, { shortcut: "F" })}
+          {item("Exportar", Download, onExport)}
+          {item("Arquivar", Archive, onArchive, { shortcut: "A" })}
           {item("Apagar", Trash2, onDelete, { danger: true, shortcut: "D" })}
         </div>
       )}

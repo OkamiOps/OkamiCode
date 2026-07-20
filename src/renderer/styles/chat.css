@@ -2351,3 +2351,84 @@ textarea:focus-visible {
   border-radius: 999px;
   padding: 1px 6px;
 }
+
+/* Menus that open upward from the composer */
+.conv-menu__list--up {
+  top: auto;
+  bottom: calc(100% + 8px);
+  left: 0;
+  right: auto;
+}
+
+.conv-menu__label {
+  font-size: 10.5px;
+  text-transform: uppercase;
+  letter-spacing: 0.07em;
+  color: var(--chat-text-dim);
+  padding: 6px 10px 3px;
+}
+
+.conv-menu__url {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  max-width: 230px;
+  font-family: var(--chat-mono);
+  font-size: 11.5px;
+}
+
+.conv-menu__item small {
+  color: var(--chat-text-dim);
+  font-size: 10.5px;
+}
+
+.conv-menu__note {
+  margin: 4px 0 0;
+  padding: 6px 10px 2px;
+  border-top: 1px solid var(--chat-border-soft);
+  font-size: 10.5px;
+  color: var(--chat-text-dim);
+}
+
+.chat-permission {
+  border: none;
+  cursor: pointer;
+  font-family: inherit;
+}
+
+/* Context readout: bar + tokens + percent, like Claude's */
+.chat-context-note {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  font-size: 11px;
+  color: var(--chat-text-dim);
+}
+
+.chat-context-bar {
+  display: inline-block;
+  width: 46px;
+  height: 4px;
+  border-radius: 999px;
+  background: var(--chat-surface-2);
+  overflow: hidden;
+}
+
+.chat-context-bar i {
+  display: block;
+  height: 100%;
+  background: var(--chat-cyan);
+}
+
+.chat-context-note[data-tone="warn"] .chat-context-bar i {
+  background: var(--chat-yellow);
+}
+
+.chat-context-note[data-tone="high"] .chat-context-bar i {
+  background: var(--chat-red);
+}
+
+.chat-context-note strong {
+  color: var(--chat-text-mid);
+  font-variant-numeric: tabular-nums;
+}

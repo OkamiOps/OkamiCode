@@ -99,6 +99,16 @@ export function reduceCanonicalEvent(
       }
     }
   }
+  if (event.kind === "session_started") {
+    // A fresh session (not a resume) is the only thing that empties context.
+    const rest = Object.fromEntries(
+      Object.entries(state.lastUsageByLane).filter(
+        ([laneId]) => laneId !== event.laneId,
+      ),
+    );
+    next.lastUsageByLane = rest;
+    persistUsage(rest);
+  }
   if (event.kind === "usage_reported") {
     const usage = event.payload.usage as Record<string, unknown> | undefined;
     if (usage && typeof usage === "object") {
@@ -115,21 +125,64 @@ export function reduceCanonicalEvent(
             )
             .reduce((max, value) => Math.max(max, value), 0) || null
         : null;
+      const previous = state.lastUsageByLane[event.laneId];
+      const measured =
+        toCount(usage.input_tokens) +
+        toCount(usage.cache_read_input_tokens) +
+        toCount(usage.output_tokens);
+      const previousTotal = previous
+        ? previous.inputTokens +
+          previous.cacheReadTokens +
+          previous.outputTokens
+        : 0;
+      // Turn-level usage fluctuates with caching; the session's occupancy is
+      // the peak, which is why the meter used to jump back down every turn.
+      const keepPrevious = measured < previousTotal;
+      const merged = {
+        inputTokens: keepPrevious
+          ? previous!.inputTokens
+          : toCount(usage.input_tokens),
+        cacheReadTokens: keepPrevious
+          ? previous!.cacheReadTokens
+          : toCount(usage.cache_read_input_tokens),
+        outputTokens: keepPrevious
+          ? previous!.outputTokens
+          : toCount(usage.output_tokens),
+        contextWindow: contextWindow ?? previous?.contextWindow ?? null,
+      };
       next.lastUsageByLane = {
         ...state.lastUsageByLane,
-        [event.laneId]: {
-          inputTokens: toCount(usage.input_tokens),
-          cacheReadTokens: toCount(usage.cache_read_input_tokens),
-          outputTokens: toCount(usage.output_tokens),
-          contextWindow,
-        },
+        [event.laneId]: merged,
       };
+      persistUsage(next.lastUsageByLane);
     }
   }
   return next;
 }
 
 const EFFORT_STORAGE_KEY = "okami.effortByLane";
+const USAGE_STORAGE_KEY = "okami.usageByLane";
+
+function loadPersistedUsage(): Record<string, SessionUsage> {
+  try {
+    const raw = globalThis.localStorage?.getItem(USAGE_STORAGE_KEY);
+    const parsed: unknown = raw ? JSON.parse(raw) : null;
+    if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) {
+      return {};
+    }
+    return parsed as Record<string, SessionUsage>;
+  } catch {
+    return {};
+  }
+}
+
+function persistUsage(usage: Record<string, SessionUsage>): void {
+  try {
+    globalThis.localStorage?.setItem(USAGE_STORAGE_KEY, JSON.stringify(usage));
+  } catch {
+    // Persistence is best effort; the in-memory meter still works.
+  }
+}
 
 function loadPersistedEfforts(): Record<string, string> {
   try {
@@ -163,7 +216,7 @@ export function createWorkbenchStore(): StoreApi<WorkbenchState> {
     activeRunId: null,
     activeRunLaneId: null,
     effortByLane: loadPersistedEfforts(),
-    lastUsageByLane: {},
+    lastUsageByLane: loadPersistedUsage(),
     appliedEventIds: {},
     openedLanes: {},
     runStatus: {},
@@ -187,6 +240,8 @@ export function createWorkbenchStore(): StoreApi<WorkbenchState> {
       set((state) => {
         let next: WorkbenchState = {
           ...state,
+          // lastUsageByLane survives: the context meter belongs to the lane,
+          // not to the message list being replaced.
           sentMessages: messages,
           streams: {},
           appliedEventIds: {},

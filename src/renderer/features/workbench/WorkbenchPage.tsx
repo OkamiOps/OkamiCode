@@ -15,6 +15,7 @@ import { modelDetail, modelLabel } from "./ModelPicker";
 import { ResizeHandle, useResizablePane } from "../../app/layout/ResizeHandle";
 import { UsagePopover } from "../usage/UsagePopover";
 import { ConversationMenu } from "./ConversationMenu";
+import { workbenchClient } from "../../lib/ipc/client";
 import { FileOpenContext } from "./file-open";
 import {
   PANEL_TITLES,
@@ -49,6 +50,7 @@ export function WorkbenchPage({ api = workbenchApi }: WorkbenchPageProps) {
         : [...current, mode],
     );
   const [panelFile, setPanelFile] = useState<string | null>(null);
+  const [previewUrl, setPreviewUrl] = useState<string | null>(null);
   const panelPane = useResizablePane({
     storageKey: "okami.width.panel",
     initial: 420,
@@ -170,6 +172,21 @@ export function WorkbenchPage({ api = workbenchApi }: WorkbenchPageProps) {
     );
   }, [historyData, effectiveTaskId, storeActions]);
 
+  // Dev-server URLs the agent printed become one-click previews, the way
+  // Codex lists "Saídas".
+  const suggestedUrls = [
+    ...new Set(
+      (historyData?.events ?? []).flatMap((event) => {
+        const text = JSON.stringify(event.payload ?? {});
+        return [
+          ...text.matchAll(/https?:\/\/(?:localhost|127\.0\.0\.1)[^"\\\s]*/gu),
+        ]
+          .map((match) => match[0])
+          .filter((url) => url.length < 120);
+      }),
+    ),
+  ];
+
   // A running turn only gates the lane it belongs to.
   const laneActiveRunId =
     activeRunLaneId !== null && activeRunLaneId === selectedLane?.laneId
@@ -192,6 +209,27 @@ export function WorkbenchPage({ api = workbenchApi }: WorkbenchPageProps) {
       contextNote={context?.label ?? null}
       contextPercent={context?.percent ?? null}
       draftKey={effectiveTaskId}
+      suggestions={suggestedUrls}
+      onOpenPanel={(mode) =>
+        setOpenPanels((current) =>
+          current.includes(mode) ? current : [...current, mode],
+        )
+      }
+      onSelectPermissionMode={(mode) => {
+        if (!selectedLane) return;
+        void workbenchClient
+          .laneSetPermissionMode({
+            laneId: selectedLane.laneId,
+            mode: mode as "manual",
+          })
+          .then(() => lanesQuery.refetch());
+      }}
+      onOpenUrl={(url) => {
+        setPreviewUrl(url);
+        setOpenPanels((current) =>
+          current.includes("browser") ? current : [...current, "browser"],
+        );
+      }}
       slashCommands={
         selectedLane ? (slashCommandsByLane[selectedLane.laneId] ?? []) : []
       }
@@ -334,6 +372,27 @@ export function WorkbenchPage({ api = workbenchApi }: WorkbenchPageProps) {
                 .then(() => window.location.reload());
             }
           }}
+          onArchive={() => {
+            if (!effectiveTaskId) return;
+            void workbenchClient
+              .taskArchive({ taskId: effectiveTaskId, archived: true })
+              .then(() => window.location.reload());
+          }}
+          onExport={() => {
+            if (!effectiveTaskId) return;
+            void workbenchClient.conversationExport({
+              taskId: effectiveTaskId,
+            });
+          }}
+          onFork={() => {
+            if (!effectiveTaskId) return;
+            void workbenchClient
+              .taskFork({ taskId: effectiveTaskId })
+              .then((task) => {
+                storeActions.selectTask(task.id);
+                window.location.reload();
+              });
+          }}
           onTogglePanel={togglePanel}
         />
       </div>
@@ -370,6 +429,7 @@ export function WorkbenchPage({ api = workbenchApi }: WorkbenchPageProps) {
             {openPanels.map((mode) => (
               <WorkspacePanel
                 key={mode}
+                initialUrl={previewUrl}
                 mode={mode}
                 onClose={() => togglePanel(mode)}
                 onOpenFile={setPanelFile}

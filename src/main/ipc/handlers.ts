@@ -9,6 +9,7 @@ import {
   readFileSync,
   realpathSync,
   statSync,
+  writeFileSync,
 } from "node:fs";
 import nodePath from "node:path";
 import type { IpcMain, IpcMainInvokeEvent, WebContents } from "electron";
@@ -147,6 +148,23 @@ async function dispatch(
     }
     case "run:list":
       return listRuns(state, request as IpcRequest<"run:list">);
+    case "lane:setPermissionMode": {
+      const set = request as IpcRequest<"lane:setPermissionMode">;
+      state.database
+        .prepare(`UPDATE runtime_lanes SET permission_mode = ? WHERE id = ?`)
+        .run(set.mode, set.laneId);
+      openedLanes.delete(set.laneId);
+      return set;
+    }
+    case "task:archive":
+      return archiveTask(state, request as IpcRequest<"task:archive">);
+    case "task:fork":
+      return forkTask(state, request as IpcRequest<"task:fork">);
+    case "conversation:export":
+      return exportConversation(
+        state,
+        request as IpcRequest<"conversation:export">,
+      );
     case "terminal:close": {
       const close = request as IpcRequest<"terminal:close">;
       terminals.get(close.termId)?.kill();
@@ -436,6 +454,93 @@ function openTerminal(
   });
   terminals.set(termId, pty);
   return { termId };
+}
+
+function archiveTask(state: AppState, request: IpcRequest<"task:archive">) {
+  state.database
+    .prepare(`UPDATE tasks SET status = ?, updated_at = ? WHERE id = ?`)
+    .run(
+      request.archived ? "archived" : "active",
+      state.clock().toISOString(),
+      request.taskId,
+    );
+  const task = listTasks(state).find((row) => row.id === request.taskId);
+  if (!task) throw new Error(`Task ${request.taskId} not found`);
+  return task;
+}
+
+// A fork starts a fresh conversation on the same folder: the lanes come
+// along so the models stay, the transcript does not.
+function forkTask(state: AppState, request: IpcRequest<"task:fork">) {
+  const source = listTasks(state).find((row) => row.id === request.taskId);
+  if (!source) throw new Error(`Task ${request.taskId} not found`);
+  const now = state.clock().toISOString();
+  const forked = {
+    id: state.createId(),
+    kind: "workbench" as const,
+    title: `${source.title} (fork)`,
+    objective: source.objective,
+    status: "active",
+    workspacePath: source.workspacePath,
+    createdAt: now,
+    updatedAt: now,
+  };
+  state.tasks.insert(forked);
+  const lanes = state.database
+    .prepare(
+      `SELECT runtime_kind, provider_kind, model, workspace_path
+       FROM runtime_lanes WHERE task_id = ?`,
+    )
+    .all(request.taskId) as Array<{
+    runtime_kind: "claude" | "codex";
+    provider_kind: string;
+    model: string;
+    workspace_path: string | null;
+  }>;
+  for (const lane of lanes) {
+    state.lanes.insert({
+      id: state.createId(),
+      taskId: forked.id,
+      runtimeKind: lane.runtime_kind,
+      providerKind: lane.provider_kind as "claude_max" | "chatgpt",
+      model: lane.model,
+      status: "ready",
+      workspacePath: lane.workspace_path,
+      lastEventCursor: 0,
+      createdAt: now,
+      updatedAt: now,
+    });
+  }
+  return forked;
+}
+
+// Writes the transcript as Markdown wherever the user points the dialog.
+async function exportConversation(
+  state: AppState,
+  request: IpcRequest<"conversation:export">,
+) {
+  const task = listTasks(state).find((row) => row.id === request.taskId);
+  if (!task) throw new Error(`Task ${request.taskId} not found`);
+  const history = conversationHistory(state, { taskId: request.taskId });
+  const lines = [`# ${task.title}`, ""];
+  if (task.workspacePath) lines.push(`Pasta: ${task.workspacePath}`, "");
+  for (const message of history.userMessages) {
+    lines.push(`## Você · ${message.at}`, "", message.body, "");
+  }
+  for (const event of history.events) {
+    if (event.kind !== "message_completed") continue;
+    const text = event.payload.text;
+    if (typeof text === "string" && text.trim()) {
+      lines.push(`## Agente · ${event.occurredAt}`, "", text, "");
+    }
+  }
+  const result = await dialog.showSaveDialog({
+    title: "Exportar conversa",
+    defaultPath: `${task.title.replaceAll("/", "-")}.md`,
+  });
+  if (result.canceled || !result.filePath) return { path: null };
+  writeFileSync(result.filePath, lines.join("\n"), "utf8");
+  return { path: result.filePath };
 }
 
 interface RunRow {

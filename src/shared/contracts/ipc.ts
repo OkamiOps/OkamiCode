@@ -141,6 +141,41 @@ export const terminalCloseRequestSchema = z
 
 export const terminalAckSchema = z.object({ ok: z.literal(true) }).strict();
 
+export const permissionModes = [
+  "manual",
+  "acceptEdits",
+  "plan",
+  "auto",
+  "bypassPermissions",
+] as const;
+
+export const laneSetPermissionModeRequestSchema = z
+  .object({
+    laneId: entityIdSchema,
+    mode: z.enum(permissionModes),
+  })
+  .strict();
+
+export const laneSetPermissionModeSchema = z
+  .object({ laneId: entityIdSchema, mode: z.enum(permissionModes) })
+  .strict();
+
+export const taskArchiveRequestSchema = z
+  .object({ taskId: entityIdSchema, archived: z.boolean() })
+  .strict();
+
+export const taskForkRequestSchema = z
+  .object({ taskId: entityIdSchema })
+  .strict();
+
+export const conversationExportRequestSchema = z
+  .object({ taskId: entityIdSchema })
+  .strict();
+
+export const conversationExportSchema = z
+  .object({ path: z.string().min(1).nullable() })
+  .strict();
+
 export const runListRequestSchema = z
   .object({ taskId: entityIdSchema.optional() })
   .strict();
@@ -519,6 +554,10 @@ export const ipcRequestSchemas = {
   "terminal:resize": terminalResizeRequestSchema,
   "terminal:close": terminalCloseRequestSchema,
   "run:list": runListRequestSchema,
+  "lane:setPermissionMode": laneSetPermissionModeRequestSchema,
+  "task:archive": taskArchiveRequestSchema,
+  "task:fork": taskForkRequestSchema,
+  "conversation:export": conversationExportRequestSchema,
   "task:list": emptyRequestSchema,
   "lane:list": laneListRequestSchema,
   "conversation:history": conversationHistoryRequestSchema,
@@ -552,6 +591,10 @@ export const ipcResponseSchemas = {
   "terminal:resize": terminalAckSchema,
   "terminal:close": terminalAckSchema,
   "run:list": runListSchema,
+  "lane:setPermissionMode": laneSetPermissionModeSchema,
+  "task:archive": taskSchema,
+  "task:fork": taskSchema,
+  "conversation:export": conversationExportSchema,
   "task:list": taskListSchema,
   "lane:list": laneListSchema,
   "conversation:history": conversationHistorySchema,

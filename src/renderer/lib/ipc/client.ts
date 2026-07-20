@@ -69,6 +69,14 @@ export const workbenchClient = {
     invokeCommand("terminal:close", request),
   runList: (request: IpcRequest<"run:list">) =>
     invokeCommand("run:list", request),
+  laneSetPermissionMode: (request: IpcRequest<"lane:setPermissionMode">) =>
+    invokeCommand("lane:setPermissionMode", request),
+  taskArchive: (request: IpcRequest<"task:archive">) =>
+    invokeCommand("task:archive", request),
+  taskFork: (request: IpcRequest<"task:fork">) =>
+    invokeCommand("task:fork", request),
+  conversationExport: (request: IpcRequest<"conversation:export">) =>
+    invokeCommand("conversation:export", request),
   workspacePick: () => invokeCommand("workspace:pick", {}),
   conversationHistory: (request: IpcRequest<"conversation:history">) =>
     invokeCommand("conversation:history", request),

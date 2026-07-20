@@ -193,9 +193,9 @@ function TasksPane({ taskId }: { taskId: string }) {
   );
 }
 
-function BrowserPane() {
-  const [address, setAddress] = useState("http://localhost:5173");
-  const [target, setTarget] = useState<string | null>(null);
+function BrowserPane({ initialUrl }: { initialUrl: string | null }) {
+  const [address, setAddress] = useState(initialUrl ?? "http://localhost:5173");
+  const [target, setTarget] = useState<string | null>(initialUrl);
   const [reloadNonce, setReloadNonce] = useState(0);
 
   function navigate() {
@@ -259,12 +259,14 @@ export function WorkspacePanel({
   openFile,
   onOpenFile,
   onClose,
+  initialUrl = null,
 }: {
   taskId: string;
   mode: WorkspacePanelMode;
   openFile: string | null;
   onOpenFile: (file: string | null) => void;
   onClose: () => void;
+  initialUrl?: string | null;
 }) {
   return (
     <section aria-label={PANEL_TITLES[mode]} className="workspace-pane">
@@ -296,7 +298,7 @@ export function WorkspacePanel({
         ) : mode === "terminal" ? (
           <TerminalPane taskId={taskId} />
         ) : mode === "browser" ? (
-          <BrowserPane />
+          <BrowserPane initialUrl={initialUrl} key={initialUrl ?? "blank"} />
         ) : openFile ? (
           <FileView file={openFile} taskId={taskId} />
         ) : (

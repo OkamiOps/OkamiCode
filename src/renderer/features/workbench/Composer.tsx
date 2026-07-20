@@ -2,9 +2,13 @@ import {
   ArrowUp,
   Clock3,
   FileText,
+  FolderTree,
+  Globe,
   Paperclip,
+  Plus,
   ShieldCheck,
   Square,
+  SquareTerminal,
   X,
 } from "lucide-react";
 import {
@@ -33,6 +37,10 @@ interface ComposerProps {
   contextPercent: number | null;
   draftKey: string | null;
   slashCommands: string[];
+  suggestions: string[];
+  onOpenPanel: (mode: "files" | "terminal" | "browser" | "tasks") => void;
+  onOpenUrl: (url: string) => void;
+  onSelectPermissionMode: (mode: string) => void;
   onCancel: (runId: string) => Promise<void>;
   onPickFiles: () => Promise<string[]>;
   onSelectEffort: (effort: string) => void;
@@ -80,6 +88,161 @@ function ContextRing({ percent }: { percent: number }) {
   );
 }
 
+function ComposerAddMenu({
+  onAttach,
+  onOpenPanel,
+  onOpenUrl,
+  suggestions,
+}: {
+  onAttach: () => void;
+  onOpenPanel: (mode: "files" | "terminal" | "browser" | "tasks") => void;
+  onOpenUrl: (url: string) => void;
+  suggestions: string[];
+}) {
+  const [open, setOpen] = useState(false);
+  const rootRef = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    if (!open) return;
+    const onPointerDown = (event: PointerEvent) => {
+      if (!rootRef.current?.contains(event.target as Node)) setOpen(false);
+    };
+    window.addEventListener("pointerdown", onPointerDown);
+    return () => window.removeEventListener("pointerdown", onPointerDown);
+  }, [open]);
+
+  const entry = (label: string, Icon: typeof Paperclip, action: () => void) => (
+    <button
+      className="conv-menu__item"
+      onClick={() => {
+        setOpen(false);
+        action();
+      }}
+      type="button"
+    >
+      <Icon aria-hidden="true" size={13} />
+      {label}
+    </button>
+  );
+
+  return (
+    <div className="conv-menu" ref={rootRef}>
+      <button
+        aria-expanded={open}
+        aria-label="Adicionar ao contexto"
+        className="chat-attach"
+        onClick={() => setOpen((value) => !value)}
+        type="button"
+      >
+        <Plus aria-hidden="true" size={15} />
+      </button>
+      {open && (
+        <div className="conv-menu__list conv-menu__list--up" role="menu">
+          {entry("Anexar arquivos", Paperclip, onAttach)}
+          {entry("Navegador", Globe, () => onOpenPanel("browser"))}
+          {entry("Terminal", SquareTerminal, () => onOpenPanel("terminal"))}
+          {entry("Arquivos da pasta", FolderTree, () => onOpenPanel("files"))}
+          {suggestions.length > 0 && (
+            <>
+              <span className="conv-menu__separator" />
+              <span className="conv-menu__label">Sugeridos</span>
+              {suggestions.slice(0, 6).map((url) => (
+                <button
+                  className="conv-menu__item"
+                  key={url}
+                  onClick={() => {
+                    setOpen(false);
+                    onOpenUrl(url);
+                  }}
+                  type="button"
+                >
+                  <Globe aria-hidden="true" size={13} />
+                  <span className="conv-menu__url">{url}</span>
+                </button>
+              ))}
+            </>
+          )}
+        </div>
+      )}
+    </div>
+  );
+}
+
+const PERMISSION_MODES: Array<{ id: string; label: string; hint?: string }> = [
+  { id: "manual", label: "Manual" },
+  { id: "acceptEdits", label: "Aceitar edições" },
+  { id: "plan", label: "Planejar" },
+  { id: "auto", label: "Automático" },
+  {
+    id: "bypassPermissions",
+    label: "Ignorar permissões",
+    hint: "sem checagens",
+  },
+];
+
+function PermissionModeMenu({
+  mode,
+  onSelect,
+}: {
+  mode: string;
+  onSelect: (mode: string) => void;
+}) {
+  const [open, setOpen] = useState(false);
+  const rootRef = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    if (!open) return;
+    const onPointerDown = (event: PointerEvent) => {
+      if (!rootRef.current?.contains(event.target as Node)) setOpen(false);
+    };
+    window.addEventListener("pointerdown", onPointerDown);
+    return () => window.removeEventListener("pointerdown", onPointerDown);
+  }, [open]);
+
+  const current =
+    PERMISSION_MODES.find((entry) => entry.id === mode) ?? PERMISSION_MODES[0];
+
+  return (
+    <div className="conv-menu" ref={rootRef}>
+      <button
+        aria-expanded={open}
+        className="chat-permission"
+        onClick={() => setOpen((value) => !value)}
+        title="Modo de permissão da lane"
+        type="button"
+      >
+        <ShieldCheck aria-hidden="true" size={12} />
+        {current.label}
+      </button>
+      {open && (
+        <div className="conv-menu__list conv-menu__list--up" role="menu">
+          <span className="conv-menu__label">Modo</span>
+          {PERMISSION_MODES.map((entry, index) => (
+            <button
+              className="conv-menu__item"
+              data-checked={entry.id === current.id || undefined}
+              data-danger={entry.id === "bypassPermissions" || undefined}
+              key={entry.id}
+              onClick={() => {
+                setOpen(false);
+                onSelect(entry.id);
+              }}
+              type="button"
+            >
+              {entry.label}
+              {entry.hint && <small>{entry.hint}</small>}
+              <kbd>{index + 1}</kbd>
+            </button>
+          ))}
+          <p className="conv-menu__note">
+            Vale a partir da próxima sessão desta lane.
+          </p>
+        </div>
+      )}
+    </div>
+  );
+}
+
 export function Composer({
   activeRunId,
   error,
@@ -94,6 +257,10 @@ export function Composer({
   contextPercent,
   draftKey,
   slashCommands,
+  suggestions,
+  onOpenPanel,
+  onOpenUrl,
+  onSelectPermissionMode,
   onCancel,
   onPickFiles,
   onSelectEffort,
@@ -315,25 +482,18 @@ export function Composer({
         value={input}
       />
       <div className="chat-composer__row">
-        {lane?.permissionMode && (
-          <span
-            className="chat-permission"
-            title="Modo de permissão da lane, vindo do harness"
-          >
-            <ShieldCheck aria-hidden="true" size={12} />
-            {lane.permissionMode === "manual" ? "Manual" : lane.permissionMode}
-          </span>
+        {lane && (
+          <PermissionModeMenu
+            mode={lane.permissionMode ?? "manual"}
+            onSelect={onSelectPermissionMode}
+          />
         )}
-        <button
-          aria-label="Anexar arquivos"
-          className="chat-attach"
-          disabled={!lane || isSending}
-          onClick={() => void attachFiles()}
-          title="Anexar arquivos (o caminho entra na mensagem)"
-          type="button"
-        >
-          <Paperclip aria-hidden="true" size={14} />
-        </button>
+        <ComposerAddMenu
+          onAttach={() => void attachFiles()}
+          onOpenPanel={onOpenPanel}
+          onOpenUrl={onOpenUrl}
+          suggestions={suggestions}
+        />
         {/* Switching models never sends a prompt, so a running turn must not
             lock the picker. */}
         <ModelPicker
