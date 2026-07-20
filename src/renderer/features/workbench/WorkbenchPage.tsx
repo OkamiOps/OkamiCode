@@ -1,11 +1,12 @@
 import { useMutation, useQuery } from "@tanstack/react-query";
-import { Sparkle } from "lucide-react";
-import { useEffect, useRef } from "react";
+import { FolderTree, Globe, Sparkle } from "lucide-react";
+import { useEffect, useRef, useState } from "react";
 import { useShallow } from "zustand/react/shallow";
 import { Composer } from "./Composer";
 import { Conversation } from "./Conversation";
 import { workbenchApi, type WorkbenchApi } from "./api";
 import { modelDetail, modelLabel } from "./ModelPicker";
+import { WorkspacePanel, type WorkspacePanelMode } from "./WorkspacePanel";
 import { useWorkbenchStore, type WorkbenchState } from "./store";
 
 interface WorkbenchPageProps {
@@ -26,6 +27,7 @@ export function WorkbenchPage({ api = workbenchApi }: WorkbenchPageProps) {
   );
   const lastUsageByLane = useWorkbenchStore((state) => state.lastUsageByLane);
   const storeActions = useWorkbenchStore(useShallow(workbenchActions));
+  const [panelMode, setPanelMode] = useState<WorkspacePanelMode | null>(null);
 
   const tasksQuery = useQuery({
     queryKey: ["workbench", "tasks"],
@@ -221,6 +223,22 @@ export function WorkbenchPage({ api = workbenchApi }: WorkbenchPageProps) {
     );
   }
 
+  const panelToggle = (mode: WorkspacePanelMode) => (
+    <button
+      className="chat-topbar__tool"
+      data-active={panelMode === mode || undefined}
+      onClick={() => setPanelMode((value) => (value === mode ? null : mode))}
+      title={mode === "files" ? "Arquivos da pasta" : "Navegador embutido"}
+      type="button"
+    >
+      {mode === "files" ? (
+        <FolderTree aria-hidden="true" size={14} />
+      ) : (
+        <Globe aria-hidden="true" size={14} />
+      )}
+    </button>
+  );
+
   return (
     <section
       aria-label={selectedTask?.title ?? "Conversa"}
@@ -242,19 +260,33 @@ export function WorkbenchPage({ api = workbenchApi }: WorkbenchPageProps) {
             <span>{modelLabel(selectedLane)}</span>
           </>
         )}
+        <span className="chat-topbar__spacer" />
+        {panelToggle("files")}
+        {panelToggle("browser")}
       </div>
-      <div className="chat-scroll">
-        <div className="chat-column">
-          <Conversation
-            initialEvents={historyData?.events ?? []}
-            isRunning={laneActiveRunId !== null}
-            key={effectiveTaskId ?? "none"}
-            lane={selectedLane}
-            lanes={lanes}
-          />
+      <div className="chat-split">
+        <div className="chat-main">
+          <div className="chat-scroll">
+            <div className="chat-column">
+              <Conversation
+                initialEvents={historyData?.events ?? []}
+                isRunning={laneActiveRunId !== null}
+                key={effectiveTaskId ?? "none"}
+                lane={selectedLane}
+                lanes={lanes}
+              />
+            </div>
+          </div>
+          <div className="chat-composer-dock">{composer}</div>
         </div>
+        {panelMode && effectiveTaskId && (
+          <WorkspacePanel
+            mode={panelMode}
+            onClose={() => setPanelMode(null)}
+            taskId={effectiveTaskId}
+          />
+        )}
       </div>
-      <div className="chat-composer-dock">{composer}</div>
     </section>
   );
 }

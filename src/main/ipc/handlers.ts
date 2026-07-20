@@ -1,4 +1,14 @@
 import { dialog } from "electron";
+import { execFileSync } from "node:child_process";
+import {
+  existsSync,
+  mkdirSync,
+  readdirSync,
+  readFileSync,
+  realpathSync,
+  statSync,
+} from "node:fs";
+import nodePath from "node:path";
 import type { IpcMain, IpcMainInvokeEvent, WebContents } from "electron";
 import { canonicalEventSchema } from "../../shared/contracts/event";
 import {
@@ -113,6 +123,10 @@ async function dispatch(
       return deleteTask(state, request as IpcRequest<"task:delete">);
     case "file:pick":
       return pickFiles(request as IpcRequest<"file:pick">);
+    case "fs:list":
+      return listWorkspaceDir(state, request as IpcRequest<"fs:list">);
+    case "fs:read":
+      return readWorkspaceFile(state, request as IpcRequest<"fs:read">);
     case "workspace:pick":
       return pickWorkspace();
     case "task:list":
@@ -248,18 +262,44 @@ function runtimeProjection(runtime: RuntimeKind, health: RuntimeHealth) {
   };
 }
 
+// Carves a dedicated git worktree for the conversation next to the repo:
+// <repo>-okami/<slug>. Falls back to the plain folder when not a repo.
+function prepareWorktree(repoPath: string, slug: string): string {
+  const container = `${repoPath.replace(/\/+$/u, "")}-okami`;
+  mkdirSync(container, { recursive: true });
+  const target = nodePath.join(container, slug);
+  const head = execFileSync("git", ["-C", repoPath, "rev-parse", "HEAD"], {
+    encoding: "utf8",
+  }).trim();
+  execFileSync(
+    "git",
+    ["-C", repoPath, "worktree", "add", "--detach", target, head],
+    { encoding: "utf8" },
+  );
+  return target;
+}
+
 function createTask(
   state: AppState,
   request: IpcRequest<"task:create">,
 ): TaskRecord {
   const now = state.clock().toISOString();
+  let workspacePath = request.workspacePath ?? null;
+  if (
+    request.useWorktree &&
+    workspacePath &&
+    existsSync(nodePath.join(workspacePath, ".git"))
+  ) {
+    const slug = `conversa-${now.replaceAll(/[:.]/gu, "-")}`;
+    workspacePath = prepareWorktree(workspacePath, slug);
+  }
   const task = {
     id: state.createId(),
     kind: "workbench" as const,
     title: request.title,
     objective: request.objective,
     status: "active",
-    workspacePath: request.workspacePath ?? null,
+    workspacePath,
     createdAt: now,
     updatedAt: now,
   };
@@ -334,6 +374,59 @@ async function pickFiles(request: IpcRequest<"file:pick">) {
     properties: ["openFile", "multiSelections"],
   });
   return { paths: result.canceled ? [] : result.filePaths };
+}
+
+const FS_IGNORED = new Set([".git", "node_modules", ".DS_Store"]);
+const FS_READ_LIMIT = 256 * 1024;
+
+// Every fs access resolves inside the task's workspace; anything that
+// escapes it (symlinks included) is refused.
+function resolveInsideWorkspace(
+  state: AppState,
+  taskId: string,
+  relative: string,
+): string {
+  const row = state.database
+    .prepare(`SELECT workspace_path FROM tasks WHERE id = ?`)
+    .get(taskId) as { workspace_path: string | null } | undefined;
+  if (!row?.workspace_path) throw new Error("Tarefa sem pasta de trabalho");
+  const root = realpathSync(row.workspace_path);
+  const target = nodePath.resolve(root, relative);
+  const real = realpathSync(target);
+  if (real !== root && !real.startsWith(`${root}${nodePath.sep}`)) {
+    throw new Error("Caminho fora da pasta da conversa");
+  }
+  return real;
+}
+
+function listWorkspaceDir(state: AppState, request: IpcRequest<"fs:list">) {
+  const dir = resolveInsideWorkspace(state, request.taskId, request.dir ?? "");
+  const entries = readdirSync(dir, { withFileTypes: true })
+    .filter((entry) => !FS_IGNORED.has(entry.name))
+    .map((entry) => ({
+      name: entry.name,
+      kind: entry.isDirectory() ? ("dir" as const) : ("file" as const),
+    }))
+    .sort((left, right) =>
+      left.kind === right.kind
+        ? left.name.localeCompare(right.name)
+        : left.kind === "dir"
+          ? -1
+          : 1,
+    );
+  return { entries };
+}
+
+function readWorkspaceFile(state: AppState, request: IpcRequest<"fs:read">) {
+  const file = resolveInsideWorkspace(state, request.taskId, request.file);
+  const size = statSync(file).size;
+  const buffer = readFileSync(file).subarray(0, FS_READ_LIMIT);
+  const binary = buffer.includes(0);
+  return {
+    content: binary ? "" : buffer.toString("utf8"),
+    truncated: size > FS_READ_LIMIT,
+    binary,
+  };
 }
 
 // The Claude/Codex workflow anchors every conversation to a folder the user

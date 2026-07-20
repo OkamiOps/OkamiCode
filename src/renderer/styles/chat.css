@@ -1451,3 +1451,223 @@ textarea:focus-visible {
   svg:first-child {
   color: var(--chat-green);
 }
+
+/* ── Workspace panel: files + embedded browser ─────── */
+.chat-split {
+  flex: 1;
+  display: flex;
+  min-height: 0;
+}
+
+.chat-main {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+  min-height: 0;
+}
+
+.chat-topbar__spacer {
+  flex: 1;
+}
+
+.chat-topbar__tool {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 28px;
+  height: 28px;
+  border: none;
+  border-radius: 8px;
+  background: transparent;
+  color: var(--chat-text-dim);
+  cursor: pointer;
+  transition:
+    color 0.12s ease,
+    background 0.12s ease;
+}
+
+.chat-topbar__tool:hover {
+  background: var(--chat-surface-2);
+  color: var(--chat-text);
+}
+
+.chat-topbar__tool[data-active="true"] {
+  background: var(--chat-surface-2);
+  color: var(--chat-cyan);
+}
+
+.workspace-panel {
+  width: min(420px, 40vw);
+  border-left: 1px solid var(--chat-border-soft);
+  background: var(--chat-surface);
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+}
+
+.workspace-panel__header {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 10px 12px;
+  border-bottom: 1px solid var(--chat-border-soft);
+  font-size: 12.5px;
+  color: var(--chat-text);
+}
+
+.workspace-panel__crumb {
+  border: none;
+  background: transparent;
+  color: var(--chat-cyan);
+  font: 500 11px/1.2 var(--chat-mono);
+  cursor: pointer;
+  max-width: 220px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  direction: rtl;
+}
+
+.workspace-panel__spacer {
+  flex: 1;
+}
+
+.workspace-panel__close {
+  display: inline-flex;
+  border: none;
+  background: transparent;
+  color: var(--chat-text-dim);
+  cursor: pointer;
+  padding: 4px;
+  border-radius: 6px;
+}
+
+.workspace-panel__close:hover {
+  background: var(--chat-surface-2);
+  color: var(--chat-text);
+}
+
+.workspace-panel__body {
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+  display: flex;
+  flex-direction: column;
+}
+
+.fs-tree {
+  padding: 6px 4px;
+}
+
+.fs-row {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  width: 100%;
+  border: none;
+  background: transparent;
+  color: var(--chat-text-mid);
+  font: 500 12.5px/1.5 inherit;
+  font-family: inherit;
+  text-align: left;
+  padding: 3px 8px;
+  border-radius: 6px;
+  cursor: pointer;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.fs-row:hover {
+  background: var(--chat-surface-2);
+  color: var(--chat-text);
+}
+
+.fs-row--dir svg {
+  color: var(--chat-yellow);
+}
+
+.fs-row--file svg {
+  color: var(--chat-cyan);
+}
+
+.fs-empty {
+  color: var(--chat-text-dim);
+  font-size: 12px;
+  padding: 10px 14px;
+}
+
+.fs-file {
+  padding: 10px 12px;
+  font-size: 13px;
+}
+
+.fs-file .md-code {
+  margin: 0;
+}
+
+.ws-browser {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+}
+
+.ws-browser__bar {
+  display: flex;
+  gap: 6px;
+  padding: 8px 10px;
+  border-bottom: 1px solid var(--chat-border-soft);
+}
+
+.ws-browser__bar input {
+  flex: 1;
+  background: var(--chat-surface-2);
+  border: 1px solid var(--chat-border-soft);
+  border-radius: 8px;
+  color: var(--chat-text);
+  font: 12.5px/1.4 var(--chat-mono);
+  padding: 6px 10px;
+  outline: none;
+}
+
+.ws-browser__bar input:focus {
+  border-color: rgba(104, 221, 235, 0.4);
+}
+
+.ws-browser__bar button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 30px;
+  border: none;
+  border-radius: 8px;
+  background: transparent;
+  color: var(--chat-text-dim);
+  cursor: pointer;
+}
+
+.ws-browser__bar button:hover {
+  background: var(--chat-surface-2);
+  color: var(--chat-text);
+}
+
+.ws-browser__view {
+  flex: 1;
+  border: none;
+  background: #fff;
+}
+
+.ws-browser__empty {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 10px;
+  color: var(--chat-text-dim);
+  font-size: 12.5px;
+  text-align: center;
+  padding: 0 30px;
+}

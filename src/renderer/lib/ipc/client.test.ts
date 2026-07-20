@@ -125,6 +125,8 @@ it("exposes exactly the enumerated command surface", () => {
     "task:delete",
     "workspace:pick",
     "file:pick",
+    "fs:list",
+    "fs:read",
     "task:list",
     "lane:list",
     "conversation:history",

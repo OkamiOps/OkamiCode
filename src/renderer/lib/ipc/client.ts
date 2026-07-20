@@ -56,6 +56,8 @@ export const workbenchClient = {
     invokeCommand("task:delete", request),
   filePick: (request: IpcRequest<"file:pick">) =>
     invokeCommand("file:pick", request),
+  fsList: (request: IpcRequest<"fs:list">) => invokeCommand("fs:list", request),
+  fsRead: (request: IpcRequest<"fs:read">) => invokeCommand("fs:read", request),
   workspacePick: () => invokeCommand("workspace:pick", {}),
   conversationHistory: (request: IpcRequest<"conversation:history">) =>
     invokeCommand("conversation:history", request),

@@ -50,6 +50,9 @@ export const taskCreateRequestSchema = z
     title: z.string().trim().min(1).max(240),
     objective: z.string().trim().min(1).max(20_000),
     workspacePath: z.string().min(1).max(4_096).optional(),
+    // When the folder is a git repo, the conversation can run on its own
+    // worktree so parallel conversations never trample the same checkout.
+    useWorktree: z.boolean().optional(),
   })
   .strict();
 
@@ -76,6 +79,40 @@ export const filePickRequestSchema = z
 
 export const filePickSchema = z
   .object({ paths: z.array(z.string().min(1)) })
+  .strict();
+
+export const fsListRequestSchema = z
+  .object({
+    taskId: entityIdSchema,
+    // Relative to the task workspace; empty string means the root.
+    dir: z.string().max(4_096).default(""),
+  })
+  .strict();
+
+export const fsEntrySchema = z
+  .object({
+    name: z.string().min(1),
+    kind: z.enum(["file", "dir"]),
+  })
+  .strict();
+
+export const fsListSchema = z
+  .object({ entries: z.array(fsEntrySchema) })
+  .strict();
+
+export const fsReadRequestSchema = z
+  .object({
+    taskId: entityIdSchema,
+    file: z.string().min(1).max(4_096),
+  })
+  .strict();
+
+export const fsReadSchema = z
+  .object({
+    content: z.string(),
+    truncated: z.boolean(),
+    binary: z.boolean(),
+  })
   .strict();
 
 export const workspacePickSchema = z
@@ -431,6 +468,8 @@ export const ipcRequestSchemas = {
   "task:delete": taskDeleteRequestSchema,
   "workspace:pick": emptyRequestSchema,
   "file:pick": filePickRequestSchema,
+  "fs:list": fsListRequestSchema,
+  "fs:read": fsReadRequestSchema,
   "task:list": emptyRequestSchema,
   "lane:list": laneListRequestSchema,
   "conversation:history": conversationHistoryRequestSchema,
@@ -457,6 +496,8 @@ export const ipcResponseSchemas = {
   "task:delete": taskDeleteResultSchema,
   "workspace:pick": workspacePickSchema,
   "file:pick": filePickSchema,
+  "fs:list": fsListSchema,
+  "fs:read": fsReadSchema,
   "task:list": taskListSchema,
   "lane:list": laneListSchema,
   "conversation:history": conversationHistorySchema,

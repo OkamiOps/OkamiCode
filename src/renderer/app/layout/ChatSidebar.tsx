@@ -29,10 +29,15 @@ export function ChatSidebar() {
       const picked = await workbenchApi.pickWorkspace();
       if (!picked.path) return null;
       const basename = picked.path.split("/").filter(Boolean).at(-1) ?? "pasta";
+      // Repos get the choice of an isolated worktree, like Claude Code.
+      const useWorktree = window.confirm(
+        `Criar um worktree isolado para esta conversa?\n\nOK: a conversa trabalha numa cópia (git worktree) e não mexe no checkout principal.\nCancelar: trabalha direto na pasta ${basename}.`,
+      );
       return workbenchApi.createTask({
         title: basename,
         objective: `Conversa na pasta ${picked.path}`,
         workspacePath: picked.path,
+        useWorktree,
       });
     },
     onSuccess: (task) => {
