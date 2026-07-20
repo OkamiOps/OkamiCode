@@ -56,6 +56,7 @@ interface ClaudeSessionState {
   setHookContext: (context: ClaudeHookContext | undefined) => void;
   initialMessages: NativeRecord[];
   allowedWorkspaces: string[];
+  permissionMode?: string;
   temporaryDirectory: string;
   gatewayConfigDirectory?: string;
   degraded: boolean;
@@ -116,6 +117,7 @@ export class ClaudeAdapter implements RuntimeAdapter {
       runId: request.runId,
       leaseIds,
       allowedWorkspaces: session.allowedWorkspaces,
+      permissionMode: session.permissionMode,
       degraded: session.degraded,
     });
     const run = { request, session };
@@ -241,6 +243,7 @@ export class ClaudeAdapter implements RuntimeAdapter {
         "settings.json",
       );
       const allowedWorkspaces = [path.resolve(request.cwd)];
+      const permissionMode = request.permissionMode;
       const sessionHookServer = new ClaudeHookServer({
         policyEngine: this.dependencies.policyEngine,
         approvalBroker: this.dependencies.approvalBroker,
@@ -303,6 +306,7 @@ export class ClaudeAdapter implements RuntimeAdapter {
         },
         initialMessages,
         allowedWorkspaces,
+        permissionMode,
         temporaryDirectory: sessionTemporaryDirectory,
         gatewayConfigDirectory,
         degraded: capabilities.mode === "degraded",

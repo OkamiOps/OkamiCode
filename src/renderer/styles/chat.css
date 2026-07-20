@@ -591,8 +591,49 @@ body {
 .chat-composer__row {
   display: flex;
   align-items: center;
+  flex-wrap: wrap;
   gap: 8px;
   margin-top: 8px;
+  min-width: 0;
+}
+
+/* Every control shrinks and truncates instead of spilling out of the box. */
+.chat-composer__row > * {
+  min-width: 0;
+}
+
+.chat-composer__row .model-picker__button,
+.chat-composer__row .chat-permission {
+  max-width: 190px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.chat-composer__spacer {
+  flex: 1 1 0;
+  min-width: 0;
+}
+
+.chat-context-note {
+  flex: 0 1 auto;
+  overflow: hidden;
+  white-space: nowrap;
+}
+
+/* Below this the readout is noise; the popover still has the numbers. */
+@container (max-width: 460px) {
+  .chat-context-note span:not(.chat-context-bar),
+  .chat-context-note {
+    font-size: 10.5px;
+  }
+  .chat-context-bar {
+    display: none;
+  }
+}
+
+.chat-composer {
+  container-type: inline-size;
 }
 
 .chat-composer__spacer {
@@ -2667,4 +2708,27 @@ textarea:focus-visible {
 .fs-row {
   font-size: 12px;
   line-height: 1.6;
+}
+
+/* Narrow composer: keep the action button beside the readout */
+.chat-composer__row .chat-send,
+.chat-composer__row .chat-run-actions {
+  margin-left: auto;
+}
+
+@container (max-width: 300px) {
+  .chat-composer__row {
+    row-gap: 6px;
+  }
+  .chat-composer__row .model-picker__button,
+  .chat-composer__row .chat-permission {
+    max-width: 120px;
+  }
+  .chat-context-note {
+    order: 10;
+  }
+  .chat-composer__row .chat-send,
+  .chat-composer__row .chat-run-actions {
+    order: 11;
+  }
 }

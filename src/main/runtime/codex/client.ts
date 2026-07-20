@@ -23,6 +23,12 @@ export class CodexRpcError extends Error {
   }
 }
 
+export type CodexApprovalPolicy =
+  "untrusted" | "on-failure" | "on-request" | "never";
+
+export type CodexSandboxPolicy =
+  "read-only" | "workspace-write" | "danger-full-access";
+
 export class CodexClient {
   private requestId = 0;
   private readonly pending = new Map<JsonRpcId, PendingRequest>();
@@ -52,8 +58,9 @@ export class CodexClient {
     options?: {
       model?: string;
       ephemeral?: boolean;
-      approvalPolicy?: "on-request";
+      approvalPolicy?: CodexApprovalPolicy;
       approvalsReviewer?: "user";
+      sandboxPolicy?: CodexSandboxPolicy;
     },
   ): Promise<Record<string, unknown>> {
     return this.request("thread/start", { cwd, ...options });
@@ -64,8 +71,9 @@ export class CodexClient {
     options?: {
       cwd?: string;
       model?: string;
-      approvalPolicy?: "on-request";
+      approvalPolicy?: CodexApprovalPolicy;
       approvalsReviewer?: "user";
+      sandboxPolicy?: CodexSandboxPolicy;
     },
   ): Promise<Record<string, unknown>> {
     return this.request("thread/resume", { threadId, ...options });

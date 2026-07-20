@@ -15,7 +15,13 @@ import type {
   UsageCapabilities,
 } from "../adapter";
 import { JsonlProcess } from "../transport";
-import { CodexClient, type CodexServerMessage, type JsonRpcId } from "./client";
+import {
+  CodexClient,
+  type CodexApprovalPolicy,
+  type CodexSandboxPolicy,
+  type CodexServerMessage,
+  type JsonRpcId,
+} from "./client";
 import { CodexProjector } from "./projector";
 
 const execFileAsync = promisify(execFile);
@@ -25,6 +31,24 @@ export interface ApprovalBroker {
   resolvedDecision(
     approvalId: string,
   ): Promise<ApprovalResponse["decision"] | undefined>;
+}
+
+export function codexPermissions(mode: string | undefined): {
+  approvalPolicy: CodexApprovalPolicy;
+  sandboxPolicy: CodexSandboxPolicy;
+} {
+  switch (mode) {
+    case "bypassPermissions":
+      return { approvalPolicy: "never", sandboxPolicy: "danger-full-access" };
+    case "auto":
+      return { approvalPolicy: "never", sandboxPolicy: "workspace-write" };
+    case "acceptEdits":
+      return { approvalPolicy: "on-failure", sandboxPolicy: "workspace-write" };
+    case "plan":
+      return { approvalPolicy: "untrusted", sandboxPolicy: "read-only" };
+    default:
+      return { approvalPolicy: "on-request", sandboxPolicy: "workspace-write" };
+  }
 }
 
 export class RepositoryApprovalBroker implements ApprovalBroker {
@@ -204,10 +228,12 @@ export class CodexAdapter implements RuntimeAdapter {
     const client = new CodexClient(process);
     try {
       await client.initialize();
+      // The lane's mode has to reach Codex too: picking "automático" must
+      // stop it asking, exactly like it does for the Claude harness.
       const options = {
         cwd: request.cwd,
         model: request.model,
-        approvalPolicy: "on-request" as const,
+        ...codexPermissions(request.permissionMode),
         approvalsReviewer: "user" as const,
       };
       const response = resume

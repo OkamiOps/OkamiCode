@@ -19,6 +19,8 @@ export interface ClaudeHookContext {
   leaseIds: Partial<Record<Capability, string>>;
   allowedWorkspaces: string[];
   degraded: boolean;
+  /** The lane's permission mode, as chosen in the composer. */
+  permissionMode?: string;
 }
 
 export interface PostToolMetadata {
@@ -174,6 +176,17 @@ export class ClaudeHookServer {
     }
     if (context.degraded && action.writeOrExecute) {
       return { decision: "deny", reason: "degraded_mode" };
+    }
+
+    // The chosen mode governs this gate too: yolo means we stop gating,
+    // plan means nothing may write or execute, and the rest keep the
+    // workspace-scoped lease checks below.
+    const mode = context.permissionMode ?? "manual";
+    if (mode === "bypassPermissions") {
+      return { decision: "allow" };
+    }
+    if (mode === "plan" && action.writeOrExecute) {
+      return { decision: "deny", reason: "plan_mode" };
     }
 
     const authorization: AuthorizationRequest = {
