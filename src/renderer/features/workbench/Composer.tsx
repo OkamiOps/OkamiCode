@@ -21,12 +21,53 @@ interface ComposerProps {
   effort: string | null;
   efforts: string[];
   contextNote: string | null;
+  contextPercent: number | null;
   slashCommands: string[];
   onCancel: (runId: string) => Promise<void>;
   onPickFiles: () => Promise<string[]>;
   onSelectEffort: (effort: string) => void;
   onSelectModel: (runtimeKind: "claude" | "codex", model: string) => void;
   onSend: (input: string) => Promise<void>;
+}
+
+// Miniature gauge: the arc fills with the session context, warming from
+// accent to red as the window runs out.
+function ContextRing({ percent }: { percent: number }) {
+  const radius = 6.5;
+  const circumference = 2 * Math.PI * radius;
+  const filled = (Math.min(100, Math.max(0, percent)) / 100) * circumference;
+  const tone =
+    percent >= 85 ? "#fb6b75" : percent >= 60 ? "#ffc26b" : "#ff7a1a";
+  return (
+    <svg
+      aria-hidden="true"
+      className="chat-context-ring"
+      height="16"
+      viewBox="0 0 16 16"
+      width="16"
+    >
+      <circle
+        cx="8"
+        cy="8"
+        fill="none"
+        r={radius}
+        stroke="currentColor"
+        strokeOpacity="0.18"
+        strokeWidth="2"
+      />
+      <circle
+        cx="8"
+        cy="8"
+        fill="none"
+        r={radius}
+        stroke={tone}
+        strokeDasharray={`${filled} ${circumference - filled}`}
+        strokeDashoffset={circumference / 4}
+        strokeLinecap="round"
+        strokeWidth="2"
+      />
+    </svg>
+  );
 }
 
 export function Composer({
@@ -40,6 +81,7 @@ export function Composer({
   effort,
   efforts,
   contextNote,
+  contextPercent,
   slashCommands,
   onCancel,
   onPickFiles,
@@ -198,9 +240,12 @@ export function Composer({
         {contextNote && (
           <span
             className="chat-context-note"
-            title="Estimativa local a partir dos eventos de uso da sessão"
+            title={`Contexto da sessão · ${contextNote} (estimativa local)`}
           >
-            {contextNote}
+            {contextPercent !== null && (
+              <ContextRing percent={contextPercent} />
+            )}
+            {contextPercent !== null ? `${contextPercent}%` : contextNote}
           </span>
         )}
         {activeRunId ? (

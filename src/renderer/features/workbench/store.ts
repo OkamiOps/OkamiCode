@@ -11,6 +11,13 @@ export interface SentMessage {
   body: string;
   id: string;
   laneId: string;
+  at: string;
+}
+
+export interface StreamEntry {
+  text: string;
+  laneId: string;
+  at: string;
 }
 
 export interface SessionUsage {
@@ -32,7 +39,7 @@ export interface WorkbenchState {
   selectedTaskId: string | null;
   sentMessages: SentMessage[];
   slashCommandsByLane: Record<string, string[]>;
-  streams: Record<string, string>;
+  streams: Record<string, StreamEntry>;
   addSentMessage(message: SentMessage): void;
   applyEvent(event: CanonicalEvent): void;
   cancelActiveRun(runId: string): void;
@@ -56,9 +63,16 @@ export function reduceCanonicalEvent(
   if (event.kind === "message_delta") {
     const anchor = event.payload.messageAnchor ?? event.nativeEventId;
     const key = `${event.runId}:${String(anchor)}`;
+    const existing = state.streams[key];
     next.streams = {
       ...state.streams,
-      [key]: `${state.streams[key] ?? ""}${String(event.payload.delta ?? "")}`,
+      [key]: {
+        text: `${existing?.text ?? ""}${String(event.payload.delta ?? "")}`,
+        // Attribution is frozen at stream time so switching models later
+        // never relabels what another model produced.
+        laneId: existing?.laneId ?? event.laneId,
+        at: existing?.at ?? event.occurredAt,
+      },
     };
   }
   if (event.kind === "run_completed" || event.kind === "run_failed") {

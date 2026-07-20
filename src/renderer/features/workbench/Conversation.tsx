@@ -35,79 +35,6 @@ function isVisibleEvent(event: EventCardEvent): boolean {
 
 const TOOL_EVENT_KINDS = new Set(["tool_call_started", "tool_call_completed"]);
 
-type ConversationSegment =
-  | { kind: "tools"; key: string; events: EventCardEvent[] }
-  | { kind: "card"; key: string; event: EventCardEvent };
-
-// Claude/Codex hide tool activity behind a one-line summary; consecutive tool
-// calls collapse into one expandable group here for the same reason.
-function segmentEvents(events: EventCardEvent[]): ConversationSegment[] {
-  const segments: ConversationSegment[] = [];
-  for (const [index, event] of events.entries()) {
-    const key = event.id ?? `${event.kind}-${index}`;
-    if (TOOL_EVENT_KINDS.has(event.kind)) {
-      const last = segments.at(-1);
-      if (last?.kind === "tools") {
-        last.events.push(event);
-        continue;
-      }
-      segments.push({ kind: "tools", key, events: [event] });
-      continue;
-    }
-    segments.push({ kind: "card", key, event });
-  }
-  return segments;
-}
-
-function toolGroupLabel(events: EventCardEvent[]): string {
-  const names = [
-    ...new Set(
-      events.map((event) =>
-        typeof event.payload?.toolName === "string"
-          ? event.payload.toolName
-          : "ferramenta",
-      ),
-    ),
-  ];
-  const running = events.some((event) => event.kind === "tool_call_started");
-  const verb = running ? "Usando" : "Usou";
-  if (events.length === 1) return `${verb} ${names[0]}`;
-  const detail = names.slice(0, 3).join(", ");
-  return `${verb} ${events.length} ferramentas · ${detail}`;
-}
-
-function ToolGroup({ events }: { events: EventCardEvent[] }) {
-  const [open, setOpen] = useState(false);
-  return (
-    <div className="chat-toolgroup" data-open={open || undefined}>
-      <button
-        aria-expanded={open}
-        className="chat-toolgroup__summary"
-        onClick={() => setOpen((value) => !value)}
-        type="button"
-      >
-        <Wrench aria-hidden="true" size={12} />
-        {toolGroupLabel(events)}
-        <ChevronRight
-          aria-hidden="true"
-          className="chat-toolgroup__chevron"
-          size={12}
-        />
-      </button>
-      {open && (
-        <div className="chat-toolgroup__items">
-          {events.map((event, index) => (
-            <EventCardRegistry
-              event={event}
-              key={event.id ?? `${event.kind}-${index}`}
-            />
-          ))}
-        </div>
-      )}
-    </div>
-  );
-}
-
 // A tool call is one card: the completed event folds into its started card
 // instead of appearing as a second entry.
 function mergeToolLifecycle(events: EventCardEvent[]): EventCardEvent[] {
@@ -141,6 +68,89 @@ function mergeToolLifecycle(events: EventCardEvent[]): EventCardEvent[] {
   return merged;
 }
 
+interface TimelineUserItem {
+  type: "user";
+  at: string;
+  key: string;
+  body: string;
+}
+
+interface TimelineAgentItem {
+  type: "agent";
+  at: string;
+  key: string;
+  laneId: string;
+  text: string;
+}
+
+interface TimelineToolsItem {
+  type: "tools";
+  at: string;
+  key: string;
+  events: EventCardEvent[];
+}
+
+interface TimelineCardItem {
+  type: "card";
+  at: string;
+  key: string;
+  event: EventCardEvent;
+}
+
+type TimelineItem =
+  TimelineUserItem | TimelineAgentItem | TimelineToolsItem | TimelineCardItem;
+
+function toolGroupLabel(events: EventCardEvent[]): string {
+  const names = [
+    ...new Set(
+      events.map((event) =>
+        typeof event.payload?.toolName === "string"
+          ? event.payload.toolName
+          : "ferramenta",
+      ),
+    ),
+  ];
+  const running = events.some((event) => event.kind === "tool_call_started");
+  const verb = running ? "Usando" : "Usou";
+  if (events.length === 1) return `${verb} ${names[0]}`;
+  const detail = names.slice(0, 3).join(", ");
+  return `${verb} ${events.length} ferramentas · ${detail}`;
+}
+
+function ToolGroup({ events }: { events: EventCardEvent[] }) {
+  const [open, setOpen] = useState(false);
+  const running = events.some((event) => event.kind === "tool_call_started");
+  return (
+    <div className="chat-toolgroup" data-open={open || undefined}>
+      <button
+        aria-expanded={open}
+        className="chat-toolgroup__summary"
+        data-running={running || undefined}
+        onClick={() => setOpen((value) => !value)}
+        type="button"
+      >
+        <Wrench aria-hidden="true" size={12} />
+        {toolGroupLabel(events)}
+        <ChevronRight
+          aria-hidden="true"
+          className="chat-toolgroup__chevron"
+          size={12}
+        />
+      </button>
+      {open && (
+        <div className="chat-toolgroup__items">
+          {events.map((event, index) => (
+            <EventCardRegistry
+              event={event}
+              key={event.id ?? `${event.kind}-${index}`}
+            />
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}
+
 function eventForCard(raw: unknown): EventCardEvent {
   const parsed = canonicalEventSchema.safeParse(raw);
   if (parsed.success) return parsed.data;
@@ -165,23 +175,20 @@ function eventForCard(raw: unknown): EventCardEvent {
 
 export function Conversation({
   initialEvents = [],
+  isRunning = false,
   lane,
+  lanes = [],
 }: {
   initialEvents?: EventCardEvent[];
+  isRunning?: boolean;
   lane: WorkbenchLane | null;
+  lanes?: WorkbenchLane[];
 }) {
   const sentMessages = useWorkbenchStore((state) => state.sentMessages);
   const streams = useWorkbenchStore((state) => state.streams);
   const [events, setEvents] = useState<EventCardEvent[]>(() =>
     initialEvents.filter(isVisibleEvent),
   );
-  const visibleEvents = mergeToolLifecycle(events);
-  const streamedMessages = Object.entries(streams);
-  const isEmpty =
-    sentMessages.length === 0 &&
-    streamedMessages.length === 0 &&
-    visibleEvents.length === 0;
-  const runtime = runtimePresentation(lane);
 
   useEffect(() => {
     if (!window.okami?.onEvent) return;
@@ -196,6 +203,66 @@ export function Conversation({
       });
     });
   }, []);
+
+  // One chronological thread: user turns, per-lane agent replies and tool
+  // groups interleave by timestamp instead of stacking by type.
+  const items: TimelineItem[] = [];
+  for (const message of sentMessages) {
+    items.push({
+      type: "user",
+      at: message.at,
+      key: message.id,
+      body: message.body,
+    });
+  }
+  for (const [key, entry] of Object.entries(streams)) {
+    items.push({
+      type: "agent",
+      at: entry.at,
+      key,
+      laneId: entry.laneId,
+      text: entry.text,
+    });
+  }
+  const visibleEvents = mergeToolLifecycle(events);
+  for (const event of visibleEvents) {
+    const key = event.id ?? `${event.kind}-${event.occurredAt}`;
+    items.push({
+      type: "card",
+      at: event.occurredAt ?? "",
+      key,
+      event,
+    });
+  }
+  items.sort((left, right) => left.at.localeCompare(right.at));
+  const timeline: TimelineItem[] = [];
+  for (const item of items) {
+    const last = timeline.at(-1);
+    if (item.type === "card" && TOOL_EVENT_KINDS.has(item.event.kind)) {
+      if (last?.type === "tools") {
+        last.events.push(item.event);
+        continue;
+      }
+      timeline.push({
+        type: "tools",
+        at: item.at,
+        key: item.key,
+        events: [item.event],
+      });
+      continue;
+    }
+    timeline.push(item);
+  }
+
+  const laneById = new Map(lanes.map((entry) => [entry.laneId, entry]));
+  const runningTool = visibleEvents
+    .filter((event) => event.kind === "tool_call_started")
+    .at(-1);
+  const runningToolName =
+    typeof runningTool?.payload?.toolName === "string"
+      ? runningTool.payload.toolName
+      : null;
+  const isEmpty = timeline.length === 0;
 
   return (
     <div aria-label="Conversa da tarefa" className="conversation-scroll">
@@ -212,60 +279,84 @@ export function Conversation({
         </div>
       ) : (
         <div className="conversation-thread" aria-live="polite">
-          {sentMessages.map((message) => (
-            <article
-              className="message-group message-group--user"
-              key={message.id}
-            >
-              <Surface className="message-bubble" variant="secondary">
-                <ReactMarkdown remarkPlugins={[remarkGfm]}>
-                  {message.body}
-                </ReactMarkdown>
-              </Surface>
-            </article>
-          ))}
-          {streamedMessages.map(([key, body]) => (
-            <article className="message-group message-group--agent" key={key}>
-              <header className="message-agent-header">
-                <span
-                  aria-hidden="true"
-                  className={`message-agent-glyph runtime-glyph--${runtime.tone}`}
+          {timeline.map((item) => {
+            if (item.type === "user") {
+              return (
+                <article
+                  className="message-group message-group--user"
+                  key={item.key}
                 >
-                  {runtime.glyph}
-                </span>
-                <strong>
-                  {lane
-                    ? `${laneDisplayName(lane)} · ${shortModel(lane.model)}`
-                    : "Agente"}
-                </strong>
-                <span>
-                  · harness{" "}
-                  {lane?.harness === "native" ? "nativo" : "Claude Code"}
-                </span>
-              </header>
-              <Surface className="message-bubble" variant="secondary">
-                <ReactMarkdown remarkPlugins={[remarkGfm]}>
-                  {body}
-                </ReactMarkdown>
-              </Surface>
-            </article>
-          ))}
-          {segmentEvents(visibleEvents).map((segment) => (
-            <article className="conversation-event" key={segment.key}>
-              {segment.kind === "tools" ? (
-                <ToolGroup events={segment.events} />
-              ) : (
-                <EventCardRegistry event={segment.event} />
-              )}
-            </article>
-          ))}
+                  <Surface className="message-bubble" variant="secondary">
+                    <ReactMarkdown remarkPlugins={[remarkGfm]}>
+                      {item.body}
+                    </ReactMarkdown>
+                  </Surface>
+                </article>
+              );
+            }
+            if (item.type === "agent") {
+              const owner = laneById.get(item.laneId) ?? lane;
+              const runtime = runtimePresentation(owner);
+              return (
+                <article
+                  className="message-group message-group--agent"
+                  key={item.key}
+                >
+                  <header className="message-agent-header">
+                    <span
+                      aria-hidden="true"
+                      className={`message-agent-glyph runtime-glyph--${runtime.tone}`}
+                    >
+                      {runtime.glyph}
+                    </span>
+                    <strong>
+                      {owner
+                        ? `${laneDisplayName(owner)} · ${shortModel(owner.model)}`
+                        : "Agente"}
+                    </strong>
+                    <span>
+                      · harness{" "}
+                      {owner?.harness === "native" ? "nativo" : "Claude Code"}
+                    </span>
+                  </header>
+                  <Surface className="message-bubble" variant="secondary">
+                    <ReactMarkdown remarkPlugins={[remarkGfm]}>
+                      {item.text}
+                    </ReactMarkdown>
+                  </Surface>
+                </article>
+              );
+            }
+            if (item.type === "tools") {
+              return (
+                <article className="conversation-event" key={item.key}>
+                  <ToolGroup events={item.events} />
+                </article>
+              );
+            }
+            return (
+              <article className="conversation-event" key={item.key}>
+                <EventCardRegistry event={item.event} />
+              </article>
+            );
+          })}
+          {isRunning && (
+            <div className="chat-live" role="status">
+              <span aria-hidden="true" className="chat-live__orb" />
+              <span className="chat-live__text">
+                {runningToolName
+                  ? `Executando ${runningToolName}…`
+                  : "Pensando…"}
+              </span>
+            </div>
+          )}
         </div>
       )}
     </div>
   );
 }
 
-function runtimePresentation(lane: WorkbenchLane | null) {
+function runtimePresentation(lane: WorkbenchLane | null | undefined) {
   if (!lane) return { glyph: "CL", tone: "claude" } as const;
   const account = `${lane.providerAccountLabel} ${lane.model}`.toLowerCase();
   if (account.includes("grok")) return { glyph: "GK", tone: "grok" } as const;

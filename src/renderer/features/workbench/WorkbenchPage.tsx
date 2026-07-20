@@ -76,11 +76,8 @@ export function WorkbenchPage({ api = workbenchApi }: WorkbenchPageProps) {
       selectedCatalogModel?.defaultEffort ??
       (efforts.length > 0 ? efforts[Math.min(2, efforts.length - 1)] : null))
     : null;
-  const contextNote = selectedLane
-    ? sessionContextNote(
-        lastUsageByLane[selectedLane.laneId],
-        selectedLane.model,
-      )
+  const context = selectedLane
+    ? sessionContext(lastUsageByLane[selectedLane.laneId], selectedLane.model)
     : null;
 
   const openLane = useMutation({
@@ -104,6 +101,7 @@ export function WorkbenchPage({ api = workbenchApi }: WorkbenchPageProps) {
         body: request.input,
         id: `${run.runId}:user`,
         laneId: request.laneId,
+        at: new Date().toISOString(),
       });
       storeActions.setActiveRun(run.runId, request.laneId);
     },
@@ -137,6 +135,7 @@ export function WorkbenchPage({ api = workbenchApi }: WorkbenchPageProps) {
         id: message.id,
         body: message.body,
         laneId: message.laneId ?? "",
+        at: message.at,
       })),
       historyData.events,
     );
@@ -160,7 +159,8 @@ export function WorkbenchPage({ api = workbenchApi }: WorkbenchPageProps) {
       catalog={modelsQuery.data ?? []}
       effort={efforts.length > 0 ? effort : null}
       efforts={efforts}
-      contextNote={contextNote}
+      contextNote={context?.label ?? null}
+      contextPercent={context?.percent ?? null}
       slashCommands={
         selectedLane ? (slashCommandsByLane[selectedLane.laneId] ?? []) : []
       }
@@ -245,25 +245,19 @@ export function WorkbenchPage({ api = workbenchApi }: WorkbenchPageProps) {
         <div className="chat-column">
           <Conversation
             initialEvents={historyData?.events ?? []}
+            isRunning={laneActiveRunId !== null}
             key={effectiveTaskId ?? "none"}
             lane={selectedLane}
+            lanes={lanes}
           />
         </div>
       </div>
-      <div className="chat-composer-dock">
-        {laneActiveRunId && (
-          <div className="chat-status-line">
-            <span aria-hidden="true" className="pulse" />
-            Executando…
-          </div>
-        )}
-        {composer}
-      </div>
+      <div className="chat-composer-dock">{composer}</div>
     </section>
   );
 }
 
-function sessionContextNote(
+function sessionContext(
   usage:
     | {
         inputTokens: number;
@@ -273,7 +267,7 @@ function sessionContextNote(
       }
     | undefined,
   model: string,
-): string | null {
+): { label: string; percent: number | null } | null {
   if (!usage) return null;
   const used = usage.inputTokens + usage.cacheReadTokens + usage.outputTokens;
   if (used === 0) return null;
@@ -286,9 +280,11 @@ function sessionContextNote(
         : null;
   const compact = (value: number) =>
     value >= 1000 ? `${Math.round(value / 1000)}k` : `${value}`;
-  if (!window) return `contexto ~${compact(used)} tokens`;
+  if (!window) {
+    return { label: `contexto ~${compact(used)} tokens`, percent: null };
+  }
   const percent = Math.min(100, Math.round((used / window) * 100));
-  return `contexto ${percent}% · ${compact(used)}/${compact(window)}`;
+  return { label: `${compact(used)}/${compact(window)} tokens`, percent };
 }
 
 function workbenchActions(state: WorkbenchState) {
