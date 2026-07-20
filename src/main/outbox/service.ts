@@ -129,25 +129,46 @@ export class ExternalOutboxService {
   }
 
   requestApproval(id: string): ExternalOutboxRecord {
+    const requested = this.db
+      .prepare(
+        `UPDATE external_outbox
+         SET status = 'approval_pending', updated_at = ?
+         WHERE id = ? AND status = 'draft' AND requires_approval = 1`,
+      )
+      .run(new Date().toISOString(), id);
+    if (requested.changes === 1) {
+      return this.requireById(id);
+    }
+
     const record = this.requireById(id);
     if (record.status === "approval_pending") return record;
-    if (record.status !== "draft" || !record.requiresApproval) {
-      throw new ExternalOutboxTransitionError(
-        id,
-        "request approval",
-        record.status,
-      );
-    }
-    return this.update(id, { status: "approval_pending" });
+    throw new ExternalOutboxTransitionError(
+      id,
+      "request approval",
+      record.status,
+    );
   }
 
   approve(id: string): ExternalOutboxRecord {
-    const record = this.requireById(id);
-    if (record.status !== "approval_pending") {
-      throw new ExternalOutboxTransitionError(id, "approve", record.status);
+    const now = new Date().toISOString();
+    const approved = this.db
+      .prepare(
+        `UPDATE external_outbox
+         SET approved_at = @now, updated_at = @now
+         WHERE id = @id
+           AND status = 'approval_pending'
+           AND approved_at IS NULL`,
+      )
+      .run({ id, now });
+    if (approved.changes === 1) {
+      return this.requireById(id);
     }
-    if (record.approvedAt !== null) return record;
-    return this.update(id, { approvedAt: new Date().toISOString() });
+
+    const record = this.requireById(id);
+    if (record.status === "approval_pending" && record.approvedAt !== null) {
+      return record;
+    }
+    throw new ExternalOutboxTransitionError(id, "approve", record.status);
   }
 
   claimDispatch(id: string): DispatchClaim {

@@ -206,6 +206,68 @@ describe("ExternalOutboxService", () => {
     }
   });
 
+  it("does not move a dispatching action back to approval pending", () => {
+    const shared = createSharedServices();
+    try {
+      const draft = shared.first.createDraft(
+        draftInput({ idempotencyKey: "shared-approval-request" }),
+      );
+      shared.firstDb.exec(`
+        CREATE TRIGGER outbox_approval_request_winner
+        BEFORE UPDATE OF status ON external_outbox
+        WHEN OLD.status = 'draft' AND NEW.status = 'approval_pending'
+        BEGIN
+          UPDATE external_outbox
+          SET status = 'dispatching', approved_at = '2026-07-21T00:00:00.000Z',
+              attempts = 1
+          WHERE id = OLD.id;
+          SELECT RAISE(IGNORE);
+        END;
+      `);
+
+      expect(() => shared.second.requestApproval(draft.id)).toThrow(
+        ExternalOutboxTransitionError,
+      );
+      expect(shared.first.findById(draft.id)).toMatchObject({
+        status: "dispatching",
+        attempts: 1,
+      });
+    } finally {
+      shared.close();
+    }
+  });
+
+  it("preserves the first approval timestamp when approval races", () => {
+    const shared = createSharedServices();
+    try {
+      const draft = shared.first.createDraft(
+        draftInput({ idempotencyKey: "shared-approve" }),
+      );
+      shared.first.requestApproval(draft.id);
+      shared.firstDb.exec(`
+        CREATE TRIGGER outbox_approval_winner
+        BEFORE UPDATE OF approved_at ON external_outbox
+        WHEN OLD.approved_at IS NULL AND NEW.approved_at IS NOT NULL
+        BEGIN
+          UPDATE external_outbox
+          SET approved_at = '2026-07-21T00:00:00.000Z',
+              updated_at = '2026-07-21T00:00:00.000Z'
+          WHERE id = OLD.id;
+          SELECT RAISE(IGNORE);
+        END;
+      `);
+
+      const first = shared.second.approve(draft.id);
+      const repeated = shared.first.approve(draft.id);
+
+      expect(first).toEqual(repeated);
+      expect(first.approvedAt).toBe("2026-07-21T00:00:00.000Z");
+      expect(first.updatedAt).toBe("2026-07-21T00:00:00.000Z");
+    } finally {
+      shared.close();
+    }
+  });
+
   it("does not overwrite a terminal result when another connection wins the dispatch transition", () => {
     const shared = createSharedServices();
     try {
