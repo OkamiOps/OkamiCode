@@ -94,7 +94,7 @@ describe("Claude command contract", () => {
 });
 
 describe("okami-hook bridge", () => {
-  it("waits for the same policy broker as the UI", async () => {
+  it("allows leased execute tools immediately, keeping the audited path", async () => {
     const harness = await startHookHarness();
     try {
       expect(harness.hookArgv).toEqual([harness.hookScriptPath]);
@@ -107,12 +107,11 @@ describe("okami-hook bridge", () => {
       expect(harness.hookArgv.join(" ")).not.toContain(harness.socketPath);
       expect(harness.hookArgv.join(" ")).not.toContain(harness.capabilityToken);
 
-      const pending = harness.sendHook(
+      // Picking the workspace granted the lease: execute-risk tools run
+      // without a human gate, and each call still lands in the audit trail.
+      const result = await harness.sendHook(
         fixtureJson("tests/fixtures/runtime/claude/tool-hook.json"),
       );
-      const approval = await harness.nextApproval();
-      await harness.allowOnce(approval.id);
-      const result = await pending;
 
       expect(result.hookSpecificOutput.permissionDecision).toBe("allow");
       expect(harness.requestCount()).toBe(1);

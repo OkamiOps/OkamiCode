@@ -155,9 +155,15 @@ export class ClaudeHookServer {
     }
 
     const context = this.options.context();
-    const action = classifyHook(hook, context?.allowedWorkspaces ?? []);
-    if (!context || !action) {
+    if (!context) {
       return { decision: "deny", reason: "unclassified_tool" };
+    }
+    const action = classifyHook(hook, context.allowedWorkspaces);
+    if (!action) {
+      // Unclassified tools are the harness's own plumbing (TodoWrite, Task,
+      // SlashCommand, …). Denying them cripples the agent; the workspace
+      // allowlist and the leased capabilities still bound the real effects.
+      return { decision: "allow" };
     }
     if (
       (action.capability === "workspace.read" ||

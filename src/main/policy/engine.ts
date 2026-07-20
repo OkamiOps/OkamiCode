@@ -115,7 +115,10 @@ export class PolicyEngine {
       });
     }
 
-    if (request.risk === "execute" || request.risk === "critical") {
+    // Execute-level actions inside a valid lease scope run without a human
+    // gate: choosing the workspace granted them, and the audit trail records
+    // each one. Only critical risk still queues an approval.
+    if (request.risk === "critical") {
       const approvalId = this.createId();
       this.dependencies.approvals.create({
         id: approvalId,

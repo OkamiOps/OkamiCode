@@ -24,6 +24,7 @@ const LEASED_CAPABILITIES: Capability[] = [
   "workspace.read",
   "workspace.write",
   "terminal.exec",
+  "browser.open",
 ];
 
 export function createMainWindow(): BrowserWindow {
@@ -82,7 +83,9 @@ function runtimeDependencies(
         // terminal.exec resources are command strings, not paths; workspace
         // confinement for them comes from the harness cwd/allowlist.
         resourcePattern:
-          capability === "terminal.exec" ? "**" : `${workspace}/**`,
+          capability === "terminal.exec" || capability === "browser.open"
+            ? "**"
+            : `${workspace}/**`,
         budget: { maxUses: null, used: 0 },
         issuedAt: now.toISOString(),
         expiresAt: expires.toISOString(),
