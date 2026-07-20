@@ -1,5 +1,11 @@
 import { useMutation, useQuery } from "@tanstack/react-query";
-import { FolderTree, Globe, SquareTerminal, Sparkle } from "lucide-react";
+import {
+  FolderTree,
+  Globe,
+  ListChecks,
+  SquareTerminal,
+  Sparkle,
+} from "lucide-react";
 import { useEffect, useRef, useState } from "react";
 import { useShallow } from "zustand/react/shallow";
 import { Composer } from "./Composer";
@@ -10,7 +16,11 @@ import { ResizeHandle, useResizablePane } from "../../app/layout/ResizeHandle";
 import { UsagePopover } from "../usage/UsagePopover";
 import { ConversationMenu } from "./ConversationMenu";
 import { FileOpenContext } from "./file-open";
-import { WorkspacePanel, type WorkspacePanelMode } from "./WorkspacePanel";
+import {
+  PANEL_TITLES,
+  WorkspacePanel,
+  type WorkspacePanelMode,
+} from "./WorkspacePanel";
 import { useWorkbenchStore, type WorkbenchState } from "./store";
 
 interface WorkbenchPageProps {
@@ -31,7 +41,13 @@ export function WorkbenchPage({ api = workbenchApi }: WorkbenchPageProps) {
   );
   const lastUsageByLane = useWorkbenchStore((state) => state.lastUsageByLane);
   const storeActions = useWorkbenchStore(useShallow(workbenchActions));
-  const [panelMode, setPanelMode] = useState<WorkspacePanelMode | null>(null);
+  const [openPanels, setOpenPanels] = useState<WorkspacePanelMode[]>([]);
+  const togglePanel = (mode: WorkspacePanelMode) =>
+    setOpenPanels((current) =>
+      current.includes(mode)
+        ? current.filter((entry) => entry !== mode)
+        : [...current, mode],
+    );
   const [panelFile, setPanelFile] = useState<string | null>(null);
   const panelPane = useResizablePane({
     storageKey: "okami.width.panel",
@@ -239,28 +255,26 @@ export function WorkbenchPage({ api = workbenchApi }: WorkbenchPageProps) {
     workspacePath: selectedTask?.workspacePath ?? null,
     open: (relative: string) => {
       setPanelFile(relative);
-      setPanelMode("files");
+      setOpenPanels((current) =>
+        current.includes("files") ? current : [...current, "files"],
+      );
     },
   };
 
   const panelToggle = (mode: WorkspacePanelMode) => (
     <button
       className="chat-topbar__tool"
-      data-active={panelMode === mode || undefined}
-      onClick={() => setPanelMode((value) => (value === mode ? null : mode))}
-      title={
-        mode === "files"
-          ? "Arquivos da pasta"
-          : mode === "browser"
-            ? "Navegador embutido"
-            : "Terminal na pasta"
-      }
+      data-active={openPanels.includes(mode) || undefined}
+      onClick={() => togglePanel(mode)}
+      title={PANEL_TITLES[mode]}
       type="button"
     >
       {mode === "files" ? (
         <FolderTree aria-hidden="true" size={14} />
       ) : mode === "browser" ? (
         <Globe aria-hidden="true" size={14} />
+      ) : mode === "tasks" ? (
+        <ListChecks aria-hidden="true" size={14} />
       ) : (
         <SquareTerminal aria-hidden="true" size={14} />
       )}
@@ -293,8 +307,9 @@ export function WorkbenchPage({ api = workbenchApi }: WorkbenchPageProps) {
         {panelToggle("files")}
         {panelToggle("terminal")}
         {panelToggle("browser")}
+        {panelToggle("tasks")}
         <ConversationMenu
-          activePanel={panelMode}
+          activePanels={openPanels}
           onDelete={() => {
             if (!effectiveTaskId || !selectedTask) return;
             if (
@@ -319,9 +334,7 @@ export function WorkbenchPage({ api = workbenchApi }: WorkbenchPageProps) {
                 .then(() => window.location.reload());
             }
           }}
-          onTogglePanel={(mode) =>
-            setPanelMode((value) => (value === mode ? null : mode))
-          }
+          onTogglePanel={togglePanel}
         />
       </div>
       <div className="chat-split">
@@ -341,22 +354,30 @@ export function WorkbenchPage({ api = workbenchApi }: WorkbenchPageProps) {
           </div>
           <div className="chat-composer-dock">{composer}</div>
         </div>
-        {panelMode && effectiveTaskId && (
+        {openPanels.length > 0 && effectiveTaskId && (
           <ResizeHandle
             ariaLabel="Redimensionar o painel de trabalho"
             edge="left"
             pane={panelPane}
           />
         )}
-        {panelMode && effectiveTaskId && (
-          <WorkspacePanel
-            mode={panelMode}
-            onClose={() => setPanelMode(null)}
-            onOpenFile={setPanelFile}
-            openFile={panelFile}
-            taskId={effectiveTaskId}
-            width={panelPane.width}
-          />
+        {openPanels.length > 0 && effectiveTaskId && (
+          <aside
+            aria-label="Painel de trabalho"
+            className="workspace-rail"
+            style={{ width: panelPane.width }}
+          >
+            {openPanels.map((mode) => (
+              <WorkspacePanel
+                key={mode}
+                mode={mode}
+                onClose={() => togglePanel(mode)}
+                onOpenFile={setPanelFile}
+                openFile={panelFile}
+                taskId={effectiveTaskId}
+              />
+            ))}
+          </aside>
         )}
       </div>
     </section>

@@ -141,6 +141,24 @@ export const terminalCloseRequestSchema = z
 
 export const terminalAckSchema = z.object({ ok: z.literal(true) }).strict();
 
+export const runListRequestSchema = z
+  .object({ taskId: entityIdSchema.optional() })
+  .strict();
+
+export const runListSchema = z.array(
+  z
+    .object({
+      runId: entityIdSchema,
+      laneId: entityIdSchema,
+      model: z.string().min(1),
+      status: z.string().min(1),
+      startedAt: z.iso.datetime({ offset: true }),
+      finishedAt: z.iso.datetime({ offset: true }).nullable(),
+      error: z.string().min(1).nullable(),
+    })
+    .strict(),
+);
+
 export const workspacePickSchema = z
   .object({ path: z.string().min(1).nullable() })
   .strict();
@@ -500,6 +518,7 @@ export const ipcRequestSchemas = {
   "terminal:write": terminalWriteRequestSchema,
   "terminal:resize": terminalResizeRequestSchema,
   "terminal:close": terminalCloseRequestSchema,
+  "run:list": runListRequestSchema,
   "task:list": emptyRequestSchema,
   "lane:list": laneListRequestSchema,
   "conversation:history": conversationHistoryRequestSchema,
@@ -532,6 +551,7 @@ export const ipcResponseSchemas = {
   "terminal:write": terminalAckSchema,
   "terminal:resize": terminalAckSchema,
   "terminal:close": terminalAckSchema,
+  "run:list": runListSchema,
   "task:list": taskListSchema,
   "lane:list": laneListSchema,
   "conversation:history": conversationHistorySchema,

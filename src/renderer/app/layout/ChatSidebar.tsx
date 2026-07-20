@@ -1,5 +1,14 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { Gauge, Link2, Pencil, Plug, Plus, Trash2 } from "lucide-react";
+import {
+  ChevronDown,
+  Gauge,
+  Link2,
+  Pencil,
+  Plug,
+  Plus,
+  Search,
+  Trash2,
+} from "lucide-react";
 import { useState, type KeyboardEvent } from "react";
 import { NavLink, useNavigate } from "react-router-dom";
 import { workbenchApi, type WorkbenchTask } from "../../features/workbench/api";
@@ -13,6 +22,20 @@ export function ChatSidebar() {
   const selectTask = useWorkbenchStore((state) => state.selectTask);
   const [renamingId, setRenamingId] = useState<string | null>(null);
   const [renameDraft, setRenameDraft] = useState("");
+  const [filter, setFilter] = useState("");
+
+  // The footer states the account and plan behind the quota, like Claude's.
+  const usage = useQuery({
+    queryKey: ["usage", "overview"],
+    queryFn: () => workbenchClient.usageOverview(),
+    staleTime: 60_000,
+  });
+  const plan =
+    usage.data && "subscriptions" in usage.data
+      ? (usage.data.subscriptions.find(
+          (snapshot) => snapshot.provider === "claude_max",
+        )?.plan ?? null)
+      : null;
 
   const tasksQuery = useQuery({
     queryKey: ["sessions"],
@@ -79,7 +102,13 @@ export function ChatSidebar() {
     if (event.key === "Escape") setRenamingId(null);
   }
 
-  const tasks = tasksQuery.data ?? [];
+  const term = filter.trim().toLowerCase();
+  const tasks = (tasksQuery.data ?? []).filter(
+    (task) =>
+      term === "" ||
+      task.title.toLowerCase().includes(term) ||
+      (task.workspacePath ?? "").toLowerCase().includes(term),
+  );
 
   return (
     <aside aria-label="Conversas" className="chat-sidebar">
@@ -108,6 +137,16 @@ export function ChatSidebar() {
         <Plus aria-hidden="true" size={15} />
         Nova conversa
       </button>
+
+      <label className="chat-search">
+        <Search aria-hidden="true" size={13} />
+        <input
+          aria-label="Buscar conversas"
+          onChange={(event) => setFilter(event.target.value)}
+          placeholder="Buscar conversas"
+          value={filter}
+        />
+      </label>
 
       <nav aria-label="Histórico de conversas" className="chat-sessions">
         <div className="chat-sessions__label">Conversas</div>
@@ -184,6 +223,16 @@ export function ChatSidebar() {
       </nav>
 
       <footer className="chat-sidebar__footer">
+        <div className="chat-account">
+          <span aria-hidden="true" className="chat-account__avatar">
+            M
+          </span>
+          <span className="chat-account__meta">
+            Marcos
+            {plan && <small>{plan}</small>}
+          </span>
+          <ChevronDown aria-hidden="true" size={12} />
+        </div>
         <NavLink className="chat-footer-link" to="/usage">
           <Gauge aria-hidden="true" size={15} />
           Uso e limites

@@ -124,7 +124,12 @@ describe("QuickChatPage", () => {
     await user.click(
       screen.getByRole("button", { name: "Remover email atual" }),
     );
-    await user.type(screen.getByRole("textbox"), "Resuma");
+    // The sidebar now carries a conversation search field, so the composer
+    // is addressed by its own role rather than "the only textbox".
+    await user.type(
+      screen.getByRole("textbox", { name: /mensagem|entrada|prompt/iu }),
+      "Resuma",
+    );
     await user.click(screen.getByRole("button", { name: "Enviar" }));
 
     await waitFor(() =>

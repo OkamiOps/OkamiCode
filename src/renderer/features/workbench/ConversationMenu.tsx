@@ -1,6 +1,7 @@
 import {
   Files,
   Globe,
+  ListChecks,
   MoreVertical,
   Pencil,
   SquareTerminal,
@@ -12,12 +13,12 @@ import type { WorkspacePanelMode } from "./WorkspacePanel";
 // The per-conversation menu Claude Desktop keeps behind "⋮": panels on the
 // left of the divider, conversation actions on the right.
 export function ConversationMenu({
-  activePanel,
+  activePanels,
   onDelete,
   onRename,
   onTogglePanel,
 }: {
-  activePanel: WorkspacePanelMode | null;
+  activePanels: WorkspacePanelMode[];
   onDelete: () => void;
   onRename: () => void;
   onTogglePanel: (mode: WorkspacePanelMode) => void;
@@ -77,14 +78,22 @@ export function ConversationMenu({
       {open && (
         <div className="conv-menu__list" role="menu">
           {item("Arquivos", Files, () => onTogglePanel("files"), {
-            checked: activePanel === "files",
+            checked: activePanels.includes("files"),
           })}
           {item("Terminal", SquareTerminal, () => onTogglePanel("terminal"), {
-            checked: activePanel === "terminal",
+            checked: activePanels.includes("terminal"),
           })}
           {item("Navegador", Globe, () => onTogglePanel("browser"), {
-            checked: activePanel === "browser",
+            checked: activePanels.includes("browser"),
           })}
+          {item(
+            "Tarefas em segundo plano",
+            ListChecks,
+            () => onTogglePanel("tasks"),
+            {
+              checked: activePanels.includes("tasks"),
+            },
+          )}
           <span className="conv-menu__separator" />
           {item("Mudar o nome", Pencil, onRename, { shortcut: "R" })}
           {item("Apagar", Trash2, onDelete, { danger: true, shortcut: "D" })}

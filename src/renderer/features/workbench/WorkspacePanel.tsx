@@ -13,7 +13,14 @@ import { workbenchClient } from "../../lib/ipc/client";
 import { MessageMarkdown } from "./MessageMarkdown";
 import { TerminalPane } from "./TerminalPane";
 
-export type WorkspacePanelMode = "files" | "browser" | "terminal";
+export type WorkspacePanelMode = "files" | "browser" | "terminal" | "tasks";
+
+export const PANEL_TITLES: Record<WorkspacePanelMode, string> = {
+  files: "Arquivos",
+  terminal: "Terminal",
+  browser: "Navegador",
+  tasks: "Tarefas em segundo plano",
+};
 
 const LANGUAGE_BY_EXTENSION: Record<string, string> = {
   ts: "typescript",
@@ -136,6 +143,56 @@ function FileView({ taskId, file }: { taskId: string; file: string }) {
   );
 }
 
+function duration(startedAt: string, finishedAt: string | null): string {
+  const end = finishedAt ? Date.parse(finishedAt) : Date.now();
+  const seconds = Math.max(0, Math.round((end - Date.parse(startedAt)) / 1000));
+  if (seconds < 60) return `${seconds}s`;
+  return `${Math.floor(seconds / 60)}m ${seconds % 60}s`;
+}
+
+// Every turn this app has run, with how it ended — the panel Claude keeps
+// as "Tarefas em segundo plano".
+function TasksPane({ taskId }: { taskId: string }) {
+  const runs = useQuery({
+    queryKey: ["workspace-runs", taskId],
+    queryFn: () => workbenchClient.runList({ taskId }),
+    refetchInterval: 5_000,
+  });
+  const rows = runs.data ?? [];
+  const done = rows.filter((row) => row.status === "completed").length;
+  const running = rows.filter((row) => row.status === "running").length;
+
+  return (
+    <div className="ws-tasks">
+      <div className="ws-tasks__summary">
+        {running > 0 && (
+          <span className="ws-tasks__running">{running} em curso</span>
+        )}
+        <span>Concluído {done}</span>
+      </div>
+      {runs.isError && (
+        <p className="fs-empty">
+          Não foi possível ler os turnos: {String(runs.error)}
+        </p>
+      )}
+      {!runs.isError && rows.length === 0 && !runs.isLoading && (
+        <p className="fs-empty">Nenhum turno registrado nesta conversa.</p>
+      )}
+      {rows.map((row) => (
+        <div className="ws-task" data-status={row.status} key={row.runId}>
+          <span className="ws-task__dot" aria-hidden="true" />
+          <span className="ws-task__meta">
+            <strong>{row.model}</strong>
+            <small>
+              {row.status} · {duration(row.startedAt, row.finishedAt)}
+            </small>
+          </span>
+        </div>
+      ))}
+    </div>
+  );
+}
+
 function BrowserPane() {
   const [address, setAddress] = useState("http://localhost:5173");
   const [target, setTarget] = useState<string | null>(null);
@@ -202,29 +259,17 @@ export function WorkspacePanel({
   openFile,
   onOpenFile,
   onClose,
-  width,
 }: {
   taskId: string;
   mode: WorkspacePanelMode;
   openFile: string | null;
   onOpenFile: (file: string | null) => void;
   onClose: () => void;
-  width: number;
 }) {
   return (
-    <aside
-      aria-label="Painel de trabalho"
-      className="workspace-panel"
-      style={{ width }}
-    >
+    <section aria-label={PANEL_TITLES[mode]} className="workspace-pane">
       <header className="workspace-panel__header">
-        <strong>
-          {mode === "files"
-            ? "Arquivos"
-            : mode === "browser"
-              ? "Navegador"
-              : "Terminal"}
-        </strong>
+        <strong>{PANEL_TITLES[mode]}</strong>
         {mode === "files" && openFile && (
           <button
             className="workspace-panel__crumb"
@@ -246,7 +291,9 @@ export function WorkspacePanel({
         </button>
       </header>
       <div className="workspace-panel__body">
-        {mode === "terminal" ? (
+        {mode === "tasks" ? (
+          <TasksPane taskId={taskId} />
+        ) : mode === "terminal" ? (
           <TerminalPane taskId={taskId} />
         ) : mode === "browser" ? (
           <BrowserPane />
@@ -264,6 +311,6 @@ export function WorkspacePanel({
           </div>
         )}
       </div>
-    </aside>
+    </section>
   );
 }

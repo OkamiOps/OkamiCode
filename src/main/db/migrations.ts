@@ -7,6 +7,7 @@ const MIGRATIONS = [
   "schema/002-task-workspace.sql",
   "schema/003-lane-workspace-repair.sql",
   "schema/004-events-run-scoped-sequence.sql",
+  "schema/005-close-orphan-runs.sql",
 ];
 
 export function runMigrations(db: InstanceType<typeof SqliteDatabase>): void {

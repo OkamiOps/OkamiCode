@@ -14,6 +14,7 @@ export const ipcChannels = [
   "terminal:write",
   "terminal:resize",
   "terminal:close",
+  "run:list",
   "task:list",
   "lane:list",
   "conversation:history",

@@ -145,6 +145,8 @@ async function dispatch(
       terminals.get(resize.termId)?.resize(resize.cols, resize.rows);
       return { ok: true as const };
     }
+    case "run:list":
+      return listRuns(state, request as IpcRequest<"run:list">);
     case "terminal:close": {
       const close = request as IpcRequest<"terminal:close">;
       terminals.get(close.termId)?.kill();
@@ -434,6 +436,40 @@ function openTerminal(
   });
   terminals.set(termId, pty);
   return { termId };
+}
+
+interface RunRow {
+  id: string;
+  lane_id: string;
+  model: string;
+  status: string;
+  started_at: string;
+  finished_at: string | null;
+  error_json: string | null;
+}
+
+// Feeds the background-tasks panel: what each lane ran, and how it ended.
+function listRuns(state: AppState, request: IpcRequest<"run:list">) {
+  const rows = state.database
+    .prepare(
+      `SELECT runs.id, runs.lane_id, runtime_lanes.model, runs.status,
+              runs.started_at, runs.finished_at, runs.error_json
+       FROM runs
+       JOIN runtime_lanes ON runtime_lanes.id = runs.lane_id
+       ${request.taskId ? "WHERE runs.task_id = ?" : ""}
+       ORDER BY runs.started_at DESC
+       LIMIT 60`,
+    )
+    .all(...(request.taskId ? [request.taskId] : [])) as RunRow[];
+  return rows.map((row) => ({
+    runId: row.id,
+    laneId: row.lane_id,
+    model: row.model,
+    status: row.status,
+    startedAt: row.started_at,
+    finishedAt: row.finished_at,
+    error: row.error_json,
+  }));
 }
 
 const FS_IGNORED = new Set([".git", "node_modules", ".DS_Store"]);
@@ -743,6 +779,12 @@ async function sendLaneTurn(
   };
 }
 
+const TERMINAL_RUN_KINDS: Record<string, string> = {
+  run_completed: "completed",
+  run_failed: "failed",
+  run_cancelled: "cancelled",
+};
+
 async function forwardEvents(
   state: AppState,
   sender: Pick<WebContents, "send">,
@@ -751,6 +793,17 @@ async function forwardEvents(
   for await (const candidate of run.events) {
     const event = canonicalEventSchema.parse(candidate);
     state.events.append(event);
+    // Without this the run row stays "running" forever: the terminal event
+    // was streamed to the UI but never written back to the run itself.
+    const terminal = TERMINAL_RUN_KINDS[event.kind];
+    if (terminal) {
+      state.database
+        .prepare(
+          `UPDATE runs SET status = ?, finished_at = ?
+           WHERE id = ? AND finished_at IS NULL`,
+        )
+        .run(terminal, event.occurredAt, event.runId);
+    }
     sender.send(eventChannel, {
       ...event,
       payload: sanitizePayload(event.payload),

@@ -67,6 +67,8 @@ export const workbenchClient = {
     invokeCommand("terminal:resize", request),
   terminalClose: (request: IpcRequest<"terminal:close">) =>
     invokeCommand("terminal:close", request),
+  runList: (request: IpcRequest<"run:list">) =>
+    invokeCommand("run:list", request),
   workspacePick: () => invokeCommand("workspace:pick", {}),
   conversationHistory: (request: IpcRequest<"conversation:history">) =>
     invokeCommand("conversation:history", request),

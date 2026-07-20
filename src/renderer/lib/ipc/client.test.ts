@@ -131,6 +131,7 @@ it("exposes exactly the enumerated command surface", () => {
     "terminal:write",
     "terminal:resize",
     "terminal:close",
+    "run:list",
     "task:list",
     "lane:list",
     "conversation:history",
