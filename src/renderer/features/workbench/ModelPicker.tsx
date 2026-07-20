@@ -37,6 +37,7 @@ export function ModelPicker({
   selectedLane,
 }: ModelPickerProps) {
   const [open, setOpen] = useState(false);
+  const [activeProvider, setActiveProvider] = useState<string | null>(null);
   const rootRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
@@ -92,61 +93,121 @@ export function ModelPicker({
         )}
         <ChevronDown aria-hidden="true" size={13} />
       </button>
-      {open && (
-        <div
-          aria-label="Modelos disponíveis"
-          className="model-picker__menu"
-          role="listbox"
-        >
-          {catalog.map((entry) => (
-            <div key={`${entry.runtimeKind}-${entry.providerLabel}`}>
-              <div className="model-picker__group">
-                {entry.providerLabel}
-                {entry.routeKind === "bridged" && " · via harness Claude"}
-              </div>
-              {entry.models.length === 0 && (
-                <div className="model-picker__empty">{entry.source}</div>
-              )}
-              {entry.models.map((model) => {
-                const isSelected =
-                  selectedLane !== null &&
-                  normalizeModelId(selectedLane.model) ===
-                    normalizeModelId(model.id);
-                return (
+      {open &&
+        (() => {
+          // Provider column first, models second: the list stays short even
+          // as more providers (Grok, Cursor, Minimax, …) plug in.
+          const providerKey = (entry: ModelCatalog[number]) =>
+            `${entry.runtimeKind}-${entry.providerLabel}`;
+          const owningProvider = selectedLane
+            ? catalog.find((entry) =>
+                entry.models.some(
+                  (model) =>
+                    normalizeModelId(model.id) ===
+                    normalizeModelId(selectedLane.model),
+                ),
+              )
+            : undefined;
+          const fallbackProvider =
+            catalog.find((entry) => entry.models.length > 0) ?? catalog[0];
+          const activeEntry =
+            catalog.find((entry) => providerKey(entry) === activeProvider) ??
+            owningProvider ??
+            fallbackProvider;
+          return (
+            <div
+              aria-label="Modelos disponíveis"
+              className="model-picker__menu model-picker__menu--dual"
+            >
+              <div
+                aria-label="Providers"
+                className="model-picker__providers"
+                role="tablist"
+              >
+                {catalog.map((entry) => (
                   <button
-                    aria-selected={isSelected}
-                    className="model-picker__option"
-                    key={model.id}
-                    onClick={() => {
-                      setOpen(false);
-                      if (!isSelected)
-                        onSelectModel(entry.runtimeKind, model.id);
-                    }}
-                    role="option"
+                    aria-selected={
+                      providerKey(entry) === providerKey(activeEntry)
+                    }
+                    className="model-picker__provider"
+                    data-active={
+                      providerKey(entry) === providerKey(activeEntry) ||
+                      undefined
+                    }
+                    key={providerKey(entry)}
+                    onClick={() => setActiveProvider(providerKey(entry))}
+                    role="tab"
                     type="button"
                   >
                     <span
                       aria-hidden="true"
                       className={`route-dot route-dot--${entry.routeKind}`}
                     />
-                    <span className="model-picker__option-meta">
-                      {model.label}
-                      <small>{model.description ?? entry.providerLabel}</small>
+                    <span className="model-picker__provider-meta">
+                      {entry.providerLabel}
+                      <small>
+                        {entry.routeKind === "bridged"
+                          ? "via harness Claude"
+                          : "nativo"}
+                        {" · "}
+                        {entry.models.length}
+                      </small>
                     </span>
-                    {isSelected && (
-                      <Check
-                        aria-hidden="true"
-                        className="model-picker__check"
-                        size={14}
-                      />
-                    )}
                   </button>
-                );
-              })}
+                ))}
+              </div>
+              <div
+                aria-label={`Modelos de ${activeEntry.providerLabel}`}
+                className="model-picker__models"
+                role="listbox"
+              >
+                {activeEntry.models.length === 0 && (
+                  <div className="model-picker__empty">
+                    {activeEntry.source}
+                  </div>
+                )}
+                {activeEntry.models.map((model) => {
+                  const isSelected =
+                    selectedLane !== null &&
+                    normalizeModelId(selectedLane.model) ===
+                      normalizeModelId(model.id);
+                  return (
+                    <button
+                      aria-selected={isSelected}
+                      className="model-picker__option"
+                      key={model.id}
+                      onClick={() => {
+                        setOpen(false);
+                        if (!isSelected)
+                          onSelectModel(activeEntry.runtimeKind, model.id);
+                      }}
+                      role="option"
+                      type="button"
+                    >
+                      <span
+                        aria-hidden="true"
+                        className={`route-dot route-dot--${activeEntry.routeKind}`}
+                      />
+                      <span className="model-picker__option-meta">
+                        {model.label}
+                        <small>
+                          {model.description ?? activeEntry.providerLabel}
+                        </small>
+                      </span>
+                      {isSelected && (
+                        <Check
+                          aria-hidden="true"
+                          className="model-picker__check"
+                          size={14}
+                        />
+                      )}
+                    </button>
+                  );
+                })}
+              </div>
             </div>
-          ))}
-        </div>
-      )}
+          );
+        })()}
     </div>
   );
 }

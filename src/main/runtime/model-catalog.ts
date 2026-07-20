@@ -183,6 +183,33 @@ export function fetchClaudeModelsFromCli(
   });
 }
 
+// Display order for known Claude families; unknown families keep the CLI
+// order after these. The list itself stays whatever list_models returned.
+const CLAUDE_FAMILY_ORDER = ["fable", "opus", "sonnet", "haiku"];
+
+export function orderClaudeModels(models: CatalogModel[]): CatalogModel[] {
+  const family = (model: CatalogModel) => {
+    const haystack = `${model.id} ${model.label}`.toLowerCase();
+    const index = CLAUDE_FAMILY_ORDER.findIndex((name) =>
+      haystack.includes(name),
+    );
+    return index === -1 ? CLAUDE_FAMILY_ORDER.length : index;
+  };
+  // "Default (recommended)" duplicates another entry (same description);
+  // dropping the alias keeps the picker short without hiding a real model.
+  const deduped = models.filter(
+    (model) =>
+      model.id !== "default" ||
+      !models.some(
+        (other) =>
+          other.id !== "default" &&
+          other.description !== undefined &&
+          other.description === model.description,
+      ),
+  );
+  return [...deduped].sort((left, right) => family(left) - family(right));
+}
+
 interface PersistedClaudeCatalog {
   cliPath: string;
   fetchedAt: string;
@@ -246,7 +273,7 @@ export function createModelCatalogService(options: {
           source: claude
             ? `list_models do Claude Code · ${claude.fetchedAt}`
             : "consultando o Claude Code (list_models)…",
-          models: claude?.models ?? [],
+          models: claude ? orderClaudeModels(claude.models) : [],
         },
         {
           runtimeKind: "codex",

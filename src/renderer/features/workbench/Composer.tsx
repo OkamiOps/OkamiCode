@@ -1,5 +1,6 @@
-import { ArrowUp, Paperclip, Square } from "lucide-react";
+import { ArrowUp, Clock3, FileText, Paperclip, Square, X } from "lucide-react";
 import {
+  useEffect,
   useMemo,
   useRef,
   useState,
@@ -22,6 +23,7 @@ interface ComposerProps {
   efforts: string[];
   contextNote: string | null;
   contextPercent: number | null;
+  draftKey: string | null;
   slashCommands: string[];
   onCancel: (runId: string) => Promise<void>;
   onPickFiles: () => Promise<string[]>;
@@ -82,6 +84,7 @@ export function Composer({
   efforts,
   contextNote,
   contextPercent,
+  draftKey,
   slashCommands,
   onCancel,
   onPickFiles,
@@ -89,9 +92,22 @@ export function Composer({
   onSelectModel,
   onSend,
 }: ComposerProps) {
-  const [input, setInput] = useState("");
+  // The parent keys this component by conversation, so the draft loads once
+  // per conversation via the lazy initializer instead of an effect.
+  const [input, setInput] = useState(() => {
+    if (!draftKey) return "";
+    try {
+      return localStorage.getItem(`okami.draft.${draftKey}`) ?? "";
+    } catch {
+      return "";
+    }
+  });
   const [slashIndex, setSlashIndex] = useState(0);
+  const [attachments, setAttachments] = useState<string[]>([]);
+  const [queued, setQueued] = useState<string[]>([]);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
+  const lastSentRef = useRef<string>("");
+  const dispatchingRef = useRef(false);
 
   function resizeTextarea() {
     const node = textareaRef.current;
@@ -103,8 +119,32 @@ export function Composer({
   function updateInput(value: string) {
     setInput(value);
     setSlashIndex(0);
+    if (draftKey) {
+      try {
+        if (value) localStorage.setItem(`okami.draft.${draftKey}`, value);
+        else localStorage.removeItem(`okami.draft.${draftKey}`);
+      } catch {
+        // Draft persistence is best effort.
+      }
+    }
     requestAnimationFrame(resizeTextarea);
   }
+
+  // Messages typed during a run wait in line and fire as soon as the lane
+  // frees up — the Claude/Codex "queue while working" behavior.
+  useEffect(() => {
+    if (activeRunId || isSending || queued.length === 0) return;
+    if (dispatchingRef.current) return;
+    const timer = window.setTimeout(() => {
+      dispatchingRef.current = true;
+      const [next, ...rest] = queued;
+      setQueued(rest);
+      void onSend(next).finally(() => {
+        dispatchingRef.current = false;
+      });
+    }, 0);
+    return () => window.clearTimeout(timer);
+  }, [activeRunId, isSending, queued, onSend]);
 
   // The menu tracks the first token only: once a space lands, the command is
   // chosen and the rest of the message is free text.
@@ -120,11 +160,25 @@ export function Composer({
     Math.max(slashMatches.length - 1, 0),
   );
 
-  async function submit() {
+  function composeOutgoing(): string {
     const trimmed = input.trim();
-    if (!lane || !trimmed || isSending || activeRunId) return;
-    await onSend(trimmed);
+    const quoted = attachments
+      .map((path) => (path.includes(" ") ? `"${path}"` : path))
+      .join(" ");
+    return [trimmed, quoted].filter(Boolean).join("\n\n");
+  }
+
+  async function submit() {
+    const outgoing = composeOutgoing();
+    if (!lane || !outgoing || isSending) return;
+    lastSentRef.current = outgoing;
     updateInput("");
+    setAttachments([]);
+    if (activeRunId) {
+      setQueued((current) => [...current, outgoing]);
+      return;
+    }
+    await onSend(outgoing);
   }
 
   function applySlashCommand(name: string) {
@@ -135,14 +189,10 @@ export function Composer({
   async function attachFiles() {
     const paths = await onPickFiles();
     if (paths.length === 0) return;
-    const quoted = paths
-      .map((path) => (path.includes(" ") ? `"${path}"` : path))
-      .join(" ");
-    updateInput(
-      input.length === 0 || input.endsWith(" ")
-        ? `${input}${quoted} `
-        : `${input} ${quoted} `,
-    );
+    setAttachments((current) => [
+      ...current,
+      ...paths.filter((path) => !current.includes(path)),
+    ]);
   }
 
   function handleSubmit(event: FormEvent<HTMLFormElement>) {
@@ -175,6 +225,11 @@ export function Composer({
         return;
       }
     }
+    if (event.key === "ArrowUp" && input === "" && lastSentRef.current) {
+      event.preventDefault();
+      updateInput(lastSentRef.current);
+      return;
+    }
     if (event.key === "Enter" && !event.shiftKey) {
       event.preventDefault();
       void submit();
@@ -197,6 +252,48 @@ export function Composer({
             </li>
           ))}
         </ul>
+      )}
+      {attachments.length > 0 && (
+        <div aria-label="Anexos" className="chat-attachments">
+          {attachments.map((path) => (
+            <span className="chat-attachment" key={path} title={path}>
+              <FileText aria-hidden="true" size={11} />
+              {path.split("/").filter(Boolean).at(-1)}
+              <button
+                aria-label={`Remover ${path}`}
+                onClick={() =>
+                  setAttachments((current) =>
+                    current.filter((item) => item !== path),
+                  )
+                }
+                type="button"
+              >
+                <X aria-hidden="true" size={10} />
+              </button>
+            </span>
+          ))}
+        </div>
+      )}
+      {queued.length > 0 && (
+        <div aria-label="Mensagens na fila" className="chat-queue">
+          {queued.map((message, index) => (
+            <span className="chat-queue__item" key={`${index}-${message}`}>
+              <Clock3 aria-hidden="true" size={11} />
+              {message.length > 60 ? `${message.slice(0, 60)}…` : message}
+              <button
+                aria-label="Remover da fila"
+                onClick={() =>
+                  setQueued((current) =>
+                    current.filter((_, position) => position !== index),
+                  )
+                }
+                type="button"
+              >
+                <X aria-hidden="true" size={10} />
+              </button>
+            </span>
+          ))}
+        </div>
       )}
       <textarea
         aria-label="Mensagem"
@@ -249,20 +346,33 @@ export function Composer({
           </span>
         )}
         {activeRunId ? (
-          <button
-            className="chat-stop"
-            disabled={isCancelling}
-            onClick={() => void onCancel(activeRunId)}
-            type="button"
-          >
-            <Square aria-hidden="true" size={11} />
-            Interromper
-          </button>
+          <span className="chat-run-actions">
+            <button
+              className="chat-stop"
+              disabled={isCancelling}
+              onClick={() => void onCancel(activeRunId)}
+              type="button"
+            >
+              <Square aria-hidden="true" size={11} />
+              Interromper
+            </button>
+            <button
+              aria-label="Enviar para a fila"
+              className="chat-send"
+              disabled={!input.trim() && attachments.length === 0}
+              title="Entra na fila e envia quando o turno atual terminar"
+              type="submit"
+            >
+              <ArrowUp aria-hidden="true" size={16} strokeWidth={2.4} />
+            </button>
+          </span>
         ) : (
           <button
             aria-label="Enviar"
             className="chat-send"
-            disabled={!lane || !input.trim() || isSending}
+            disabled={
+              !lane || (!input.trim() && attachments.length === 0) || isSending
+            }
             type="submit"
           >
             <ArrowUp aria-hidden="true" size={16} strokeWidth={2.4} />

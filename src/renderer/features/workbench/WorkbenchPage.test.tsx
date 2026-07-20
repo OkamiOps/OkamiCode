@@ -190,6 +190,8 @@ describe("WorkbenchPage", () => {
     await userEvent.click(
       screen.getByRole("button", { name: "Selecionar modelo" }),
     );
+    // Two-pane picker: choose the provider column first, then the model.
+    await userEvent.click(screen.getByRole("tab", { name: /ChatGPT/i }));
     await userEvent.click(
       screen.getByRole("option", { name: /GPT-5\.6-sol/i }),
     );
@@ -208,7 +210,7 @@ describe("WorkbenchPage", () => {
     await user.click(
       await screen.findByRole("button", { name: "Selecionar modelo" }),
     );
-    expect(screen.getAllByText("ChatGPT").length).toBeGreaterThan(0);
+    expect(screen.getAllByText(/ChatGPT/u).length).toBeGreaterThan(0);
     await user.keyboard("{Escape}");
     expect(screen.queryByText("Não informado")).toBeNull();
 

@@ -1193,3 +1193,121 @@ textarea:focus-visible {
 .hljs-strong {
   font-weight: 700;
 }
+
+/* Two-pane model picker: provider column, then models */
+.model-picker__menu--dual {
+  display: flex;
+  padding: 0;
+  min-width: 460px;
+  overflow: hidden;
+}
+
+.model-picker__providers {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  padding: 6px;
+  min-width: 158px;
+  border-right: 1px solid var(--chat-border-soft);
+  background: rgba(255, 255, 255, 0.015);
+}
+
+.model-picker__provider {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  border: none;
+  background: transparent;
+  color: var(--chat-text-mid);
+  font: 600 12.5px/1.2 inherit;
+  font-family: inherit;
+  text-align: left;
+  padding: 8px 10px;
+  border-radius: 9px;
+  cursor: pointer;
+  transition: background 0.12s ease;
+}
+
+.model-picker__provider:hover {
+  background: var(--chat-surface-2);
+  color: var(--chat-text);
+}
+
+.model-picker__provider[data-active="true"] {
+  background: var(--chat-surface-2);
+  color: var(--chat-text);
+}
+
+.model-picker__provider-meta {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.model-picker__provider-meta small {
+  font: 500 10px/1.2 inherit;
+  color: var(--chat-text-dim);
+  text-transform: none;
+}
+
+.model-picker__models {
+  flex: 1;
+  padding: 6px;
+  max-height: min(420px, 55vh);
+  overflow-y: auto;
+  min-width: 280px;
+}
+
+/* Attachment chips + queued messages */
+.chat-attachments,
+.chat-queue {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin-bottom: 8px;
+}
+
+.chat-attachment,
+.chat-queue__item {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  background: var(--chat-surface-2);
+  border: 1px solid var(--chat-border-soft);
+  color: var(--chat-text-mid);
+  font: 500 11.5px/1 inherit;
+  border-radius: 999px;
+  padding: 5px 7px 5px 10px;
+  max-width: 300px;
+}
+
+.chat-queue__item {
+  border-style: dashed;
+  color: var(--chat-text-dim);
+}
+
+.chat-attachment button,
+.chat-queue__item button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 16px;
+  height: 16px;
+  border: none;
+  border-radius: 50%;
+  background: transparent;
+  color: var(--chat-text-dim);
+  cursor: pointer;
+}
+
+.chat-attachment button:hover,
+.chat-queue__item button:hover {
+  background: rgba(251, 107, 117, 0.15);
+  color: var(--chat-red);
+}
+
+.chat-run-actions {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+}

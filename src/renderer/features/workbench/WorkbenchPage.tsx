@@ -148,6 +148,7 @@ export function WorkbenchPage({ api = workbenchApi }: WorkbenchPageProps) {
       : null;
   const composer = (
     <Composer
+      key={effectiveTaskId ?? "no-task"}
       activeRunId={laneActiveRunId}
       error={queryError(
         sendTurn.error ?? cancelRun.error ?? openLane.error ?? ensureLane.error,
@@ -161,6 +162,7 @@ export function WorkbenchPage({ api = workbenchApi }: WorkbenchPageProps) {
       efforts={efforts}
       contextNote={context?.label ?? null}
       contextPercent={context?.percent ?? null}
+      draftKey={effectiveTaskId}
       slashCommands={
         selectedLane ? (slashCommandsByLane[selectedLane.laneId] ?? []) : []
       }
