@@ -25,12 +25,37 @@ export function SourceFreshness({
   );
 }
 
+// Mirrors how Claude and Codex report quota: every window as a labelled bar
+// of what was consumed, with its reset, instead of one "remaining" number.
+function usageTone(used: number): "ok" | "warn" | "high" {
+  if (used >= 85) return "high";
+  if (used >= 60) return "warn";
+  return "ok";
+}
+
+function countdown(resetsAt: string | null): string {
+  if (!resetsAt) return "reset indisponível";
+  const target = Date.parse(resetsAt);
+  if (Number.isNaN(target)) return "reset indisponível";
+  const minutes = Math.round((target - Date.now()) / 60_000);
+  if (minutes <= 0) return "reiniciando";
+  if (minutes < 60) return `reinicia em ${minutes} min`;
+  const hours = Math.floor(minutes / 60);
+  if (hours < 24) {
+    const rest = minutes % 60;
+    return `reinicia em ${hours} h${rest > 0 ? ` ${rest} min` : ""}`;
+  }
+  return `reinicia ${formatReset(resetsAt)}`;
+}
+
 export function SubscriptionCards({ subscriptions }: SubscriptionTableProps) {
   return (
     <div className="usage-cards">
       {subscriptions.map((subscription) => {
-        const window = mostRestrictiveWindow(subscription.windows);
         const runtime = runtimePresentation(subscription);
+        const windows = [...subscription.windows].sort(
+          (left, right) => (right.usedPercent ?? 0) - (left.usedPercent ?? 0),
+        );
         return (
           <article className="usage-card" key={subscription.accountRef}>
             <header>
@@ -41,27 +66,48 @@ export function SubscriptionCards({ subscriptions }: SubscriptionTableProps) {
                 {runtime.glyph}
               </span>
               <strong>{subscription.accountLabel}</strong>
+              {subscription.plan && (
+                <span className="usage-card__plan">{subscription.plan}</span>
+              )}
               <span
                 className={`freshness-pill freshness-pill--${freshnessTone(subscription.freshness)}`}
               >
                 {freshnessLabel(subscription.freshness)}
               </span>
             </header>
-            <p className="usage-card__value">
-              {window?.remainingPercent === null ||
-              window?.remainingPercent === undefined
-                ? "—"
-                : `${formatNumber(window.remainingPercent)}%`}
-              <small>
-                {window ? `restante · ${window.label}` : "sem fonte de quota"}
-              </small>
-            </p>
-            <p className="usage-card__reset">
-              {window?.resetsAt
-                ? `reseta ${formatReset(window.resetsAt)}`
-                : "reset indisponível"}{" "}
-              · fonte: {subscription.source.kind}
-            </p>
+            {windows.length === 0 ? (
+              <p className="usage-card__empty">
+                {subscription.error ?? "sem fonte de quota"}
+              </p>
+            ) : (
+              <ul className="usage-meters">
+                {windows.map((window) => {
+                  const used = window.usedPercent;
+                  return (
+                    <li className="usage-meter" key={window.label}>
+                      <div className="usage-meter__head">
+                        <span className="usage-meter__label">
+                          {window.label}
+                        </span>
+                        <strong className="usage-meter__value">
+                          {used === null ? "—" : `${formatNumber(used)}% usado`}
+                        </strong>
+                      </div>
+                      <div
+                        aria-hidden="true"
+                        className="usage-meter__track"
+                        data-tone={used === null ? "ok" : usageTone(used)}
+                      >
+                        <i style={{ width: `${Math.max(0, used ?? 0)}%` }} />
+                      </div>
+                      <span className="usage-meter__reset">
+                        {countdown(window.resetsAt)}
+                      </span>
+                    </li>
+                  );
+                })}
+              </ul>
+            )}
           </article>
         );
       })}
@@ -171,14 +217,6 @@ function SubscriptionRow({
       </td>
     </tr>
   );
-}
-
-function mostRestrictiveWindow(windows: UsageWindow[]) {
-  return [...windows].sort(
-    (left, right) =>
-      (left.remainingPercent ?? Number.POSITIVE_INFINITY) -
-      (right.remainingPercent ?? Number.POSITIVE_INFINITY),
-  )[0];
 }
 
 function runtimePresentation(subscription: UsageSnapshot) {

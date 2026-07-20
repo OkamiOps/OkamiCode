@@ -113,23 +113,43 @@ interface TimelineCardItem {
 type TimelineItem =
   TimelineUserItem | TimelineAgentItem | TimelineToolsItem | TimelineCardItem;
 
+// Claude and Codex summarise a burst of tools in plain language ("Criado um
+// arquivo, executado 2 comandos") rather than listing tool names.
+const TOOL_PHRASES: Record<string, [string, string]> = {
+  Write: ["criado um arquivo", "criados {n} arquivos"],
+  Edit: ["editado um arquivo", "editados {n} arquivos"],
+  MultiEdit: ["editado um arquivo", "editados {n} arquivos"],
+  NotebookEdit: ["editado um notebook", "editados {n} notebooks"],
+  Read: ["lido um arquivo", "lidos {n} arquivos"],
+  Bash: ["executado um comando", "executados {n} comandos"],
+  Glob: ["buscado arquivos", "buscado arquivos"],
+  Grep: ["buscado no código", "buscado no código"],
+  WebFetch: ["consultada uma página", "consultadas {n} páginas"],
+  WebSearch: ["feita uma busca", "feitas {n} buscas"],
+  Task: ["acionado um subagente", "acionados {n} subagentes"],
+  TodoWrite: ["atualizado o plano", "atualizado o plano"],
+};
+
 function toolGroupLabel(events: EventCardEvent[]): string {
-  const names = [
-    ...new Set(
-      events.map((event) => {
-        const name =
-          typeof event.payload?.toolName === "string"
-            ? event.payload.toolName
-            : "ferramenta";
-        return name === "Task" ? "Subagente" : name;
-      }),
-    ),
-  ];
+  const counts = new Map<string, number>();
+  for (const event of events) {
+    const name =
+      typeof event.payload?.toolName === "string"
+        ? event.payload.toolName
+        : "ferramenta";
+    counts.set(name, (counts.get(name) ?? 0) + 1);
+  }
+  const phrases = [...counts.entries()].map(([name, count]) => {
+    const phrase = TOOL_PHRASES[name];
+    if (!phrase) {
+      return count === 1 ? `usado ${name}` : `usado ${name} ${count}×`;
+    }
+    return count === 1 ? phrase[0] : phrase[1].replace("{n}", String(count));
+  });
+  const summary = phrases.slice(0, 3).join(", ");
+  const sentence = summary.charAt(0).toUpperCase() + summary.slice(1);
   const running = events.some((event) => event.kind === "tool_call_started");
-  const verb = running ? "Usando" : "Usou";
-  if (events.length === 1) return `${verb} ${names[0]}`;
-  const detail = names.slice(0, 3).join(", ");
-  return `${verb} ${events.length} ferramentas · ${detail}`;
+  return running ? `${sentence}…` : sentence;
 }
 
 function ToolGroup({ events }: { events: EventCardEvent[] }) {
@@ -309,6 +329,8 @@ export function Conversation({
       ? runningTool.payload.toolName
       : null;
   const isEmpty = timeline.length === 0;
+  // Tracks the last agent label while rendering the thread in order.
+  let lastSpeaker: string | null = null;
 
   return (
     <div aria-label="Conversa da tarefa" className="conversation-scroll">
@@ -342,29 +364,30 @@ export function Conversation({
               const owner = laneById.get(item.laneId) ?? lane;
               const runtime = runtimePresentation(owner);
               const isLiveTail = isRunning && item.key === lastAgent?.key;
+              // The speaker line only appears when it changes: repeating it
+              // on every reply is the noise Claude and Codex avoid.
+              const speaker = owner
+                ? `${laneDisplayName(owner)} · ${shortModel(owner.model)}`
+                : "Agente";
+              const showSpeaker = speaker !== lastSpeaker;
+              lastSpeaker = speaker;
               return (
                 <article
                   className="message-group message-group--agent"
                   data-tone={runtime.tone}
                   key={item.key}
                 >
-                  <header className="message-agent-header">
-                    <span
-                      aria-hidden="true"
-                      className={`message-agent-glyph runtime-glyph--${runtime.tone}`}
-                    >
-                      {runtime.glyph}
-                    </span>
-                    <strong>
-                      {owner
-                        ? `${laneDisplayName(owner)} · ${shortModel(owner.model)}`
-                        : "Agente"}
-                    </strong>
-                    <span>
-                      · harness{" "}
-                      {owner?.harness === "native" ? "nativo" : "Claude Code"}
-                    </span>
-                  </header>
+                  {showSpeaker && (
+                    <header className="message-agent-header">
+                      <span
+                        aria-hidden="true"
+                        className={`message-agent-glyph runtime-glyph--${runtime.tone}`}
+                      >
+                        {runtime.glyph}
+                      </span>
+                      <strong>{speaker}</strong>
+                    </header>
+                  )}
                   <Surface className="message-bubble" variant="secondary">
                     <MessageMarkdown>{item.text}</MessageMarkdown>
                     {isLiveTail && (

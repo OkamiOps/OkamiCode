@@ -257,7 +257,7 @@ export function runClaudeUsageScreen(
 export function parseWindows(text: string): UsageWindow[] {
   const compact = text.replace(/\s+/gu, "");
   const pattern =
-    /Current(session|week)(?:\(([^)]{0,40})\))?[^%]{0,400}?(\d{1,3})%used(?:Resets([A-Za-z0-9:,]{0,30}))?/giu;
+    /Current(session|week)(?:\(([^)]{0,40})\))?[^%]{0,400}?(\d{1,3})%used(?:(?:Resets|Reinicia)([A-Za-zÀ-ÿ0-9:.,]{0,30}))?/giu;
   const seen = new Set<string>();
   const windows: UsageWindow[] = [];
   for (const match of compact.matchAll(pattern)) {
@@ -312,6 +312,20 @@ function parseResetStamp(value: string | undefined): string | null {
       Number(full[4]),
     );
     return Number.isNaN(date.valueOf()) ? null : date.toISOString();
+  }
+  // Localised screens report a weekday instead of a date ("qua.,09:59").
+  const weekday = /^([A-Za-zÀ-ÿ]{3})\.?,?(\d{1,2}):(\d{2})$/u.exec(value);
+  if (weekday) {
+    const names = ["dom", "seg", "ter", "qua", "qui", "sex", "sáb"];
+    const index = names.indexOf(weekday[1].toLowerCase());
+    if (index >= 0) {
+      const date = new Date(now);
+      date.setHours(Number(weekday[2]), Number(weekday[3]), 0, 0);
+      const delta = (index - date.getDay() + 7) % 7;
+      date.setDate(date.getDate() + delta);
+      if (date.getTime() <= now.getTime()) date.setDate(date.getDate() + 7);
+      return date.toISOString();
+    }
   }
   if (timeOnly) {
     const date = new Date(now);
