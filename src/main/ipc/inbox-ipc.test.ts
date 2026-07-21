@@ -429,6 +429,7 @@ it("generates a reply draft only through the strict trusted Inbox channel", asyn
       runtimeKind: "codex",
       model: "gpt-test",
       effort: "low",
+      instructions: "Agradeça e confirme o prazo.",
     }),
   ).resolves.toMatchObject({
     sourceThreadId: threadId,
@@ -447,6 +448,7 @@ it("generates a reply draft only through the strict trusted Inbox channel", asyn
     runtimeKind: "codex",
     model: "gpt-test",
     effort: "low",
+    instructions: "Agradeça e confirme o prazo.",
   });
   expect(generationCall[1]).toEqual({ onEvent: expect.any(Function) });
 
@@ -454,7 +456,17 @@ it("generates a reply draft only through the strict trusted Inbox channel", asyn
     handlers.get("inbox:thread:generateReplyDraft")?.(event, {
       threadId,
       runtimeKind: "codex",
+      model: "gpt-test",
+    }),
+  ).rejects.toThrow();
+  expect(inboxReplyGenerationService.generateReplyDraft).toHaveBeenCalledOnce();
+
+  await expect(
+    handlers.get("inbox:thread:generateReplyDraft")?.(event, {
+      threadId,
+      runtimeKind: "codex",
       model: "x".repeat(121),
+      instructions: "Agradeça e confirme o prazo.",
     }),
   ).rejects.toThrow();
   expect(inboxReplyGenerationService.generateReplyDraft).toHaveBeenCalledOnce();
@@ -467,6 +479,7 @@ it("generates a reply draft only through the strict trusted Inbox channel", asyn
       threadId,
       runtimeKind: "codex",
       model: "gpt-test",
+      instructions: "Agradeça e confirme o prazo.",
     }),
   ).rejects.toThrow();
   expect(inboxReplyGenerationService.generateReplyDraft).toHaveBeenCalledTimes(
@@ -482,6 +495,7 @@ it("generates a reply draft only through the strict trusted Inbox channel", asyn
       threadId,
       runtimeKind: "codex",
       model: "gpt-test",
+      instructions: "Agradeça e confirme o prazo.",
     }),
   ).rejects.toThrow("Untrusted renderer origin");
   expect(inboxReplyGenerationService.generateReplyDraft).toHaveBeenCalledTimes(

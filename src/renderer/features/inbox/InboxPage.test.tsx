@@ -218,6 +218,20 @@ function renderInbox(api = makeApi()) {
   };
 }
 
+const draftInstructions = "Agradeça o contato e confirme o prazo.";
+
+async function configureAgentDraft(dialog: HTMLElement, model = "gpt-5.6") {
+  await userEvent.type(
+    within(dialog).getByLabelText("O que você quer responder?"),
+    draftInstructions,
+  );
+  await userEvent.selectOptions(
+    within(dialog).getByLabelText("Agente"),
+    "codex:ChatGPT Plus",
+  );
+  await userEvent.selectOptions(within(dialog).getByLabelText("Modelo"), model);
+}
+
 describe("InboxPage", () => {
   beforeEach(() => localStorage.clear());
   afterEach(cleanup);
@@ -454,14 +468,11 @@ describe("InboxPage", () => {
     expect(api.listModels).toHaveBeenCalledOnce();
     expect(within(dialog).queryByText("Não deve aparecer")).toBeNull();
     expect(
-      within(dialog).getByText(/Esta ação usa uma turn da sua assinatura/i),
+      within(dialog).getByText(/Usa uma turn da assinatura escolhida/i),
     ).toBeVisible();
 
-    await userEvent.click(
-      within(dialog).getByLabelText("Provider ChatGPT Plus"),
-    );
-    await userEvent.click(within(dialog).getByLabelText("Modelo GPT-5.6"));
-    expect(within(dialog).getByLabelText("Effort medium")).toBeChecked();
+    await configureAgentDraft(dialog);
+    expect(within(dialog).getByLabelText("Effort")).toHaveValue("medium");
     await userEvent.click(
       within(dialog).getByRole("button", { name: "Gerar rascunho" }),
     );
@@ -475,9 +486,59 @@ describe("InboxPage", () => {
       model: "gpt-5.6",
       effort: "medium",
       fromAddress: "contato@okamiops.com",
+      instructions: draftInstructions,
     });
     expect(api.approveReply).not.toHaveBeenCalled();
     expect(await screen.findByText("Aguardando sua aprovação")).toBeVisible();
+  });
+
+  it("requires drafting instructions and sends them with compact agent and model choices", async () => {
+    const { api } = renderInbox();
+    await userEvent.click(
+      await screen.findByRole("button", { name: /Proposta para landing page/ }),
+    );
+    await userEvent.click(
+      screen.getByRole("button", { name: "Pedir rascunho" }),
+    );
+
+    const dialog = await screen.findByRole("dialog");
+    const instructions = within(dialog).getByLabelText(
+      "O que você quer responder?",
+    );
+    const agent = within(dialog).getByLabelText("Agente");
+    const model = within(dialog).getByLabelText("Modelo");
+    const submit = within(dialog).getByRole("button", {
+      name: "Gerar rascunho",
+    });
+
+    expect(instructions).toHaveAttribute(
+      "placeholder",
+      expect.stringMatching(/agradeça/i),
+    );
+    expect(agent).toHaveRole("combobox");
+    expect(model).toHaveRole("combobox");
+    expect(submit).toBeDisabled();
+
+    await userEvent.type(
+      instructions,
+      "Agradeça o contato, confirme o prazo de cinco dias e peça o briefing.",
+    );
+    await userEvent.selectOptions(agent, "codex:ChatGPT Plus");
+    await userEvent.selectOptions(model, "gpt-5.6");
+    await userEvent.click(submit);
+
+    await vi.waitFor(() =>
+      expect(api.generateReplyDraft).toHaveBeenCalledOnce(),
+    );
+    expect(vi.mocked(api.generateReplyDraft).mock.calls[0]?.[0]).toEqual({
+      threadId,
+      runtimeKind: "codex",
+      model: "gpt-5.6",
+      effort: "medium",
+      fromAddress: "contato@okamiops.com",
+      instructions:
+        "Agradeça o contato, confirme o prazo de cinco dias e peça o briefing.",
+    });
   });
 
   it("omits effort for models that do not declare it and blocks duplicate generation", async () => {
@@ -498,11 +559,8 @@ describe("InboxPage", () => {
       screen.getByRole("button", { name: "Pedir rascunho" }),
     );
     const dialog = await screen.findByRole("dialog");
-    await userEvent.click(
-      within(dialog).getByLabelText("Provider ChatGPT Plus"),
-    );
-    await userEvent.click(within(dialog).getByLabelText("Modelo GPT-5.6 mini"));
-    expect(within(dialog).queryByText("Escolha o effort")).toBeNull();
+    await configureAgentDraft(dialog, "gpt-5.6-mini");
+    expect(within(dialog).queryByLabelText("Effort")).toBeNull();
 
     const submit = within(dialog).getByRole("button", {
       name: "Gerar rascunho",
@@ -518,6 +576,7 @@ describe("InboxPage", () => {
       runtimeKind: "codex",
       model: "gpt-5.6-mini",
       fromAddress: "contato@okamiops.com",
+      instructions: draftInstructions,
     });
     await userEvent.keyboard("{Escape}");
     expect(screen.getByRole("dialog")).toBeVisible();
@@ -549,10 +608,7 @@ describe("InboxPage", () => {
       screen.getByRole("button", { name: "Pedir rascunho" }),
     );
     const dialog = await screen.findByRole("dialog");
-    await userEvent.click(
-      within(dialog).getByLabelText("Provider ChatGPT Plus"),
-    );
-    await userEvent.click(within(dialog).getByLabelText("Modelo GPT-5.6"));
+    await configureAgentDraft(dialog);
     await userEvent.click(
       within(dialog).getByRole("button", { name: "Gerar rascunho" }),
     );
@@ -577,10 +633,7 @@ describe("InboxPage", () => {
       screen.getByRole("button", { name: "Pedir rascunho" }),
     );
     const dialog = await screen.findByRole("dialog");
-    await userEvent.click(
-      within(dialog).getByLabelText("Provider ChatGPT Plus"),
-    );
-    await userEvent.click(within(dialog).getByLabelText("Modelo GPT-5.6"));
+    await configureAgentDraft(dialog);
     await userEvent.click(
       within(dialog).getByRole("button", { name: "Gerar rascunho" }),
     );
@@ -588,7 +641,7 @@ describe("InboxPage", () => {
     expect(await within(dialog).findByRole("alert")).toHaveTextContent(
       "Serviço indisponível",
     );
-    expect(within(dialog).getByLabelText("Modelo GPT-5.6")).toBeChecked();
+    expect(within(dialog).getByLabelText("Modelo")).toHaveValue("gpt-5.6");
   });
 
   it("maps backend errors to Portuguese without leaking unknown English text", async () => {
@@ -606,10 +659,7 @@ describe("InboxPage", () => {
       screen.getByRole("button", { name: "Pedir rascunho" }),
     );
     const dialog = await screen.findByRole("dialog");
-    await userEvent.click(
-      within(dialog).getByLabelText("Provider ChatGPT Plus"),
-    );
-    await userEvent.click(within(dialog).getByLabelText("Modelo GPT-5.6"));
+    await configureAgentDraft(dialog);
     const submit = within(dialog).getByRole("button", {
       name: "Gerar rascunho",
     });
@@ -630,7 +680,7 @@ describe("InboxPage", () => {
     expect(
       within(dialog).queryByText("Internal provider error 5xx"),
     ).toBeNull();
-    expect(within(dialog).getByLabelText("Modelo GPT-5.6")).toBeChecked();
+    expect(within(dialog).getByLabelText("Modelo")).toHaveValue("gpt-5.6");
   });
 
   it("saves a trimmed reply as approval pending without sending an email", async () => {

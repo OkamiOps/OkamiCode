@@ -1,6 +1,19 @@
 import { Button, Modal, Spinner, useOverlayState } from "@heroui/react";
-import { Bot, Gauge, Sparkles, X } from "lucide-react";
-import { useMemo, useRef, useState, type FormEvent } from "react";
+import {
+  Bot,
+  ChevronDown,
+  Gauge,
+  MessageSquareText,
+  Sparkles,
+  X,
+} from "lucide-react";
+import {
+  useMemo,
+  useRef,
+  useState,
+  type FormEvent,
+  type ReactNode,
+} from "react";
 import type { IpcRequest, IpcResponse } from "../../../shared/contracts/ipc";
 import { InboxSenderIdentityField } from "./InboxSenderIdentityField";
 
@@ -14,7 +27,11 @@ type ReplyCatalogEntry = ModelCatalog[number] & {
 function supportsReplyGeneration(
   provider: ModelCatalog[number],
 ): provider is ReplyCatalogEntry {
-  return provider.runtimeKind !== "cursor";
+  return provider.runtimeKind === "claude" || provider.runtimeKind === "codex";
+}
+
+function providerKey(provider: ReplyCatalogEntry) {
+  return `${provider.runtimeKind}:${provider.providerLabel}`;
 }
 
 interface InboxAgentReplyModalProps {
@@ -39,10 +56,11 @@ export function InboxAgentReplyModal({
   thread,
 }: InboxAgentReplyModalProps) {
   const [catalog, setCatalog] = useState<ModelCatalog>([]);
-  const [selectedProvider, setSelectedProvider] = useState<number | null>(null);
+  const [selectedProviderKey, setSelectedProviderKey] = useState("");
   const [selectedModelId, setSelectedModelId] = useState<string | null>(null);
   const [effort, setEffort] = useState<string | null>(null);
   const [fromAddress, setFromAddress] = useState("");
+  const [instructions, setInstructions] = useState("");
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const inFlight = useRef(false);
@@ -50,6 +68,7 @@ export function InboxAgentReplyModal({
     onOpenChange: (isOpen) => {
       if (!isOpen) return;
       setFromAddress(defaultFromAddress || fromAddresses[0] || "");
+      setInstructions("");
       void loadCatalog();
     },
   });
@@ -68,7 +87,9 @@ export function InboxAgentReplyModal({
     [catalog],
   );
   const provider =
-    selectedProvider === null ? null : (providers[selectedProvider] ?? null);
+    providers.find(
+      (candidate) => providerKey(candidate) === selectedProviderKey,
+    ) ?? null;
   const model = provider?.models.find((item) => item.id === selectedModelId);
   const efforts = model?.efforts ?? [];
 
@@ -76,7 +97,7 @@ export function InboxAgentReplyModal({
     setIsLoading(true);
     setError(null);
     setCatalog([]);
-    setSelectedProvider(null);
+    setSelectedProviderKey("");
     setSelectedModelId(null);
     setEffort(null);
     try {
@@ -88,8 +109,8 @@ export function InboxAgentReplyModal({
     }
   }
 
-  function chooseProvider(index: number) {
-    setSelectedProvider(index);
+  function chooseProvider(key: string) {
+    setSelectedProviderKey(key);
     setSelectedModelId(null);
     setEffort(null);
     setError(null);
@@ -114,6 +135,7 @@ export function InboxAgentReplyModal({
         runtimeKind: provider.runtimeKind,
         model: model.id,
         fromAddress,
+        instructions: instructions.trim(),
         ...(efforts.length > 0 && effort ? { effort } : {}),
       });
       state.close();
@@ -134,6 +156,7 @@ export function InboxAgentReplyModal({
     !provider ||
     !model ||
     !fromAddress ||
+    instructions.trim().length === 0 ||
     (efforts.length > 0 && !effort) ||
     isLoading;
 
@@ -173,7 +196,7 @@ export function InboxAgentReplyModal({
                 </span>
                 <div>
                   <Modal.Heading>Pedir rascunho</Modal.Heading>
-                  <p>Escolha quem prepara a resposta para esta conversa.</p>
+                  <p>Diga o que responder e escolha quem prepara o texto.</p>
                 </div>
                 <Button
                   aria-label="Fechar pedido de rascunho"
@@ -188,20 +211,27 @@ export function InboxAgentReplyModal({
                 </Button>
               </Modal.Header>
               <Modal.Body className="inbox-agent-reply-modal__body">
-                <InboxSenderIdentityField
-                  addresses={fromAddresses}
-                  disabled={
-                    isLoadingFromAddresses || fromAddresses.length === 0
-                  }
-                  error={fromAddressesError}
-                  onChange={setFromAddress}
-                  value={fromAddress}
-                />
-                <p className="inbox-agent-reply-modal__quota">
-                  <Gauge aria-hidden="true" size={14} />
-                  Esta ação usa uma turn da sua assinatura. O resultado será
-                  salvo para aprovação; nenhum email será enviado.
-                </p>
+                <label className="inbox-agent-reply-modal__instructions">
+                  <span>
+                    <MessageSquareText aria-hidden="true" size={14} />O que você
+                    quer responder?
+                  </span>
+                  <textarea
+                    aria-label="O que você quer responder?"
+                    maxLength={4_000}
+                    onChange={(event) => {
+                      setInstructions(event.target.value);
+                      setError(null);
+                    }}
+                    placeholder="Ex.: agradeça o contato, confirme o prazo de cinco dias e peça o briefing."
+                    required
+                    value={instructions}
+                  />
+                  <small>
+                    <span>Use tom, pontos obrigatórios e o próximo passo.</span>
+                    <span>{instructions.length}/4000</span>
+                  </small>
+                </label>
                 {isLoading && (
                   <p className="inbox-agent-reply-modal__state" role="status">
                     <Spinner size="sm" /> Carregando catálogo…
@@ -213,86 +243,67 @@ export function InboxAgentReplyModal({
                   </p>
                 )}
                 {providers.length > 0 && !isLoading && (
-                  <fieldset className="inbox-agent-reply-modal__providers">
-                    <legend>Runtime e provider</legend>
-                    <div>
-                      {providers.map((item, index) => (
-                        <label
-                          data-selected={
-                            selectedProvider === index || undefined
-                          }
-                          key={`${item.runtimeKind}-${item.providerLabel}`}
-                        >
-                          <input
-                            aria-label={`Provider ${item.providerLabel}`}
-                            checked={selectedProvider === index}
-                            name="reply-provider"
-                            onChange={() => chooseProvider(index)}
-                            type="radio"
-                            value={`${item.runtimeKind}-${index}`}
-                          />
-                          <span>
-                            <strong>{item.providerLabel}</strong>
-                            <small>{item.runtimeKind}</small>
-                          </span>
-                        </label>
-                      ))}
-                    </div>
-                  </fieldset>
+                  <div
+                    className="inbox-agent-reply-modal__configuration"
+                    data-has-effort={efforts.length > 0 || undefined}
+                  >
+                    <CompactSelect
+                      icon={<Bot aria-hidden="true" size={13} />}
+                      label="Agente"
+                      onChange={chooseProvider}
+                      options={providers.map((item) => ({
+                        label: `${item.providerLabel} · ${item.runtimeKind}`,
+                        value: providerKey(item),
+                      }))}
+                      placeholder="Selecionar agente"
+                      value={selectedProviderKey}
+                    />
+                    <CompactSelect
+                      disabled={!provider}
+                      icon={<Sparkles aria-hidden="true" size={13} />}
+                      label="Modelo"
+                      onChange={chooseModel}
+                      options={(provider?.models ?? []).map((item) => ({
+                        label: item.label,
+                        value: item.id,
+                      }))}
+                      placeholder="Selecionar modelo"
+                      value={selectedModelId ?? ""}
+                    />
+                    {efforts.length > 0 && (
+                      <CompactSelect
+                        icon={<Gauge aria-hidden="true" size={13} />}
+                        label="Effort"
+                        onChange={setEffort}
+                        options={efforts.map((item) => ({
+                          label: item,
+                          value: item,
+                        }))}
+                        placeholder="Selecionar effort"
+                        value={effort ?? ""}
+                      />
+                    )}
+                  </div>
                 )}
-                {provider && (
-                  <fieldset className="inbox-agent-reply-modal__models">
-                    <legend>Modelo</legend>
-                    <div>
-                      {provider.models.map((item) => (
-                        <label
-                          data-selected={
-                            selectedModelId === item.id || undefined
-                          }
-                          key={item.id}
-                        >
-                          <input
-                            aria-label={`Modelo ${item.label}`}
-                            checked={selectedModelId === item.id}
-                            name="reply-model"
-                            onChange={() => chooseModel(item.id)}
-                            type="radio"
-                            value={item.id}
-                          />
-                          <span>
-                            <strong>{item.label}</strong>
-                            {item.description && (
-                              <small>{item.description}</small>
-                            )}
-                          </span>
-                        </label>
-                      ))}
-                    </div>
-                  </fieldset>
+                {model?.description && (
+                  <p className="inbox-agent-reply-modal__model-description">
+                    {model.description}
+                  </p>
                 )}
-                {model && efforts.length > 0 && (
-                  <fieldset className="inbox-agent-reply-modal__efforts">
-                    <legend>Escolha o effort</legend>
-                    <div>
-                      {efforts.map((item) => (
-                        <label
-                          data-selected={effort === item || undefined}
-                          key={item}
-                        >
-                          <input
-                            aria-label={`Effort ${item}`}
-                            checked={effort === item}
-                            name="reply-effort"
-                            onChange={() => setEffort(item)}
-                            type="radio"
-                            value={item}
-                          />
-                          {item}
-                        </label>
-                      ))}
-                    </div>
-                  </fieldset>
-                )}
+                <InboxSenderIdentityField
+                  addresses={fromAddresses}
+                  disabled={
+                    isLoadingFromAddresses || fromAddresses.length === 0
+                  }
+                  error={fromAddressesError}
+                  onChange={setFromAddress}
+                  value={fromAddress}
+                />
+                <p className="inbox-agent-reply-modal__quota">
+                  <Gauge aria-hidden="true" size={14} />
+                  Usa uma turn da assinatura escolhida. O rascunho será salvo
+                  para sua revisão; nenhum email será enviado agora.
+                </p>
                 {error && (
                   <p className="inbox-agent-reply-modal__error" role="alert">
                     {error}
@@ -328,6 +339,49 @@ export function InboxAgentReplyModal({
         </Modal.Container>
       </Modal.Backdrop>
     </Modal.Root>
+  );
+}
+
+interface CompactSelectProps {
+  disabled?: boolean;
+  icon: ReactNode;
+  label: string;
+  onChange: (value: string) => void;
+  options: Array<{ label: string; value: string }>;
+  placeholder: string;
+  value: string;
+}
+
+function CompactSelect({
+  disabled = false,
+  icon,
+  label,
+  onChange,
+  options,
+  placeholder,
+  value,
+}: CompactSelectProps) {
+  return (
+    <label className="inbox-agent-reply-modal__select">
+      <span>{label}</span>
+      <span className="inbox-agent-reply-modal__select-control">
+        {icon}
+        <select
+          aria-label={label}
+          disabled={disabled}
+          onChange={(event) => onChange(event.target.value)}
+          value={value}
+        >
+          <option value="">{placeholder}</option>
+          {options.map((option) => (
+            <option key={option.value} value={option.value}>
+              {option.label}
+            </option>
+          ))}
+        </select>
+        <ChevronDown aria-hidden="true" size={13} />
+      </span>
+    </label>
   );
 }
 

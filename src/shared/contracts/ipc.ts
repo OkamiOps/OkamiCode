@@ -1212,6 +1212,7 @@ const inboxThreadGenerateReplyDraftRequestSchema = z
     model: z.string().trim().min(1).max(120),
     effort: z.string().trim().min(1).max(20).optional(),
     fromAddress: z.email().trim().max(320).optional(),
+    instructions: z.string().trim().min(1).max(4_000),
   })
   .strict();
 

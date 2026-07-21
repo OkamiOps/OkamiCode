@@ -556,6 +556,7 @@ it("provides typed Inbox account and thread commands through the bridge", async 
       runtimeKind: "codex",
       model: "gpt-5.6",
       effort: "medium",
+      instructions: "Agradeça e confirme o prazo.",
     }),
   ).resolves.toMatchObject({
     sourceThreadId: threadId,
