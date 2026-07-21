@@ -215,6 +215,7 @@ it("exposes exactly the enumerated command surface", () => {
     "inbox:thread:markRead",
     "inbox:thread:createTask",
     "inbox:thread:createReplyDraft",
+    "inbox:thread:generateReplyDraft",
     "inbox:thread:replyActions:list",
     "inbox:reply:approveAndSend",
   ]);

@@ -1167,6 +1167,15 @@ const inboxThreadCreateReplyDraftRequestSchema = z
   })
   .strict();
 
+const inboxThreadGenerateReplyDraftRequestSchema = z
+  .object({
+    threadId: entityIdSchema,
+    runtimeKind: runtimeKindSchema,
+    model: z.string().trim().min(1).max(120),
+    effort: z.string().trim().min(1).max(20).optional(),
+  })
+  .strict();
+
 const inboxThreadCreateReplyDraftResultSchema = z
   .object({
     id: entityIdSchema,
@@ -1271,6 +1280,7 @@ export const ipcRequestSchemas = {
   "inbox:thread:markRead": inboxThreadIdRequestSchema,
   "inbox:thread:createTask": inboxThreadCreateTaskRequestSchema,
   "inbox:thread:createReplyDraft": inboxThreadCreateReplyDraftRequestSchema,
+  "inbox:thread:generateReplyDraft": inboxThreadGenerateReplyDraftRequestSchema,
   "inbox:thread:replyActions:list": inboxThreadIdRequestSchema,
   "inbox:reply:approveAndSend": inboxReplyApproveAndSendRequestSchema,
 } satisfies Record<IpcChannel, z.ZodType>;
@@ -1341,6 +1351,7 @@ export const ipcResponseSchemas = {
   "inbox:thread:markRead": inboxThreadSchema,
   "inbox:thread:createTask": inboxThreadCreateTaskResultSchema,
   "inbox:thread:createReplyDraft": inboxThreadCreateReplyDraftResultSchema,
+  "inbox:thread:generateReplyDraft": inboxThreadCreateReplyDraftResultSchema,
   "inbox:thread:replyActions:list": z.array(inboxThreadReplyActionSchema),
   "inbox:reply:approveAndSend": inboxReplyDispatchSchema,
 } satisfies Record<IpcChannel, z.ZodType>;

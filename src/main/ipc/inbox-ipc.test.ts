@@ -158,6 +158,22 @@ function harness() {
       },
     ]),
   };
+  const inboxReplyGenerationService = {
+    generateReplyDraft: vi.fn(async () => ({
+      id: "0f7c4f9c-33dd-4dbd-98cb-8e768646b386",
+      sourceThreadId: threadId,
+      connectorAccountId: accountId,
+      to: ["client@example.com"] as string[],
+      subject: "Re: Subject",
+      body: "Generated reply",
+      status: "approval_pending" as const,
+      requiresApproval: true as const,
+      safeRetry: false as const,
+      attempts: 0 as const,
+      createdAt: now,
+      updatedAt: now,
+    })),
+  };
   const inboxOutgoingSettingsService = {
     get: vi.fn(() => ({
       host: "smtp.example.com",
@@ -196,6 +212,7 @@ function harness() {
     inboxService,
     inboxTaskActionService,
     inboxReplyDraftService,
+    inboxReplyGenerationService,
     inboxOutgoingSettingsService,
     inboxReplyDispatchService,
   });
@@ -209,6 +226,7 @@ function harness() {
     inboxService,
     inboxTaskActionService,
     inboxReplyDraftService,
+    inboxReplyGenerationService,
     inboxOutgoingSettingsService,
     inboxReplyDispatchService,
     event,
@@ -344,6 +362,75 @@ it("creates an approval-pending reply draft through the strict trusted Inbox cha
     }),
   ).rejects.toThrow("Untrusted renderer origin");
   expect(inboxReplyDraftService.createReplyDraft).toHaveBeenCalledOnce();
+});
+
+it("generates a reply draft only through the strict trusted Inbox channel", async () => {
+  const { handlers, inboxReplyGenerationService, event } = harness();
+
+  await expect(
+    handlers.get("inbox:thread:generateReplyDraft")?.(event, {
+      threadId,
+      runtimeKind: "codex",
+      model: "gpt-test",
+      effort: "low",
+    }),
+  ).resolves.toMatchObject({
+    sourceThreadId: threadId,
+    body: "Generated reply",
+    status: "approval_pending",
+    requiresApproval: true,
+    safeRetry: false,
+  });
+  expect(inboxReplyGenerationService.generateReplyDraft).toHaveBeenCalledOnce();
+  const generationCall = (
+    inboxReplyGenerationService.generateReplyDraft.mock
+      .calls as unknown as Array<[unknown, unknown]>
+  )[0]!;
+  expect(generationCall[0]).toEqual({
+    threadId,
+    runtimeKind: "codex",
+    model: "gpt-test",
+    effort: "low",
+  });
+  expect(generationCall[1]).toEqual({ onEvent: expect.any(Function) });
+
+  await expect(
+    handlers.get("inbox:thread:generateReplyDraft")?.(event, {
+      threadId,
+      runtimeKind: "codex",
+      model: "x".repeat(121),
+    }),
+  ).rejects.toThrow();
+  expect(inboxReplyGenerationService.generateReplyDraft).toHaveBeenCalledOnce();
+
+  inboxReplyGenerationService.generateReplyDraft.mockResolvedValueOnce(
+    {} as never,
+  );
+  await expect(
+    handlers.get("inbox:thread:generateReplyDraft")?.(event, {
+      threadId,
+      runtimeKind: "codex",
+      model: "gpt-test",
+    }),
+  ).rejects.toThrow();
+  expect(inboxReplyGenerationService.generateReplyDraft).toHaveBeenCalledTimes(
+    2,
+  );
+
+  const untrustedEvent = {
+    senderFrame: { url: "https://evil.example/inbox" },
+    sender: { mainFrame: { url: "https://evil.example/inbox" }, send: vi.fn() },
+  } as unknown as IpcMainInvokeEvent;
+  await expect(
+    handlers.get("inbox:thread:generateReplyDraft")?.(untrustedEvent, {
+      threadId,
+      runtimeKind: "codex",
+      model: "gpt-test",
+    }),
+  ).rejects.toThrow("Untrusted renderer origin");
+  expect(inboxReplyGenerationService.generateReplyDraft).toHaveBeenCalledTimes(
+    2,
+  );
 });
 
 it("lists only the strict public reply-action surface for a trusted thread", async () => {

@@ -62,6 +62,7 @@ import {
 } from "../kanban/service";
 import type { InboxApplicationService } from "../inbox/application-service";
 import { InboxReplyDraftService } from "../inbox/reply-draft-service";
+import { InboxReplyGenerationService } from "../inbox/reply-generation-service";
 import { InboxTaskActionService } from "../inbox/task-action-service";
 import { InboxOutgoingSettingsService } from "../inbox/outgoing-settings-service";
 import { ReplyDispatchService } from "../inbox/reply-dispatch-service";
@@ -89,6 +90,11 @@ export type InboxReplyDraftIpcService = Pick<
   "createReplyDraft" | "listReplyActions"
 >;
 
+export type InboxReplyGenerationIpcService = Pick<
+  InboxReplyGenerationService,
+  "generateReplyDraft"
+>;
+
 export type InboxOutgoingSettingsIpcService = Pick<
   InboxOutgoingSettingsService,
   "get" | "save"
@@ -110,6 +116,7 @@ interface RegisterIpcHandlersOptions {
   inboxService?: InboxIpcService;
   inboxTaskActionService?: InboxTaskActionIpcService;
   inboxReplyDraftService?: InboxReplyDraftIpcService;
+  inboxReplyGenerationService?: InboxReplyGenerationIpcService;
   inboxOutgoingSettingsService?: InboxOutgoingSettingsIpcService;
   inboxReplyDispatchService?: InboxReplyDispatchIpcService;
 }
@@ -138,6 +145,7 @@ export function registerIpcHandlers({
   inboxService,
   inboxTaskActionService,
   inboxReplyDraftService,
+  inboxReplyGenerationService,
   inboxOutgoingSettingsService,
   inboxReplyDispatchService,
 }: RegisterIpcHandlersOptions): void {
@@ -184,6 +192,12 @@ export function registerIpcHandlers({
   let inboxReplyDrafts = inboxReplyDraftService;
   const getInboxReplyDraftService = () =>
     (inboxReplyDrafts ??= new InboxReplyDraftService({ db: state.database }));
+  let inboxReplyGeneration = inboxReplyGenerationService;
+  const getInboxReplyGenerationService = () =>
+    (inboxReplyGeneration ??= new InboxReplyGenerationService({
+      state,
+      modelCatalog,
+    }));
   let inboxOutgoingSettings = inboxOutgoingSettingsService;
   const getInboxOutgoingSettingsService = () =>
     (inboxOutgoingSettings ??= new InboxOutgoingSettingsService({
@@ -217,6 +231,7 @@ export function registerIpcHandlers({
         getInboxService,
         getInboxTaskActionService,
         getInboxReplyDraftService,
+        getInboxReplyGenerationService,
         getInboxOutgoingSettingsService,
         getInboxReplyDispatchService,
       );
@@ -241,6 +256,7 @@ async function dispatch(
   inboxService: () => InboxIpcService,
   inboxTaskActionService: () => InboxTaskActionIpcService,
   inboxReplyDraftService: () => InboxReplyDraftIpcService,
+  inboxReplyGenerationService: () => InboxReplyGenerationIpcService,
   inboxOutgoingSettingsService: () => InboxOutgoingSettingsIpcService,
   inboxReplyDispatchService: () => InboxReplyDispatchIpcService,
 ): Promise<unknown> {
@@ -483,6 +499,14 @@ async function dispatch(
     case "inbox:thread:createReplyDraft":
       return inboxReplyDraftService().createReplyDraft(
         request as IpcRequest<"inbox:thread:createReplyDraft">,
+      );
+    case "inbox:thread:generateReplyDraft":
+      return inboxReplyGenerationService().generateReplyDraft(
+        request as IpcRequest<"inbox:thread:generateReplyDraft">,
+        {
+          onEvent: (candidate) =>
+            persistAndForwardEvent(state, event.sender, candidate),
+        },
       );
     case "inbox:thread:replyActions:list":
       return inboxReplyDraftService().listReplyActions(
@@ -1447,24 +1471,32 @@ async function forwardEvents(
   run: RunHandle,
 ): Promise<void> {
   for await (const candidate of run.events) {
-    const event = canonicalEventSchema.parse(candidate);
-    state.events.append(event);
-    // Without this the run row stays "running" forever: the terminal event
-    // was streamed to the UI but never written back to the run itself.
-    const terminal = TERMINAL_RUN_KINDS[event.kind];
-    if (terminal) {
-      state.database
-        .prepare(
-          `UPDATE runs SET status = ?, finished_at = ?
-           WHERE id = ? AND finished_at IS NULL`,
-        )
-        .run(terminal, event.occurredAt, event.runId);
-    }
-    sender.send(eventChannel, {
-      ...event,
-      payload: sanitizePayload(event.payload),
-    });
+    await persistAndForwardEvent(state, sender, candidate);
   }
+}
+
+async function persistAndForwardEvent(
+  state: AppState,
+  sender: Pick<WebContents, "send">,
+  candidate: unknown,
+): Promise<void> {
+  const event = canonicalEventSchema.parse(candidate);
+  state.events.append(event);
+  // Without this the run row stays "running" forever: the terminal event
+  // was streamed to the UI but never written back to the run itself.
+  const terminal = TERMINAL_RUN_KINDS[event.kind];
+  if (terminal) {
+    state.database
+      .prepare(
+        `UPDATE runs SET status = ?, finished_at = ?
+         WHERE id = ? AND finished_at IS NULL`,
+      )
+      .run(terminal, event.occurredAt, event.runId);
+  }
+  sender.send(eventChannel, {
+    ...event,
+    payload: sanitizePayload(event.payload),
+  });
 }
 
 async function cancelRun(state: AppState, request: IpcRequest<"run:cancel">) {
