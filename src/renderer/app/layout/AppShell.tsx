@@ -45,12 +45,13 @@ export function AppShell() {
   });
   const location = useLocation();
   const isInbox = location.pathname === "/inbox";
+  const isCalendar = location.pathname === "/calendar";
 
   return (
     <QueryClientProvider client={queryClient}>
       <WorkbenchStoreContext.Provider value={store}>
-        {isInbox ? (
-          <div className="inbox-shell">
+        {isInbox || isCalendar ? (
+          <div className={`inbox-shell${isCalendar ? " calendar-shell" : ""}`}>
             <NavigationRail />
             <main className="inbox-shell__main">
               <Outlet context={emptyOutletContext} />

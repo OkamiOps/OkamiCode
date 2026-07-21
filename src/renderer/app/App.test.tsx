@@ -5,6 +5,7 @@ import { App } from "./App";
 
 describe("App", () => {
   beforeEach(() => {
+    window.history.replaceState({}, "", "/#/workbench");
     installOkamiMock({ "task:list": [], "lane:list": [] });
   });
 

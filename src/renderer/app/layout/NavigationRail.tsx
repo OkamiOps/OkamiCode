@@ -24,7 +24,7 @@ const navigationItems: NavigationItem[] = [
   { icon: Home, label: "Início", path: "/quick-chat" },
   { icon: PanelsTopLeft, label: "Workbench", path: "/workbench" },
   { icon: Inbox, label: "Inbox", path: "/inbox" },
-  { icon: CalendarDays, label: "Agenda" },
+  { icon: CalendarDays, label: "Agenda", path: "/calendar" },
   { icon: Columns3, label: "Kanban", path: "/kanban" },
   { icon: Gauge, label: "Uso e limites", path: "/usage" },
   { icon: Brain, label: "Memória", path: "/memory" },

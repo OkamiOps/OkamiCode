@@ -1,11 +1,13 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import {
   Bot,
+  CalendarDays,
   ChevronDown,
   Columns3,
   Cog,
   FolderGit2,
   Gauge,
+  Inbox,
   Link2,
   Pencil,
   Plug,
@@ -241,6 +243,14 @@ export function ChatSidebar() {
         <NavLink className="chat-footer-link" to="/usage">
           <Gauge aria-hidden="true" size={15} />
           Uso e limites
+        </NavLink>
+        <NavLink className="chat-footer-link" to="/inbox">
+          <Inbox aria-hidden="true" size={15} />
+          Inbox
+        </NavLink>
+        <NavLink className="chat-footer-link" to="/calendar">
+          <CalendarDays aria-hidden="true" size={15} />
+          Agenda
         </NavLink>
         <NavLink className="chat-footer-link" to="/kanban">
           <Columns3 aria-hidden="true" size={15} />

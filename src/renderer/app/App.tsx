@@ -5,6 +5,7 @@ import "../styles/usage.css";
 import "../styles/kanban.css";
 import "../styles/chat.css";
 import "../styles/inbox.css";
+import "../styles/calendar.css";
 import { AppProviders } from "./providers";
 import { AppRouter } from "./router";
 

@@ -10,6 +10,7 @@ import { UsagePage } from "../features/usage/UsagePage";
 import { WorkbenchPage } from "../features/workbench/WorkbenchPage";
 import { KanbanPage } from "../features/kanban/KanbanPage";
 import { InboxPage } from "../features/inbox/InboxPage";
+import { CalendarPage } from "../features/calendar/CalendarPage";
 import { AppShell } from "./layout/AppShell";
 
 export function AppRouter() {
@@ -18,6 +19,7 @@ export function AppRouter() {
       <Route element={<AppShell />}>
         <Route path="/workbench" element={<WorkbenchPage />} />
         <Route path="/inbox" element={<InboxPage />} />
+        <Route path="/calendar" element={<CalendarPage />} />
         <Route path="/quick-chat" element={<QuickChatPage />} />
         <Route path="/kanban" element={<KanbanPage />} />
         <Route path="/usage" element={<UsagePage />} />

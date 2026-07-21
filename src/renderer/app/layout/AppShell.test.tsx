@@ -5,7 +5,7 @@ import { App } from "../App";
 import { installOkamiMock } from "../../test/okami-mock";
 
 function renderApp(path: string) {
-  window.history.replaceState({}, "", path);
+  window.history.replaceState({}, "", `/#${path}`);
   return render(<App />);
 }
 

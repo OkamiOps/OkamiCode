@@ -50,7 +50,10 @@ const timedEvent = {
   updatedAt: now,
 };
 
-function harness() {
+function harness(
+  rendererUrl = "http://127.0.0.1:5173/index.html",
+  senderUrl = "http://127.0.0.1:5173/calendar",
+) {
   const fixture = createTestDatabase();
   const state = createAppState({
     database: fixture.db,
@@ -73,18 +76,31 @@ function harness() {
         handlers.set(channel as IpcChannel, handler);
       },
     },
-    rendererUrl: "http://127.0.0.1:5173/index.html",
+    rendererUrl,
     state,
     clientCapabilities: async () => [],
     calendarService,
   } as never);
-  const senderFrame = { url: "http://127.0.0.1:5173/calendar" };
+  const senderFrame = { url: senderUrl };
   const event = {
     senderFrame,
     sender: { mainFrame: senderFrame, send: vi.fn() },
   } as unknown as IpcMainInvokeEvent;
   return { calendarService, handlers, event };
 }
+
+it("keeps the packaged file origin trusted across hash-routed Calendar navigation", async () => {
+  const rendererUrl = "file:///Applications/Okami/out/renderer/index.html";
+  const { calendarService, handlers, event } = harness(
+    rendererUrl,
+    `${rendererUrl}#/calendar`,
+  );
+
+  await expect(
+    handlers.get("calendar:sources:list" as IpcChannel)?.(event, {}),
+  ).resolves.toEqual([source]);
+  expect(calendarService.listSources).toHaveBeenCalledOnce();
+});
 
 it("routes all six strict Calendar commands once with public data only", async () => {
   const { calendarService, handlers, event } = harness();
