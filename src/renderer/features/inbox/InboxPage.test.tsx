@@ -14,6 +14,7 @@ import { InboxPage, type InboxApi } from "./InboxPage";
 const accountId = "11111111-1111-4111-8111-111111111111";
 const threadId = "22222222-2222-4222-8222-222222222222";
 const now = "2026-07-21T09:30:00.000Z";
+const remoteImageTrustKey = "okami.inbox.remoteImages.allowedSenders.v1";
 
 const account: IpcResponse<"inbox:accounts:list">[number] = {
   account: {
@@ -236,18 +237,64 @@ describe("InboxPage", () => {
     expect(emailDocument.getAttribute("srcdoc")).not.toContain(
       "https://tracker.example/pixel.gif",
     );
+    expect(
+      screen.getByText(
+        "Imagens externas bloqueadas para proteger sua privacidade.",
+      ),
+    ).toBeVisible();
+    expect(
+      screen.getByRole("button", {
+        name: "Sempre permitir imagens de ana@cliente.com",
+      }),
+    ).toBeVisible();
     await userEvent.click(
-      screen.getByRole("button", { name: "Carregar imagens externas" }),
+      screen.getByRole("button", { name: "Carregar imagens agora" }),
     );
     expect(emailDocument.getAttribute("srcdoc")).toContain(
       "https://tracker.example/pixel.gif",
     );
+    expect(localStorage.getItem(remoteImageTrustKey)).toBeNull();
     expect(screen.getByText("Próximo passo")).toBeVisible();
     expect(screen.getByText(/Nada é enviado sem sua aprovação/i)).toBeVisible();
     expect(api.markThreadRead).toHaveBeenCalledTimes(1);
 
     await userEvent.click(item);
     expect(api.markThreadRead).toHaveBeenCalledTimes(1);
+  });
+
+  it("remembers a trusted image sender locally and loads future messages", async () => {
+    const first = renderInbox();
+    await userEvent.click(
+      await screen.findByRole("button", { name: /Proposta para landing page/ }),
+    );
+    const firstFrame = await screen.findByTitle("Conteúdo HTML do email");
+
+    await userEvent.click(
+      screen.getByRole("button", {
+        name: "Sempre permitir imagens de ana@cliente.com",
+      }),
+    );
+    expect(firstFrame.getAttribute("srcdoc")).toContain(
+      "https://tracker.example/pixel.gif",
+    );
+    expect(
+      JSON.parse(localStorage.getItem(remoteImageTrustKey) ?? "[]"),
+    ).toEqual(["ana@cliente.com"]);
+
+    first.unmount();
+    renderInbox();
+    await userEvent.click(
+      await screen.findByRole("button", { name: /Proposta para landing page/ }),
+    );
+    const trustedFrame = await screen.findByTitle("Conteúdo HTML do email");
+    expect(trustedFrame.getAttribute("srcdoc")).toContain(
+      "https://tracker.example/pixel.gif",
+    );
+    expect(
+      screen.queryByText(
+        "Imagens externas bloqueadas para proteger sua privacidade.",
+      ),
+    ).toBeNull();
   });
 
   it("restores persisted column widths and exposes three resize handles", () => {

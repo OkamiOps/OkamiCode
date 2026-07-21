@@ -1,19 +1,29 @@
 import { Button } from "@heroui/react";
-import { FileCode2, ImageOff } from "lucide-react";
+import { FileCode2, ImageOff, ShieldCheck } from "lucide-react";
 import { useMemo, useState, type SyntheticEvent } from "react";
 
 interface EmailMessageBodyProps {
   body: string;
   format: "html" | "text";
+  sender: string;
 }
+
+const remoteImageTrustKey = "okami.inbox.remoteImages.allowedSenders.v1";
 
 const removedElements =
   "script, iframe, object, embed, form, input, button, textarea, select, base, link, meta[http-equiv]";
 const remoteUrl = /^(?:https?:)?\/\//iu;
 const remoteCssUrl = /url\(\s*(['"]?)(?:https?:)?\/\/.*?\1\s*\)/giu;
 
-export function EmailMessageBody({ body, format }: EmailMessageBodyProps) {
-  const [allowRemoteImages, setAllowRemoteImages] = useState(false);
+export function EmailMessageBody({
+  body,
+  format,
+  sender,
+}: EmailMessageBodyProps) {
+  const senderAddress = useMemo(() => addressFromSender(sender), [sender]);
+  const [allowRemoteImages, setAllowRemoteImages] = useState(() =>
+    isTrustedImageSender(senderAddress),
+  );
   const hasRemoteImages = useMemo(() => containsRemoteImages(body), [body]);
   const sourceDocument = useMemo(
     () => buildEmailDocument(body, allowRemoteImages),
@@ -34,19 +44,48 @@ export function EmailMessageBody({ body, format }: EmailMessageBodyProps) {
         <span>
           <FileCode2 aria-hidden="true" size={13} /> Mensagem formatada
         </span>
-        {hasRemoteImages && !allowRemoteImages && (
-          <Button
-            aria-label="Carregar imagens externas"
-            className="inbox-email-document__images"
-            onPress={() => setAllowRemoteImages(true)}
-            size="sm"
-            variant="ghost"
-          >
-            <ImageOff aria-hidden="true" size={13} />
-            Carregar imagens
-          </Button>
-        )}
       </div>
+      {hasRemoteImages && !allowRemoteImages && (
+        <div className="inbox-email-document__privacy" role="note">
+          <span className="inbox-email-document__privacy-copy">
+            <span className="inbox-email-document__privacy-mark">
+              <ImageOff aria-hidden="true" size={14} />
+            </span>
+            <span>
+              <strong>Imagens externas bloqueadas</strong>
+              <small>
+                Imagens externas bloqueadas para proteger sua privacidade.
+              </small>
+            </span>
+          </span>
+          <span className="inbox-email-document__privacy-actions">
+            <Button
+              aria-label="Carregar imagens agora"
+              className="inbox-email-document__images"
+              onPress={() => setAllowRemoteImages(true)}
+              size="sm"
+              variant="ghost"
+            >
+              Carregar agora
+            </Button>
+            {senderAddress && (
+              <Button
+                aria-label={`Sempre permitir imagens de ${senderAddress}`}
+                className="inbox-email-document__images inbox-email-document__images--trust"
+                onPress={() => {
+                  trustImageSender(senderAddress);
+                  setAllowRemoteImages(true);
+                }}
+                size="sm"
+                variant="ghost"
+              >
+                <ShieldCheck aria-hidden="true" size={13} />
+                Sempre para este remetente
+              </Button>
+            )}
+          </span>
+        </div>
+      )}
       <iframe
         className="inbox-email-document__frame"
         onLoad={resizeEmailFrame}
@@ -56,6 +95,51 @@ export function EmailMessageBody({ body, format }: EmailMessageBodyProps) {
       />
     </div>
   );
+}
+
+function addressFromSender(sender: string) {
+  const bracketed = sender.match(/<([^<>]+)>/u)?.[1];
+  const candidate = (bracketed ?? sender).trim().toLowerCase();
+  return /^[^\s@]+@[^\s@]+\.[^\s@]+$/u.test(candidate) ? candidate : "";
+}
+
+function isTrustedImageSender(senderAddress: string) {
+  return (
+    senderAddress.length > 0 &&
+    readTrustedImageSenders().includes(senderAddress)
+  );
+}
+
+function trustImageSender(senderAddress: string) {
+  const trusted = new Set(readTrustedImageSenders());
+  trusted.add(senderAddress);
+  try {
+    globalThis.localStorage.setItem(
+      remoteImageTrustKey,
+      JSON.stringify([...trusted].sort()),
+    );
+  } catch {
+    // Loading still applies to this message when local persistence is unavailable.
+  }
+}
+
+function readTrustedImageSenders(): string[] {
+  try {
+    const parsed: unknown = JSON.parse(
+      globalThis.localStorage.getItem(remoteImageTrustKey) ?? "[]",
+    );
+    if (!Array.isArray(parsed)) return [];
+    return [
+      ...new Set(
+        parsed
+          .filter((value): value is string => typeof value === "string")
+          .map((value) => value.trim().toLowerCase())
+          .filter((value) => /^[^\s@]+@[^\s@]+\.[^\s@]+$/u.test(value)),
+      ),
+    ];
+  } catch {
+    return [];
+  }
 }
 
 export function buildEmailDocument(body: string, allowRemoteImages: boolean) {

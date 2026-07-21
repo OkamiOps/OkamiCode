@@ -991,6 +991,7 @@ function Conversation({
                 <EmailMessageBody
                   body={message.body}
                   format={message.bodyFormat}
+                  sender={message.sender}
                 />
                 {message.attachments.length > 0 && (
                   <div className="inbox-attachments">
