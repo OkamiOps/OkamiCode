@@ -5,6 +5,7 @@ import {
   providerKindSchema,
   runtimeKindSchema,
 } from "./lane";
+import { isSafeCalendarHttpUrl } from "./calendar-url";
 
 export { ipcChannels, eventChannel, type IpcChannel } from "./channels";
 import type { IpcChannel } from "./channels";
@@ -1225,59 +1226,13 @@ const calendarTextSchema = (maximum: number) =>
 const calendarOptionalTextSchema = (maximum: number) =>
   calendarTextSchema(maximum).nullable().optional();
 const calendarTimestampSchema = z.iso.datetime({ offset: true });
-const calendarCredentialQueryKeys = new Set([
-  "token",
-  "access_token",
-  "refresh_token",
-  "auth",
-  "authorization",
-  "password",
-  "passwd",
-  "credential",
-  "api_key",
-  "key",
-  "signature",
-  "sig",
-]);
 const calendarSafeHttpUrlSchema = z
   .string()
   .trim()
   .min(1)
   .max(4_096)
-  .superRefine((value, context) => {
-    let url: URL;
-    try {
-      url = new URL(value);
-    } catch {
-      context.addIssue({ code: "custom", message: "Calendar URL is invalid" });
-      return;
-    }
-    if (url.protocol !== "http:" && url.protocol !== "https:") {
-      context.addIssue({
-        code: "custom",
-        message: "Calendar URL must use HTTP(S)",
-      });
-    }
-    if (url.username || url.password) {
-      context.addIssue({
-        code: "custom",
-        message: "Calendar URL must not include credentials",
-      });
-    }
-    if (url.hash) {
-      context.addIssue({
-        code: "custom",
-        message: "Calendar URL must not include a fragment",
-      });
-    }
-    for (const key of url.searchParams.keys()) {
-      if (calendarCredentialQueryKeys.has(key.toLowerCase())) {
-        context.addIssue({
-          code: "custom",
-          message: "Calendar URL must not include credential query fields",
-        });
-      }
-    }
+  .refine(isSafeCalendarHttpUrl, {
+    message: "Calendar URL must be public HTTP(S) without credentials",
   });
 const calendarOptionalSafeHttpUrlSchema = calendarSafeHttpUrlSchema
   .nullable()

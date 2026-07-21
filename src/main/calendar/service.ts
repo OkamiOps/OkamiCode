@@ -1,4 +1,5 @@
 import type { Database } from "../db/connection";
+import { isSafeCalendarHttpUrl } from "../../shared/contracts/calendar-url";
 
 export type CalendarSourceKind =
   "local" | "google" | "outlook" | "caldav" | "ics";
@@ -509,8 +510,8 @@ export class CalendarService {
       description: optionalText(input.description),
       location: optionalText(input.location),
       organizer: optionalText(input.organizer),
-      joinUrl: optionalText(input.joinUrl),
-      sourceUrl: optionalText(input.sourceUrl),
+      joinUrl: optionalSafeCalendarUrl(input.joinUrl),
+      sourceUrl: optionalSafeCalendarUrl(input.sourceUrl),
       etag: null,
       providerUpdatedAt: null,
       attendees: canonicalAttendees(input.attendees ?? []),
@@ -780,6 +781,16 @@ function optionalText(value: string | null | undefined): string | null {
   }
   const normalized = value.trim();
   return normalized || null;
+}
+
+function optionalSafeCalendarUrl(
+  value: string | null | undefined,
+): string | null {
+  const normalized = optionalText(value);
+  if (normalized !== null && !isSafeCalendarHttpUrl(normalized)) {
+    throw new Error("Calendar URL must not contain credentials");
+  }
+  return normalized;
 }
 
 function requireEventStatus(value: CalendarEventStatus): CalendarEventStatus {

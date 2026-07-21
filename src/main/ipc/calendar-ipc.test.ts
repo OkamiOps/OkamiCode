@@ -245,6 +245,18 @@ it("rejects unsafe Calendar URLs before dispatch and after service output", asyn
       sourceUrl: "https://calendar.example/event?TOKEN=never-send-this",
     }),
   ).rejects.toThrow();
+  await expect(
+    create?.(event, {
+      sourceId,
+      title: "Planejamento",
+      timezone: "America/Sao_Paulo",
+      allDay: false,
+      startsAt: "2026-07-21T12:00:00-03:00",
+      endsAt: "2026-07-21T13:00:00-03:00",
+      sourceUrl:
+        "https://calendar.example/event?accessToken=never-send-this&cookie=session",
+    }),
+  ).rejects.toThrow();
   expect(calendarService.createLocalEvent).not.toHaveBeenCalled();
 
   calendarService.createLocalEvent.mockReturnValueOnce({

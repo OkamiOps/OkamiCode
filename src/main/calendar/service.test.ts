@@ -206,6 +206,65 @@ describe("CalendarService", () => {
     });
   });
 
+  it("rejects credential-bearing URLs before local or provider events can be persisted", () => {
+    const fx = createService();
+    const local = fx.service.createLocalSource({
+      displayName: "Seguro",
+      color: "#123456",
+      timezone: "UTC",
+    });
+
+    expect(() =>
+      fx.service.createLocalEvent({
+        sourceId: local.id,
+        title: "Credencial em userinfo",
+        timezone: "UTC",
+        allDay: false,
+        startsAt: "2026-06-01T10:00:00Z",
+        endsAt: "2026-06-01T11:00:00Z",
+        joinUrl: "https://user:password@meet.example/event",
+      }),
+    ).toThrow("Calendar URL must not contain credentials");
+    expect(
+      fx.db.prepare("SELECT count(*) AS count FROM calendar_events").get(),
+    ).toEqual({ count: 0 });
+
+    const remote = createRemoteSource(fx);
+    expect(() =>
+      fx.service.applySyncBatch(
+        syncInput(remote.id, {
+          upserts: [
+            {
+              ...timedUpsert("remote-secret"),
+              sourceUrl:
+                "https://calendar.example/event?access_token=never-store-this",
+            },
+          ],
+        }),
+      ),
+    ).toThrow("Calendar URL must not contain credentials");
+    expect(
+      fx.db
+        .prepare("SELECT sync_cursor FROM calendar_sources WHERE id = ?")
+        .get(remote.id),
+    ).toEqual({ sync_cursor: null });
+    expect(
+      fx.db.prepare("SELECT count(*) AS count FROM calendar_events").get(),
+    ).toEqual({ count: 0 });
+
+    expect(
+      fx.service.createLocalEvent({
+        sourceId: local.id,
+        title: "Link público",
+        timezone: "UTC",
+        allDay: false,
+        startsAt: "2026-06-01T12:00:00Z",
+        endsAt: "2026-06-01T13:00:00Z",
+        joinUrl: "https://meet.example/event?view=compact",
+      }).joinUrl,
+    ).toBe("https://meet.example/event?view=compact");
+  });
+
   it("preserves undefined nullable fields and clears every nullable local field with null", () => {
     const fx = createService();
     const source = fx.service.createLocalSource({
