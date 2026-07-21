@@ -37,4 +37,20 @@ describe("AppShell", () => {
       screen.getByRole("navigation", { name: "Histórico de conversas" }),
     ).toBeVisible();
   });
+
+  it("uses the dedicated inbox shell without the coding conversation sidebar", async () => {
+    const { container } = renderApp("/inbox");
+
+    expect(await screen.findByRole("heading", { name: "Inbox" })).toBeVisible();
+    expect(screen.queryByRole("button", { name: "Nova conversa" })).toBeNull();
+    expect(screen.getByRole("link", { name: "Inbox" })).toHaveAttribute(
+      "aria-current",
+      "page",
+    );
+
+    const shell = container.querySelector(".inbox-shell");
+    expect(shell).toBeTruthy();
+    expect(shell?.firstElementChild).toHaveClass("navigation-rail");
+    expect(shell?.lastElementChild).toHaveClass("inbox-shell__main");
+  });
 });

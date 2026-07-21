@@ -1,11 +1,12 @@
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { useState, type CSSProperties } from "react";
-import { Outlet } from "react-router-dom";
+import { Outlet, useLocation } from "react-router-dom";
 import {
   createWorkbenchStore,
   WorkbenchStoreContext,
 } from "../../features/workbench/store";
 import { ChatSidebar } from "./ChatSidebar";
+import { NavigationRail } from "./NavigationRail";
 import { ResizeHandle, useResizablePane } from "./ResizeHandle";
 
 // Kept for route components that still type their outlet context.
@@ -42,24 +43,37 @@ export function AppShell() {
     min: 170,
     max: 620,
   });
+  const location = useLocation();
+  const isInbox = location.pathname === "/inbox";
 
   return (
     <QueryClientProvider client={queryClient}>
       <WorkbenchStoreContext.Provider value={store}>
-        <div
-          className="chat-shell"
-          style={{ "--chat-sidebar-w": `${sidebar.width}px` } as CSSProperties}
-        >
-          <ChatSidebar />
-          <ResizeHandle
-            ariaLabel="Redimensionar a lista de conversas"
-            edge="right"
-            pane={sidebar}
-          />
-          <main className="chat-main">
-            <Outlet context={emptyOutletContext} />
-          </main>
-        </div>
+        {isInbox ? (
+          <div className="inbox-shell">
+            <NavigationRail />
+            <main className="inbox-shell__main">
+              <Outlet context={emptyOutletContext} />
+            </main>
+          </div>
+        ) : (
+          <div
+            className="chat-shell"
+            style={
+              { "--chat-sidebar-w": `${sidebar.width}px` } as CSSProperties
+            }
+          >
+            <ChatSidebar />
+            <ResizeHandle
+              ariaLabel="Redimensionar a lista de conversas"
+              edge="right"
+              pane={sidebar}
+            />
+            <main className="chat-main">
+              <Outlet context={emptyOutletContext} />
+            </main>
+          </div>
+        )}
       </WorkbenchStoreContext.Provider>
     </QueryClientProvider>
   );

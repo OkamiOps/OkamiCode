@@ -9,6 +9,7 @@ import { SettingsPage } from "../features/ecosystem/SettingsPage";
 import { UsagePage } from "../features/usage/UsagePage";
 import { WorkbenchPage } from "../features/workbench/WorkbenchPage";
 import { KanbanPage } from "../features/kanban/KanbanPage";
+import { InboxPage } from "../features/inbox/InboxPage";
 import { AppShell } from "./layout/AppShell";
 
 export function AppRouter() {
@@ -16,6 +17,7 @@ export function AppRouter() {
     <Routes>
       <Route element={<AppShell />}>
         <Route path="/workbench" element={<WorkbenchPage />} />
+        <Route path="/inbox" element={<InboxPage />} />
         <Route path="/quick-chat" element={<QuickChatPage />} />
         <Route path="/kanban" element={<KanbanPage />} />
         <Route path="/usage" element={<UsagePage />} />
