@@ -47,6 +47,30 @@ const thread: IpcResponse<"inbox:threads:list">["threads"][number] = {
   updatedAt: now,
 };
 
+const workspaceLane: IpcResponse<"lane:list">[number] = {
+  laneId: "55555555-5555-4555-8555-555555555555",
+  taskId: "66666666-6666-4666-8666-666666666666",
+  harness: "claude",
+  runtimeKind: "claude",
+  runtimeVersion: "2.1.0",
+  providerAccountLabel: "Anthropic Max",
+  model: "Claude Sonnet 4.5",
+  routeKind: "direct",
+  routeReason: "Assinatura local",
+  displayQuotaAccount: "Max",
+  permissionMode: "ask",
+  workspacePath: "/Users/marcos/Projetos/landing",
+  nativeSessionIdPrefix: null,
+  status: "ready",
+  temperature: "clean",
+  pendingDeltaEvents: 0,
+};
+
+const taskResult = {
+  sourceThreadId: threadId,
+  executionStarted: false,
+} as IpcResponse<"inbox:thread:createTask">;
+
 function makeApi(overrides: Partial<InboxApi> = {}): InboxApi {
   return {
     listAccounts: vi.fn().mockResolvedValue([account]),
@@ -82,6 +106,8 @@ function makeApi(overrides: Partial<InboxApi> = {}): InboxApi {
       ],
     }),
     markThreadRead: vi.fn().mockResolvedValue({ ...thread, unreadCount: 0 }),
+    listLanes: vi.fn().mockResolvedValue([]),
+    createTask: vi.fn().mockResolvedValue(taskResult),
     ...overrides,
   };
 }
@@ -181,7 +207,7 @@ describe("InboxPage", () => {
     );
   });
 
-  it("filters unread threads and confirms removal without invoking future actions", async () => {
+  it("filters unread threads and confirms removal while keeping future actions disabled", async () => {
     const { api } = renderInbox();
     await screen.findByText("Projetos");
     await userEvent.click(screen.getByRole("button", { name: "Não lidos" }));
@@ -204,9 +230,122 @@ describe("InboxPage", () => {
     );
     await screen.findByText("Ana Silva <ana@cliente.com>");
 
-    for (const action of ["Virar tarefa", "Pedir rascunho", "Responder"]) {
+    expect(screen.getByRole("button", { name: "Virar tarefa" })).toBeEnabled();
+    for (const action of ["Pedir rascunho", "Responder"]) {
       expect(screen.getByRole("button", { name: action })).toBeDisabled();
     }
+  });
+
+  it("creates a manual Kanban task from the selected email without starting a lane", async () => {
+    const { api } = renderInbox();
+    await userEvent.click(
+      await screen.findByRole("button", { name: /Proposta para landing page/ }),
+    );
+    await screen.findByText("Ana Silva <ana@cliente.com>");
+
+    await userEvent.click(screen.getByRole("button", { name: "Virar tarefa" }));
+    expect(
+      screen.getByRole("heading", { name: "Transformar em tarefa" }),
+    ).toBeVisible();
+    expect(screen.getByLabelText("Título da tarefa")).toHaveValue(
+      "Proposta para landing page",
+    );
+    expect(screen.getByText("Nenhum agente será iniciado.")).toBeVisible();
+
+    await userEvent.click(screen.getByRole("button", { name: "Criar tarefa" }));
+    await vi.waitFor(() => expect(api.createTask).toHaveBeenCalledTimes(1));
+    expect(vi.mocked(api.createTask).mock.calls[0]?.[0]).toEqual({
+      threadId,
+      mode: "manual",
+      laneId: null,
+      title: "Proposta para landing page",
+      idempotencyKey: expect.stringMatching(
+        /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i,
+      ),
+    });
+    expect(api.listLanes).not.toHaveBeenCalled();
+    expect(api).not.toHaveProperty("laneSendTurn");
+    expect(
+      await screen.findByText(
+        "Tarefa criada no Kanban. Nenhum agente foi iniciado.",
+      ),
+    ).toBeVisible();
+  });
+
+  it("only offers workspace lanes when preparing an email task for an agent", async () => {
+    const noWorkspaceLane = { ...workspaceLane, workspacePath: null };
+    const { api } = renderInbox(
+      makeApi({
+        listLanes: vi.fn().mockResolvedValue([noWorkspaceLane, workspaceLane]),
+      }),
+    );
+    await userEvent.click(
+      await screen.findByRole("button", { name: /Proposta para landing page/ }),
+    );
+    await userEvent.click(screen.getByRole("button", { name: "Virar tarefa" }));
+    await userEvent.click(
+      screen.getByRole("radio", { name: /Preparar para agente/ }),
+    );
+
+    expect(await screen.findByText("Claude Sonnet 4.5")).toBeVisible();
+    expect(screen.getByText(/Anthropic Max/)).toBeVisible();
+    expect(screen.getByText(/Projetos\/landing/)).toBeVisible();
+    expect(screen.queryAllByText("Claude Sonnet 4.5")).toHaveLength(1);
+    await userEvent.click(
+      screen.getByRole("radio", { name: /Claude Sonnet 4.5/ }),
+    );
+    await userEvent.click(screen.getByRole("button", { name: "Criar tarefa" }));
+
+    await vi.waitFor(() => expect(api.createTask).toHaveBeenCalledTimes(1));
+    expect(vi.mocked(api.createTask).mock.calls[0]?.[0]).toEqual(
+      expect.objectContaining({
+        threadId,
+        mode: "delegate",
+        laneId: workspaceLane.laneId,
+      }),
+    );
+  });
+
+  it("keeps task choices on failure, blocks double submit and reuses the idempotency key", async () => {
+    let resolveCreation: (() => void) | undefined;
+    const createTask = vi
+      .fn()
+      .mockRejectedValueOnce(new Error("Kanban indisponível"))
+      .mockImplementationOnce(
+        () =>
+          new Promise((resolve) => {
+            resolveCreation = () => resolve(taskResult);
+          }),
+      );
+    const { api } = renderInbox(makeApi({ createTask }));
+    await userEvent.click(
+      await screen.findByRole("button", { name: /Proposta para landing page/ }),
+    );
+    await userEvent.click(screen.getByRole("button", { name: "Virar tarefa" }));
+    await userEvent.clear(screen.getByLabelText("Título da tarefa"));
+    await userEvent.type(
+      screen.getByLabelText("Título da tarefa"),
+      "Proposta revisada",
+    );
+    await userEvent.click(screen.getByRole("button", { name: "Criar tarefa" }));
+    expect(await screen.findByRole("alert")).toHaveTextContent(
+      "Kanban indisponível",
+    );
+
+    await userEvent.click(screen.getByRole("button", { name: "Criar tarefa" }));
+    expect(screen.getByRole("button", { name: "Criando…" })).toBeDisabled();
+    await userEvent.click(screen.getByRole("button", { name: "Criando…" }));
+    expect(createTask).toHaveBeenCalledTimes(2);
+    expect(createTask.mock.calls[1]?.[0].idempotencyKey).toBe(
+      createTask.mock.calls[0]?.[0].idempotencyKey,
+    );
+    resolveCreation?.();
+    expect(
+      await screen.findByText(
+        "Tarefa criada no Kanban. Nenhum agente foi iniciado.",
+      ),
+    ).toBeVisible();
+    expect(api.createTask).toHaveBeenCalledTimes(2);
   });
 
   it("removes a read thread from the unread cache", async () => {

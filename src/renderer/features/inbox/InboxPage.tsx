@@ -14,7 +14,6 @@ import {
   Bot,
   CircleAlert,
   ExternalLink,
-  FileText,
   Inbox as InboxIcon,
   Mail,
   MoreHorizontal,
@@ -29,6 +28,7 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import type { IpcRequest, IpcResponse } from "../../../shared/contracts/ipc";
 import { workbenchClient } from "../../lib/ipc/client";
 import { InboxAccountModal } from "./InboxAccountModal";
+import { InboxTaskModal } from "./InboxTaskModal";
 
 type InboxAccount = IpcResponse<"inbox:accounts:list">[number];
 type InboxThread = IpcResponse<"inbox:threads:list">["threads"][number];
@@ -54,6 +54,12 @@ export interface InboxApi {
   markThreadRead(
     request: IpcRequest<"inbox:thread:markRead">,
   ): Promise<IpcResponse<"inbox:thread:markRead">>;
+  listLanes(
+    request: IpcRequest<"lane:list">,
+  ): Promise<IpcResponse<"lane:list">>;
+  createTask(
+    request: IpcRequest<"inbox:thread:createTask">,
+  ): Promise<IpcResponse<"inbox:thread:createTask">>;
 }
 
 const defaultApi: InboxApi = {
@@ -64,6 +70,8 @@ const defaultApi: InboxApi = {
   listThreads: workbenchClient.inboxThreadsList,
   getThread: workbenchClient.inboxThreadGet,
   markThreadRead: workbenchClient.inboxThreadMarkRead,
+  listLanes: workbenchClient.laneList,
+  createTask: workbenchClient.inboxThreadCreateTask,
 };
 
 type AccountFilter = "all" | "unread" | string;
@@ -72,6 +80,9 @@ export function InboxPage({ api = defaultApi }: { api?: InboxApi }) {
   const queryClient = useQueryClient();
   const [filter, setFilter] = useState<AccountFilter>("all");
   const [selectedThreadId, setSelectedThreadId] = useState<string | null>(null);
+  const [taskCreatedForThreadId, setTaskCreatedForThreadId] = useState<
+    string | null
+  >(null);
   const markedRead = useRef(new Set<string>());
   const detailsDrawer = useOverlayState();
   const accounts = useQuery({
@@ -151,6 +162,13 @@ export function InboxPage({ api = defaultApi }: { api?: InboxApi }) {
       );
     },
   });
+  const createTask = useMutation({
+    mutationFn: api.createTask,
+    onSuccess: (result) => {
+      setTaskCreatedForThreadId(result.sourceThreadId);
+      void queryClient.invalidateQueries({ queryKey: ["kanban"] });
+    },
+  });
 
   const selectedThread =
     detail.data?.thread ?? threadById(threads.data?.threads, selectedThreadId);
@@ -207,7 +225,11 @@ export function InboxPage({ api = defaultApi }: { api?: InboxApi }) {
         detail={detail.data}
         error={detail.isError ? errorMessage(detail.error) : null}
         isLoading={detail.isLoading}
+        isCreatingTask={createTask.isPending}
         onOpenDetails={detailsDrawer.open}
+        onCreateTask={(request) => createTask.mutateAsync(request)}
+        taskCreated={taskCreatedForThreadId === detail.data?.thread.id}
+        listLanes={api.listLanes}
       />
       <aside className="inbox-details-region" aria-label="Detalhes da conversa">
         <InboxDetails
@@ -558,12 +580,20 @@ function Conversation({
   detail,
   error,
   isLoading,
+  isCreatingTask,
+  listLanes,
+  onCreateTask,
   onOpenDetails,
+  taskCreated,
 }: {
   detail: InboxThreadDetail | undefined;
   error: string | null;
   isLoading: boolean;
+  isCreatingTask: boolean;
+  listLanes: InboxApi["listLanes"];
+  onCreateTask: InboxApi["createTask"];
   onOpenDetails: () => void;
+  taskCreated: boolean;
 }) {
   if (!detail && !isLoading && !error)
     return (
@@ -651,19 +681,44 @@ function Conversation({
           </div>
         )}
       </div>
-      <FutureActions />
+      {taskCreated && (
+        <p className="inbox-task-created" role="status">
+          Tarefa criada no Kanban. Nenhum agente foi iniciado.
+        </p>
+      )}
+      <FutureActions
+        isCreatingTask={isCreatingTask}
+        listLanes={listLanes}
+        onCreateTask={onCreateTask}
+        thread={detail?.thread}
+      />
     </section>
   );
 }
 
-function FutureActions() {
+function FutureActions({
+  isCreatingTask,
+  listLanes,
+  onCreateTask,
+  thread,
+}: {
+  isCreatingTask: boolean;
+  listLanes: InboxApi["listLanes"];
+  onCreateTask: InboxApi["createTask"];
+  thread: InboxThread | undefined;
+}) {
   const actions = [
-    { label: "Virar tarefa", icon: <FileText size={14} /> },
     { label: "Pedir rascunho", icon: <Sparkles size={14} /> },
     { label: "Responder", icon: <Send size={14} /> },
   ];
   return (
     <footer className="inbox-future-actions">
+      <InboxTaskModal
+        isCreating={isCreatingTask}
+        listLanes={listLanes}
+        onCreateTask={onCreateTask}
+        thread={thread}
+      />
       {actions.map((action) => (
         <Tooltip.Root closeDelay={0} delay={250} key={action.label}>
           <Button
