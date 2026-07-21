@@ -363,6 +363,126 @@ describe("CalendarPage", () => {
     ).toBeNull();
   });
 
+  it("switches Day, Week and Month views while keeping event selection available", async () => {
+    renderCalendar();
+    await screen.findByRole("button", { name: /Planejamento semanal/ });
+
+    const day = screen.getByRole("button", { name: "Dia" });
+    const week = screen.getByRole("button", { name: "Semana" });
+    const month = screen.getByRole("button", { name: "Mês" });
+    expect(week).toHaveAttribute("aria-pressed", "true");
+
+    await userEvent.click(day);
+    expect(day).toHaveAttribute("aria-pressed", "true");
+    expect(await screen.findByLabelText("Dia selecionado")).toBeVisible();
+    await userEvent.click(
+      screen.getByRole("button", { name: /Planejamento semanal/ }),
+    );
+    expect(
+      await screen.findByRole("heading", { name: "Planejamento semanal" }),
+    ).toBeVisible();
+
+    await userEvent.click(month);
+    expect(month).toHaveAttribute("aria-pressed", "true");
+    expect(await screen.findByLabelText("Mês selecionado")).toBeVisible();
+    expect(
+      screen.getByRole("button", { name: /Planejamento semanal/ }),
+    ).toBeVisible();
+  });
+
+  it("segments overnight timed events across both calendar days", async () => {
+    const overnightEvent = {
+      ...events[0],
+      id: "77777777-7777-4777-8777-777777777777",
+      externalId: "77777777-7777-4777-8777-777777777777",
+      sourceId: workSourceId,
+      title: "Plantão noturno",
+      timezone: "Europe/Berlin",
+      startsAt: "2026-07-21T21:30:00.000Z",
+      endsAt: "2026-07-21T23:30:00.000Z",
+    };
+    renderCalendar(
+      makeApi({
+        listEvents: vi.fn().mockResolvedValue([...events, overnightEvent]),
+      }),
+    );
+
+    const segments = await screen.findAllByRole("button", {
+      name: /Plantão noturno/,
+    });
+    expect(segments).toHaveLength(2);
+    expect(segments[0]?.style.getPropertyValue("--event-top")).toBe(
+      "97.91666666666666%",
+    );
+    expect(segments[1]?.style.getPropertyValue("--event-top")).toBe("0%");
+  });
+
+  it("requests the visible Day, Week and complete Month ranges when navigating", async () => {
+    const { api } = renderCalendar();
+    await screen.findByRole("button", { name: /Planejamento semanal/ });
+
+    await userEvent.click(screen.getByRole("button", { name: "Dia" }));
+    await vi.waitFor(() => expect(api.listEvents).toHaveBeenCalledTimes(2));
+    expect(vi.mocked(api.listEvents).mock.calls.at(-1)?.[0]).toMatchObject({
+      startDate: "2026-07-21",
+      endDate: "2026-07-22",
+    });
+    await userEvent.click(screen.getByRole("button", { name: "Próximo dia" }));
+    await vi.waitFor(() => expect(api.listEvents).toHaveBeenCalledTimes(3));
+    expect(vi.mocked(api.listEvents).mock.calls.at(-1)?.[0]).toMatchObject({
+      startDate: "2026-07-22",
+      endDate: "2026-07-23",
+    });
+
+    await userEvent.click(screen.getByRole("button", { name: "Semana" }));
+    await vi.waitFor(() => expect(api.listEvents).toHaveBeenCalledTimes(4));
+    expect(vi.mocked(api.listEvents).mock.calls.at(-1)?.[0]).toMatchObject({
+      startDate: "2026-07-20",
+      endDate: "2026-07-27",
+    });
+
+    await userEvent.click(screen.getByRole("button", { name: "Mês" }));
+    await vi.waitFor(() => expect(api.listEvents).toHaveBeenCalledTimes(5));
+    expect(vi.mocked(api.listEvents).mock.calls.at(-1)?.[0]).toMatchObject({
+      startDate: "2026-06-29",
+      endDate: "2026-08-10",
+    });
+  });
+
+  it("retries failed source and event reads without blocking calendar navigation", async () => {
+    const listSources = vi
+      .fn()
+      .mockRejectedValueOnce(new Error("indisponível"))
+      .mockResolvedValue(sources);
+    const sourceApi = makeApi({ listSources });
+    renderCalendar(sourceApi);
+    expect(
+      await screen.findByRole("alert", { name: "Erro ao carregar agendas" }),
+    ).toHaveTextContent("Não foi possível carregar as agendas locais.");
+    await userEvent.click(
+      screen.getByRole("button", { name: "Tentar novamente" }),
+    );
+    await vi.waitFor(() => expect(listSources).toHaveBeenCalledTimes(2));
+    expect(await screen.findByText("Pessoal")).toBeVisible();
+
+    const listEvents = vi
+      .fn()
+      .mockRejectedValueOnce(new Error("indisponível"))
+      .mockResolvedValue(events);
+    cleanup();
+    renderCalendar(makeApi({ listEvents }));
+    expect(
+      await screen.findByRole("alert", { name: "Erro ao carregar eventos" }),
+    ).toHaveTextContent("Não foi possível carregar os eventos locais.");
+    await userEvent.click(
+      screen.getByRole("button", { name: "Tentar novamente" }),
+    );
+    await vi.waitFor(() => expect(listEvents).toHaveBeenCalledTimes(2));
+    expect(
+      await screen.findByRole("button", { name: /Planejamento semanal/ }),
+    ).toBeVisible();
+  });
+
   it("shows honest empty and error states without provider connect or sync actions", async () => {
     renderCalendar(
       makeApi({

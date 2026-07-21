@@ -11,12 +11,24 @@ import {
   Plus,
   Radio,
 } from "lucide-react";
-import { useMemo, useState, type FormEvent } from "react";
+import {
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+  type CSSProperties,
+  type FormEvent,
+} from "react";
 import type { IpcRequest, IpcResponse } from "../../../shared/contracts/ipc";
 import { workbenchClient } from "../../lib/ipc/client";
 
 type CalendarSource = IpcResponse<"calendar:sources:list">[number];
 type CalendarEvent = IpcResponse<"calendar:events:list">[number];
+type CalendarView = "day" | "week" | "month";
+
+const HOURS = Array.from({ length: 24 }, (_, index) => index);
+const WEEKDAY_LABELS = ["SEG", "TER", "QUA", "QUI", "SEX", "SÁB", "DOM"];
+const MINUTES_IN_DAY = 24 * 60;
 
 export interface CalendarApi {
   listSources(): Promise<IpcResponse<"calendar:sources:list">>;
@@ -50,8 +62,9 @@ export function CalendarPage({
   const queryClient = useQueryClient();
   const sourceModal = useOverlayState();
   const eventModal = useOverlayState();
-  const [weekAnchor, setWeekAnchor] = useState(() =>
-    startOfWeekDate(dateInTimezone(new Date(), displayTimezone)),
+  const [view, setView] = useState<CalendarView>("week");
+  const [calendarAnchor, setCalendarAnchor] = useState(() =>
+    dateInTimezone(new Date(), displayTimezone),
   );
   const [sourceFilter, setSourceFilter] = useState<Set<string> | null>(null);
   const [selectedEventId, setSelectedEventId] = useState<string | null>(null);
@@ -72,9 +85,9 @@ export function CalendarPage({
   const [endTime, setEndTime] = useState("10:00");
   const [eventInputError, setEventInputError] = useState<string | null>(null);
 
-  const week = useMemo(
-    () => weekBounds(weekAnchor, displayTimezone),
-    [displayTimezone, weekAnchor],
+  const range = useMemo(
+    () => calendarBounds(calendarAnchor, view, displayTimezone),
+    [calendarAnchor, displayTimezone, view],
   );
   const sources = useQuery({
     queryKey: ["calendar", "sources"],
@@ -95,18 +108,18 @@ export function CalendarPage({
     queryKey: [
       "calendar",
       "events",
-      week.startDate,
-      week.endDate,
+      range.startDate,
+      range.endDate,
       localSourceIds,
     ],
     enabled: sources.isSuccess && localSourceIds.length > 0,
     queryFn: () =>
       api.listEvents({
         sourceIds: localSourceIds,
-        startsAt: week.startsAt,
-        endsAt: week.endsAt,
-        startDate: week.startDate,
-        endDate: week.endDate,
+        startsAt: range.startsAt,
+        endsAt: range.endsAt,
+        startDate: range.startDate,
+        endDate: range.endDate,
       }),
   });
   const visibleEvents = useMemo(() => {
@@ -148,6 +161,20 @@ export function CalendarPage({
       void refreshEvents();
     },
   });
+
+  function moveCalendar(direction: -1 | 1) {
+    setCalendarAnchor((anchor) =>
+      view === "day"
+        ? addDateDays(anchor, direction)
+        : view === "week"
+          ? addDateDays(anchor, direction * 7)
+          : addDateMonths(anchor, direction),
+    );
+  }
+
+  function resetCalendar() {
+    setCalendarAnchor(dateInTimezone(new Date(), displayTimezone));
+  }
 
   function toggleSource(sourceId: string) {
     const selected = new Set(
@@ -233,18 +260,25 @@ export function CalendarPage({
         <div className="calendar-sources__scroll">
           {sources.isLoading && <State label="Carregando agendas locais…" />}
           {sources.isError && (
-            <p
+            <div
               aria-label="Erro ao carregar agendas"
-              className="calendar-state"
+              className="calendar-state calendar-state--error"
               role="alert"
             >
-              Não foi possível carregar as agendas locais.
-            </p>
+              <span>Não foi possível carregar as agendas locais.</span>
+              <Button
+                className="calendar-retry"
+                onPress={() => void sources.refetch()}
+                variant="ghost"
+              >
+                Tentar novamente
+              </Button>
+            </div>
           )}
           {!sources.isLoading &&
             !sources.isError &&
             localSources.length === 0 && (
-              <State label="Nenhuma agenda local criada ainda." />
+              <State busy={false} label="Nenhuma agenda local criada ainda." />
             )}
           <div className="calendar-source-list">
             {localSources.map((source) => {
@@ -280,12 +314,12 @@ export function CalendarPage({
 
       <main className="calendar-main">
         <header className="calendar-toolbar">
-          <div className="calendar-toolbar__week">
+          <div className="calendar-toolbar__navigation">
             <Button
-              aria-label="Semana anterior"
+              aria-label={`${viewUnitLabel(view, true)} anterior`}
               className="calendar-icon-action"
               isIconOnly
-              onPress={() => setWeekAnchor(addDateDays(weekAnchor, -7))}
+              onPress={() => moveCalendar(-1)}
               variant="ghost"
             >
               <ArrowLeft aria-hidden="true" size={17} />
@@ -293,25 +327,45 @@ export function CalendarPage({
             <Button
               aria-label="Hoje"
               className="calendar-today"
-              onPress={() =>
-                setWeekAnchor(
-                  startOfWeekDate(dateInTimezone(new Date(), displayTimezone)),
-                )
-              }
+              onPress={resetCalendar}
               variant="ghost"
             >
               Hoje
             </Button>
             <Button
-              aria-label="Próxima semana"
+              aria-label={nextViewLabel(view)}
               className="calendar-icon-action"
               isIconOnly
-              onPress={() => setWeekAnchor(addDateDays(weekAnchor, 7))}
+              onPress={() => moveCalendar(1)}
               variant="ghost"
             >
               <ArrowRight aria-hidden="true" size={17} />
             </Button>
-            <span className="calendar-week-label">{week.label}</span>
+            <span className="calendar-week-label">{range.label}</span>
+          </div>
+          <div
+            aria-label="Visualização da agenda"
+            className="calendar-view-control"
+            role="group"
+          >
+            {(
+              [
+                ["day", "Dia"],
+                ["week", "Semana"],
+                ["month", "Mês"],
+              ] as const
+            ).map(([candidate, label]) => (
+              <Button
+                aria-pressed={view === candidate}
+                className="calendar-view-control__button"
+                data-active={view === candidate}
+                key={candidate}
+                onPress={() => setView(candidate)}
+                variant="ghost"
+              >
+                {label}
+              </Button>
+            ))}
           </div>
           <Button className="calendar-primary-action" onPress={openEventModal}>
             <Plus aria-hidden="true" size={16} />
@@ -320,77 +374,40 @@ export function CalendarPage({
         </header>
 
         {events.isError && (
-          <p
+          <div
             aria-label="Erro ao carregar eventos"
-            className="calendar-state"
+            className="calendar-state calendar-state--error calendar-state--surface"
             role="alert"
           >
-            Não foi possível carregar os eventos locais.
-          </p>
-        )}
-        {events.isLoading ? (
-          <State label="Carregando semana…" />
-        ) : (
-          <div className="calendar-week" aria-label="Semana selecionada">
-            {week.days.map((day) => {
-              const dayEvents = visibleEvents.filter((event) =>
-                occursOn(event, day, displayTimezone),
-              );
-              const isToday =
-                day === dateInTimezone(new Date(), displayTimezone);
-              return (
-                <section
-                  aria-label={`Agenda de ${weekdayLabel(day, displayTimezone)} ${day.slice(-2)}`}
-                  className="calendar-day"
-                  data-today={isToday}
-                  key={day}
-                >
-                  <header className="calendar-day__header">
-                    <span>{weekdayLabel(day, displayTimezone)}</span>
-                    <strong>{day.slice(-2)}</strong>
-                  </header>
-                  {isToday && (
-                    <span
-                      aria-hidden="true"
-                      className="calendar-day__filament"
-                    />
-                  )}
-                  <div className="calendar-day__events">
-                    {dayEvents.map((event) => (
-                      <button
-                        aria-label={`${event.title}, ${event.allDay ? "dia inteiro" : timeRange(event, displayTimezone)}`}
-                        className={`calendar-event calendar-event--${event.allDay ? "all-day" : "timed"}`}
-                        data-selected={event.id === selectedEventId}
-                        key={event.id}
-                        onClick={() => setSelectedEventId(event.id)}
-                        style={
-                          {
-                            "--event-color":
-                              sourceById.get(event.sourceId)?.color ??
-                              "#68DDEB",
-                          } as React.CSSProperties
-                        }
-                        type="button"
-                      >
-                        <span>
-                          {event.allDay
-                            ? "Dia inteiro"
-                            : timeRange(event, displayTimezone)}
-                        </span>
-                        <strong>{event.title}</strong>
-                      </button>
-                    ))}
-                    {dayEvents.length === 0 && (
-                      <span className="calendar-day__empty">—</span>
-                    )}
-                  </div>
-                </section>
-              );
-            })}
+            <span>Não foi possível carregar os eventos locais.</span>
+            <Button
+              className="calendar-retry"
+              onPress={() => void events.refetch()}
+              variant="ghost"
+            >
+              Tentar novamente
+            </Button>
           </div>
         )}
+        {events.isLoading ? (
+          <State label={`Carregando ${viewUnitLabel(view, false)}…`} />
+        ) : events.isError ? null : (
+          <CalendarSurface
+            days={range.days}
+            displayTimezone={displayTimezone}
+            events={visibleEvents}
+            monthView={view === "month"}
+            onSelectEvent={setSelectedEventId}
+            selectedEventId={selectedEventId}
+            sourceById={sourceById}
+            view={view}
+          />
+        )}
         {!events.isLoading && !events.isError && visibleEvents.length === 0 && (
-          <p className="calendar-empty-week">Nenhum evento nesta semana.</p>
+          <p className="calendar-empty-week">
+            Nenhum evento em {range.emptyLabel}. Crie um evento ou selecione
+            outra agenda.
+          </p>
         )}
       </main>
 
@@ -459,12 +476,298 @@ export function CalendarPage({
   );
 }
 
-function State({ label }: { label: string }) {
+function State({ label, busy = true }: { label: string; busy?: boolean }) {
   return (
     <p className="calendar-state">
-      <Spinner aria-label={label} size="sm" />
+      {busy ? (
+        <Spinner aria-label={label} size="sm" />
+      ) : (
+        <CalendarDays aria-hidden="true" size={15} />
+      )}
       {label}
     </p>
+  );
+}
+
+function CalendarSurface({
+  view,
+  days,
+  events,
+  sourceById,
+  displayTimezone,
+  selectedEventId,
+  onSelectEvent,
+  monthView,
+}: {
+  view: CalendarView;
+  days: string[];
+  events: CalendarEvent[];
+  sourceById: Map<string, CalendarSource>;
+  displayTimezone: string;
+  selectedEventId: string | null;
+  onSelectEvent: (eventId: string) => void;
+  monthView: boolean;
+}) {
+  if (monthView) {
+    return (
+      <MonthGrid
+        days={days}
+        displayTimezone={displayTimezone}
+        events={events}
+        onSelectEvent={onSelectEvent}
+        selectedEventId={selectedEventId}
+        sourceById={sourceById}
+      />
+    );
+  }
+
+  return (
+    <TimeGrid
+      days={days}
+      displayTimezone={displayTimezone}
+      events={events}
+      onSelectEvent={onSelectEvent}
+      selectedEventId={selectedEventId}
+      sourceById={sourceById}
+      view={view}
+    />
+  );
+}
+
+function TimeGrid({
+  view,
+  days,
+  events,
+  sourceById,
+  displayTimezone,
+  selectedEventId,
+  onSelectEvent,
+}: Omit<Parameters<typeof CalendarSurface>[0], "monthView">) {
+  const today = dateInTimezone(new Date(), displayTimezone);
+  const scrollRef = useRef<HTMLDivElement>(null);
+  const columns = `repeat(${days.length}, minmax(${view === "day" ? 360 : 90}px, 1fr))`;
+
+  useEffect(() => {
+    const focusHour = days.includes(today)
+      ? Math.max(0, zonedParts(new Date(), displayTimezone).hour - 1)
+      : 8;
+    if (scrollRef.current) scrollRef.current.scrollTop = focusHour * 48;
+  }, [days, displayTimezone, today]);
+
+  return (
+    <div
+      aria-label={view === "day" ? "Dia selecionado" : "Semana selecionada"}
+      className={`calendar-time-surface calendar-time-surface--${view}`}
+    >
+      <div className="calendar-time-header">
+        <span aria-hidden="true" className="calendar-time-gutter" />
+        <div
+          className="calendar-time-header__days"
+          style={{ gridTemplateColumns: columns }}
+        >
+          {days.map((day) => (
+            <div
+              className="calendar-time-day-heading"
+              data-today={day === today}
+              key={day}
+            >
+              <span>{weekdayLabel(day, displayTimezone)}</span>
+              <strong>{day.slice(-2)}</strong>
+            </div>
+          ))}
+        </div>
+      </div>
+      <div className="calendar-all-day-row">
+        <span className="calendar-all-day-row__label">Dia inteiro</span>
+        <div
+          className="calendar-all-day-row__days"
+          style={{ gridTemplateColumns: columns }}
+        >
+          {days.map((day) => {
+            const dayEvents = events.filter(
+              (event) => event.allDay && occursOn(event, day, displayTimezone),
+            );
+            return (
+              <section
+                className="calendar-all-day-cell"
+                data-today={day === today}
+                key={day}
+              >
+                {dayEvents.map((event) => (
+                  <CalendarEventButton
+                    compact
+                    displayTimezone={displayTimezone}
+                    event={event}
+                    key={event.id}
+                    onSelect={onSelectEvent}
+                    selected={event.id === selectedEventId}
+                    source={sourceById.get(event.sourceId)}
+                  />
+                ))}
+              </section>
+            );
+          })}
+        </div>
+      </div>
+      <div className="calendar-time-scroll" ref={scrollRef}>
+        <div className="calendar-time-rail" aria-hidden="true">
+          {HOURS.map((hour) => (
+            <span key={hour}>{String(hour).padStart(2, "0")}:00</span>
+          ))}
+        </div>
+        <div
+          className="calendar-time-grid"
+          style={{ gridTemplateColumns: columns }}
+        >
+          {days.map((day) => {
+            const dayEvents = events.flatMap((event) => {
+              if (event.allDay) return [];
+              const style = timedEventSegmentStyle(event, day, displayTimezone);
+              return style ? [{ event, style }] : [];
+            });
+            const isToday = day === today;
+            return (
+              <section
+                aria-label={`Agenda de ${weekdayLabel(day, displayTimezone)} ${day.slice(-2)}`}
+                className="calendar-time-column"
+                data-today={isToday}
+                key={day}
+              >
+                {isToday && <NowLine displayTimezone={displayTimezone} />}
+                {dayEvents.map(({ event, style }) => (
+                  <CalendarEventButton
+                    displayTimezone={displayTimezone}
+                    event={event}
+                    key={event.id}
+                    onSelect={onSelectEvent}
+                    selected={event.id === selectedEventId}
+                    source={sourceById.get(event.sourceId)}
+                    style={style}
+                  />
+                ))}
+              </section>
+            );
+          })}
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function MonthGrid({
+  days,
+  events,
+  sourceById,
+  displayTimezone,
+  selectedEventId,
+  onSelectEvent,
+}: Omit<Parameters<typeof CalendarSurface>[0], "view" | "monthView">) {
+  const today = dateInTimezone(new Date(), displayTimezone);
+  const month = days[21]?.slice(0, 7) ?? days[0].slice(0, 7);
+  return (
+    <div aria-label="Mês selecionado" className="calendar-month">
+      <div className="calendar-month__weekdays">
+        {WEEKDAY_LABELS.map((weekday) => (
+          <span key={weekday}>{weekday}</span>
+        ))}
+      </div>
+      <div className="calendar-month__grid">
+        {days.map((day) => {
+          const dayEvents = events.filter((event) =>
+            occursOn(event, day, displayTimezone),
+          );
+          const visible = dayEvents.slice(0, 3);
+          const hidden = dayEvents.slice(3);
+          return (
+            <section
+              aria-label={`Agenda de ${weekdayLabel(day, displayTimezone)} ${day.slice(-2)}`}
+              className="calendar-month-cell"
+              data-outside-month={!day.startsWith(month)}
+              data-today={day === today}
+              key={day}
+            >
+              <span className="calendar-month-cell__date">
+                {Number(day.slice(-2))}
+              </span>
+              <div className="calendar-month-cell__events">
+                {visible.map((event) => (
+                  <CalendarEventButton
+                    compact
+                    displayTimezone={displayTimezone}
+                    event={event}
+                    key={event.id}
+                    onSelect={onSelectEvent}
+                    selected={event.id === selectedEventId}
+                    source={sourceById.get(event.sourceId)}
+                  />
+                ))}
+                {hidden.length > 0 && (
+                  <button
+                    className="calendar-month-cell__more"
+                    key="more"
+                    onClick={() => onSelectEvent(hidden[0].id)}
+                    type="button"
+                  >
+                    +{hidden.length} mais
+                  </button>
+                )}
+              </div>
+            </section>
+          );
+        })}
+      </div>
+    </div>
+  );
+}
+
+function CalendarEventButton({
+  event,
+  source,
+  displayTimezone,
+  selected,
+  onSelect,
+  compact = false,
+  style,
+}: {
+  event: CalendarEvent;
+  source?: CalendarSource;
+  displayTimezone: string;
+  selected: boolean;
+  onSelect: (eventId: string) => void;
+  compact?: boolean;
+  style?: CSSProperties;
+}) {
+  return (
+    <button
+      aria-label={`${event.title}, ${event.allDay ? "dia inteiro" : timeRange(event, displayTimezone)}`}
+      className={`calendar-event calendar-event--${event.allDay ? "all-day" : "timed"}${compact ? " calendar-event--compact" : ""}`}
+      data-selected={selected}
+      onClick={() => onSelect(event.id)}
+      style={
+        {
+          "--event-color": source?.color ?? "#68DDEB",
+          ...style,
+        } as CSSProperties
+      }
+      type="button"
+    >
+      <span>
+        {event.allDay ? "Dia inteiro" : timeRange(event, displayTimezone)}
+      </span>
+      <strong>{event.title}</strong>
+    </button>
+  );
+}
+
+function NowLine({ displayTimezone }: { displayTimezone: string }) {
+  const current = zonedParts(new Date(), displayTimezone);
+  const top = ((current.hour * 60 + current.minute) / MINUTES_IN_DAY) * 100;
+  return (
+    <span
+      aria-hidden="true"
+      className="calendar-now-line"
+      style={{ "--now-top": `${top}%` } as CSSProperties}
+    />
   );
 }
 
@@ -792,6 +1095,31 @@ function defaultTimezone() {
   return Intl.DateTimeFormat().resolvedOptions().timeZone || "UTC";
 }
 
+function calendarBounds(anchor: string, view: CalendarView, timezone: string) {
+  if (view === "day") return dayBounds(anchor, timezone);
+  if (view === "month") return monthBounds(anchor, timezone);
+  return weekBounds(anchor, timezone);
+}
+
+function dayBounds(anchor: string, timezone: string) {
+  const next = addDateDays(anchor, 1);
+  return {
+    days: [anchor],
+    startDate: anchor,
+    endDate: next,
+    startsAt: zonedDateTimeToIso(anchor, "00:00", timezone),
+    endsAt: zonedDateTimeToIso(next, "00:00", timezone),
+    label: new Intl.DateTimeFormat("pt-BR", {
+      timeZone: timezone,
+      weekday: "long",
+      day: "numeric",
+      month: "long",
+      year: "numeric",
+    }).format(new Date(zonedDateTimeToIso(anchor, "12:00", timezone))),
+    emptyLabel: "este dia",
+  };
+}
+
 function weekBounds(anchor: string, timezone: string) {
   const start = startOfWeekDate(anchor);
   const end = addDateDays(start, 7);
@@ -809,7 +1137,43 @@ function weekBounds(anchor: string, timezone: string) {
         month: "short",
       }).format(new Date(zonedDateTimeToIso(start, "12:00", timezone))) +
       ` — ${new Intl.DateTimeFormat("pt-BR", { timeZone: timezone, day: "2-digit", month: "short", year: "numeric" }).format(new Date(zonedDateTimeToIso(lastDay, "12:00", timezone)))}`,
+    emptyLabel: "esta semana",
   };
+}
+
+function monthBounds(anchor: string, timezone: string) {
+  const monthStart = startOfMonthDate(anchor);
+  const gridStart = startOfWeekDate(monthStart);
+  const gridEnd = addDateDays(gridStart, 42);
+  const monthLabel = new Intl.DateTimeFormat("pt-BR", {
+    timeZone: timezone,
+    month: "long",
+    year: "numeric",
+  }).format(new Date(zonedDateTimeToIso(monthStart, "12:00", timezone)));
+  return {
+    days: Array.from({ length: 42 }, (_, index) =>
+      addDateDays(gridStart, index),
+    ),
+    startDate: gridStart,
+    endDate: gridEnd,
+    startsAt: zonedDateTimeToIso(gridStart, "00:00", timezone),
+    endsAt: zonedDateTimeToIso(gridEnd, "00:00", timezone),
+    label: monthLabel,
+    emptyLabel: `este mês (${monthLabel})`,
+  };
+}
+
+function viewUnitLabel(view: CalendarView, capitalize: boolean) {
+  const label = view === "day" ? "dia" : view === "week" ? "semana" : "mês";
+  return capitalize ? label[0].toUpperCase() + label.slice(1) : label;
+}
+
+function nextViewLabel(view: CalendarView) {
+  return view === "week"
+    ? "Próxima semana"
+    : view === "day"
+      ? "Próximo dia"
+      : "Próximo mês";
 }
 
 function weekdayLabel(day: string, timezone = defaultTimezone()) {
@@ -823,7 +1187,7 @@ function weekdayLabel(day: string, timezone = defaultTimezone()) {
 
 function occursOn(event: CalendarEvent, day: string, displayTimezone: string) {
   if (event.allDay) return event.startDate <= day && event.endDate > day;
-  return dateInTimezone(new Date(event.startsAt), displayTimezone) === day;
+  return Boolean(timedEventSegmentStyle(event, day, displayTimezone));
 }
 
 function timeRange(
@@ -844,6 +1208,54 @@ function addDateDays(day: string, count: number) {
   const date = parseDate(day);
   const next = new Date(Date.UTC(date.year, date.month - 1, date.day + count));
   return `${next.getUTCFullYear()}-${String(next.getUTCMonth() + 1).padStart(2, "0")}-${String(next.getUTCDate()).padStart(2, "0")}`;
+}
+
+function startOfMonthDate(day: string) {
+  const date = parseDate(day);
+  return `${date.year}-${String(date.month).padStart(2, "0")}-01`;
+}
+
+function addDateMonths(day: string, count: number) {
+  const date = parseDate(day);
+  const next = new Date(Date.UTC(date.year, date.month - 1 + count, 1));
+  const finalDay = Math.min(
+    date.day,
+    new Date(
+      Date.UTC(next.getUTCFullYear(), next.getUTCMonth() + 1, 0),
+    ).getUTCDate(),
+  );
+  return `${next.getUTCFullYear()}-${String(next.getUTCMonth() + 1).padStart(2, "0")}-${String(finalDay).padStart(2, "0")}`;
+}
+
+function timedEventSegmentStyle(
+  event: Extract<CalendarEvent, { allDay: false }>,
+  day: string,
+  timezone: string,
+): CSSProperties | null {
+  const startInstant = new Date(event.startsAt);
+  const endInstant = new Date(event.endsAt);
+  const eventStartDay = dateInTimezone(startInstant, timezone);
+  // Calendar ranges are half-open. Subtracting 1ms keeps an event ending at
+  // midnight out of the next day without making assumptions about DST length.
+  const eventLastDay = dateInTimezone(
+    new Date(endInstant.getTime() - 1),
+    timezone,
+  );
+  if (day < eventStartDay || day > eventLastDay) return null;
+
+  const start = zonedParts(startInstant, timezone);
+  const end = zonedParts(endInstant, timezone);
+  const startMinutes =
+    day === eventStartDay ? start.hour * 60 + start.minute : 0;
+  const endMinutes =
+    day === dateInTimezone(endInstant, timezone)
+      ? end.hour * 60 + end.minute
+      : MINUTES_IN_DAY;
+  const duration = Math.max(30, endMinutes - startMinutes);
+  return {
+    "--event-top": `${(startMinutes / MINUTES_IN_DAY) * 100}%`,
+    "--event-height": `${(Math.min(duration, MINUTES_IN_DAY - startMinutes) / MINUTES_IN_DAY) * 100}%`,
+  } as CSSProperties;
 }
 
 function dateInTimezone(instant: Date, timezone: string) {

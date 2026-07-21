@@ -282,6 +282,34 @@ describe("InboxPage", () => {
     );
   });
 
+  it("presents account connection as a grouped local-credential form", async () => {
+    renderInbox();
+    await screen.findByText("Projetos");
+    await userEvent.click(
+      screen.getByRole("button", { name: "Adicionar conta" }),
+    );
+
+    const dialog = screen.getByRole("dialog");
+    expect(
+      within(dialog).getByRole("group", { name: "Provedor da caixa" }),
+    ).toBeVisible();
+    expect(within(dialog).getByRole("radio", { name: /IMAP/ })).toBeChecked();
+    await userEvent.click(within(dialog).getByRole("radio", { name: /Zoho/ }));
+    expect(within(dialog).getByRole("radio", { name: /Zoho/ })).toBeChecked();
+    expect(
+      within(dialog).getByRole("heading", { name: "Identificação da caixa" }),
+    ).toBeVisible();
+    expect(
+      within(dialog).getByRole("heading", { name: "Servidor de entrada" }),
+    ).toBeVisible();
+    expect(
+      within(dialog).getByRole("heading", { name: "Credenciais" }),
+    ).toBeVisible();
+    expect(
+      within(dialog).getByText("As credenciais ficam somente neste Mac."),
+    ).toBeVisible();
+  });
+
   it("filters unread threads and confirms removal while keeping the AI draft action disabled without a conversation", async () => {
     const { api } = renderInbox();
     await screen.findByText("Projetos");
