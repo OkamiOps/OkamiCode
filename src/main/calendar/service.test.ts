@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { createTestDatabase } from "../db/test-support";
-import { CalendarService } from "./service";
+import { CalendarService, CalendarSyncCursorConflictError } from "./service";
 
 function createService() {
   const fx = createTestDatabase();
@@ -13,6 +13,60 @@ function createService() {
       createId: () => `calendar-${++id}`,
       clock: () => `2026-07-21T00:00:${String(++tick).padStart(2, "0")}.000Z`,
     }),
+  };
+}
+
+function createRemoteSource(
+  fx: ReturnType<typeof createService>,
+  overrides: Partial<{
+    id: string;
+    kind: "google" | "outlook" | "caldav" | "ics";
+    status: "active" | "not_configured" | "paused" | "degraded";
+    syncCursor: string | null;
+  }> = {},
+) {
+  const source = {
+    id: overrides.id ?? "remote-source",
+    kind: overrides.kind ?? "google",
+    status: overrides.status ?? "active",
+    syncCursor: overrides.syncCursor ?? null,
+  };
+  fx.db
+    .prepare(
+      `INSERT INTO calendar_sources
+       (id, kind, display_name, color, timezone, status, sync_cursor, last_error,
+        last_synced_at, created_at, updated_at)
+       VALUES (?, ?, 'Remote', '#112233', 'UTC', ?, ?, 'previous error', NULL,
+               '2026-07-20T00:00:00.000Z', '2026-07-20T00:00:00.000Z')`,
+    )
+    .run(source.id, source.kind, source.status, source.syncCursor);
+  return source;
+}
+
+function timedUpsert(
+  externalId: string,
+  providerUpdatedAt = "2026-07-21T10:00:00Z",
+) {
+  return {
+    externalId,
+    providerUpdatedAt,
+    title: `Event ${externalId}`,
+    timezone: "UTC",
+    allDay: false as const,
+    startsAt: "2026-08-01T10:00:00Z",
+    endsAt: "2026-08-01T11:00:00Z",
+  };
+}
+
+function syncInput(sourceId: string, overrides = {}) {
+  return {
+    sourceId,
+    previousCursor: null,
+    nextCursor: "cursor-1",
+    syncedAt: "2026-07-21T12:00:00Z",
+    upserts: [],
+    tombstones: [],
+    ...overrides,
   };
 }
 
@@ -299,5 +353,216 @@ describe("CalendarService", () => {
         })
         .map((item) => item.id),
     ).toEqual([allDay.id, other.id]);
+  });
+
+  it("rejects a cursor conflict and an invalid later item without mutating the source or events", () => {
+    const fx = createService();
+    const source = createRemoteSource(fx, { syncCursor: "cursor-0" });
+
+    expect(() =>
+      fx.service.applySyncBatch(
+        syncInput(source.id, {
+          previousCursor: "wrong-cursor",
+          upserts: [timedUpsert("first")],
+        }),
+      ),
+    ).toThrow(CalendarSyncCursorConflictError);
+    expect(
+      fx.db
+        .prepare("SELECT sync_cursor FROM calendar_sources WHERE id = ?")
+        .get(source.id),
+    ).toEqual({ sync_cursor: "cursor-0" });
+    expect(
+      fx.db.prepare("SELECT count(*) AS count FROM calendar_events").get(),
+    ).toEqual({ count: 0 });
+
+    expect(() =>
+      fx.service.applySyncBatch(
+        syncInput(source.id, {
+          previousCursor: "cursor-0",
+          upserts: [
+            timedUpsert("valid"),
+            { ...timedUpsert("invalid"), title: " " },
+          ],
+        }),
+      ),
+    ).toThrow("Calendar event title is required");
+    expect(
+      fx.db
+        .prepare("SELECT sync_cursor FROM calendar_sources WHERE id = ?")
+        .get(source.id),
+    ).toEqual({ sync_cursor: "cursor-0" });
+    expect(
+      fx.db.prepare("SELECT count(*) AS count FROM calendar_events").get(),
+    ).toEqual({ count: 0 });
+  });
+
+  it("upserts only newer provider versions and preserves the local event identity", () => {
+    const fx = createService();
+    const source = createRemoteSource(fx);
+
+    expect(
+      fx.service.applySyncBatch(
+        syncInput(source.id, { upserts: [timedUpsert("provider-1")] }),
+      ),
+    ).toEqual({ inserted: 1, updated: 0, deleted: 0, unchanged: 0 });
+    const inserted = fx.db
+      .prepare(
+        "SELECT id, created_at FROM calendar_events WHERE external_id = ?",
+      )
+      .get("provider-1") as { id: string; created_at: string };
+
+    expect(
+      fx.service.applySyncBatch(
+        syncInput(source.id, {
+          previousCursor: "cursor-1",
+          nextCursor: "cursor-2",
+          upserts: [
+            {
+              ...timedUpsert("provider-1", "2026-07-21T11:00:00Z"),
+              title: "Updated remotely",
+            },
+          ],
+        }),
+      ),
+    ).toEqual({ inserted: 0, updated: 1, deleted: 0, unchanged: 0 });
+    expect(
+      fx.db
+        .prepare(
+          "SELECT id, created_at, title, provider_updated_at FROM calendar_events WHERE external_id = ?",
+        )
+        .get("provider-1"),
+    ).toEqual({
+      id: inserted.id,
+      created_at: inserted.created_at,
+      title: "Updated remotely",
+      provider_updated_at: "2026-07-21T11:00:00.000Z",
+    });
+    expect(
+      fx.service.applySyncBatch(
+        syncInput(source.id, {
+          previousCursor: "cursor-2",
+          nextCursor: "cursor-3",
+          upserts: [timedUpsert("provider-1", "2026-07-21T11:00:00Z")],
+        }),
+      ),
+    ).toEqual({ inserted: 0, updated: 0, deleted: 0, unchanged: 1 });
+  });
+
+  it("applies tombstones by provider version and blocks stale resurrection, including unseen events", () => {
+    const fx = createService();
+    const source = createRemoteSource(fx);
+    fx.service.applySyncBatch(
+      syncInput(source.id, { upserts: [timedUpsert("provider-1")] }),
+    );
+
+    expect(
+      fx.service.applySyncBatch(
+        syncInput(source.id, {
+          previousCursor: "cursor-1",
+          nextCursor: "cursor-2",
+          tombstones: [
+            {
+              externalId: "provider-1",
+              providerUpdatedAt: "2026-07-21T11:00:00Z",
+            },
+            { externalId: "unseen", providerUpdatedAt: "2026-07-21T12:00:00Z" },
+          ],
+        }),
+      ),
+    ).toEqual({ inserted: 0, updated: 0, deleted: 2, unchanged: 0 });
+    expect(
+      fx.service.applySyncBatch(
+        syncInput(source.id, {
+          previousCursor: "cursor-2",
+          nextCursor: "cursor-3",
+          upserts: [
+            timedUpsert("provider-1", "2026-07-21T11:00:00Z"),
+            timedUpsert("unseen", "2026-07-21T11:00:00Z"),
+          ],
+        }),
+      ),
+    ).toEqual({ inserted: 0, updated: 0, deleted: 0, unchanged: 2 });
+    expect(
+      fx.service.applySyncBatch(
+        syncInput(source.id, {
+          previousCursor: "cursor-3",
+          nextCursor: "cursor-4",
+          upserts: [timedUpsert("provider-1", "2026-07-21T13:00:00Z")],
+        }),
+      ),
+    ).toEqual({ inserted: 0, updated: 1, deleted: 0, unchanged: 0 });
+    expect(fx.service.listEvents().map((event) => event.externalId)).toEqual([
+      "provider-1",
+    ]);
+  });
+
+  it("rejects ineligible sources and duplicate external ids before mutating, while recovering a degraded remote source", () => {
+    const fx = createService();
+    const local = fx.service.createLocalSource({
+      displayName: "Local",
+      color: "#112233",
+      timezone: "UTC",
+    });
+    const notConfigured = createRemoteSource(fx, {
+      id: "not-configured",
+      status: "not_configured",
+    });
+    const paused = createRemoteSource(fx, { id: "paused", status: "paused" });
+    for (const source of [local, notConfigured, paused]) {
+      expect(() =>
+        fx.service.applySyncBatch(
+          syncInput(source.id, { upserts: [timedUpsert("rejected")] }),
+        ),
+      ).toThrow();
+    }
+
+    const degraded = createRemoteSource(fx, {
+      id: "degraded",
+      status: "degraded",
+    });
+    expect(() =>
+      fx.service.applySyncBatch(
+        syncInput(degraded.id, {
+          upserts: [timedUpsert("duplicate"), timedUpsert("duplicate")],
+        }),
+      ),
+    ).toThrow();
+    expect(
+      fx.db
+        .prepare(
+          "SELECT status, sync_cursor FROM calendar_sources WHERE id = ?",
+        )
+        .get(degraded.id),
+    ).toEqual({ status: "degraded", sync_cursor: null });
+    expect(() =>
+      fx.service.applySyncBatch(
+        syncInput(degraded.id, {
+          upserts: [timedUpsert("shared")],
+          tombstones: [
+            { externalId: "shared", providerUpdatedAt: "2026-07-21T10:00:00Z" },
+          ],
+        }),
+      ),
+    ).toThrow();
+
+    expect(
+      fx.service.applySyncBatch(
+        syncInput(degraded.id, { upserts: [timedUpsert("accepted")] }),
+      ),
+    ).toEqual({ inserted: 1, updated: 0, deleted: 0, unchanged: 0 });
+    expect(
+      fx.db
+        .prepare(
+          "SELECT status, sync_cursor, last_error, last_synced_at, updated_at FROM calendar_sources WHERE id = ?",
+        )
+        .get(degraded.id),
+    ).toEqual({
+      status: "active",
+      sync_cursor: "cursor-1",
+      last_error: null,
+      last_synced_at: "2026-07-21T12:00:00.000Z",
+      updated_at: "2026-07-21T12:00:00.000Z",
+    });
   });
 });

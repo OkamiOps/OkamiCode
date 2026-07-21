@@ -95,6 +95,52 @@ export interface ListEventsInput {
   endDate?: string;
 }
 
+export type CalendarSyncUpsert =
+  | (EventDetails & {
+      externalId: string;
+      providerUpdatedAt: string;
+      etag?: string | null;
+      allDay: false;
+      startsAt: string;
+      endsAt: string;
+    })
+  | (EventDetails & {
+      externalId: string;
+      providerUpdatedAt: string;
+      etag?: string | null;
+      allDay: true;
+      startDate: string;
+      endDate: string;
+    });
+
+export interface CalendarSyncTombstone {
+  externalId: string;
+  providerUpdatedAt: string;
+}
+
+export interface CalendarSyncBatchInput {
+  sourceId: string;
+  previousCursor: string | null;
+  nextCursor: string;
+  syncedAt: string;
+  upserts: CalendarSyncUpsert[];
+  tombstones: CalendarSyncTombstone[];
+}
+
+export interface CalendarSyncBatchCounts {
+  inserted: number;
+  updated: number;
+  deleted: number;
+  unchanged: number;
+}
+
+export class CalendarSyncCursorConflictError extends Error {
+  constructor() {
+    super("Calendar sync cursor conflict");
+    this.name = "CalendarSyncCursorConflictError";
+  }
+}
+
 interface SourceRow {
   id: string;
   kind: CalendarSourceKind;
@@ -281,6 +327,156 @@ export class CalendarService {
     return rows.map(rowToEvent);
   }
 
+  applySyncBatch(input: CalendarSyncBatchInput): CalendarSyncBatchCounts {
+    const sourceId = requireText(input.sourceId, "source id");
+    const previousCursor = requireCursor(input.previousCursor, "previous");
+    const nextCursor = requireCursor(input.nextCursor, "next");
+    const syncedAt = canonicalInstant(input.syncedAt);
+    const source = this.findSource(sourceId);
+    if (
+      !source ||
+      source.kind === "local" ||
+      (source.status !== "active" && source.status !== "degraded")
+    ) {
+      throw new Error("Calendar source is not available for synchronization");
+    }
+
+    const seen = new Set<string>();
+    const upserts = input.upserts.map((upsert) => {
+      const externalId = requireExternalId(upsert.externalId, seen);
+      const providerUpdatedAt = canonicalInstant(upsert.providerUpdatedAt);
+      const event = this.buildEvent({
+        id: "calendar-sync-validation",
+        externalId,
+        sourceId,
+        input: syncUpsertToEventInput(upsert, sourceId),
+        createdAt: syncedAt,
+      });
+      return {
+        externalId,
+        providerUpdatedAt,
+        etag: optionalText(upsert.etag),
+        event,
+      };
+    });
+    const tombstones = input.tombstones.map((tombstone) => ({
+      externalId: requireExternalId(tombstone.externalId, seen),
+      providerUpdatedAt: canonicalInstant(tombstone.providerUpdatedAt),
+    }));
+
+    return this.dependencies.db.transaction(() => {
+      const persistedSource = this.findSource(sourceId);
+      if (!persistedSource || persistedSource.syncCursor !== previousCursor) {
+        throw new CalendarSyncCursorConflictError();
+      }
+      const counts: CalendarSyncBatchCounts = {
+        inserted: 0,
+        updated: 0,
+        deleted: 0,
+        unchanged: 0,
+      };
+      for (const upsert of upserts.sort(compareExternalId)) {
+        const current = this.findEventByExternalId(sourceId, upsert.externalId);
+        if (
+          current &&
+          !isNewerVersion(upsert.providerUpdatedAt, current.providerUpdatedAt)
+        ) {
+          counts.unchanged += 1;
+          continue;
+        }
+        if (!current) {
+          this.insertEvent(
+            this.buildSyncedEvent({
+              id: this.dependencies.createId(),
+              sourceId,
+              externalId: upsert.externalId,
+              event: upsert.event,
+              etag: upsert.etag,
+              providerUpdatedAt: upsert.providerUpdatedAt,
+              syncedAt,
+            }),
+          );
+          counts.inserted += 1;
+          continue;
+        }
+        this.updateSyncedEvent(
+          current,
+          upsert.event,
+          upsert.etag,
+          upsert.providerUpdatedAt,
+          syncedAt,
+        );
+        counts.updated += 1;
+      }
+      for (const tombstone of tombstones.sort(compareExternalId)) {
+        const current = this.findEventByExternalId(
+          sourceId,
+          tombstone.externalId,
+        );
+        if (
+          current &&
+          !isNewerVersion(
+            tombstone.providerUpdatedAt,
+            current.providerUpdatedAt,
+          )
+        ) {
+          counts.unchanged += 1;
+          continue;
+        }
+        if (!current) {
+          this.insertEvent({
+            id: this.dependencies.createId(),
+            sourceId,
+            externalId: tombstone.externalId,
+            title: "Deleted remote event",
+            description: null,
+            location: null,
+            organizer: null,
+            joinUrl: null,
+            sourceUrl: null,
+            etag: null,
+            providerUpdatedAt: tombstone.providerUpdatedAt,
+            attendees: [],
+            status: "cancelled",
+            allDay: true,
+            timezone: "UTC",
+            startsAt: null,
+            endsAt: null,
+            startDate: "1970-01-01",
+            endDate: "1970-01-02",
+            deletedAt: syncedAt,
+            createdAt: syncedAt,
+            updatedAt: syncedAt,
+          });
+        } else {
+          this.dependencies.db
+            .prepare(
+              `UPDATE calendar_events
+               SET deleted_at = ?, provider_updated_at = ?, updated_at = ?
+               WHERE id = ? AND source_id = ?`,
+            )
+            .run(
+              syncedAt,
+              tombstone.providerUpdatedAt,
+              syncedAt,
+              current.id,
+              sourceId,
+            );
+        }
+        counts.deleted += 1;
+      }
+      this.dependencies.db
+        .prepare(
+          `UPDATE calendar_sources
+           SET sync_cursor = ?, last_synced_at = ?, last_error = NULL,
+               status = 'active', updated_at = ?
+           WHERE id = ?`,
+        )
+        .run(nextCursor, syncedAt, syncedAt, sourceId);
+      return counts;
+    })();
+  }
+
   private buildEvent({
     id,
     externalId,
@@ -355,6 +551,82 @@ export class CalendarService {
                  @createdAt, @updatedAt)`,
       )
       .run(eventToParams(event));
+  }
+
+  private buildSyncedEvent({
+    id,
+    sourceId,
+    externalId,
+    event,
+    etag,
+    providerUpdatedAt,
+    syncedAt,
+  }: {
+    id: string;
+    sourceId: string;
+    externalId: string;
+    event: CalendarEvent;
+    etag: string | null;
+    providerUpdatedAt: string;
+    syncedAt: string;
+  }): CalendarEvent {
+    return {
+      ...event,
+      id,
+      sourceId,
+      externalId,
+      etag,
+      providerUpdatedAt,
+      deletedAt: null,
+      createdAt: syncedAt,
+      updatedAt: syncedAt,
+    };
+  }
+
+  private updateSyncedEvent(
+    current: CalendarEvent,
+    event: CalendarEvent,
+    etag: string | null,
+    providerUpdatedAt: string,
+    syncedAt: string,
+  ): void {
+    this.dependencies.db
+      .prepare(
+        `UPDATE calendar_events
+         SET title = @title, description = @description, location = @location,
+             organizer = @organizer, join_url = @joinUrl, source_url = @sourceUrl,
+             etag = @etag, provider_updated_at = @providerUpdatedAt,
+             attendees_json = @attendeesJson, status = @status, all_day = @allDay,
+             timezone = @timezone, starts_at = @startsAt, ends_at = @endsAt,
+             start_date = @startDate, end_date = @endDate, deleted_at = NULL,
+             updated_at = @updatedAt
+         WHERE id = @id AND source_id = @sourceId`,
+      )
+      .run(
+        eventToParams({
+          ...event,
+          id: current.id,
+          sourceId: current.sourceId,
+          externalId: current.externalId,
+          etag,
+          providerUpdatedAt,
+          createdAt: current.createdAt,
+          updatedAt: syncedAt,
+          deletedAt: null,
+        }),
+      );
+  }
+
+  private findEventByExternalId(
+    sourceId: string,
+    externalId: string,
+  ): CalendarEvent | undefined {
+    const row = this.dependencies.db
+      .prepare(
+        "SELECT * FROM calendar_events WHERE source_id = ? AND external_id = ?",
+      )
+      .get(sourceId, externalId) as EventRow | undefined;
+    return row ? rowToEvent(row) : undefined;
   }
 
   private requireActiveLocalSource(sourceId: string): CalendarSource {
@@ -500,6 +772,71 @@ function optionalText(value: string | null | undefined): string | null {
   }
   const normalized = value.trim();
   return normalized || null;
+}
+
+function requireCursor(value: string | null, label: string): string | null {
+  if (value === null) {
+    return null;
+  }
+  return requireText(value, `${label} sync cursor`);
+}
+
+function requireExternalId(externalId: string, seen: Set<string>): string {
+  const normalized = requireText(externalId, "external id");
+  if (seen.has(normalized)) {
+    throw new Error("Calendar sync batch contains duplicate external ids");
+  }
+  seen.add(normalized);
+  return normalized;
+}
+
+function syncUpsertToEventInput(
+  upsert: CalendarSyncUpsert,
+  sourceId: string,
+): CreateLocalEventInput {
+  if (upsert.allDay) {
+    return {
+      sourceId,
+      allDay: true,
+      title: upsert.title,
+      timezone: upsert.timezone,
+      description: upsert.description,
+      location: upsert.location,
+      organizer: upsert.organizer,
+      joinUrl: upsert.joinUrl,
+      sourceUrl: upsert.sourceUrl,
+      attendees: upsert.attendees,
+      status: upsert.status,
+      startDate: upsert.startDate,
+      endDate: upsert.endDate,
+    };
+  }
+  return {
+    sourceId,
+    allDay: false,
+    title: upsert.title,
+    timezone: upsert.timezone,
+    description: upsert.description,
+    location: upsert.location,
+    organizer: upsert.organizer,
+    joinUrl: upsert.joinUrl,
+    sourceUrl: upsert.sourceUrl,
+    attendees: upsert.attendees,
+    status: upsert.status,
+    startsAt: upsert.startsAt,
+    endsAt: upsert.endsAt,
+  };
+}
+
+function isNewerVersion(incoming: string, stored: string | null): boolean {
+  return stored === null || incoming > stored;
+}
+
+function compareExternalId(
+  left: { externalId: string },
+  right: { externalId: string },
+): number {
+  return left.externalId.localeCompare(right.externalId);
 }
 
 function requireTimezone(value: string): string {
