@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { agyLauncherArgs } from "./command";
+import { agyLauncherArgs, agyTurnArgs } from "./command";
 
 describe("agyLauncherArgs", () => {
   it("builds a workspace-bound launcher command without a prompt or print mode", () => {
@@ -75,4 +75,43 @@ describe("agyLauncherArgs", () => {
       agyLauncherArgs({ workspacePath: "relative/workspace" }),
     ).toThrow("AGY workspace must be an absolute path");
   });
+});
+
+describe("agyTurnArgs", () => {
+  it("adds print mode and the prompt while preserving the safe launcher boundary", () => {
+    const args = agyTurnArgs({
+      workspacePath: "/Users/marcos/Workspace",
+      conversationId: "<redacted-agy-conversation-id>",
+      model: "gemini-2.5-pro",
+      agent: "planner",
+      permissionMode: "acceptEdits",
+      prompt: "Inspect the repository.",
+    });
+
+    expect(args).toEqual([
+      "--add-dir",
+      "/Users/marcos/Workspace",
+      "--mode",
+      "accept-edits",
+      "--sandbox",
+      "--conversation",
+      "<redacted-agy-conversation-id>",
+      "--model",
+      "gemini-2.5-pro",
+      "--agent",
+      "planner",
+      "--print",
+      "Inspect the repository.",
+    ]);
+    expect(args).not.toContain("--dangerously-skip-permissions");
+  });
+
+  it.each(["", "   ", "x".repeat(100_001)])(
+    "rejects an empty or oversized prompt before AGY can be invoked",
+    (prompt) => {
+      expect(() =>
+        agyTurnArgs({ workspacePath: "/Users/marcos/Workspace", prompt }),
+      ).toThrow(/prompt/i);
+    },
+  );
 });

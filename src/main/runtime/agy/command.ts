@@ -8,6 +8,10 @@ export interface AgyLauncherArgsOptions {
   permissionMode?: string;
 }
 
+export interface AgyTurnArgsOptions extends AgyLauncherArgsOptions {
+  prompt: string;
+}
+
 /**
  * Builds the safe, interactive AGY launcher invocation. Prompts are deliberately
  * absent: the companion ingress owns hook capture before a native turn exists.
@@ -27,6 +31,17 @@ export function agyLauncherArgs(options: AgyLauncherArgsOptions): string[] {
     ...(options.model ? ["--model", options.model] : []),
     ...(options.agent ? ["--agent", options.agent] : []),
   ];
+}
+
+/** Builds a safe non-interactive AGY turn without relaxing sandboxing. */
+export function agyTurnArgs(options: AgyTurnArgsOptions): string[] {
+  if (options.prompt.trim().length === 0) {
+    throw new Error("AGY prompt must not be empty");
+  }
+  if (options.prompt.length > 100_000) {
+    throw new Error("AGY prompt exceeds the 100000 character limit");
+  }
+  return [...agyLauncherArgs(options), "--print", options.prompt];
 }
 
 function agyPermissionArgs(mode: string | undefined): string[] {
