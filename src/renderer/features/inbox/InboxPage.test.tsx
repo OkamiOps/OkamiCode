@@ -53,6 +53,15 @@ const thread: IpcResponse<"inbox:threads:list">["threads"][number] = {
   createdAt: now,
   updatedAt: now,
 };
+const secondThread: IpcResponse<"inbox:threads:list">["threads"][number] = {
+  ...thread,
+  id: "44444444-4444-4444-8444-444444444444",
+  externalThreadId: "message-13",
+  subject: "Revisão do contrato",
+  snippet: "Pode revisar o contrato antes da reunião?",
+  participants: ["Bruno <bruno@cliente.com>", "contato@okamiops.com"],
+  unreadCount: 0,
+};
 
 const workspaceLane: IpcResponse<"lane:list">[number] = {
   laneId: "55555555-5555-4555-8555-555555555555",
@@ -255,6 +264,103 @@ async function configureAgentDraft(dialog: HTMLElement, model = "gpt-5.6") {
 describe("InboxPage", () => {
   beforeEach(() => localStorage.clear());
   afterEach(cleanup);
+
+  it("opens a useful context menu from a thread row", async () => {
+    renderInbox();
+    const row = await screen.findByRole("button", {
+      name: /Proposta para landing page/,
+    });
+
+    fireEvent.contextMenu(row, { clientX: 240, clientY: 180 });
+
+    const menu = await screen.findByRole("menu", {
+      name: "Ações para Proposta para landing page",
+    });
+    expect(
+      within(menu).getByRole("menuitem", { name: "Abrir conversa" }),
+    ).toBeVisible();
+    expect(
+      within(menu).getByRole("menuitem", { name: "Selecionar conversa" }),
+    ).toBeVisible();
+    expect(
+      within(menu).getByRole("menuitem", { name: "Marcar como lida" }),
+    ).toBeVisible();
+    expect(
+      within(menu).getByRole("menuitem", { name: "Mover para spam" }),
+    ).toBeVisible();
+    expect(
+      within(menu).getByRole("menuitem", { name: "Mover para lixeira" }),
+    ).toBeVisible();
+  });
+
+  it("selects multiple conversations and moves them with one confirmation", async () => {
+    const api = makeApi({
+      listThreads: vi.fn().mockResolvedValue({
+        threads: [thread, secondThread],
+        nextCursor: null,
+      }),
+    });
+    renderInbox(api);
+    await screen.findByText("2 abertas");
+
+    await userEvent.click(
+      screen.getByRole("button", { name: "Selecionar conversas" }),
+    );
+    await userEvent.click(
+      screen.getByRole("checkbox", {
+        name: "Selecionar Proposta para landing page",
+      }),
+    );
+    await userEvent.click(
+      screen.getByRole("checkbox", { name: "Selecionar Revisão do contrato" }),
+    );
+    expect(screen.getByText("2 selecionadas")).toBeVisible();
+
+    await userEvent.click(
+      screen.getByRole("button", { name: "Excluir selecionadas" }),
+    );
+    await userEvent.click(
+      screen.getByRole("button", {
+        name: "Confirmar exclusão de 2 conversas",
+      }),
+    );
+
+    await vi.waitFor(() =>
+      expect(api.moveThreadToTrash).toHaveBeenCalledTimes(2),
+    );
+    expect(
+      screen.queryByText("Proposta para landing page"),
+    ).not.toBeInTheDocument();
+    expect(screen.queryByText("Revisão do contrato")).not.toBeInTheDocument();
+  });
+
+  it("removes a deleted conversation optimistically while IMAP finishes", async () => {
+    let finishMove:
+      ((value: IpcResponse<"inbox:thread:moveToTrash">) => void) | undefined;
+    const api = makeApi({
+      moveThreadToTrash: vi.fn(
+        () =>
+          new Promise<IpcResponse<"inbox:thread:moveToTrash">>((resolve) => {
+            finishMove = resolve;
+          }),
+      ),
+    });
+    renderInbox(api);
+    await userEvent.click(
+      await screen.findByRole("button", { name: /Proposta para landing page/ }),
+    );
+    await userEvent.click(
+      screen.getByRole("button", { name: "Excluir conversa" }),
+    );
+    await userEvent.click(
+      screen.getByRole("button", { name: "Confirmar exclusão" }),
+    );
+
+    expect(
+      screen.queryByText("Proposta para landing page"),
+    ).not.toBeInTheDocument();
+    finishMove?.({ threadId, destination: "trash", moved: true });
+  });
 
   it("moves the selected conversation to spam after explicit confirmation", async () => {
     const moveThreadToSpam = vi.fn().mockResolvedValue({

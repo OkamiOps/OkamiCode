@@ -15,6 +15,9 @@ const MAX_INITIAL_MESSAGES = 500;
 const DEFAULT_MESSAGE_BYTES = 2 * 1024 * 1024;
 const MAX_MESSAGE_BYTES = 10 * 1024 * 1024;
 const MAX_CALENDAR_INVITATION_BYTES = 512 * 1024;
+const IMAP_CONNECTION_TIMEOUT_MS = 15_000;
+const IMAP_GREETING_TIMEOUT_MS = 10_000;
+const IMAP_SOCKET_TIMEOUT_MS = 30_000;
 
 export interface ImapAccountConfiguration {
   host: string;
@@ -96,6 +99,9 @@ export type ImapClientOptions = {
   port: number;
   secure: boolean;
   auth: { user: string; pass?: string; accessToken?: string };
+  connectionTimeout?: number;
+  greetingTimeout?: number;
+  socketTimeout?: number;
   logger?: false;
 };
 
@@ -575,7 +581,13 @@ export function createProductionImapClient(
   options: ImapClientOptions,
   ImapFlowConstructor: ImapClientConstructor = ImapFlow as unknown as ImapClientConstructor,
 ): ImapClient {
-  return new ImapFlowConstructor({ ...options, logger: false });
+  return new ImapFlowConstructor({
+    ...options,
+    connectionTimeout: IMAP_CONNECTION_TIMEOUT_MS,
+    greetingTimeout: IMAP_GREETING_TIMEOUT_MS,
+    socketTimeout: IMAP_SOCKET_TIMEOUT_MS,
+    logger: false,
+  });
 }
 
 function validateConfiguration(

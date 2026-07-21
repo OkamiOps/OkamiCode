@@ -311,7 +311,13 @@ describe("ImapSyncAdapter", () => {
       auth: { user: "me@example.com", pass: "secret" },
     };
     createProductionImapClient(options, FakeImapFlow as ImapClientConstructor);
-    expect(constructed).toHaveBeenCalledWith({ ...options, logger: false });
+    expect(constructed).toHaveBeenCalledWith({
+      ...options,
+      connectionTimeout: 15_000,
+      greetingTimeout: 10_000,
+      socketTimeout: 30_000,
+      logger: false,
+    });
   });
 
   it("validates configuration and uses bounded defaults", async () => {

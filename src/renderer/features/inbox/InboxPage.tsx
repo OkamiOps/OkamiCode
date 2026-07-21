@@ -15,6 +15,7 @@ import {
   CircleAlert,
   Inbox as InboxIcon,
   Mail,
+  MailCheck,
   MailOpen,
   MoreHorizontal,
   Paperclip,
@@ -26,6 +27,7 @@ import {
   Trash2,
   Users,
   X,
+  CheckSquare2,
 } from "lucide-react";
 import {
   useEffect,
@@ -177,6 +179,15 @@ export function InboxPage({ api = defaultApi }: { api?: InboxApi }) {
   });
   const [filter, setFilter] = useState<AccountFilter>("all");
   const [selectedThreadId, setSelectedThreadId] = useState<string | null>(null);
+  const [selectionMode, setSelectionMode] = useState(false);
+  const [selectedThreadIds, setSelectedThreadIds] = useState<Set<string>>(
+    () => new Set(),
+  );
+  const [contextMenu, setContextMenu] = useState<{
+    thread: InboxThread;
+    x: number;
+    y: number;
+  } | null>(null);
   const [taskCreatedForThreadId, setTaskCreatedForThreadId] = useState<
     string | null
   >(null);
@@ -279,20 +290,65 @@ export function InboxPage({ api = defaultApi }: { api?: InboxApi }) {
   });
   const moveToSpam = useMutation({
     mutationFn: api.moveThreadToSpam,
+    onMutate: (request) => beginOptimisticMove([request.threadId]),
+    onError: (_error, _request, context) => rollbackOptimisticMove(context),
     onSuccess: clearMovedThread,
   });
   const markUnread = useMutation({
     mutationFn: api.markThreadUnread,
     onSuccess: (updated) => {
       markedRead.current.delete(updated.id);
-      setSelectedThreadId(null);
-      detailsDrawer.close();
+      if (updated.id === selectedThreadId) {
+        setSelectedThreadId(null);
+        detailsDrawer.close();
+      }
       void queryClient.invalidateQueries({ queryKey: ["inbox", "threads"] });
     },
   });
   const moveToTrash = useMutation({
     mutationFn: api.moveThreadToTrash,
+    onMutate: (request) => beginOptimisticMove([request.threadId]),
+    onError: (_error, _request, context) => rollbackOptimisticMove(context),
     onSuccess: clearMovedThread,
+  });
+  const moveSelectedToTrash = useMutation({
+    mutationFn: (threadIds: string[]) =>
+      Promise.all(
+        threadIds.map((threadId) =>
+          api.moveThreadToTrash({
+            threadId,
+            confirmation: "move_to_trash",
+          }),
+        ),
+      ),
+    onMutate: (threadIds) => beginOptimisticMove(threadIds),
+    onError: (_error, _threadIds, context) => rollbackOptimisticMove(context),
+    onSuccess: (_result, threadIds) => finishBulkMove(threadIds),
+  });
+  const moveSelectedToSpam = useMutation({
+    mutationFn: (threadIds: string[]) =>
+      Promise.all(
+        threadIds.map((threadId) =>
+          api.moveThreadToSpam({ threadId, confirmation: "move_to_spam" }),
+        ),
+      ),
+    onMutate: (threadIds) => beginOptimisticMove(threadIds),
+    onError: (_error, _threadIds, context) => rollbackOptimisticMove(context),
+    onSuccess: (_result, threadIds) => finishBulkMove(threadIds),
+  });
+  const markSelectedRead = useMutation({
+    mutationFn: (threadIds: string[]) =>
+      Promise.all(
+        threadIds.map((threadId) => api.markThreadRead({ threadId })),
+      ),
+    onSuccess: refreshThreads,
+  });
+  const markSelectedUnread = useMutation({
+    mutationFn: (threadIds: string[]) =>
+      Promise.all(
+        threadIds.map((threadId) => api.markThreadUnread({ threadId })),
+      ),
+    onSuccess: refreshThreads,
   });
   const createTask = useMutation({
     mutationFn: api.createTask,
@@ -459,6 +515,60 @@ export function InboxPage({ api = defaultApi }: { api?: InboxApi }) {
     setSelectedThreadId(thread.id);
   }
 
+  function refreshThreads() {
+    void queryClient.invalidateQueries({ queryKey: ["inbox", "threads"] });
+  }
+
+  async function beginOptimisticMove(threadIds: string[]) {
+    const queryKey = ["inbox", "threads", threadRequest] as const;
+    await queryClient.cancelQueries({ queryKey });
+    const previous =
+      queryClient.getQueryData<IpcResponse<"inbox:threads:list">>(queryKey);
+    const previousSelectedThreadId = selectedThreadId;
+    const moved = new Set(threadIds);
+    queryClient.setQueryData<IpcResponse<"inbox:threads:list">>(
+      queryKey,
+      (current) =>
+        current
+          ? {
+              ...current,
+              threads: current.threads.filter((item) => !moved.has(item.id)),
+            }
+          : current,
+    );
+    if (selectedThreadId && moved.has(selectedThreadId)) {
+      setSelectedThreadId(null);
+      detailsDrawer.close();
+    }
+    return { previous, previousSelectedThreadId, queryKey };
+  }
+
+  function rollbackOptimisticMove(
+    context:
+      | {
+          previous: IpcResponse<"inbox:threads:list"> | undefined;
+          previousSelectedThreadId: string | null;
+          queryKey: readonly unknown[];
+        }
+      | undefined,
+  ) {
+    if (!context) return;
+    queryClient.setQueryData(context.queryKey, context.previous);
+    setSelectedThreadId(context.previousSelectedThreadId);
+  }
+
+  function finishBulkMove(threadIds: string[]) {
+    for (const threadId of threadIds) {
+      queryClient.removeQueries({ queryKey: ["inbox", "thread", threadId] });
+      queryClient.removeQueries({
+        queryKey: ["inbox", "reply-actions", threadId],
+      });
+      markedRead.current.delete(threadId);
+    }
+    setSelectedThreadIds(new Set());
+    setSelectionMode(false);
+  }
+
   function clearMovedThread(result: { threadId: string }) {
     queryClient.removeQueries({
       queryKey: ["inbox", "thread", result.threadId],
@@ -467,9 +577,24 @@ export function InboxPage({ api = defaultApi }: { api?: InboxApi }) {
       queryKey: ["inbox", "reply-actions", result.threadId],
     });
     markedRead.current.delete(result.threadId);
-    setSelectedThreadId(null);
-    detailsDrawer.close();
-    void queryClient.invalidateQueries({ queryKey: ["inbox", "threads"] });
+    if (selectedThreadId === result.threadId) {
+      setSelectedThreadId(null);
+      detailsDrawer.close();
+    }
+  }
+
+  function toggleThreadSelection(threadId: string) {
+    setSelectedThreadIds((current) => {
+      const next = new Set(current);
+      if (next.has(threadId)) next.delete(threadId);
+      else next.add(threadId);
+      return next;
+    });
+  }
+
+  function toggleSelectionMode() {
+    setSelectionMode((current) => !current);
+    setSelectedThreadIds(new Set());
   }
 
   return (
@@ -536,8 +661,25 @@ export function InboxPage({ api = defaultApi }: { api?: InboxApi }) {
         error={threads.isError ? errorMessage(threads.error) : null}
         isLoading={threads.isLoading}
         onSelect={selectThread}
+        onContextMenu={setContextMenu}
+        onToggleSelection={toggleThreadSelection}
+        onToggleSelectionMode={toggleSelectionMode}
         selectedThreadId={selectedThreadId}
+        selectedThreadIds={selectedThreadIds}
+        selectionMode={selectionMode}
         threads={threads.data?.threads ?? []}
+        onMarkSelectedRead={() =>
+          markSelectedRead.mutate([...selectedThreadIds])
+        }
+        onMarkSelectedUnread={() =>
+          markSelectedUnread.mutate([...selectedThreadIds])
+        }
+        onMoveSelectedToSpam={() =>
+          moveSelectedToSpam.mutateAsync([...selectedThreadIds])
+        }
+        onMoveSelectedToTrash={() =>
+          moveSelectedToTrash.mutateAsync([...selectedThreadIds])
+        }
       />
       <ResizeHandle
         ariaLabel="Redimensionar lista de conversas"
@@ -621,6 +763,33 @@ export function InboxPage({ api = defaultApi }: { api?: InboxApi }) {
         state={detailsDrawer}
         thread={selectedThread}
       />
+      {contextMenu && (
+        <ThreadContextMenu
+          menu={contextMenu}
+          onClose={() => setContextMenu(null)}
+          onMarkRead={(threadId) => markRead.mutate({ threadId })}
+          onMarkUnread={(threadId) => markUnread.mutate({ threadId })}
+          onMoveToSpam={(thread) => {
+            setContextMenu(null);
+            moveToSpam.mutate({
+              threadId: thread.id,
+              confirmation: "move_to_spam",
+            });
+          }}
+          onMoveToTrash={(thread) => {
+            setContextMenu(null);
+            moveToTrash.mutate({
+              threadId: thread.id,
+              confirmation: "move_to_trash",
+            });
+          }}
+          onOpen={selectThread}
+          onSelect={(threadId) => {
+            setSelectionMode(true);
+            setSelectedThreadIds(new Set([threadId]));
+          }}
+        />
+      )}
     </section>
   );
 }
@@ -898,17 +1067,36 @@ function ThreadList({
   activeFilter,
   error,
   isLoading,
+  onContextMenu,
+  onMarkSelectedRead,
+  onMarkSelectedUnread,
+  onMoveSelectedToSpam,
+  onMoveSelectedToTrash,
   onSelect,
+  onToggleSelection,
+  onToggleSelectionMode,
   selectedThreadId,
+  selectedThreadIds,
+  selectionMode,
   threads,
 }: {
   activeFilter: AccountFilter;
   error: string | null;
   isLoading: boolean;
+  onContextMenu: (menu: { thread: InboxThread; x: number; y: number }) => void;
+  onMarkSelectedRead: () => void;
+  onMarkSelectedUnread: () => void;
+  onMoveSelectedToSpam: () => Promise<unknown>;
+  onMoveSelectedToTrash: () => Promise<unknown>;
   onSelect: (thread: InboxThread) => void;
+  onToggleSelection: (threadId: string) => void;
+  onToggleSelectionMode: () => void;
   selectedThreadId: string | null;
+  selectedThreadIds: Set<string>;
+  selectionMode: boolean;
   threads: InboxThread[];
 }) {
+  const selectedCount = selectedThreadIds.size;
   return (
     <section className="inbox-thread-list" aria-label="Lista de conversas">
       <header className="inbox-thread-list__header">
@@ -919,16 +1107,63 @@ function ThreadList({
           <h2>{isLoading ? "Carregando" : `${threads.length} abertas`}</h2>
         </div>
         <Button
-          aria-label="Mais filtros em breve"
+          aria-label={
+            selectionMode ? "Cancelar seleção" : "Selecionar conversas"
+          }
           className="inbox-list-menu"
-          isDisabled
           isIconOnly
+          onPress={onToggleSelectionMode}
           size="sm"
           variant="ghost"
         >
-          <MoreHorizontal aria-hidden="true" size={16} />
+          {selectionMode ? (
+            <X aria-hidden="true" size={16} />
+          ) : (
+            <CheckSquare2 aria-hidden="true" size={16} />
+          )}
         </Button>
       </header>
+      {selectionMode && (
+        <div
+          className="inbox-selection-toolbar"
+          role="toolbar"
+          aria-label="Ações em lote"
+        >
+          <strong>
+            {selectedCount} selecionada{selectedCount === 1 ? "" : "s"}
+          </strong>
+          <Button
+            aria-label="Marcar selecionadas como lidas"
+            isDisabled={selectedCount === 0}
+            isIconOnly
+            onPress={onMarkSelectedRead}
+            size="sm"
+            variant="ghost"
+          >
+            <MailCheck aria-hidden="true" size={15} />
+          </Button>
+          <Button
+            aria-label="Marcar selecionadas como não lidas"
+            isDisabled={selectedCount === 0}
+            isIconOnly
+            onPress={onMarkSelectedUnread}
+            size="sm"
+            variant="ghost"
+          >
+            <MailOpen aria-hidden="true" size={15} />
+          </Button>
+          <BulkMoveAction
+            action="spam"
+            count={selectedCount}
+            onConfirm={onMoveSelectedToSpam}
+          />
+          <BulkMoveAction
+            action="trash"
+            count={selectedCount}
+            onConfirm={onMoveSelectedToTrash}
+          />
+        </div>
+      )}
       <div className="inbox-thread-list__scroll">
         {isLoading && (
           <ListState
@@ -946,44 +1181,69 @@ function ThreadList({
           />
         )}
         {threads.map((thread) => (
-          <button
-            aria-label={`${thread.subject} — ${thread.snippet}`}
-            className="inbox-thread-row"
-            data-selected={thread.id === selectedThreadId || undefined}
-            data-unread={thread.unreadCount > 0 || undefined}
+          <div
+            className="inbox-thread-row-shell"
             key={thread.id}
-            onClick={() => onSelect(thread)}
+            onContextMenu={(event) => {
+              event.preventDefault();
+              onContextMenu({
+                thread,
+                x: event.clientX,
+                y: event.clientY,
+              });
+            }}
             style={senderIdentityStyle(primaryParticipantIdentity(thread))}
-            type="button"
           >
-            <span className="inbox-thread-avatar">
-              {initials(senderLabel(primaryParticipantIdentity(thread)))}
-            </span>
-            <span className="inbox-thread-row__body">
-              <span className="inbox-thread-row__heading">
-                <strong>
-                  {senderLabel(primaryParticipantIdentity(thread))}
-                </strong>
-                {senderDomain(primaryParticipantIdentity(thread)) && (
-                  <span className="inbox-thread-row__origin">
-                    {senderDomain(primaryParticipantIdentity(thread))}
-                  </span>
-                )}
-                <time>{shortDate(thread.lastMessageAt)}</time>
-              </span>
-              <span className="inbox-thread-row__subject">
-                {thread.subject || "(sem assunto)"}
-              </span>
-              <span className="inbox-thread-row__preview">
-                {thread.snippet}
-              </span>
-            </span>
-            {thread.unreadCount > 0 && (
-              <Badge className="inbox-unread-badge" size="sm">
-                {thread.unreadCount}
-              </Badge>
+            {selectionMode && (
+              <input
+                aria-label={`Selecionar ${thread.subject}`}
+                checked={selectedThreadIds.has(thread.id)}
+                className="inbox-thread-checkbox"
+                onChange={() => onToggleSelection(thread.id)}
+                type="checkbox"
+              />
             )}
-          </button>
+            <button
+              aria-label={`${thread.subject} — ${thread.snippet}`}
+              className="inbox-thread-row"
+              data-bulk-selected={selectedThreadIds.has(thread.id) || undefined}
+              data-selected={thread.id === selectedThreadId || undefined}
+              data-selection-mode={selectionMode || undefined}
+              data-unread={thread.unreadCount > 0 || undefined}
+              onClick={() =>
+                selectionMode ? onToggleSelection(thread.id) : onSelect(thread)
+              }
+              type="button"
+            >
+              <span className="inbox-thread-avatar">
+                {initials(senderLabel(primaryParticipantIdentity(thread)))}
+              </span>
+              <span className="inbox-thread-row__body">
+                <span className="inbox-thread-row__heading">
+                  <strong>
+                    {senderLabel(primaryParticipantIdentity(thread))}
+                  </strong>
+                  {senderDomain(primaryParticipantIdentity(thread)) && (
+                    <span className="inbox-thread-row__origin">
+                      {senderDomain(primaryParticipantIdentity(thread))}
+                    </span>
+                  )}
+                  <time>{shortDate(thread.lastMessageAt)}</time>
+                </span>
+                <span className="inbox-thread-row__subject">
+                  {thread.subject || "(sem assunto)"}
+                </span>
+                <span className="inbox-thread-row__preview">
+                  {thread.snippet}
+                </span>
+              </span>
+              {thread.unreadCount > 0 && (
+                <Badge className="inbox-unread-badge" size="sm">
+                  {thread.unreadCount}
+                </Badge>
+              )}
+            </button>
+          </div>
         ))}
       </div>
     </section>
@@ -1335,6 +1595,195 @@ function ThreadMoveAction({
                     isSpam ? "inbox-confirm-spam" : "inbox-confirm-danger"
                   }
                   isDisabled={isPending}
+                  onPress={() => {
+                    dialog.close();
+                    void onConfirm().catch(() => undefined);
+                  }}
+                >
+                  {isSpam ? "Mover para spam" : "Mover para lixeira"}
+                </Button>
+              </Modal.Footer>
+            </Modal.Dialog>
+          </Modal.Container>
+        </Modal.Backdrop>
+      </Modal.Root>
+    </>
+  );
+}
+
+function ThreadContextMenu({
+  menu,
+  onClose,
+  onMarkRead,
+  onMarkUnread,
+  onMoveToSpam,
+  onMoveToTrash,
+  onOpen,
+  onSelect,
+}: {
+  menu: { thread: InboxThread; x: number; y: number };
+  onClose: () => void;
+  onMarkRead: (threadId: string) => void;
+  onMarkUnread: (threadId: string) => void;
+  onMoveToSpam: (thread: InboxThread) => void;
+  onMoveToTrash: (thread: InboxThread) => void;
+  onOpen: (thread: InboxThread) => void;
+  onSelect: (threadId: string) => void;
+}) {
+  const { thread } = menu;
+  useEffect(() => {
+    const close = () => onClose();
+    const onKeyDown = (event: KeyboardEvent) => {
+      if (event.key === "Escape") close();
+    };
+    window.addEventListener("resize", close);
+    document.addEventListener("scroll", close, true);
+    document.addEventListener("pointerdown", close);
+    document.addEventListener("keydown", onKeyDown);
+    return () => {
+      window.removeEventListener("resize", close);
+      document.removeEventListener("scroll", close, true);
+      document.removeEventListener("pointerdown", close);
+      document.removeEventListener("keydown", onKeyDown);
+    };
+  }, [onClose]);
+
+  const run = (action: () => void) => (event: React.MouseEvent) => {
+    event.stopPropagation();
+    action();
+    onClose();
+  };
+  const left = Math.min(menu.x, Math.max(12, window.innerWidth - 224));
+  const top = Math.min(menu.y, Math.max(12, window.innerHeight - 250));
+  return (
+    <div
+      aria-label={`Ações para ${thread.subject}`}
+      className="inbox-context-menu"
+      onPointerDown={(event) => event.stopPropagation()}
+      role="menu"
+      style={{ left, top }}
+    >
+      <button onClick={run(() => onOpen(thread))} role="menuitem" type="button">
+        <MailOpen aria-hidden="true" size={15} /> Abrir conversa
+      </button>
+      <button
+        onClick={run(() => onSelect(thread.id))}
+        role="menuitem"
+        type="button"
+      >
+        <CheckSquare2 aria-hidden="true" size={15} /> Selecionar conversa
+      </button>
+      <span className="inbox-context-menu__divider" />
+      <button
+        onClick={run(() =>
+          thread.unreadCount > 0
+            ? onMarkRead(thread.id)
+            : onMarkUnread(thread.id),
+        )}
+        role="menuitem"
+        type="button"
+      >
+        <MailCheck aria-hidden="true" size={15} />
+        {thread.unreadCount > 0 ? "Marcar como lida" : "Marcar como não lida"}
+      </button>
+      <button
+        onClick={run(() => onMoveToSpam(thread))}
+        role="menuitem"
+        type="button"
+      >
+        <ShieldAlert aria-hidden="true" size={15} /> Mover para spam
+      </button>
+      <button
+        className="inbox-context-menu__danger"
+        onClick={run(() => onMoveToTrash(thread))}
+        role="menuitem"
+        type="button"
+      >
+        <Trash2 aria-hidden="true" size={15} /> Mover para lixeira
+      </button>
+    </div>
+  );
+}
+
+function BulkMoveAction({
+  action,
+  count,
+  onConfirm,
+}: {
+  action: "spam" | "trash";
+  count: number;
+  onConfirm: () => Promise<unknown>;
+}) {
+  const dialog = useOverlayState();
+  const isSpam = action === "spam";
+  const label = isSpam
+    ? "Mover selecionadas para spam"
+    : "Excluir selecionadas";
+  return (
+    <>
+      <Button
+        aria-label={label}
+        isDisabled={count === 0}
+        isIconOnly
+        onPress={dialog.open}
+        size="sm"
+        variant="ghost"
+      >
+        {isSpam ? (
+          <ShieldAlert aria-hidden="true" size={15} />
+        ) : (
+          <Trash2 aria-hidden="true" size={15} />
+        )}
+      </Button>
+      <Modal.Root state={dialog}>
+        <Modal.Backdrop className="inbox-modal-backdrop">
+          <Modal.Container
+            className="inbox-confirm-dialog-container"
+            placement="center"
+          >
+            <Modal.Dialog className="inbox-confirm-dialog">
+              <Modal.Header className="inbox-confirm-dialog__header">
+                <span
+                  className={`inbox-confirm-dialog__icon${isSpam ? "" : " inbox-confirm-dialog__icon--danger"}`}
+                >
+                  {isSpam ? <ShieldAlert size={18} /> : <Trash2 size={18} />}
+                </span>
+                <span className="inbox-confirm-dialog__heading-copy">
+                  <small>Ação em lote</small>
+                  <Modal.Heading>
+                    {isSpam
+                      ? `Mover ${count} conversas para spam?`
+                      : `Excluir ${count} conversas?`}
+                  </Modal.Heading>
+                </span>
+                <Modal.CloseTrigger
+                  aria-label="Fechar"
+                  className="inbox-confirm-dialog__close"
+                >
+                  <X aria-hidden="true" size={15} />
+                </Modal.CloseTrigger>
+              </Modal.Header>
+              <Modal.Body className="inbox-confirm-dialog__body">
+                As conversas selecionadas sairão desta caixa imediatamente. A
+                sincronização continua em segundo plano.
+              </Modal.Body>
+              <Modal.Footer className="inbox-confirm-dialog__footer">
+                <Button
+                  className="inbox-confirm-cancel"
+                  onPress={dialog.close}
+                  variant="ghost"
+                >
+                  Cancelar
+                </Button>
+                <Button
+                  aria-label={
+                    isSpam
+                      ? `Confirmar spam de ${count} conversas`
+                      : `Confirmar exclusão de ${count} conversas`
+                  }
+                  className={
+                    isSpam ? "inbox-confirm-spam" : "inbox-confirm-danger"
+                  }
                   onPress={() => {
                     dialog.close();
                     void onConfirm().catch(() => undefined);
