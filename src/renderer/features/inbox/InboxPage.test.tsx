@@ -7,7 +7,7 @@ import {
   within,
 } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
-import { afterEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { IpcRequest, IpcResponse } from "../../../shared/contracts/ipc";
 import { InboxPage, type InboxApi } from "./InboxPage";
 
@@ -155,7 +155,7 @@ function makeApi(overrides: Partial<InboxApi> = {}): InboxApi {
           direction: "incoming",
           sender: "Ana Silva <ana@cliente.com>",
           recipients: ["contato@okamiops.com"],
-          body: "<b>Conteúdo externo</b>",
+          body: '<section><h1 style="color:#f97316">Conteúdo externo</h1><img src="https://tracker.example/pixel.gif"><script>alert(1)</script></section>',
           bodyFormat: "html",
           sentAt: null,
           receivedAt: now,
@@ -205,6 +205,7 @@ function renderInbox(api = makeApi()) {
 }
 
 describe("InboxPage", () => {
+  beforeEach(() => localStorage.clear());
   afterEach(cleanup);
 
   it("renders the focused inbox, selects a thread and marks it read only once", async () => {
@@ -215,16 +216,40 @@ describe("InboxPage", () => {
     });
     await userEvent.click(item);
 
-    expect(
-      await screen.findByText("Ana Silva <ana@cliente.com>"),
-    ).toBeVisible();
-    expect(screen.getByText("Conteúdo externo")).toBeVisible();
+    const emailDocument = await screen.findByTitle("Conteúdo HTML do email");
+    expect(emailDocument).toHaveAttribute("sandbox", "allow-same-origin");
+    expect(emailDocument.getAttribute("srcdoc")).toContain("Conteúdo externo");
+    expect(emailDocument.getAttribute("srcdoc")).not.toContain("<script");
+    expect(emailDocument.getAttribute("srcdoc")).not.toContain(
+      "https://tracker.example/pixel.gif",
+    );
+    await userEvent.click(
+      screen.getByRole("button", { name: "Carregar imagens externas" }),
+    );
+    expect(emailDocument.getAttribute("srcdoc")).toContain(
+      "https://tracker.example/pixel.gif",
+    );
     expect(screen.getByText("Próximo passo")).toBeVisible();
     expect(screen.getByText(/Nada é enviado sem sua aprovação/i)).toBeVisible();
     expect(api.markThreadRead).toHaveBeenCalledTimes(1);
 
     await userEvent.click(item);
     expect(api.markThreadRead).toHaveBeenCalledTimes(1);
+  });
+
+  it("restores persisted column widths and exposes three resize handles", () => {
+    localStorage.setItem("okami.inbox.sidebarWidth", "280");
+    localStorage.setItem("okami.inbox.threadListWidth", "360");
+    localStorage.setItem("okami.inbox.detailsWidth", "320");
+    renderInbox();
+
+    const page = screen.getByRole("region", { name: "Inbox" });
+    expect(page).toHaveStyle({
+      "--inbox-sidebar-width": "280px",
+      "--inbox-thread-list-width": "360px",
+      "--inbox-details-width": "320px",
+    });
+    expect(screen.getAllByRole("slider")).toHaveLength(3);
   });
 
   it("only synchronizes after an explicit account action", async () => {
@@ -647,7 +672,7 @@ describe("InboxPage", () => {
     await userEvent.click(
       await screen.findByRole("button", { name: /Proposta para landing page/ }),
     );
-    await screen.findByText("Ana Silva <ana@cliente.com>");
+    await screen.findByTitle("Conteúdo HTML do email");
 
     await userEvent.click(screen.getByRole("button", { name: "Virar tarefa" }));
     expect(
@@ -763,10 +788,7 @@ describe("InboxPage", () => {
     });
     await userEvent.click(item);
 
-    expect(
-      await screen.findByText("Ana Silva <ana@cliente.com>"),
-    ).toBeVisible();
-    expect(api.markThreadRead).toHaveBeenCalledTimes(1);
+    await vi.waitFor(() => expect(api.markThreadRead).toHaveBeenCalledTimes(1));
     expect(
       await screen.findByText("Nenhuma conversa nesta fila."),
     ).toBeVisible();
@@ -778,9 +800,7 @@ describe("InboxPage", () => {
       name: /Proposta para landing page/,
     });
     await userEvent.click(item);
-    expect(
-      await screen.findByText("Ana Silva <ana@cliente.com>"),
-    ).toBeVisible();
+    await screen.findByTitle("Conteúdo HTML do email");
 
     await userEvent.click(
       screen.getByRole("button", { name: "Remover Projetos" }),

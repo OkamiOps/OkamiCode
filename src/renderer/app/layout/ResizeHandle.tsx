@@ -1,4 +1,10 @@
-import { useCallback, useRef, useState, type PointerEvent } from "react";
+import {
+  useCallback,
+  useRef,
+  useState,
+  type KeyboardEvent,
+  type PointerEvent,
+} from "react";
 
 // Persisted pane width with a drag handle, the way Claude/Codex/Cursor let
 // you reshape their panels.
@@ -31,15 +37,17 @@ export function useResizablePane(options: {
     [storageKey],
   );
 
-  return { width, setWidth, persist, min, max };
+  return { width, setWidth, persist, initial, min, max };
 }
 
 export function ResizeHandle({
   ariaLabel,
+  className,
   edge,
   pane,
 }: {
   ariaLabel: string;
+  className?: string;
   edge: "left" | "right";
   pane: ReturnType<typeof useResizablePane>;
 }) {
@@ -96,19 +104,38 @@ export function ResizeHandle({
     window.addEventListener("mouseup", up);
   }
 
+  function onKeyDown(event: KeyboardEvent<HTMLDivElement>) {
+    const direction = edge === "right" ? 1 : -1;
+    const delta =
+      event.key === "ArrowRight"
+        ? 12 * direction
+        : event.key === "ArrowLeft"
+          ? -12 * direction
+          : 0;
+    if (delta === 0) return;
+    event.preventDefault();
+    const next = Math.min(pane.max, Math.max(pane.min, pane.width + delta));
+    pane.setWidth(next);
+    pane.persist(next);
+  }
+
   return (
     <div
       aria-label={ariaLabel}
       aria-orientation="vertical"
-      className="resize-handle"
+      aria-valuemax={pane.max}
+      aria-valuemin={pane.min}
+      aria-valuenow={Math.round(pane.width)}
+      className={["resize-handle", className].filter(Boolean).join(" ")}
       data-dragging={dragging || undefined}
       onDoubleClick={() => {
-        pane.setWidth(pane.min);
-        pane.persist(pane.min);
+        pane.setWidth(pane.initial);
+        pane.persist(pane.initial);
       }}
+      onKeyDown={onKeyDown}
       onPointerDown={onPointerDown}
-      role="separator"
-      tabIndex={-1}
+      role="slider"
+      tabIndex={0}
     />
   );
 }

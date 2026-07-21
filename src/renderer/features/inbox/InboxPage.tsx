@@ -12,7 +12,6 @@ import {
   AtSign,
   Bot,
   CircleAlert,
-  ExternalLink,
   Inbox as InboxIcon,
   Mail,
   MoreHorizontal,
@@ -24,9 +23,17 @@ import {
   Trash2,
   Users,
 } from "lucide-react";
-import { useEffect, useMemo, useRef, useState } from "react";
+import {
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+  type CSSProperties,
+} from "react";
 import type { IpcRequest, IpcResponse } from "../../../shared/contracts/ipc";
+import { ResizeHandle, useResizablePane } from "../../app/layout/ResizeHandle";
 import { workbenchClient } from "../../lib/ipc/client";
+import { EmailMessageBody } from "./EmailMessageBody";
 import { InboxAccountModal } from "./InboxAccountModal";
 import { InboxOutgoingSettingsModal } from "./InboxOutgoingSettingsModal";
 import { InboxReplyApprovalCard } from "./InboxReplyApprovalCard";
@@ -112,6 +119,24 @@ type AccountFilter = "all" | "unread" | string;
 
 export function InboxPage({ api = defaultApi }: { api?: InboxApi }) {
   const queryClient = useQueryClient();
+  const sidebarPane = useResizablePane({
+    storageKey: "okami.inbox.sidebarWidth",
+    initial: 244,
+    min: 180,
+    max: 360,
+  });
+  const threadListPane = useResizablePane({
+    storageKey: "okami.inbox.threadListWidth",
+    initial: 332,
+    min: 230,
+    max: 480,
+  });
+  const detailsPane = useResizablePane({
+    storageKey: "okami.inbox.detailsWidth",
+    initial: 300,
+    min: 260,
+    max: 420,
+  });
   const [filter, setFilter] = useState<AccountFilter>("all");
   const [selectedThreadId, setSelectedThreadId] = useState<string | null>(null);
   const [taskCreatedForThreadId, setTaskCreatedForThreadId] = useState<
@@ -302,7 +327,17 @@ export function InboxPage({ api = defaultApi }: { api?: InboxApi }) {
   }
 
   return (
-    <section aria-label="Inbox" className="inbox-page">
+    <section
+      aria-label="Inbox"
+      className="inbox-page"
+      style={
+        {
+          "--inbox-sidebar-width": `${sidebarPane.width}px`,
+          "--inbox-thread-list-width": `${threadListPane.width}px`,
+          "--inbox-details-width": `${detailsPane.width}px`,
+        } as CSSProperties
+      }
+    >
       <InboxSidebar
         accounts={accounts.data ?? []}
         activeFilter={filter}
@@ -323,6 +358,12 @@ export function InboxPage({ api = defaultApi }: { api?: InboxApi }) {
         }
         unreadCount={visibleUnreadCount}
       />
+      <ResizeHandle
+        ariaLabel="Redimensionar contas e filtros"
+        className="inbox-resize-handle inbox-resize-handle--sidebar"
+        edge="right"
+        pane={sidebarPane}
+      />
       <ThreadList
         activeFilter={filter}
         error={threads.isError ? errorMessage(threads.error) : null}
@@ -330,6 +371,12 @@ export function InboxPage({ api = defaultApi }: { api?: InboxApi }) {
         onSelect={selectThread}
         selectedThreadId={selectedThreadId}
         threads={threads.data?.threads ?? []}
+      />
+      <ResizeHandle
+        ariaLabel="Redimensionar lista de conversas"
+        className="inbox-resize-handle inbox-resize-handle--threads"
+        edge="right"
+        pane={threadListPane}
       />
       <Conversation
         detail={detail.data}
@@ -357,6 +404,12 @@ export function InboxPage({ api = defaultApi }: { api?: InboxApi }) {
         taskCreated={taskCreatedForThreadId === detail.data?.thread.id}
         listLanes={api.listLanes}
         listModels={api.listModels}
+      />
+      <ResizeHandle
+        ariaLabel="Redimensionar detalhes da conversa"
+        className="inbox-resize-handle inbox-resize-handle--details"
+        edge="left"
+        pane={detailsPane}
       />
       <aside className="inbox-details-region" aria-label="Detalhes da conversa">
         <InboxDetails
@@ -845,15 +898,10 @@ function Conversation({
                     )}
                   </time>
                 </header>
-                <div className="inbox-message__body">
-                  {readableMessageBody(message.body, message.bodyFormat)}
-                </div>
-                {message.bodyFormat === "html" && (
-                  <p className="inbox-untrusted">
-                    <ExternalLink aria-hidden="true" size={11} /> Conteúdo
-                    convertido para leitura segura
-                  </p>
-                )}
+                <EmailMessageBody
+                  body={message.body}
+                  format={message.bodyFormat}
+                />
                 {message.attachments.length > 0 && (
                   <div className="inbox-attachments">
                     {message.attachments.map((attachment, index) => (
@@ -1135,40 +1183,6 @@ function participantSummary(value: string) {
 }
 function compactIdentifier(value: string) {
   return value.length > 26 ? `${value.slice(0, 12)}…${value.slice(-8)}` : value;
-}
-function readableMessageBody(body: string, format: string) {
-  const safe = format === "html" ? stripHtml(body) : body;
-  const lines = safe.replace(/\r\n?/gu, "\n").split("\n");
-  let hiddenLink = false;
-  const readable = lines.flatMap((line) => {
-    const candidate = line.trim().replace(/^\[|\]$/gu, "");
-    if (/^https?:\/\/\S{120,}$/iu.test(candidate)) {
-      if (hiddenLink) return [];
-      hiddenLink = true;
-      return ["[Link técnico ocultado para facilitar a leitura]"];
-    }
-    return [line];
-  });
-  return readable
-    .join("\n")
-    .replace(/\n{3,}/gu, "\n\n")
-    .trim();
-}
-function stripHtml(value: string) {
-  return value
-    .replace(/<(script|style|head)[^>]*>[\s\S]*?<\/\1>/giu, " ")
-    .replace(/<br\s*\/?\s*>/giu, "\n")
-    .replace(/<\/p\s*>/giu, "\n\n")
-    .replace(/<[^>]+>/gu, " ")
-    .replace(/&nbsp;/giu, " ")
-    .replace(/&amp;/giu, "&")
-    .replace(/&lt;/giu, "<")
-    .replace(/&gt;/giu, ">")
-    .replace(/&quot;/giu, '"')
-    .replace(/&#39;/giu, "'")
-    .replace(/[ \t]+\n/gu, "\n")
-    .replace(/[ \t]{2,}/gu, " ")
-    .trim();
 }
 function shortDate(value: string, includeTime = false) {
   const date = new Date(value);

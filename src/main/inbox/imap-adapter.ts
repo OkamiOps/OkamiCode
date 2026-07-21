@@ -193,7 +193,7 @@ export class ImapSyncAdapter {
     const reset = !cursor || cursor.uidValidity !== uidValidity;
     const lastUid = reset ? 0 : cursor.lastUid;
     const nextCursor = (value: number) =>
-      JSON.stringify({ version: 1, uidValidity, lastUid: value });
+      JSON.stringify({ version: 2, uidValidity, lastUid: value });
 
     if (mailbox.exists === 0) {
       return emptyBatch(input.account, nextCursor(0), this.clock());
@@ -257,7 +257,7 @@ export class ImapSyncAdapter {
 }
 
 type ValidatedConfiguration = Required<ImapAccountConfiguration>;
-type Cursor = { version: 1; uidValidity: string; lastUid: number };
+type Cursor = { version: 2; uidValidity: string; lastUid: number };
 type ThreadInput = {
   externalThreadId: string;
   subject: string;
@@ -328,7 +328,7 @@ function parseCursor(value: string | null): Cursor | null {
     !Object.hasOwn(parsed, "version") ||
     !Object.hasOwn(parsed, "uidValidity") ||
     !Object.hasOwn(parsed, "lastUid") ||
-    parsed.version !== 1 ||
+    (parsed.version !== 1 && parsed.version !== 2) ||
     typeof parsed.uidValidity !== "string" ||
     !/^[0-9]+$/.test(parsed.uidValidity) ||
     typeof parsed.lastUid !== "number" ||
@@ -336,8 +336,11 @@ function parseCursor(value: string | null): Cursor | null {
     parsed.lastUid < 0
   )
     throw new Error("invalid");
+  // Cursor v1 stored messages with the text alternative even when HTML was
+  // available. Rehydrate the recent window once, then persist v2 normally.
+  if (parsed.version === 1) return null;
   return {
-    version: 1,
+    version: 2,
     uidValidity: parsed.uidValidity as string,
     lastUid: parsed.lastUid as number,
   };
@@ -396,9 +399,9 @@ function normalizeMessage(
     ...addresses(parsed.bcc),
     ...envelopeAddresses(item.envelope?.to),
   ]);
-  const body =
-    parsed.text || (typeof parsed.html === "string" ? parsed.html : "");
-  const bodyFormat = parsed.text ? "text" : "html";
+  const htmlBody = typeof parsed.html === "string" ? parsed.html : "";
+  const body = htmlBody || parsed.text || "";
+  const bodyFormat = htmlBody ? "html" : "text";
   const labels = unique([
     ...(item.labels ? [...item.labels] : []),
     ...(item.flags ? [...item.flags] : []),

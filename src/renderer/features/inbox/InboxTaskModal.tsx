@@ -101,7 +101,7 @@ export function InboxTaskModal({
           className="inbox-future-action inbox-future-action--task"
         >
           <CheckSquare aria-hidden="true" size={14} />
-          Virar tarefa
+          Criar tarefa
         </Modal.Trigger>
       ) : (
         <Button
@@ -112,7 +112,7 @@ export function InboxTaskModal({
           variant="ghost"
         >
           <CheckSquare aria-hidden="true" size={14} />
-          Virar tarefa
+          Criar tarefa
         </Button>
       )}
       <Modal.Backdrop className="inbox-modal-backdrop">

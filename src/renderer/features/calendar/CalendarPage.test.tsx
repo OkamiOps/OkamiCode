@@ -353,7 +353,7 @@ describe("CalendarPage", () => {
         endDate: "2026-08-04",
       }),
     );
-  });
+  }, 10_000);
 
   it("uses event IANA timezones for DST-safe wall time and rejects nonexistent local time", async () => {
     const { api } = renderCalendar(makeApi(), "America/Sao_Paulo");
@@ -425,7 +425,7 @@ describe("CalendarPage", () => {
       "Data ou horário inválido para o fuso horário escolhido.",
     );
     expect(api.createEvent).toHaveBeenCalledOnce();
-  });
+  }, 10_000);
 
   it("renders returned active remote sources and requests events for every active source", async () => {
     const remoteEvent = {

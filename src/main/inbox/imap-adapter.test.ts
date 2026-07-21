@@ -84,6 +84,28 @@ function rfc822WithAttachment() {
   );
 }
 
+function rfc822WithHtmlAlternative() {
+  return Buffer.from(
+    [
+      "Message-ID: <html-message@example.com>",
+      "Subject: HTML message",
+      "From: Other <other@example.com>",
+      "To: Me <me@example.com>",
+      "Content-Type: multipart/alternative; boundary=alternative",
+      "",
+      "--alternative",
+      "Content-Type: text/plain; charset=utf-8",
+      "",
+      "Plain fallback",
+      "--alternative",
+      "Content-Type: text/html; charset=utf-8",
+      "",
+      '<html><body><h1 style="color: #f97316">Formatted email</h1></body></html>',
+      "--alternative--",
+    ].join("\r\n"),
+  );
+}
+
 function fakeClient(overrides: Partial<ImapClient> = {}) {
   const lock = { release: vi.fn() };
   const client: ImapClient = {
@@ -310,7 +332,7 @@ describe("ImapSyncAdapter", () => {
     expect(result).toMatchObject({
       previousCursor: null,
       nextCursor: JSON.stringify({
-        version: 1,
+        version: 2,
         uidValidity: "99",
         lastUid: 204,
       }),
@@ -334,9 +356,31 @@ describe("ImapSyncAdapter", () => {
     expect(client.logout).toHaveBeenCalledOnce();
   });
 
+  it("preserves the HTML alternative instead of flattening a multipart email", async () => {
+    const { client } = fakeClient({
+      mailbox: { uidValidity: 99n, uidNext: 2, exists: 1 },
+      fetchAll: vi.fn().mockResolvedValue([message(1)]),
+      download: vi.fn().mockResolvedValue({
+        content: Readable.from([rfc822WithHtmlAlternative()]),
+      }),
+    });
+    const { adapter: subject } = adapter(client);
+
+    const result = await subject.sync({
+      account,
+      configuration: { host: "mail.example.com", port: 993, secure: true },
+    });
+
+    expect(result.messages[0]).toMatchObject({
+      bodyFormat: "html",
+      body: expect.stringContaining("Formatted email"),
+    });
+    expect(result.threads[0]?.snippet).toContain("Plain fallback");
+  });
+
   it("handles incremental no-op, UID validity reset, empty mailbox and invalid cursor", async () => {
     const cursor = JSON.stringify({
-      version: 1,
+      version: 2,
       uidValidity: "99",
       lastUid: 4,
     });
@@ -382,7 +426,7 @@ describe("ImapSyncAdapter", () => {
       configuration: { host: "mail.example.com", port: 993, secure: true },
     });
     expect(emptyResult.nextCursor).toBe(
-      JSON.stringify({ version: 1, uidValidity: "3", lastUid: 0 }),
+      JSON.stringify({ version: 2, uidValidity: "3", lastUid: 0 }),
     );
     expect(empty.client.fetchAll).not.toHaveBeenCalled();
     await expect(
@@ -391,6 +435,35 @@ describe("ImapSyncAdapter", () => {
         configuration: { host: "mail.example.com", port: 993, secure: true },
       }),
     ).rejects.toBeInstanceOf(ImapSyncError);
+  });
+
+  it("rehydrates the recent window once for a legacy text-first cursor", async () => {
+    const legacy = fakeClient({
+      mailbox: { uidValidity: 99, uidNext: 5, exists: 4 },
+      fetchAll: vi.fn().mockResolvedValue([message(4)]),
+    });
+
+    const result = await adapter(legacy.client).adapter.sync({
+      account: {
+        ...account,
+        syncCursor: JSON.stringify({
+          version: 1,
+          uidValidity: "99",
+          lastUid: 4,
+        }),
+      },
+      configuration: { host: "mail.example.com", port: 993, secure: true },
+    });
+
+    expect(legacy.client.fetchAll).toHaveBeenCalledWith(
+      "1:*",
+      expect.any(Object),
+      { uid: true },
+    );
+    expect(JSON.parse(result.nextCursor ?? "{}")).toMatchObject({
+      version: 2,
+      lastUid: 4,
+    });
   });
 
   it("returns attachment metadata only, never the parsed binary content", async () => {
