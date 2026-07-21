@@ -136,3 +136,32 @@ it("exposes strict Inbox contracts in both IPC maps", () => {
     ipcRequestSchemas["inbox:thread:get"].safeParse({ threadId: accountId }),
   ).toMatchObject({ success: true });
 });
+
+it("exposes a strict public-only linked Calendar source contract", () => {
+  const request = {
+    accountId: "b672d2e8-688b-48ac-a618-3294bfc96a99",
+    protocol: "caldav",
+    calendarUrl: "https://calendar.example/caldav/marcos",
+    displayName: "Trabalho",
+    color: "#FF7A1A",
+    timezone: "America/Sao_Paulo",
+  };
+  expect(
+    ipcRequestSchemas["calendar:source:createLinked"].safeParse(request)
+      .success,
+  ).toBe(true);
+  expect(
+    ipcRequestSchemas["calendar:source:createLinked"].safeParse({
+      ...request,
+      calendarUrl: "https://user:secret@calendar.example/feed.ics",
+    }).success,
+  ).toBe(false);
+  expect(
+    ipcRequestSchemas["calendar:source:createLinked"].safeParse({
+      ...request,
+      password: "secret",
+    }).success,
+  ).toBe(false);
+  expect(ipcChannels).toContain("calendar:source:createLinked");
+  expect(ipcResponseSchemas["calendar:source:createLinked"]).toBeDefined();
+});

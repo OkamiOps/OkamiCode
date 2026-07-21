@@ -26,6 +26,9 @@ import { secureWebPreferences } from "./window";
 import { InboxApplicationService } from "./inbox/application-service";
 import { ImapSyncAdapter } from "./inbox/imap-adapter";
 import { ReplyDispatchService } from "./inbox/reply-dispatch-service";
+import { CalendarService } from "./calendar/service";
+import { CalendarApplicationService } from "./calendar/application-service";
+import { RemoteCalendarAdapter } from "./calendar/remote-adapter";
 import type { Capability } from "./policy/action";
 import type { TaskId } from "../shared/ids";
 import { locateLocalBinary } from "./ecosystem/cli-capabilities";
@@ -324,6 +327,17 @@ async function bootstrap(): Promise<void> {
       recoveredReplyDispatches,
     });
   }
+  const calendarService = new CalendarApplicationService({
+    db: database,
+    calendar: new CalendarService({
+      db: database,
+      createId: randomUUID,
+      clock: () => new Date().toISOString(),
+    }),
+    synchronizer: new RemoteCalendarAdapter(inboxCredentialVault),
+    createId: randomUUID,
+    clock: () => new Date(),
+  });
   registerIpcHandlers({
     ipcMain,
     laneEffort,
@@ -335,6 +349,7 @@ async function bootstrap(): Promise<void> {
     memoryService,
     inboxService,
     inboxReplyDispatchService,
+    calendarService,
   });
 }
 

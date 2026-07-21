@@ -6,6 +6,7 @@ node_modules/
 dist/
 dist-electron/
 out/
+output/playwright/
 release/
 test-results/
 playwright-report/

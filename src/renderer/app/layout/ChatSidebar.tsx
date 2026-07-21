@@ -1,23 +1,7 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import {
-  Bot,
-  CalendarDays,
-  ChevronDown,
-  Columns3,
-  Cog,
-  FolderGit2,
-  Gauge,
-  Inbox,
-  Link2,
-  Pencil,
-  Plug,
-  Plus,
-  Search,
-  Trash2,
-  Zap,
-} from "lucide-react";
+import { Pencil, Plus, Search, Trash2 } from "lucide-react";
 import { useState, type KeyboardEvent } from "react";
-import { NavLink, useNavigate } from "react-router-dom";
+import { useNavigate } from "react-router-dom";
 import { workbenchApi, type WorkbenchTask } from "../../features/workbench/api";
 import { workbenchClient } from "../../lib/ipc/client";
 import { useWorkbenchStore } from "../../features/workbench/store";
@@ -30,19 +14,6 @@ export function ChatSidebar() {
   const [renamingId, setRenamingId] = useState<string | null>(null);
   const [renameDraft, setRenameDraft] = useState("");
   const [filter, setFilter] = useState("");
-
-  // The footer states the account and plan behind the quota, like Claude's.
-  const usage = useQuery({
-    queryKey: ["usage", "overview"],
-    queryFn: () => workbenchClient.usageOverview(),
-    staleTime: 60_000,
-  });
-  const plan =
-    usage.data && "subscriptions" in usage.data
-      ? (usage.data.subscriptions.find(
-          (snapshot) => snapshot.provider === "claude_max",
-        )?.plan ?? null)
-      : null;
 
   const tasksQuery = useQuery({
     queryKey: ["sessions"],
@@ -118,23 +89,7 @@ export function ChatSidebar() {
   );
 
   return (
-    <aside aria-label="Conversas" className="chat-sidebar">
-      <div className="chat-sidebar__brand">
-        <span aria-hidden="true" className="chat-sidebar__brand-mark">
-          <svg
-            fill="none"
-            height="15"
-            stroke="currentColor"
-            strokeWidth="2.4"
-            viewBox="0 0 24 24"
-            width="15"
-          >
-            <path d="M4 4l4 5 4-3 4 3 4-5v9a8 8 0 0 1-16 0z" />
-          </svg>
-        </span>
-        Okami
-      </div>
-
+    <aside aria-label="Conversas do Workbench" className="chat-sidebar">
       <button
         className="chat-new-button"
         disabled={createTask.isPending}
@@ -228,59 +183,6 @@ export function ChatSidebar() {
           </div>
         ))}
       </nav>
-
-      <footer className="chat-sidebar__footer">
-        <div className="chat-account">
-          <span aria-hidden="true" className="chat-account__avatar">
-            M
-          </span>
-          <span className="chat-account__meta">
-            Marcos
-            {plan && <small>{plan}</small>}
-          </span>
-          <ChevronDown aria-hidden="true" size={12} />
-        </div>
-        <NavLink className="chat-footer-link" to="/usage">
-          <Gauge aria-hidden="true" size={15} />
-          Uso e limites
-        </NavLink>
-        <NavLink className="chat-footer-link" to="/inbox">
-          <Inbox aria-hidden="true" size={15} />
-          Inbox
-        </NavLink>
-        <NavLink className="chat-footer-link" to="/calendar">
-          <CalendarDays aria-hidden="true" size={15} />
-          Agenda
-        </NavLink>
-        <NavLink className="chat-footer-link" to="/kanban">
-          <Columns3 aria-hidden="true" size={15} />
-          Kanban
-        </NavLink>
-        <NavLink className="chat-footer-link" to="/connections">
-          <Plug aria-hidden="true" size={15} />
-          Conexões
-        </NavLink>
-        <NavLink className="chat-footer-link" to="/memory">
-          <Link2 aria-hidden="true" size={15} />
-          Memória
-        </NavLink>
-        <NavLink className="chat-footer-link" to="/management">
-          <FolderGit2 aria-hidden="true" size={15} />
-          Gestão
-        </NavLink>
-        <NavLink className="chat-footer-link" to="/models">
-          <Zap aria-hidden="true" size={15} />
-          Modelos
-        </NavLink>
-        <NavLink className="chat-footer-link" to="/agents">
-          <Bot aria-hidden="true" size={15} />
-          Agentes
-        </NavLink>
-        <NavLink className="chat-footer-link" to="/settings">
-          <Cog aria-hidden="true" size={15} />
-          Configurações
-        </NavLink>
-      </footer>
     </aside>
   );
 }

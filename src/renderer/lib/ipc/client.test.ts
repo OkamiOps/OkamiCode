@@ -206,6 +206,7 @@ it("exposes exactly the enumerated command surface", () => {
     "memory:reindex",
     "calendar:sources:list",
     "calendar:source:createLocal",
+    "calendar:source:createLinked",
     "calendar:events:list",
     "calendar:event:createLocal",
     "calendar:event:updateLocal",
@@ -257,6 +258,19 @@ it("sends strict Calendar commands through the typed bridge", async () => {
     updatedAt: now,
   };
   const createLocal = vi.fn(async () => event);
+  const createLinked = vi.fn(async () => ({
+    id: sourceId,
+    kind: "caldav",
+    displayName: "Trabalho",
+    color: "#FF7A1A",
+    timezone: "UTC",
+    status: "active",
+    syncCursor: "cursor-1",
+    lastError: null,
+    lastSyncedAt: now,
+    createdAt: now,
+    updatedAt: now,
+  }));
   const deleteLocal = vi.fn(async () => ({ eventId, deleted: true }));
   Object.defineProperty(window, "okami", {
     configurable: true,
@@ -266,6 +280,7 @@ it("sends strict Calendar commands through the typed bridge", async () => {
         ...window.okami.invoke,
         "calendar:event:createLocal": createLocal,
         "calendar:event:deleteLocal": deleteLocal,
+        "calendar:source:createLinked": createLinked,
       },
     },
   });
@@ -286,6 +301,18 @@ it("sends strict Calendar commands through the typed bridge", async () => {
   ).resolves.toEqual({ eventId, deleted: true });
   expect(createLocal).toHaveBeenCalledWith(createRequest);
   expect(deleteLocal).toHaveBeenCalledWith({ eventId, sourceId });
+  const linkedRequest = {
+    accountId: sourceId,
+    protocol: "caldav" as const,
+    calendarUrl: "https://calendar.example/caldav/marcos",
+    displayName: "Trabalho",
+    color: "#FF7A1A",
+    timezone: "UTC",
+  };
+  await expect(
+    workbenchClient.calendarSourceCreateLinked(linkedRequest),
+  ).resolves.toMatchObject({ kind: "caldav", status: "active" });
+  expect(createLinked).toHaveBeenCalledWith(linkedRequest);
 });
 
 it("provides typed Inbox account and thread commands through the bridge", async () => {

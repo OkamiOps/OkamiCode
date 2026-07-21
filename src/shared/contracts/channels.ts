@@ -52,6 +52,7 @@ export const ipcChannels = [
   "memory:reindex",
   "calendar:sources:list",
   "calendar:source:createLocal",
+  "calendar:source:createLinked",
   "calendar:events:list",
   "calendar:event:createLocal",
   "calendar:event:updateLocal",

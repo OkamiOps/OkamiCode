@@ -1,5 +1,5 @@
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
-import { cleanup, render, screen } from "@testing-library/react";
+import { cleanup, fireEvent, render, screen } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { IpcResponse } from "../../../shared/contracts/ipc";
@@ -40,6 +40,46 @@ const sources = [
     updatedAt: now,
   },
 ] satisfies IpcResponse<"calendar:sources:list">;
+
+const remoteSource = {
+  id: "99999999-9999-4999-8999-999999999999",
+  kind: "caldav" as const,
+  displayName: "Agenda de clientes",
+  color: "#8B5CF6",
+  timezone: "Europe/Berlin",
+  status: "active" as const,
+  syncCursor: null,
+  lastError: null,
+  lastSyncedAt: now,
+  createdAt: now,
+  updatedAt: now,
+} satisfies IpcResponse<"calendar:sources:list">[number];
+
+const inboxAccounts = [
+  {
+    account: {
+      id: "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa",
+      provider: "zoho" as const,
+      displayName: "Marcos · trabalho",
+      address: "marcos@okamiops.com",
+      status: "connected" as const,
+      syncCursor: null,
+      lastError: null,
+      lastSyncedAt: now,
+      createdAt: now,
+      updatedAt: now,
+    },
+    configuration: {
+      host: "imap.zoho.eu",
+      port: 993,
+      secure: true,
+      mailbox: "INBOX",
+      maxInitialMessages: 100,
+      maxMessageBytes: 1_048_576,
+    },
+    hasCredential: true,
+  },
+] satisfies IpcResponse<"inbox:accounts:list">;
 
 const events = [
   {
@@ -131,6 +171,8 @@ function makeApi(overrides: Partial<CalendarApi> = {}): CalendarApi {
   return {
     listSources: vi.fn().mockResolvedValue(sources),
     createSource: vi.fn().mockResolvedValue(sources[0]),
+    listAccounts: vi.fn().mockResolvedValue(inboxAccounts),
+    createLinkedSource: vi.fn().mockResolvedValue(remoteSource),
     listEvents: vi.fn().mockResolvedValue(events),
     createEvent: vi.fn().mockResolvedValue(events[0]),
     ...overrides,
@@ -201,20 +243,61 @@ describe("CalendarPage", () => {
     expect(document.querySelector(".calendar-inspector--drawer")).toBeTruthy();
   });
 
+  it("offers a linked calendar from Inbox accounts before the local agenda fallback", async () => {
+    const { api } = renderCalendar();
+    await userEvent.click(
+      await screen.findByRole("button", { name: "Nova agenda" }),
+    );
+
+    expect(
+      await screen.findByRole("heading", { name: "Conectar agenda" }),
+    ).toBeVisible();
+    expect(screen.getByText("IMAP sozinho não lê sua agenda.")).toBeVisible();
+    expect(screen.getByLabelText("Conta do Inbox")).toHaveTextContent(
+      "Marcos · trabalho",
+    );
+    fireEvent.change(screen.getByLabelText("Conta do Inbox"), {
+      target: { value: inboxAccounts[0].account.id },
+    });
+    fireEvent.change(screen.getByLabelText("URL da agenda"), {
+      target: { value: "https://calendar.zoho.eu/caldav/marcos" },
+    });
+    fireEvent.change(screen.getByLabelText("Nome da agenda"), {
+      target: { value: "Zoho trabalho" },
+    });
+    await userEvent.click(
+      screen.getByRole("button", { name: "Vincular agenda" }),
+    );
+
+    await vi.waitFor(() =>
+      expect(api.createLinkedSource).toHaveBeenCalledWith({
+        accountId: inboxAccounts[0].account.id,
+        protocol: "caldav",
+        calendarUrl: "https://calendar.zoho.eu/caldav/marcos",
+        displayName: "Zoho trabalho",
+        color: "#FF7A1A",
+        timezone: Intl.DateTimeFormat().resolvedOptions().timeZone,
+      }),
+    );
+  });
+
   it("creates a local source with the exact typed request and refreshes", async () => {
     const { api } = renderCalendar();
     await userEvent.click(
       await screen.findByRole("button", { name: "Nova agenda" }),
     );
-    await userEvent.clear(screen.getByLabelText("Nome da agenda"));
-    await userEvent.type(screen.getByLabelText("Nome da agenda"), "Clientes");
-    await userEvent.clear(screen.getByLabelText("Cor da agenda"));
-    await userEvent.type(screen.getByLabelText("Cor da agenda"), "#FF7A1A");
-    await userEvent.clear(screen.getByLabelText("Fuso horário"));
-    await userEvent.type(
-      screen.getByLabelText("Fuso horário"),
-      "America/Sao_Paulo",
+    await userEvent.click(
+      await screen.findByRole("button", { name: "Criar agenda local" }),
     );
+    fireEvent.change(screen.getByLabelText("Nome da agenda"), {
+      target: { value: "Clientes" },
+    });
+    fireEvent.change(screen.getByLabelText("Cor da agenda"), {
+      target: { value: "#FF7A1A" },
+    });
+    fireEvent.change(screen.getByLabelText("Fuso horário"), {
+      target: { value: "America/Sao_Paulo" },
+    });
     await userEvent.click(screen.getByRole("button", { name: "Criar agenda" }));
 
     await vi.waitFor(() =>
@@ -344,7 +427,32 @@ describe("CalendarPage", () => {
     expect(api.createEvent).toHaveBeenCalledOnce();
   });
 
-  it("never renders events returned for a remote or unknown source", async () => {
+  it("renders returned active remote sources and requests events for every active source", async () => {
+    const remoteEvent = {
+      ...events[0],
+      id: "66666666-6666-4666-8666-666666666666",
+      sourceId: remoteSource.id,
+      title: "Reunião remota configurada",
+    };
+    const { api } = renderCalendar(
+      makeApi({
+        listSources: vi.fn().mockResolvedValue([...sources, remoteSource]),
+        listEvents: vi.fn().mockResolvedValue([...events, remoteEvent]),
+      }),
+    );
+
+    expect(await screen.findByText("Agenda de clientes")).toBeVisible();
+    expect(
+      await screen.findByRole("button", { name: /Reunião remota configurada/ }),
+    ).toBeVisible();
+    expect(vi.mocked(api.listEvents).mock.calls[0]?.[0]?.sourceIds).toEqual([
+      personalSourceId,
+      workSourceId,
+      remoteSource.id,
+    ]);
+  });
+
+  it("never renders events returned for an unknown or inactive source", async () => {
     const remoteEvent = {
       ...events[0],
       id: "66666666-6666-4666-8666-666666666666",
@@ -458,7 +566,7 @@ describe("CalendarPage", () => {
     renderCalendar(sourceApi);
     expect(
       await screen.findByRole("alert", { name: "Erro ao carregar agendas" }),
-    ).toHaveTextContent("Não foi possível carregar as agendas locais.");
+    ).toHaveTextContent("Não foi possível carregar as agendas.");
     await userEvent.click(
       screen.getByRole("button", { name: "Tentar novamente" }),
     );
@@ -473,7 +581,7 @@ describe("CalendarPage", () => {
     renderCalendar(makeApi({ listEvents }));
     expect(
       await screen.findByRole("alert", { name: "Erro ao carregar eventos" }),
-    ).toHaveTextContent("Não foi possível carregar os eventos locais.");
+    ).toHaveTextContent("Não foi possível carregar os eventos.");
     await userEvent.click(
       screen.getByRole("button", { name: "Tentar novamente" }),
     );
@@ -492,9 +600,8 @@ describe("CalendarPage", () => {
     );
     expect(
       await screen.findByRole("alert", { name: "Erro ao carregar agendas" }),
-    ).toHaveTextContent("Não foi possível carregar as agendas locais.");
-    expect(screen.getByText("Google · não configurado")).toBeVisible();
-    expect(screen.getByText("Outlook · não configurado")).toBeVisible();
+    ).toHaveTextContent("Não foi possível carregar as agendas.");
+    expect(screen.queryByLabelText("Provedores remotos")).toBeNull();
     expect(
       screen.queryByRole("button", { name: /Conectar|Sincronizar/i }),
     ).toBeNull();

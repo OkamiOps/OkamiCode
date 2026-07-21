@@ -1,13 +1,11 @@
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
-import { useState, type CSSProperties } from "react";
+import { useEffect, useState } from "react";
 import { Outlet, useLocation } from "react-router-dom";
 import {
   createWorkbenchStore,
   WorkbenchStoreContext,
 } from "../../features/workbench/store";
-import { ChatSidebar } from "./ChatSidebar";
 import { NavigationRail } from "./NavigationRail";
-import { ResizeHandle, useResizablePane } from "./ResizeHandle";
 
 // Kept for route components that still type their outlet context.
 export interface AppShellOutletContext {
@@ -37,45 +35,57 @@ export function AppShell() {
       }),
   );
   const [store] = useState(createWorkbenchStore);
-  const sidebar = useResizablePane({
-    storageKey: "okami.width.sidebar",
-    initial: 236,
-    min: 170,
-    max: 620,
-  });
-  const location = useLocation();
-  const isInbox = location.pathname === "/inbox";
-  const isCalendar = location.pathname === "/calendar";
+  const [collapsed, setCollapsed] = useState(
+    () =>
+      globalThis.localStorage?.getItem("okami.navigation.collapsed") === "true",
+  );
+
+  useEffect(() => {
+    globalThis.localStorage?.setItem(
+      "okami.navigation.collapsed",
+      String(collapsed),
+    );
+  }, [collapsed]);
 
   return (
     <QueryClientProvider client={queryClient}>
       <WorkbenchStoreContext.Provider value={store}>
-        {isInbox || isCalendar ? (
-          <div className={`inbox-shell${isCalendar ? " calendar-shell" : ""}`}>
-            <NavigationRail />
-            <main className="inbox-shell__main">
-              <Outlet context={emptyOutletContext} />
-            </main>
-          </div>
-        ) : (
-          <div
-            className="chat-shell"
-            style={
-              { "--chat-sidebar-w": `${sidebar.width}px` } as CSSProperties
-            }
-          >
-            <ChatSidebar />
-            <ResizeHandle
-              ariaLabel="Redimensionar a lista de conversas"
-              edge="right"
-              pane={sidebar}
-            />
-            <main className="chat-main">
-              <Outlet context={emptyOutletContext} />
-            </main>
-          </div>
-        )}
+        <ShellContent collapsed={collapsed} onCollapsedChange={setCollapsed} />
       </WorkbenchStoreContext.Provider>
     </QueryClientProvider>
+  );
+}
+
+function ShellContent({
+  collapsed,
+  onCollapsedChange,
+}: {
+  collapsed: boolean;
+  onCollapsedChange: (collapsed: boolean) => void;
+}) {
+  const location = useLocation();
+  const isInbox = location.pathname === "/inbox";
+  const isCalendar = location.pathname === "/calendar";
+  const shellClassName =
+    isInbox || isCalendar
+      ? `inbox-shell navigation-shell${isCalendar ? " calendar-shell" : ""}`
+      : "chat-shell navigation-shell";
+
+  return (
+    <div
+      className={shellClassName}
+      data-navigation-collapsed={collapsed || undefined}
+    >
+      <NavigationRail
+        collapsed={collapsed}
+        onCollapsedChange={onCollapsedChange}
+        showWorkbench={location.pathname === "/workbench"}
+      />
+      <main
+        className={isInbox || isCalendar ? "inbox-shell__main" : "chat-main"}
+      >
+        <Outlet context={emptyOutletContext} />
+      </main>
+    </div>
   );
 }

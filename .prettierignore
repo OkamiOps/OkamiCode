@@ -1,1 +1,13 @@
 docs/
+.cache/
+.claude/worktrees/
+.pnpm-store/
+.worktrees/
+dist/
+dist-electron/
+node_modules/
+out/
+output/playwright/
+playwright-report/
+release/
+test-results/

@@ -70,7 +70,7 @@ import { InboxReplyGenerationService } from "../inbox/reply-generation-service";
 import { InboxTaskActionService } from "../inbox/task-action-service";
 import { InboxOutgoingSettingsService } from "../inbox/outgoing-settings-service";
 import { ReplyDispatchService } from "../inbox/reply-dispatch-service";
-import { CalendarService } from "../calendar/service";
+import type { CalendarApplicationService } from "../calendar/application-service";
 
 export type { ModelCatalogEntry };
 
@@ -111,9 +111,10 @@ export type InboxReplyDispatchIpcService = Pick<
 >;
 
 export type CalendarIpcService = Pick<
-  CalendarService,
+  CalendarApplicationService,
   | "listSources"
   | "createLocalSource"
+  | "createLinkedSource"
   | "listEvents"
   | "createLocalEvent"
   | "updateLocalEvent"
@@ -227,13 +228,10 @@ export function registerIpcHandlers({
     }
     return inboxReplyDispatchService;
   };
-  let calendar = calendarService;
-  const getCalendarService = () =>
-    (calendar ??= new CalendarService({
-      db: state.database,
-      createId: state.createId,
-      clock: () => state.clock().toISOString(),
-    }));
+  const getCalendarService = () => {
+    if (!calendarService) throw new Error("Calendar is unavailable.");
+    return calendarService;
+  };
 
   for (const channel of ipcChannels) {
     ipcMain.handle(channel, async (event, payload) => {
@@ -491,6 +489,10 @@ async function dispatch(
     case "calendar:source:createLocal":
       return calendarService().createLocalSource(
         request as IpcRequest<"calendar:source:createLocal">,
+      );
+    case "calendar:source:createLinked":
+      return calendarService().createLinkedSource(
+        request as IpcRequest<"calendar:source:createLinked">,
       );
     case "calendar:events:list":
       return calendarService().listEvents(

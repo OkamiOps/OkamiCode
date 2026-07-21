@@ -64,6 +64,10 @@ function harness(
   const calendarService = {
     listSources: vi.fn(() => [source]),
     createLocalSource: vi.fn(() => source),
+    createLinkedSource: vi.fn(async () => ({
+      ...source,
+      kind: "caldav" as const,
+    })),
     listEvents: vi.fn(() => [timedEvent]),
     createLocalEvent: vi.fn(() => timedEvent),
     updateLocalEvent: vi.fn(() => timedEvent),
@@ -102,7 +106,7 @@ it("keeps the packaged file origin trusted across hash-routed Calendar navigatio
   expect(calendarService.listSources).toHaveBeenCalledOnce();
 });
 
-it("routes all six strict Calendar commands once with public data only", async () => {
+it("routes all seven strict Calendar commands once with public data only", async () => {
   const { calendarService, handlers, event } = harness();
 
   await expect(
@@ -115,6 +119,16 @@ it("routes all six strict Calendar commands once with public data only", async (
       timezone: "America/Sao_Paulo",
     }),
   ).resolves.toEqual(source);
+  await expect(
+    handlers.get("calendar:source:createLinked" as IpcChannel)?.(event, {
+      accountId: sourceId,
+      protocol: "caldav",
+      calendarUrl: "https://calendar.example/caldav/marcos",
+      displayName: "Trabalho",
+      color: "#FF7A1A",
+      timezone: "UTC",
+    }),
+  ).resolves.toMatchObject({ kind: "caldav" });
   await expect(
     handlers.get("calendar:events:list" as IpcChannel)?.(event, {
       sourceIds: [sourceId],
@@ -148,6 +162,7 @@ it("routes all six strict Calendar commands once with public data only", async (
 
   expect(calendarService.listSources).toHaveBeenCalledOnce();
   expect(calendarService.createLocalSource).toHaveBeenCalledOnce();
+  expect(calendarService.createLinkedSource).toHaveBeenCalledOnce();
   expect(calendarService.listEvents).toHaveBeenCalledOnce();
   expect(calendarService.createLocalEvent).toHaveBeenCalledOnce();
   expect(calendarService.updateLocalEvent).toHaveBeenCalledOnce();
@@ -160,6 +175,7 @@ it("routes all six strict Calendar commands once with public data only", async (
   ).toEqual([
     "calendar:sources:list",
     "calendar:source:createLocal",
+    "calendar:source:createLinked",
     "calendar:events:list",
     "calendar:event:createLocal",
     "calendar:event:updateLocal",

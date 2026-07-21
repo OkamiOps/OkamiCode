@@ -1333,6 +1333,17 @@ export const calendarCreateLocalSourceRequestSchema = z
   })
   .strict();
 
+export const calendarCreateLinkedSourceRequestSchema = z
+  .object({
+    accountId: entityIdSchema,
+    protocol: z.enum(["caldav", "ics"]),
+    calendarUrl: calendarSafeHttpUrlSchema,
+    displayName: calendarTextSchema(255),
+    color: z.string().regex(/^#[0-9A-Fa-f]{6}$/u),
+    timezone: calendarTextSchema(255),
+  })
+  .strict();
+
 export const calendarCreateLocalEventRequestSchema = z.discriminatedUnion(
   "allDay",
   [
@@ -1459,6 +1470,7 @@ export const ipcRequestSchemas = {
   "memory:reindex": memoryReindexRequestSchema,
   "calendar:sources:list": emptyRequestSchema,
   "calendar:source:createLocal": calendarCreateLocalSourceRequestSchema,
+  "calendar:source:createLinked": calendarCreateLinkedSourceRequestSchema,
   "calendar:events:list": calendarListEventsRequestSchema,
   "calendar:event:createLocal": calendarCreateLocalEventRequestSchema,
   "calendar:event:updateLocal": calendarUpdateLocalEventRequestSchema,
@@ -1536,6 +1548,7 @@ export const ipcResponseSchemas = {
     .strict(),
   "calendar:sources:list": z.array(calendarSourceSchema),
   "calendar:source:createLocal": calendarSourceSchema,
+  "calendar:source:createLinked": calendarSourceSchema,
   "calendar:events:list": z.array(calendarEventSchema),
   "calendar:event:createLocal": calendarEventSchema,
   "calendar:event:updateLocal": calendarEventSchema,

@@ -7,6 +7,7 @@ import {
   Check,
   Clock3,
   ExternalLink,
+  Link2,
   MapPin,
   Plus,
   Radio,
@@ -24,7 +25,10 @@ import { workbenchClient } from "../../lib/ipc/client";
 
 type CalendarSource = IpcResponse<"calendar:sources:list">[number];
 type CalendarEvent = IpcResponse<"calendar:events:list">[number];
+type InboxAccount = IpcResponse<"inbox:accounts:list">[number];
 type CalendarView = "day" | "week" | "month";
+type SourceMode = "linked" | "local";
+type CreateLinkedSourceRequest = IpcRequest<"calendar:source:createLinked">;
 
 const HOURS = Array.from({ length: 24 }, (_, index) => index);
 const WEEKDAY_LABELS = ["SEG", "TER", "QUA", "QUI", "SEX", "SÁB", "DOM"];
@@ -32,9 +36,13 @@ const MINUTES_IN_DAY = 24 * 60;
 
 export interface CalendarApi {
   listSources(): Promise<IpcResponse<"calendar:sources:list">>;
+  listAccounts(): Promise<IpcResponse<"inbox:accounts:list">>;
   createSource(
     request: IpcRequest<"calendar:source:createLocal">,
   ): Promise<IpcResponse<"calendar:source:createLocal">>;
+  createLinkedSource(
+    request: CreateLinkedSourceRequest,
+  ): Promise<CalendarSource>;
   listEvents(
     request: IpcRequest<"calendar:events:list">,
   ): Promise<IpcResponse<"calendar:events:list">>;
@@ -45,12 +53,12 @@ export interface CalendarApi {
 
 const defaultApi: CalendarApi = {
   listSources: workbenchClient.calendarSourcesList,
+  listAccounts: workbenchClient.inboxAccountsList,
   createSource: workbenchClient.calendarSourceCreateLocal,
+  createLinkedSource: workbenchClient.calendarSourceCreateLinked,
   listEvents: workbenchClient.calendarEventsList,
   createEvent: workbenchClient.calendarEventCreateLocal,
 };
-
-const remoteSources = ["Google", "Outlook", "CalDAV", "ICS"] as const;
 
 export function CalendarPage({
   api = defaultApi,
@@ -68,9 +76,15 @@ export function CalendarPage({
   );
   const [sourceFilter, setSourceFilter] = useState<Set<string> | null>(null);
   const [selectedEventId, setSelectedEventId] = useState<string | null>(null);
+  const [sourceMode, setSourceMode] = useState<SourceMode>("linked");
   const [sourceName, setSourceName] = useState("");
   const [sourceColor, setSourceColor] = useState("#FF7A1A");
   const [sourceTimezone, setSourceTimezone] = useState(defaultTimezone);
+  const [linkedAccountId, setLinkedAccountId] = useState("");
+  const [linkedProtocol, setLinkedProtocol] = useState<"caldav" | "ics">(
+    "caldav",
+  );
+  const [linkedCalendarUrl, setLinkedCalendarUrl] = useState("");
   const [eventTitle, setEventTitle] = useState("");
   const [eventSourceId, setEventSourceId] = useState("");
   const [eventTimezone, setEventTimezone] = useState(defaultTimezone);
@@ -93,16 +107,29 @@ export function CalendarPage({
     queryKey: ["calendar", "sources"],
     queryFn: api.listSources,
   });
-  const localSources = useMemo(
+  const accounts = useQuery({
+    queryKey: ["inbox", "accounts"],
+    queryFn: api.listAccounts,
+  });
+  const effectiveLinkedAccountId =
+    linkedAccountId || accounts.data?.[0]?.account.id || "";
+  const readableSources = useMemo(
     () =>
       (sources.data ?? []).filter(
-        (source) => source.kind === "local" && source.status === "active",
+        (source) => source.status === "active" || source.status === "degraded",
       ),
     [sources.data],
   );
-  const localSourceIds = useMemo(
-    () => localSources.map((source) => source.id),
-    [localSources],
+  const localSources = useMemo(
+    () =>
+      readableSources.filter(
+        (source) => source.kind === "local" && source.status === "active",
+      ),
+    [readableSources],
+  );
+  const readableSourceIds = useMemo(
+    () => readableSources.map((source) => source.id),
+    [readableSources],
   );
   const events = useQuery({
     queryKey: [
@@ -110,12 +137,12 @@ export function CalendarPage({
       "events",
       range.startDate,
       range.endDate,
-      localSourceIds,
+      readableSourceIds,
     ],
-    enabled: sources.isSuccess && localSourceIds.length > 0,
+    enabled: sources.isSuccess && readableSourceIds.length > 0,
     queryFn: () =>
       api.listEvents({
-        sourceIds: localSourceIds,
+        sourceIds: readableSourceIds,
         startsAt: range.startsAt,
         endsAt: range.endsAt,
         startDate: range.startDate,
@@ -123,20 +150,20 @@ export function CalendarPage({
       }),
   });
   const visibleEvents = useMemo(() => {
-    const localSourceIdSet = new Set(localSourceIds);
+    const readableSourceIdSet = new Set(readableSourceIds);
     const visibleSourceIds = sourceFilter;
     return (events.data ?? []).filter(
       (event) =>
-        localSourceIdSet.has(event.sourceId) &&
+        readableSourceIdSet.has(event.sourceId) &&
         (!visibleSourceIds || visibleSourceIds.has(event.sourceId)),
     );
-  }, [events.data, localSourceIds, sourceFilter]);
+  }, [events.data, readableSourceIds, sourceFilter]);
   const selectedEvent = visibleEvents.find(
     (event) => event.id === selectedEventId,
   );
   const sourceById = useMemo(
-    () => new Map(localSources.map((source) => [source.id, source])),
-    [localSources],
+    () => new Map((sources.data ?? []).map((source) => [source.id, source])),
+    [sources.data],
   );
 
   const refreshSources = () =>
@@ -149,6 +176,16 @@ export function CalendarPage({
     onSuccess: () => {
       sourceModal.close();
       setSourceName("");
+      void refreshSources();
+    },
+  });
+  const createLinkedSource = useMutation({
+    mutationFn: (request: CreateLinkedSourceRequest) =>
+      api.createLinkedSource(request),
+    onSuccess: () => {
+      sourceModal.close();
+      setSourceName("");
+      setLinkedCalendarUrl("");
       void refreshSources();
     },
   });
@@ -176,6 +213,11 @@ export function CalendarPage({
     setCalendarAnchor(dateInTimezone(new Date(), displayTimezone));
   }
 
+  function openSourceModal() {
+    setSourceMode("linked");
+    sourceModal.open();
+  }
+
   function toggleSource(sourceId: string) {
     const selected = new Set(
       sourceFilter ?? (sources.data ?? []).map((source) => source.id),
@@ -195,6 +237,25 @@ export function CalendarPage({
     });
   }
 
+  function submitLinkedSource(event: FormEvent) {
+    event.preventDefault();
+    if (
+      !effectiveLinkedAccountId ||
+      !linkedCalendarUrl.trim() ||
+      !sourceName.trim()
+    ) {
+      return;
+    }
+    createLinkedSource.mutate({
+      accountId: effectiveLinkedAccountId,
+      protocol: linkedProtocol,
+      calendarUrl: linkedCalendarUrl.trim(),
+      displayName: sourceName.trim(),
+      color: sourceColor.trim(),
+      timezone: sourceTimezone.trim(),
+    });
+  }
+
   function openEventModal() {
     if (!eventSourceId && localSources[0]) {
       setEventSourceId(localSources[0].id);
@@ -206,7 +267,13 @@ export function CalendarPage({
 
   function submitEvent(event: FormEvent) {
     event.preventDefault();
-    if (!eventTitle.trim() || !eventSourceId) return;
+    if (
+      !eventTitle.trim() ||
+      !eventSourceId ||
+      !localSources.some((source) => source.id === eventSourceId)
+    ) {
+      return;
+    }
     if (allDay) {
       createEvent.mutate({
         sourceId: eventSourceId,
@@ -251,21 +318,21 @@ export function CalendarPage({
             aria-label="Nova agenda"
             className="calendar-icon-action"
             isIconOnly
-            onPress={sourceModal.open}
+            onPress={openSourceModal}
             variant="ghost"
           >
             <Plus aria-hidden="true" size={17} />
           </Button>
         </header>
         <div className="calendar-sources__scroll">
-          {sources.isLoading && <State label="Carregando agendas locais…" />}
+          {sources.isLoading && <State label="Carregando agendas…" />}
           {sources.isError && (
             <div
               aria-label="Erro ao carregar agendas"
               className="calendar-state calendar-state--error"
               role="alert"
             >
-              <span>Não foi possível carregar as agendas locais.</span>
+              <span>Não foi possível carregar as agendas.</span>
               <Button
                 className="calendar-retry"
                 onPress={() => void sources.refetch()}
@@ -277,14 +344,18 @@ export function CalendarPage({
           )}
           {!sources.isLoading &&
             !sources.isError &&
-            localSources.length === 0 && (
-              <State busy={false} label="Nenhuma agenda local criada ainda." />
+            readableSources.length === 0 && (
+              <State
+                busy={false}
+                label="Nenhuma agenda conectada ou local criada ainda."
+              />
             )}
           <div className="calendar-source-list">
-            {localSources.map((source) => {
+            {(sources.data ?? []).map((source) => {
               const active = !sourceFilter || sourceFilter.has(source.id);
               return (
                 <button
+                  aria-label={`${source.displayName} · ${calendarSourceStatus(source)}`}
                   aria-pressed={active}
                   className="calendar-source-row"
                   data-active={active}
@@ -297,18 +368,19 @@ export function CalendarPage({
                     className="calendar-source-row__dot"
                     style={{ backgroundColor: source.color }}
                   />
-                  <span>{source.displayName}</span>
-                  {active && <Check aria-hidden="true" size={14} />}
+                  <span title={source.lastError ?? undefined}>
+                    {source.displayName}
+                  </span>
+                  <span className="calendar-source-row__meta">
+                    {calendarSourceStatus(source)}
+                  </span>
+                  {active && source.status === "active" && (
+                    <Check aria-hidden="true" size={14} />
+                  )}
                 </button>
               );
             })}
           </div>
-          <section className="calendar-remote" aria-label="Provedores remotos">
-            <span className="calendar-eyebrow">REMOTOS</span>
-            {remoteSources.map((source) => (
-              <p key={source}>{source} · não configurado</p>
-            ))}
-          </section>
         </div>
       </aside>
 
@@ -379,7 +451,7 @@ export function CalendarPage({
             className="calendar-state calendar-state--error calendar-state--surface"
             role="alert"
           >
-            <span>Não foi possível carregar os eventos locais.</span>
+            <span>Não foi possível carregar os eventos.</span>
             <Button
               className="calendar-retry"
               onPress={() => void events.refetch()}
@@ -430,11 +502,23 @@ export function CalendarPage({
       </aside>
 
       <SourceModal
+        accounts={accounts.data ?? []}
+        accountsError={accounts.isError}
+        accountsLoading={accounts.isLoading}
         color={sourceColor}
-        error={createSource.isError}
+        error={createSource.isError || createLinkedSource.isError}
+        linkedAccountId={effectiveLinkedAccountId}
+        linkedCalendarUrl={linkedCalendarUrl}
+        linkedProtocol={linkedProtocol}
+        mode={sourceMode}
         name={sourceName}
+        onAccountChange={setLinkedAccountId}
         onColorChange={setSourceColor}
+        onCalendarUrlChange={setLinkedCalendarUrl}
+        onLinkedSubmit={submitLinkedSource}
+        onModeChange={setSourceMode}
         onNameChange={setSourceName}
+        onProtocolChange={setLinkedProtocol}
         onSubmit={submitSource}
         onTimezoneChange={setSourceTimezone}
         state={sourceModal}
@@ -832,35 +916,69 @@ function EventInspector({
 
 function SourceModal({
   state,
+  mode,
+  accounts,
+  accountsLoading,
+  accountsError,
   name,
   color,
   timezone,
+  linkedAccountId,
+  linkedProtocol,
+  linkedCalendarUrl,
   error,
+  onModeChange,
+  onAccountChange,
+  onProtocolChange,
+  onCalendarUrlChange,
   onNameChange,
   onColorChange,
   onTimezoneChange,
+  onLinkedSubmit,
   onSubmit,
 }: {
   state: ReturnType<typeof useOverlayState>;
+  mode: SourceMode;
+  accounts: InboxAccount[];
+  accountsLoading: boolean;
+  accountsError: boolean;
   name: string;
   color: string;
   timezone: string;
+  linkedAccountId: string;
+  linkedProtocol: "caldav" | "ics";
+  linkedCalendarUrl: string;
   error: boolean;
+  onModeChange: (mode: SourceMode) => void;
+  onAccountChange: (value: string) => void;
+  onProtocolChange: (value: "caldav" | "ics") => void;
+  onCalendarUrlChange: (value: string) => void;
   onNameChange: (value: string) => void;
   onColorChange: (value: string) => void;
   onTimezoneChange: (value: string) => void;
+  onLinkedSubmit: (event: FormEvent) => void;
   onSubmit: (event: FormEvent) => void;
 }) {
+  const linked = mode === "linked";
   return (
     <Modal.Root state={state}>
       <Modal.Backdrop className="calendar-modal-backdrop">
-        <Modal.Container className="calendar-modal" placement="center">
-          <Modal.Dialog>
-            <form onSubmit={onSubmit}>
+        <Modal.Container
+          className="calendar-modal-container calendar-modal-container--source"
+          placement="center"
+        >
+          <Modal.Dialog className="calendar-modal calendar-modal--source">
+            <form onSubmit={linked ? onLinkedSubmit : onSubmit}>
               <Modal.Header className="calendar-modal__header">
                 <div>
-                  <Modal.Heading>Nova agenda local</Modal.Heading>
-                  <p>Dados guardados apenas neste Mac.</p>
+                  <Modal.Heading>
+                    {linked ? "Conectar agenda" : "Nova agenda local"}
+                  </Modal.Heading>
+                  <p>
+                    {linked
+                      ? "Escolha uma conta já conectada e informe a agenda a vincular."
+                      : "Dados guardados apenas neste Mac."}
+                  </p>
                 </div>
                 <Modal.CloseTrigger
                   aria-label="Fechar"
@@ -870,14 +988,104 @@ function SourceModal({
                 </Modal.CloseTrigger>
               </Modal.Header>
               <Modal.Body className="calendar-modal__body">
-                <label>
-                  Nome da agenda
-                  <input
-                    aria-label="Nome da agenda"
-                    onChange={(event) => onNameChange(event.target.value)}
-                    value={name}
-                  />
-                </label>
+                {linked ? (
+                  <>
+                    <div className="calendar-modal__notice">
+                      <Link2 aria-hidden="true" size={16} />
+                      <p>
+                        <strong>IMAP sozinho não lê sua agenda.</strong> Use uma
+                        URL CalDAV ou ICS da conta conectada.
+                      </p>
+                    </div>
+                    {accountsLoading ? (
+                      <State label="Carregando contas do Inbox…" />
+                    ) : accountsError ? (
+                      <p className="calendar-modal__error" role="alert">
+                        Não foi possível carregar as contas do Inbox.
+                      </p>
+                    ) : accounts.length === 0 ? (
+                      <p className="calendar-modal__empty">
+                        Nenhuma conta conectada no Inbox. Adicione uma conta
+                        antes de vincular uma agenda.
+                      </p>
+                    ) : (
+                      <label>
+                        Conta do Inbox
+                        <select
+                          aria-label="Conta do Inbox"
+                          onChange={(event) =>
+                            onAccountChange(event.target.value)
+                          }
+                          value={linkedAccountId}
+                        >
+                          {accounts.map(({ account }) => (
+                            <option key={account.id} value={account.id}>
+                              {account.displayName} · {account.address}
+                            </option>
+                          ))}
+                        </select>
+                      </label>
+                    )}
+                    <div className="calendar-modal__split">
+                      <label>
+                        Protocolo
+                        <select
+                          aria-label="Protocolo da agenda"
+                          onChange={(event) =>
+                            onProtocolChange(
+                              event.target.value as "caldav" | "ics",
+                            )
+                          }
+                          value={linkedProtocol}
+                        >
+                          <option value="caldav">CalDAV</option>
+                          <option value="ics">ICS</option>
+                        </select>
+                      </label>
+                      <label>
+                        Fuso horário
+                        <input
+                          aria-label="Fuso horário"
+                          onChange={(event) =>
+                            onTimezoneChange(event.target.value)
+                          }
+                          value={timezone}
+                        />
+                      </label>
+                    </div>
+                    <label>
+                      URL da agenda
+                      <input
+                        aria-label="URL da agenda"
+                        onChange={(event) =>
+                          onCalendarUrlChange(event.target.value)
+                        }
+                        placeholder="https://calendar.example.com/principal"
+                        type="url"
+                        value={linkedCalendarUrl}
+                      />
+                    </label>
+                  </>
+                ) : (
+                  <label>
+                    Nome da agenda
+                    <input
+                      aria-label="Nome da agenda"
+                      onChange={(event) => onNameChange(event.target.value)}
+                      value={name}
+                    />
+                  </label>
+                )}
+                {linked && (
+                  <label>
+                    Nome da agenda
+                    <input
+                      aria-label="Nome da agenda"
+                      onChange={(event) => onNameChange(event.target.value)}
+                      value={name}
+                    />
+                  </label>
+                )}
                 <label>
                   Cor da agenda
                   <input
@@ -886,27 +1094,43 @@ function SourceModal({
                     value={color}
                   />
                 </label>
-                <label>
-                  Fuso horário
-                  <input
-                    aria-label="Fuso horário"
-                    onChange={(event) => onTimezoneChange(event.target.value)}
-                    value={timezone}
-                  />
-                </label>
+                {!linked && (
+                  <label>
+                    Fuso horário
+                    <input
+                      aria-label="Fuso horário"
+                      onChange={(event) => onTimezoneChange(event.target.value)}
+                      value={timezone}
+                    />
+                  </label>
+                )}
                 {error && (
                   <p className="calendar-modal__error" role="alert">
-                    Não foi possível criar a agenda local.
+                    Não foi possível {linked ? "vincular" : "criar"} a agenda.
                   </p>
                 )}
               </Modal.Body>
               <Modal.Footer className="calendar-modal__footer">
                 <Button
+                  className="calendar-secondary-action"
+                  onPress={() => onModeChange(linked ? "local" : "linked")}
+                  type="button"
+                  variant="ghost"
+                >
+                  {linked ? "Criar agenda local" : "Vincular uma conta"}
+                </Button>
+                <Button
                   className="calendar-primary-action"
-                  isDisabled={!name.trim()}
+                  isDisabled={
+                    linked
+                      ? !linkedAccountId ||
+                        !linkedCalendarUrl.trim() ||
+                        !name.trim()
+                      : !name.trim()
+                  }
                   type="submit"
                 >
-                  Criar agenda
+                  {linked ? "Vincular agenda" : "Criar agenda"}
                 </Button>
               </Modal.Footer>
             </form>
@@ -965,8 +1189,11 @@ function EventModal({
   return (
     <Modal.Root state={state}>
       <Modal.Backdrop className="calendar-modal-backdrop">
-        <Modal.Container className="calendar-modal" placement="center">
-          <Modal.Dialog>
+        <Modal.Container
+          className="calendar-modal-container"
+          placement="center"
+        >
+          <Modal.Dialog className="calendar-modal">
             <form onSubmit={onSubmit}>
               <Modal.Header className="calendar-modal__header">
                 <div>
@@ -1195,6 +1422,17 @@ function timeRange(
   displayTimezone: string,
 ) {
   return `${formatTime(event.startsAt, displayTimezone)} — ${formatTime(event.endsAt, displayTimezone)}`;
+}
+
+function calendarSourceStatus(source: CalendarSource): string {
+  if (source.status === "degraded") return "Falha na sincronização";
+  if (source.status === "paused") return "Pausada";
+  if (source.status === "not_configured") return "Configuração pendente";
+  if (source.kind === "local") return "Local";
+  if (source.kind === "caldav") return "CalDAV";
+  if (source.kind === "ics") return "ICS";
+  if (source.kind === "google") return "Google";
+  return "Outlook";
 }
 
 function startOfWeekDate(day: string) {

@@ -141,6 +141,9 @@ export const workbenchClient = {
   calendarSourceCreateLocal: (
     request: IpcRequest<"calendar:source:createLocal">,
   ) => invokeCommand("calendar:source:createLocal", request),
+  calendarSourceCreateLinked: (
+    request: IpcRequest<"calendar:source:createLinked">,
+  ) => invokeCommand("calendar:source:createLinked", request),
   calendarEventsList: (request: IpcRequest<"calendar:events:list"> = {}) =>
     invokeCommand("calendar:events:list", request),
   calendarEventCreateLocal: (

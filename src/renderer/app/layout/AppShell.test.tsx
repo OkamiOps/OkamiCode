@@ -13,6 +13,7 @@ describe("AppShell", () => {
   afterEach(cleanup);
 
   beforeEach(() => {
+    localStorage.clear();
     installOkamiMock({ "task:list": [], "lane:list": [] });
   });
 
@@ -27,18 +28,44 @@ describe("AppShell", () => {
     expect(usage).toHaveAttribute("aria-current", "page");
   });
 
-  it("shows the chat sidebar with the new conversation action", async () => {
+  it("keeps one expanded global navigation with workbench conversations", async () => {
     renderApp("/workbench");
 
     expect(
-      await screen.findByRole("button", { name: "Nova conversa" }),
+      await screen.findByRole("navigation", { name: "Navegação principal" }),
     ).toBeVisible();
+    expect(screen.getByRole("link", { name: "Workbench" })).toBeVisible();
+    expect(screen.getByRole("button", { name: "Nova conversa" })).toBeVisible();
     expect(
       screen.getByRole("navigation", { name: "Histórico de conversas" }),
     ).toBeVisible();
   });
 
-  it("uses the dedicated inbox shell without the coding conversation sidebar", async () => {
+  it("persists a collapsed navigation across routes while keeping destinations accessible", async () => {
+    const user = userEvent.setup();
+    renderApp("/workbench");
+
+    await user.click(
+      await screen.findByRole("button", { name: "Recolher navegação" }),
+    );
+
+    expect(localStorage.getItem("okami.navigation.collapsed")).toBe("true");
+    expect(screen.queryByText("Nova conversa")).toBeNull();
+    expect(screen.queryByText("Histórico de conversas")).toBeNull();
+    expect(screen.getByRole("link", { name: "Uso e limites" })).toBeVisible();
+    expect(
+      screen.getByRole("button", { name: "Expandir navegação" }),
+    ).toBeVisible();
+
+    await user.click(screen.getByRole("link", { name: "Inbox" }));
+
+    expect(await screen.findByRole("heading", { name: "Inbox" })).toBeVisible();
+    expect(screen.getByRole("link", { name: "Inbox" })).toBeVisible();
+    expect(screen.queryByRole("button", { name: "Nova conversa" })).toBeNull();
+    expect(screen.queryByText("Uso e limites")).toBeNull();
+  });
+
+  it("uses the global navigation on inbox instead of a route-specific rail", async () => {
     const { container } = renderApp("/inbox");
 
     expect(await screen.findByRole("heading", { name: "Inbox" })).toBeVisible();
@@ -51,6 +78,7 @@ describe("AppShell", () => {
     const shell = container.querySelector(".inbox-shell");
     expect(shell).toBeTruthy();
     expect(shell?.firstElementChild).toHaveClass("navigation-rail");
+    expect(shell?.firstElementChild).toHaveClass("navigation-rail--expanded");
     expect(shell?.lastElementChild).toHaveClass("inbox-shell__main");
   });
 });

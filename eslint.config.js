@@ -7,9 +7,13 @@ import tseslint from "typescript-eslint";
 export default defineConfig(
   globalIgnores([
     ".cache/**",
+    ".claude/worktrees/**",
+    ".pnpm-store/**",
+    ".worktrees/**",
     "dist/**",
     "dist-electron/**",
     "out/**",
+    "output/playwright/**",
     "release/**",
     "test-results/**",
     "playwright-report/**",

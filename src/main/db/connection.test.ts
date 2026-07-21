@@ -11,7 +11,7 @@ describe("openDatabase", () => {
     const key = Buffer.alloc(32, 7);
     const db = openDatabase(file, key);
     expect(db.prepare("SELECT sqlite3mc_version()").pluck().get()).toBeTruthy();
-    expect(db.pragma("user_version", { simple: true })).toBe(13);
+    expect(db.pragma("user_version", { simple: true })).toBe(14);
     const settingsSql = db
       .prepare(
         "SELECT sql FROM sqlite_master WHERE type = 'table' AND name = 'inbox_account_settings'",
@@ -55,6 +55,14 @@ describe("openDatabase", () => {
       "CHECK(kind IN ('local', 'google', 'outlook', 'caldav', 'ics'))",
     );
     expect(calendarSql).not.toMatch(/credential|secret|token|password/i);
+    const linkedCalendarSql = db
+      .prepare(
+        "SELECT sql FROM sqlite_master WHERE type = 'table' AND name = 'calendar_linked_sources'",
+      )
+      .pluck()
+      .get() as string;
+    expect(linkedCalendarSql).toContain("REFERENCES connector_accounts(id)");
+    expect(linkedCalendarSql).not.toMatch(/credential|secret|token|password/i);
     expect(() =>
       db
         .prepare(
