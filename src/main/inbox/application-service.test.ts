@@ -125,6 +125,46 @@ function addInput(overrides: Record<string, unknown> = {}) {
 }
 
 describe("InboxApplicationService", () => {
+  it("marks every provider message seen before updating the local thread", async () => {
+    const setMessagesSeen = vi.fn().mockResolvedValue(undefined);
+    const { service } = fixture({
+      sync: async (input: { account: { id: string } }) =>
+        batch(input.account.id),
+      setMessagesSeen,
+    } as never);
+    const added = await service.addImapAccount(addInput());
+    await service.syncAccount(added.account.id);
+    const selected = service.listThreads().threads[0]!;
+
+    await expect(service.markThreadRead(selected.id)).resolves.toMatchObject({
+      id: selected.id,
+      unreadCount: 0,
+    });
+    expect(setMessagesSeen).toHaveBeenCalledWith(
+      expect.objectContaining({
+        account: expect.objectContaining({ id: added.account.id }),
+        externalMessageIds: ["message-1"],
+        seen: true,
+      }),
+    );
+  });
+
+  it("keeps an unread thread local when marking it seen fails remotely", async () => {
+    const { service } = fixture({
+      sync: async (input: { account: { id: string } }) =>
+        batch(input.account.id),
+      setMessagesSeen: vi.fn().mockRejectedValue(new ImapSyncError()),
+    } as never);
+    const added = await service.addImapAccount(addInput());
+    await service.syncAccount(added.account.id);
+    const selected = service.listThreads().threads[0]!;
+
+    await expect(service.markThreadRead(selected.id)).rejects.toThrow(
+      "Não foi possível marcar a conversa como lida.",
+    );
+    expect(service.getThread(selected.id).thread.unreadCount).toBe(1);
+  });
+
   it("marks every provider message unseen before updating the local thread", async () => {
     const setMessagesSeen = vi.fn().mockResolvedValue(undefined);
     const { service } = fixture({
@@ -135,7 +175,7 @@ describe("InboxApplicationService", () => {
     const added = await service.addImapAccount(addInput());
     await service.syncAccount(added.account.id);
     const selected = service.listThreads().threads[0]!;
-    service.markThreadRead(selected.id);
+    await service.markThreadRead(selected.id);
 
     await expect(service.markThreadUnread(selected.id)).resolves.toMatchObject({
       id: selected.id,
@@ -151,15 +191,19 @@ describe("InboxApplicationService", () => {
   });
 
   it("keeps a read thread local when marking it unseen fails remotely", async () => {
+    const setMessagesSeen = vi
+      .fn()
+      .mockResolvedValueOnce(undefined)
+      .mockRejectedValueOnce(new ImapSyncError());
     const { service } = fixture({
       sync: async (input: { account: { id: string } }) =>
         batch(input.account.id),
-      setMessagesSeen: vi.fn().mockRejectedValue(new ImapSyncError()),
+      setMessagesSeen,
     } as never);
     const added = await service.addImapAccount(addInput());
     await service.syncAccount(added.account.id);
     const selected = service.listThreads().threads[0]!;
-    service.markThreadRead(selected.id);
+    await service.markThreadRead(selected.id);
 
     await expect(service.markThreadUnread(selected.id)).rejects.toThrow(
       "Não foi possível marcar a conversa como não lida.",
@@ -534,7 +578,10 @@ describe("InboxApplicationService", () => {
   });
 
   it("applies a successful sync and delegates thread reads and local mutations to InboxService", async () => {
-    const { service } = fixture();
+    const { service } = fixture({
+      sync: async (input) => batch(input.account.id),
+      setMessagesSeen: vi.fn().mockResolvedValue(undefined),
+    });
     const added = await service.addImapAccount(addInput());
 
     await expect(service.syncAccount(added.account.id)).resolves.toMatchObject({
@@ -543,7 +590,9 @@ describe("InboxApplicationService", () => {
     });
     const thread = service.listThreads().threads[0];
     expect(service.getThread(thread.id).messages).toHaveLength(1);
-    expect(service.markThreadRead(thread.id).unreadCount).toBe(0);
+    await expect(service.markThreadRead(thread.id)).resolves.toMatchObject({
+      unreadCount: 0,
+    });
   });
 
   it("marks a credential-less account auth_required without creating an adapter", async () => {

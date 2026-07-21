@@ -88,7 +88,7 @@ function harness() {
       },
       messages: [],
     })),
-    markThreadRead: vi.fn(() => ({
+    markThreadRead: vi.fn(async () => ({
       id: threadId,
       accountId,
       externalThreadId: "x",

@@ -304,8 +304,33 @@ export class InboxApplicationService {
     return this.inbox.getThread(id);
   }
 
-  markThreadRead(id: string): InboxThread {
-    return this.inbox.markThreadRead(id);
+  async markThreadRead(id: string): Promise<InboxThread> {
+    const detail = this.inbox.getThread(id);
+    const account = this.findAccount(detail.thread.accountId);
+    const configuration = this.findConfiguration(detail.thread.accountId);
+    if (!account || !configuration) throw new InboxApplicationError();
+    const adapter = this.options.createAdapter(this.options.vault);
+    if (!adapter.setMessagesSeen) throw new InboxApplicationError();
+
+    try {
+      await adapter.setMessagesSeen({
+        account,
+        configuration,
+        externalMessageIds: detail.messages.map(
+          (message) => message.externalMessageId,
+        ),
+        seen: true,
+      });
+      return this.inbox.markThreadRead(id);
+    } catch (cause) {
+      if (cause instanceof ImapSyncError && cause.code === "auth_required") {
+        this.setPublicStatus(account.id, "auth_required", cause.message);
+        throw new InboxApplicationError(cause.message);
+      }
+      throw new InboxApplicationError(
+        "Não foi possível marcar a conversa como lida.",
+      );
+    }
   }
 
   async markThreadUnread(id: string): Promise<InboxThread> {
