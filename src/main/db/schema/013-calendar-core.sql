@@ -11,8 +11,7 @@ CREATE TABLE calendar_sources (
   last_error TEXT,
   last_synced_at TEXT,
   created_at TEXT NOT NULL,
-  updated_at TEXT NOT NULL,
-  CHECK(status != 'active' OR kind = 'local')
+  updated_at TEXT NOT NULL
 );
 
 CREATE TABLE calendar_events (

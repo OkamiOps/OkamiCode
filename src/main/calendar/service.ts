@@ -178,9 +178,7 @@ export class CalendarService {
   listSources(): CalendarSource[] {
     return (
       this.dependencies.db
-        .prepare(
-          "SELECT * FROM calendar_sources ORDER BY created_at ASC, id ASC",
-        )
+        .prepare("SELECT * FROM calendar_sources ORDER BY rowid ASC")
         .all() as SourceRow[]
     ).map(rowToSource);
   }
@@ -404,11 +402,17 @@ function mergeEventInput(
   const details: EventDetails = {
     title: update.title ?? current.title,
     timezone: update.timezone ?? current.timezone,
-    description: update.description ?? current.description,
-    location: update.location ?? current.location,
-    organizer: update.organizer ?? current.organizer,
-    joinUrl: update.joinUrl ?? current.joinUrl,
-    sourceUrl: update.sourceUrl ?? current.sourceUrl,
+    description:
+      update.description === undefined
+        ? current.description
+        : update.description,
+    location:
+      update.location === undefined ? current.location : update.location,
+    organizer:
+      update.organizer === undefined ? current.organizer : update.organizer,
+    joinUrl: update.joinUrl === undefined ? current.joinUrl : update.joinUrl,
+    sourceUrl:
+      update.sourceUrl === undefined ? current.sourceUrl : update.sourceUrl,
     attendees: update.attendees ?? current.attendees,
     status: update.status ?? current.status,
   };
@@ -517,18 +521,59 @@ function canonicalAttendees(attendees: string[]): string[] {
 }
 
 function canonicalInstant(value: string): string {
-  if (
-    !/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}(?::\d{2}(?:\.\d{1,9})?)?(?:Z|[+-]\d{2}:\d{2})$/.test(
+  const match =
+    /^(\d{4})-(\d{2})-(\d{2})T(\d{2}):(\d{2})(?::(\d{2})(?:\.(\d{1,9}))?)?(?:Z|[+-](\d{2}):(\d{2}))$/.exec(
       value,
-    )
-  ) {
+    );
+  if (!match) {
     throw new Error("Timed calendar datetimes require an explicit offset");
+  }
+  const [
+    ,
+    yearText,
+    monthText,
+    dayText,
+    hourText,
+    minuteText,
+    secondText,
+    ,
+    offsetHourText,
+    offsetMinuteText,
+  ] = match;
+  const year = Number(yearText);
+  const month = Number(monthText);
+  const day = Number(dayText);
+  const hour = Number(hourText);
+  const minute = Number(minuteText);
+  const second = Number(secondText ?? "0");
+  const offsetHour = Number(offsetHourText ?? "0");
+  const offsetMinute = Number(offsetMinuteText ?? "0");
+  if (
+    month < 1 ||
+    month > 12 ||
+    day < 1 ||
+    day > daysInMonth(year, month) ||
+    hour > 23 ||
+    minute > 59 ||
+    second > 59 ||
+    offsetHour > 23 ||
+    offsetMinute > 59
+  ) {
+    throw new Error("Timed calendar datetime is invalid");
   }
   const date = new Date(value);
   if (Number.isNaN(date.getTime())) {
     throw new Error("Timed calendar datetime is invalid");
   }
   return date.toISOString();
+}
+
+function daysInMonth(year: number, month: number): number {
+  if (month === 2) {
+    const leapYear = year % 4 === 0 && (year % 100 !== 0 || year % 400 === 0);
+    return leapYear ? 29 : 28;
+  }
+  return [4, 6, 9, 11].includes(month) ? 30 : 31;
 }
 
 function requireDateRange(startDate: string, endDate: string): void {

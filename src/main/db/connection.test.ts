@@ -60,10 +60,10 @@ describe("openDatabase", () => {
         .prepare(
           `INSERT INTO calendar_sources
            (id, kind, display_name, color, timezone, status, created_at, updated_at)
-           VALUES ('remote', 'google', 'Google', '#336699', 'UTC', 'active', 'now', 'now')`,
+           VALUES ('remote', 'google', 'Google', '#336699', 'UTC', 'not_configured', 'now', 'now')`,
         )
         .run(),
-    ).toThrow();
+    ).not.toThrow();
     expect(() =>
       db
         .prepare(

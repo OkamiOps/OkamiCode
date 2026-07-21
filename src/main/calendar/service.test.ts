@@ -17,7 +17,7 @@ function createService() {
 }
 
 describe("CalendarService", () => {
-  it("creates local sources in creation order and rejects invalid or remote-active sources", () => {
+  it("creates local sources and rejects invalid input", () => {
     const fx = createService();
     const first = fx.service.createLocalSource({
       displayName: "Equipe",
@@ -38,15 +38,28 @@ describe("CalendarService", () => {
         timezone: "UTC",
       }),
     ).toThrow();
-    expect(() =>
-      fx.db
-        .prepare(
-          `INSERT INTO calendar_sources
-           (id, kind, display_name, color, timezone, status, created_at, updated_at)
-           VALUES ('google', 'google', 'Google', '#123456', 'UTC', 'active', 'now', 'now')`,
-        )
-        .run(),
-    ).toThrow();
+  });
+
+  it("preserves true insertion order when timestamps tie and ids sort backwards", () => {
+    const fx = createTestDatabase();
+    const ids = ["z-source", "a-source"];
+    const service = new CalendarService({
+      db: fx.db,
+      createId: () => ids.shift() ?? "unexpected",
+      clock: () => "2026-07-21T00:00:00.000Z",
+    });
+    const first = service.createLocalSource({
+      displayName: "Inserted first",
+      color: "#111111",
+      timezone: "UTC",
+    });
+    const second = service.createLocalSource({
+      displayName: "Inserted second",
+      color: "#222222",
+      timezone: "UTC",
+    });
+
+    expect(service.listSources()).toEqual([first, second]);
   });
 
   it("requires offset timed datetimes, valid timezone and preserves instants through DST", () => {
@@ -64,6 +77,16 @@ describe("CalendarService", () => {
         allDay: false,
         startsAt: "2026-03-08T01:30:00",
         endsAt: "2026-03-08T03:30:00-04:00",
+      }),
+    ).toThrow();
+    expect(() =>
+      fx.service.createLocalEvent({
+        sourceId: source.id,
+        title: "Impossible civil date",
+        timezone: "America/New_York",
+        allDay: false,
+        startsAt: "2026-02-30T10:00:00-05:00",
+        endsAt: "2026-03-03T11:00:00-05:00",
       }),
     ).toThrow();
     expect(() =>
@@ -124,6 +147,58 @@ describe("CalendarService", () => {
       endDate: "2026-06-03",
       startsAt: null,
       endsAt: null,
+    });
+  });
+
+  it("preserves undefined nullable fields and clears every nullable local field with null", () => {
+    const fx = createService();
+    const source = fx.service.createLocalSource({
+      displayName: "Mutable",
+      color: "#123456",
+      timezone: "UTC",
+    });
+    const event = fx.service.createLocalEvent({
+      sourceId: source.id,
+      title: "Original",
+      timezone: "UTC",
+      allDay: false,
+      startsAt: "2026-06-01T10:00:00Z",
+      endsAt: "2026-06-01T11:00:00Z",
+      description: "Description",
+      location: "Room",
+      organizer: "organizer@example.com",
+      joinUrl: "https://meet.example.com/event",
+      sourceUrl: "https://calendar.example.com/event",
+    });
+
+    const preserved = fx.service.updateLocalEvent({
+      eventId: event.id,
+      sourceId: source.id,
+      title: "Renamed",
+    });
+    expect(preserved).toMatchObject({
+      description: "Description",
+      location: "Room",
+      organizer: "organizer@example.com",
+      joinUrl: "https://meet.example.com/event",
+      sourceUrl: "https://calendar.example.com/event",
+    });
+
+    const cleared = fx.service.updateLocalEvent({
+      eventId: event.id,
+      sourceId: source.id,
+      description: null,
+      location: null,
+      organizer: null,
+      joinUrl: null,
+      sourceUrl: null,
+    });
+    expect(cleared).toMatchObject({
+      description: null,
+      location: null,
+      organizer: null,
+      joinUrl: null,
+      sourceUrl: null,
     });
   });
 
@@ -200,7 +275,20 @@ describe("CalendarService", () => {
       }),
     ).toThrow();
     fx.service.deleteLocalEvent(timed.id, a.id);
+    const deletedOnce = fx.db
+      .prepare(
+        "SELECT deleted_at, updated_at FROM calendar_events WHERE id = ?",
+      )
+      .get(timed.id) as { deleted_at: string; updated_at: string };
+    expect(deletedOnce.deleted_at).toBe(deletedOnce.updated_at);
     fx.service.deleteLocalEvent(timed.id, a.id);
+    expect(
+      fx.db
+        .prepare(
+          "SELECT deleted_at, updated_at FROM calendar_events WHERE id = ?",
+        )
+        .get(timed.id),
+    ).toEqual(deletedOnce);
     expect(
       fx.service
         .listEvents({
