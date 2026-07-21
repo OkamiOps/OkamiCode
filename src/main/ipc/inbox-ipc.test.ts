@@ -232,6 +232,24 @@ function harness() {
       lastError: null,
     })),
   };
+  const googleInboxOAuthService = {
+    connectGmail: vi.fn(async () => ({
+      account,
+      configuration: {
+        host: "imap.gmail.com",
+        port: 993,
+        secure: true,
+        mailbox: "INBOX",
+        maxInitialMessages: 100,
+        maxMessageBytes: 2_097_152,
+      },
+      hasCredential: true,
+    })),
+    reauthorizeGmail: vi.fn(async () => ({
+      account,
+      counts: { inserted: 1, updated: 0, unchanged: 0 },
+    })),
+  };
   const handlers = new Map<IpcChannel, Parameters<IpcMain["handle"]>[1]>();
   registerIpcHandlers({
     ipcMain: {
@@ -248,6 +266,7 @@ function harness() {
     inboxReplyGenerationService,
     inboxOutgoingSettingsService,
     inboxReplyDispatchService,
+    googleInboxOAuthService,
   });
   const senderFrame = { url: "http://127.0.0.1:5173/inbox" };
   const event = {
@@ -262,13 +281,14 @@ function harness() {
     inboxReplyGenerationService,
     inboxOutgoingSettingsService,
     inboxReplyDispatchService,
+    googleInboxOAuthService,
     event,
     sendTurn,
   };
 }
 
 it("routes all Inbox commands once and rejects invalid payloads before dispatch", async () => {
-  const { handlers, inboxService, event } = harness();
+  const { handlers, inboxService, googleInboxOAuthService, event } = harness();
   const add = {
     provider: "imap",
     displayName: "Primary",
@@ -289,6 +309,10 @@ it("routes all Inbox commands once and rejects invalid payloads before dispatch"
     accountId,
     credential: add.credential,
   });
+  await handlers.get("inbox:account:connectGoogle" as IpcChannel)?.(event, {});
+  await handlers.get("inbox:account:reauthorizeGoogle" as IpcChannel)?.(event, {
+    accountId,
+  });
   await handlers.get("inbox:threads:list")?.(event, {
     unreadOnly: true,
     limit: 10,
@@ -302,6 +326,10 @@ it("routes all Inbox commands once and rejects invalid payloads before dispatch"
   expect(inboxService.updateCredentialAndSync).toHaveBeenCalledWith(
     accountId,
     add.credential,
+  );
+  expect(googleInboxOAuthService.connectGmail).toHaveBeenCalledOnce();
+  expect(googleInboxOAuthService.reauthorizeGmail).toHaveBeenCalledWith(
+    accountId,
   );
   expect(inboxService.listThreads).toHaveBeenCalledWith({
     unreadOnly: true,

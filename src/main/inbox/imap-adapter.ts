@@ -1,6 +1,7 @@
 import { ImapFlow } from "imapflow";
 import { simpleParser, type AddressObject, type ParsedMail } from "mailparser";
 import type { ConnectorCredential } from "../connectors/credential-vault";
+import { GoogleOAuthRefreshRequiredError } from "../connectors/google-oauth";
 import type {
   ApplyInboxSyncBatch,
   ConnectorAccount,
@@ -122,7 +123,10 @@ export class ImapSyncAdapter {
     let credential: ConnectorCredential | null;
     try {
       credential = await this.vault.get(input.account.id);
-    } catch {
+    } catch (cause) {
+      if (cause instanceof GoogleOAuthRefreshRequiredError) {
+        throw new ImapSyncError(cause.message, "auth_required");
+      }
       throw new ImapSyncError("IMAP credentials unavailable");
     }
     if (!credential) throw new ImapSyncError("IMAP credentials unavailable");
@@ -282,9 +286,9 @@ export class ImapSyncAdapter {
 }
 
 const GMAIL_APP_PASSWORD_ERROR =
-  "O Gmail exige uma senha de app. Atualize o acesso usando o código de 16 caracteres da Conta Google.";
+  "O Gmail recusou a conexão antiga. Reconecte a conta usando Entrar com Google.";
 const GMAIL_CREDENTIAL_REJECTED_ERROR =
-  "O Gmail recusou a credencial. Gere uma nova senha de app e atualize o acesso.";
+  "O Gmail recusou a credencial. Reconecte a conta usando Entrar com Google.";
 
 function classifyImapFailure(
   cause: unknown,

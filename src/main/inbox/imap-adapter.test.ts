@@ -2,6 +2,7 @@ import { Readable } from "node:stream";
 import { describe, expect, it, vi } from "vitest";
 import type { ConnectorAccount } from "./service";
 import type { ConnectorCredential } from "../connectors/credential-vault";
+import { GoogleOAuthRefreshRequiredError } from "../connectors/google-oauth";
 import {
   ImapSyncAdapter,
   ImapSyncError,
@@ -164,6 +165,29 @@ function adapter(
 }
 
 describe("ImapSyncAdapter", () => {
+  it("marks an expired Google refresh grant as auth_required before opening IMAP", async () => {
+    const { client } = fakeClient();
+    const factory: ImapClientFactory = vi.fn().mockReturnValue(client);
+    const syncer = new ImapSyncAdapter(
+      {
+        get: vi.fn().mockRejectedValue(new GoogleOAuthRefreshRequiredError()),
+      },
+      factory,
+    );
+
+    await expect(
+      syncer.sync({
+        account: { ...account, provider: "gmail" },
+        configuration: { host: "imap.gmail.com", port: 993, secure: true },
+      }),
+    ).rejects.toMatchObject({
+      code: "auth_required",
+      message:
+        "A autorização do Google expirou. Reconecte a conta para continuar.",
+    });
+    expect(factory).not.toHaveBeenCalled();
+  });
+
   it("classifies Gmail's app-password requirement without exposing the raw server response", async () => {
     const gmailAccount: ConnectorAccount = {
       ...account,
@@ -192,7 +216,7 @@ describe("ImapSyncAdapter", () => {
       name: "ImapSyncError",
       code: "auth_required",
       message:
-        "O Gmail exige uma senha de app. Atualize o acesso usando o código de 16 caracteres da Conta Google.",
+        "O Gmail recusou a conexão antiga. Reconecte a conta usando Entrar com Google.",
     });
   });
 

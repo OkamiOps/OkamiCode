@@ -1,5 +1,5 @@
 import { Button, Modal, useOverlayState } from "@heroui/react";
-import { KeyRound, ShieldCheck, X } from "lucide-react";
+import { ExternalLink, KeyRound, ShieldCheck, X } from "lucide-react";
 import { useState, type FormEvent } from "react";
 import type { IpcRequest, IpcResponse } from "../../../shared/contracts/ipc";
 
@@ -9,10 +9,12 @@ type UpdateCredentialRequest = IpcRequest<"inbox:account:updateCredential">;
 export function InboxCredentialModal({
   account,
   isPending,
+  onConnectGoogle,
   onSubmit,
 }: {
   account: InboxAccount;
   isPending: boolean;
+  onConnectGoogle: (request: { accountId: string }) => Promise<unknown>;
   onSubmit: (request: UpdateCredentialRequest) => Promise<unknown>;
 }) {
   const isGmail = account.provider === "gmail";
@@ -31,15 +33,21 @@ export function InboxCredentialModal({
 
   async function submit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
-    const normalizedPassword = isGmail
-      ? password.replace(/\s+/gu, "")
-      : password;
-    if (!username.trim() || !normalizedPassword) {
-      setError("Informe o usuário e a nova credencial.");
+    if (isGmail) {
+      try {
+        await onConnectGoogle({ accountId: account.id });
+        state.close();
+      } catch (cause) {
+        setError(
+          cause instanceof Error
+            ? cause.message
+            : "Não foi possível reconectar a Conta Google.",
+        );
+      }
       return;
     }
-    if (isGmail && normalizedPassword.length !== 16) {
-      setError("A senha de app do Google deve ter 16 caracteres.");
+    if (!username.trim() || !password) {
+      setError("Informe o usuário e a nova credencial.");
       return;
     }
     try {
@@ -49,7 +57,7 @@ export function InboxCredentialModal({
           version: 1,
           kind: "imap_password",
           username: username.trim(),
-          password: normalizedPassword,
+          password,
         },
       });
       state.close();
@@ -82,10 +90,13 @@ export function InboxCredentialModal({
                   <KeyRound aria-hidden="true" size={16} />
                 </span>
                 <div>
-                  <Modal.Heading>Atualizar acesso</Modal.Heading>
+                  <Modal.Heading>
+                    {isGmail ? "Reconectar Google" : "Atualizar acesso"}
+                  </Modal.Heading>
                   <p>
-                    Substitua a credencial local de {account.displayName} e
-                    teste a sincronização agora.
+                    {isGmail
+                      ? `Confirme o acesso no navegador para reconectar ${account.displayName}.`
+                      : `Substitua a credencial local de ${account.displayName} e teste a sincronização agora.`}
                   </p>
                 </div>
                 <Modal.CloseTrigger
@@ -104,47 +115,45 @@ export function InboxCredentialModal({
                     <small>{account.address}</small>
                   </span>
                 </div>
-                <div className="inbox-form-grid inbox-form-grid--credentials">
-                  <label className="inbox-form-field">
-                    <span>Usuário IMAP</span>
-                    <input
-                      aria-label="Usuário IMAP"
-                      onChange={(event) => setUsername(event.target.value)}
-                      value={username}
-                    />
-                  </label>
-                  <label className="inbox-form-field">
-                    <span>
-                      {isGmail
-                        ? "Senha de app do Google"
-                        : "Nova senha da conta"}
+                {isGmail ? (
+                  <div className="inbox-google-reauthorize">
+                    <span className="inbox-google-reauthorize__icon">
+                      <ExternalLink aria-hidden="true" size={19} />
                     </span>
-                    <input
-                      aria-label={
-                        isGmail
-                          ? "Senha de app do Google"
-                          : "Nova senha da conta"
-                      }
-                      autoComplete="new-password"
-                      onChange={(event) => setPassword(event.target.value)}
-                      type="password"
-                      value={password}
-                    />
-                  </label>
-                </div>
-                {isGmail && (
-                  <p className="inbox-account-modal__credential-help">
-                    Use o código de 16 caracteres criado em Segurança → Senhas
-                    de app da sua Conta Google. Espaços são removidos
-                    automaticamente. Não use a senha normal do Gmail.{" "}
-                    <a
-                      href="https://support.google.com/accounts/answer/185833"
-                      rel="noreferrer"
-                      target="_blank"
-                    >
-                      Abrir instruções oficiais
-                    </a>
-                  </p>
+                    <div>
+                      <strong>Login oficial do Google</strong>
+                      <p>
+                        O navegador será aberto para você entrar e confirmar no
+                        dispositivo. O Okami não solicita nem armazena sua
+                        senha.
+                      </p>
+                      <small>
+                        Se esta conta ainda usa a conexão antiga, você escolherá
+                        uma vez o JSON “Aplicativo para computador”.
+                      </small>
+                    </div>
+                  </div>
+                ) : (
+                  <div className="inbox-form-grid inbox-form-grid--credentials">
+                    <label className="inbox-form-field">
+                      <span>Usuário IMAP</span>
+                      <input
+                        aria-label="Usuário IMAP"
+                        onChange={(event) => setUsername(event.target.value)}
+                        value={username}
+                      />
+                    </label>
+                    <label className="inbox-form-field">
+                      <span>Nova senha da conta</span>
+                      <input
+                        aria-label="Nova senha da conta"
+                        autoComplete="new-password"
+                        onChange={(event) => setPassword(event.target.value)}
+                        type="password"
+                        value={password}
+                      />
+                    </label>
+                  </div>
                 )}
                 {error && (
                   <p className="inbox-form-error" role="alert">
@@ -167,7 +176,13 @@ export function InboxCredentialModal({
                   size="sm"
                   type="submit"
                 >
-                  {isPending ? "Sincronizando…" : "Atualizar e sincronizar"}
+                  {isPending
+                    ? isGmail
+                      ? "Aguardando Google…"
+                      : "Sincronizando…"
+                    : isGmail
+                      ? "Entrar com Google"
+                      : "Atualizar e sincronizar"}
                 </Button>
               </Modal.Footer>
             </form>

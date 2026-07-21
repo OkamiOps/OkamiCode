@@ -1,5 +1,14 @@
 import { Button, Modal, useOverlayState } from "@heroui/react";
-import { LockKeyhole, MailPlus, Server, X } from "lucide-react";
+import {
+  Check,
+  ExternalLink,
+  FileJson,
+  LockKeyhole,
+  MailPlus,
+  Server,
+  ShieldCheck,
+  X,
+} from "lucide-react";
 import { useState, type FormEvent, type ReactNode } from "react";
 import type { IpcRequest } from "../../../shared/contracts/ipc";
 
@@ -8,6 +17,7 @@ type AddInboxAccountRequest = IpcRequest<"inbox:account:add">;
 interface InboxAccountModalProps {
   isPending: boolean;
   onSubmit: (request: AddInboxAccountRequest) => Promise<unknown>;
+  onConnectGoogle: () => Promise<unknown>;
 }
 
 interface AccountForm {
@@ -34,6 +44,7 @@ const initialForm: AccountForm = {
 
 export function InboxAccountModal({
   isPending,
+  onConnectGoogle,
   onSubmit,
 }: InboxAccountModalProps) {
   const [form, setForm] = useState(initialForm);
@@ -68,6 +79,19 @@ export function InboxAccountModal({
 
   async function submit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
+    if (form.provider === "gmail") {
+      try {
+        await onConnectGoogle();
+        close();
+      } catch (cause) {
+        setError(
+          cause instanceof Error
+            ? cause.message
+            : "Não foi possível conectar a Conta Google.",
+        );
+      }
+      return;
+    }
     if (!form.displayName.trim() || !form.address.trim() || !form.host.trim()) {
       setError("Preencha nome, email e servidor IMAP.");
       return;
@@ -115,7 +139,7 @@ export function InboxAccountModal({
           placement="center"
         >
           <Modal.Dialog className="inbox-account-modal">
-            <form onSubmit={submit}>
+            <form data-provider={form.provider} onSubmit={submit}>
               <Modal.Header className="inbox-account-modal__header">
                 <span className="inbox-account-modal__mark">
                   <Server aria-hidden="true" size={16} />
@@ -149,7 +173,7 @@ export function InboxAccountModal({
                         type="radio"
                       />
                       <span>Gmail</span>
-                      <small>Senha de app</small>
+                      <small>OAuth 2.0</small>
                     </label>
                     <label
                       data-selected={form.provider === "imap" || undefined}
@@ -178,161 +202,152 @@ export function InboxAccountModal({
                   </div>
                 </fieldset>
 
-                <section
-                  aria-labelledby="inbox-account-identity"
-                  className="inbox-account-modal__section"
-                >
-                  <div className="inbox-account-modal__section-heading">
-                    <h3 id="inbox-account-identity">Identificação da caixa</h3>
-                    <p>Como ela aparecerá no Inbox.</p>
-                  </div>
-                  <div className="inbox-form-grid">
-                    <Field label="Nome da conta">
-                      <input
-                        aria-label="Nome da conta"
-                        onChange={(event) =>
-                          setForm((current) => ({
-                            ...current,
-                            displayName: event.target.value,
-                          }))
-                        }
-                        placeholder="Projetos, pessoal, clientes…"
-                        value={form.displayName}
-                      />
-                    </Field>
-                    <Field label="Email da conta">
-                      <input
-                        aria-label="Email da conta"
-                        inputMode="email"
-                        onChange={(event) =>
-                          setForm((current) => ({
-                            ...current,
-                            address: event.target.value,
-                            ...(current.provider === "gmail"
-                              ? { username: event.target.value }
-                              : {}),
-                          }))
-                        }
-                        placeholder="voce@dominio.com"
-                        value={form.address}
-                      />
-                    </Field>
-                  </div>
-                </section>
-
-                <section
-                  aria-labelledby="inbox-account-server"
-                  className="inbox-account-modal__section"
-                >
-                  <div className="inbox-account-modal__section-heading">
-                    <h3 id="inbox-account-server">Servidor de entrada</h3>
-                    <p>Informe os dados IMAP fornecidos pelo provedor.</p>
-                  </div>
-                  <div className="inbox-form-grid inbox-form-grid--server">
-                    <Field label="Servidor IMAP">
-                      <input
-                        aria-label="Servidor IMAP"
-                        onChange={(event) =>
-                          setForm((current) => ({
-                            ...current,
-                            host: event.target.value,
-                          }))
-                        }
-                        placeholder="imap.dominio.com"
-                        value={form.host}
-                      />
-                    </Field>
-                    <Field label="Porta">
-                      <input
-                        aria-label="Porta IMAP"
-                        max="65535"
-                        min="1"
-                        onChange={(event) =>
-                          setForm((current) => ({
-                            ...current,
-                            port: event.target.value,
-                          }))
-                        }
-                        type="number"
-                        value={form.port}
-                      />
-                    </Field>
-                  </div>
-                </section>
-
-                <section
-                  aria-labelledby="inbox-account-credentials"
-                  className="inbox-account-modal__section"
-                >
-                  <div className="inbox-account-modal__section-heading">
-                    <h3 id="inbox-account-credentials">Credenciais</h3>
-                    <p>Armazenadas localmente no chaveiro deste Mac.</p>
-                  </div>
-                  <div className="inbox-form-grid inbox-form-grid--credentials">
-                    <Field label="Usuário IMAP">
-                      <input
-                        aria-label="Usuário IMAP"
-                        onChange={(event) =>
-                          setForm((current) => ({
-                            ...current,
-                            username: event.target.value,
-                          }))
-                        }
-                        placeholder="usuario@dominio.com"
-                        value={form.username}
-                      />
-                    </Field>
-                    <Field
-                      label={
-                        form.provider === "gmail"
-                          ? "Senha de app do Google"
-                          : "Senha da conta"
-                      }
+                {form.provider === "gmail" ? (
+                  <GoogleOAuthPanel />
+                ) : (
+                  <>
+                    <section
+                      aria-labelledby="inbox-account-identity"
+                      className="inbox-account-modal__section"
                     >
+                      <div className="inbox-account-modal__section-heading">
+                        <h3 id="inbox-account-identity">
+                          Identificação da caixa
+                        </h3>
+                        <p>Como ela aparecerá no Inbox.</p>
+                      </div>
+                      <div className="inbox-form-grid">
+                        <Field label="Nome da conta">
+                          <input
+                            aria-label="Nome da conta"
+                            onChange={(event) =>
+                              setForm((current) => ({
+                                ...current,
+                                displayName: event.target.value,
+                              }))
+                            }
+                            placeholder="Projetos, pessoal, clientes…"
+                            value={form.displayName}
+                          />
+                        </Field>
+                        <Field label="Email da conta">
+                          <input
+                            aria-label="Email da conta"
+                            inputMode="email"
+                            onChange={(event) =>
+                              setForm((current) => ({
+                                ...current,
+                                address: event.target.value,
+                                ...(current.provider === "gmail"
+                                  ? { username: event.target.value }
+                                  : {}),
+                              }))
+                            }
+                            placeholder="voce@dominio.com"
+                            value={form.address}
+                          />
+                        </Field>
+                      </div>
+                    </section>
+
+                    <section
+                      aria-labelledby="inbox-account-server"
+                      className="inbox-account-modal__section"
+                    >
+                      <div className="inbox-account-modal__section-heading">
+                        <h3 id="inbox-account-server">Servidor de entrada</h3>
+                        <p>Informe os dados IMAP fornecidos pelo provedor.</p>
+                      </div>
+                      <div className="inbox-form-grid inbox-form-grid--server">
+                        <Field label="Servidor IMAP">
+                          <input
+                            aria-label="Servidor IMAP"
+                            onChange={(event) =>
+                              setForm((current) => ({
+                                ...current,
+                                host: event.target.value,
+                              }))
+                            }
+                            placeholder="imap.dominio.com"
+                            value={form.host}
+                          />
+                        </Field>
+                        <Field label="Porta">
+                          <input
+                            aria-label="Porta IMAP"
+                            max="65535"
+                            min="1"
+                            onChange={(event) =>
+                              setForm((current) => ({
+                                ...current,
+                                port: event.target.value,
+                              }))
+                            }
+                            type="number"
+                            value={form.port}
+                          />
+                        </Field>
+                      </div>
+                    </section>
+
+                    <section
+                      aria-labelledby="inbox-account-credentials"
+                      className="inbox-account-modal__section"
+                    >
+                      <div className="inbox-account-modal__section-heading">
+                        <h3 id="inbox-account-credentials">Credenciais</h3>
+                        <p>Armazenadas localmente no chaveiro deste Mac.</p>
+                      </div>
+                      <div className="inbox-form-grid inbox-form-grid--credentials">
+                        <Field label="Usuário IMAP">
+                          <input
+                            aria-label="Usuário IMAP"
+                            onChange={(event) =>
+                              setForm((current) => ({
+                                ...current,
+                                username: event.target.value,
+                              }))
+                            }
+                            placeholder="usuario@dominio.com"
+                            value={form.username}
+                          />
+                        </Field>
+                        <Field label="Senha da conta">
+                          <input
+                            aria-label="Senha da conta"
+                            autoComplete="new-password"
+                            onChange={(event) =>
+                              setForm((current) => ({
+                                ...current,
+                                password: event.target.value,
+                              }))
+                            }
+                            type="password"
+                            value={form.password}
+                          />
+                        </Field>
+                      </div>
+                    </section>
+
+                    <label className="inbox-tls-toggle">
                       <input
-                        aria-label={
-                          form.provider === "gmail"
-                            ? "Senha de app do Google"
-                            : "Senha da conta"
-                        }
-                        autoComplete="new-password"
+                        checked={form.secure}
                         onChange={(event) =>
                           setForm((current) => ({
                             ...current,
-                            password: event.target.value,
+                            secure: event.target.checked,
                           }))
                         }
-                        type="password"
-                        value={form.password}
+                        type="checkbox"
                       />
-                    </Field>
-                  </div>
-                  {form.provider === "gmail" && (
-                    <p className="inbox-account-modal__credential-help">
-                      Use a senha de app de 16 caracteres da sua Conta Google.
-                      Ela exige verificação em duas etapas e não é sua senha
-                      normal do Gmail.
-                    </p>
-                  )}
-                </section>
-
-                <label className="inbox-tls-toggle">
-                  <input
-                    checked={form.secure}
-                    onChange={(event) =>
-                      setForm((current) => ({
-                        ...current,
-                        secure: event.target.checked,
-                      }))
-                    }
-                    type="checkbox"
-                  />
-                  <LockKeyhole aria-hidden="true" size={16} />
-                  <span>
-                    <strong>Usar TLS seguro</strong>
-                    <small>As credenciais ficam somente neste Mac.</small>
-                  </span>
-                </label>
+                      <LockKeyhole aria-hidden="true" size={16} />
+                      <span>
+                        <strong>Usar TLS seguro</strong>
+                        <small>As credenciais ficam somente neste Mac.</small>
+                      </span>
+                    </label>
+                  </>
+                )}
                 {error && (
                   <p className="inbox-form-error" role="alert">
                     {error}
@@ -354,7 +369,13 @@ export function InboxAccountModal({
                   size="sm"
                   type="submit"
                 >
-                  {isPending ? "Conectando…" : "Conectar conta"}
+                  {isPending
+                    ? form.provider === "gmail"
+                      ? "Aguardando Google…"
+                      : "Conectando…"
+                    : form.provider === "gmail"
+                      ? "Escolher JSON e entrar com Google"
+                      : "Conectar conta"}
                 </Button>
               </Modal.Footer>
             </form>
@@ -362,6 +383,52 @@ export function InboxAccountModal({
         </Modal.Container>
       </Modal.Backdrop>
     </Modal.Root>
+  );
+}
+
+function GoogleOAuthPanel() {
+  return (
+    <section className="inbox-google-oauth" aria-label="Conexão segura Google">
+      <div className="inbox-google-oauth__hero">
+        <span className="inbox-google-oauth__shield">
+          <ShieldCheck aria-hidden="true" size={22} />
+        </span>
+        <div>
+          <h3>Entrar com Google</h3>
+          <p>
+            Use o login oficial no navegador e confirme o acesso no seu
+            dispositivo. Sua senha nunca entra no Okami.
+          </p>
+        </div>
+      </div>
+      <ol className="inbox-google-oauth__steps">
+        <li>
+          <FileJson aria-hidden="true" size={17} />
+          <span>
+            <strong>Selecione o JSON</strong>
+            <small>Credencial “Aplicativo para computador”.</small>
+          </span>
+        </li>
+        <li>
+          <ExternalLink aria-hidden="true" size={17} />
+          <span>
+            <strong>Autorize no Google</strong>
+            <small>O login abre fora do app, no navegador padrão.</small>
+          </span>
+        </li>
+        <li>
+          <Check aria-hidden="true" size={17} />
+          <span>
+            <strong>Sincronização automática</strong>
+            <small>O token é renovado localmente sem pedir sua senha.</small>
+          </span>
+        </li>
+      </ol>
+      <p className="inbox-google-oauth__privacy">
+        O JSON configura o cliente OAuth; ele não contém acesso aos seus emails.
+        Os tokens ficam criptografados no chaveiro deste Mac.
+      </p>
+    </section>
   );
 }
 

@@ -165,6 +165,11 @@ export const workbenchClient = {
   inboxAccountUpdateCredential: (
     request: IpcRequest<"inbox:account:updateCredential">,
   ) => invokeCommand("inbox:account:updateCredential", request),
+  inboxAccountConnectGoogle: () =>
+    invokeCommand("inbox:account:connectGoogle", {}),
+  inboxAccountReauthorizeGoogle: (
+    request: IpcRequest<"inbox:account:reauthorizeGoogle">,
+  ) => invokeCommand("inbox:account:reauthorizeGoogle", request),
   inboxAccountOutgoingGet: (
     request: IpcRequest<"inbox:account:outgoing:get">,
   ) => invokeCommand("inbox:account:outgoing:get", request),

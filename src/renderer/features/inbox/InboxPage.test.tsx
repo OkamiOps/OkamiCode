@@ -149,6 +149,11 @@ function makeApi(overrides: Partial<InboxApi> = {}): InboxApi {
       account: account.account,
       counts: { inserted: 1, updated: 0, unchanged: 0 },
     }),
+    connectGoogle: vi.fn().mockResolvedValue(account),
+    reauthorizeGoogle: vi.fn().mockResolvedValue({
+      account: account.account,
+      counts: { inserted: 1, updated: 0, unchanged: 0 },
+    }),
     getOutgoingSettings: vi.fn().mockResolvedValue(null),
     setOutgoingSettings: vi.fn().mockResolvedValue({
       host: "smtp.okamiops.com",
@@ -363,7 +368,7 @@ describe("InboxPage", () => {
     expect(api.syncAccount).not.toHaveBeenCalled();
   });
 
-  it("updates a Gmail app password from the existing account row and strips visual spaces", async () => {
+  it("reconnects an existing Gmail account through Google OAuth without asking for a password", async () => {
     const gmail = {
       ...account,
       account: {
@@ -372,8 +377,7 @@ describe("InboxPage", () => {
         displayName: "Pessoal",
         address: "msant262@gmail.com",
         status: "auth_required" as const,
-        lastError:
-          "O Gmail exige uma senha de app. Atualize o acesso usando o código de 16 caracteres da Conta Google.",
+        lastError: "A autorização do Google expirou. Reconecte a conta.",
       },
       configuration: {
         ...account.configuration,
@@ -386,30 +390,24 @@ describe("InboxPage", () => {
     renderInbox(api);
 
     expect(
-      await screen.findByText(/O Gmail exige uma senha de app/),
+      await screen.findByText(/A autorização do Google expirou/),
     ).toBeVisible();
     await userEvent.click(
       screen.getByRole("button", { name: "Atualizar acesso de Pessoal" }),
     );
     const dialog = screen.getByRole("dialog");
-    await userEvent.type(
-      within(dialog).getByLabelText("Senha de app do Google"),
-      "abcd efgh ijkl mnop",
-    );
+    expect(within(dialog).queryByLabelText(/senha/i)).toBeNull();
+    expect(
+      within(dialog).getByText(/confirme o acesso no navegador/i),
+    ).toBeVisible();
     await userEvent.click(
       within(dialog).getByRole("button", {
-        name: "Atualizar e sincronizar",
+        name: "Entrar com Google",
       }),
     );
 
-    expect(vi.mocked(api.updateAccountCredential).mock.calls[0]?.[0]).toEqual({
+    expect(vi.mocked(api.reauthorizeGoogle).mock.calls[0]?.[0]).toEqual({
       accountId,
-      credential: {
-        version: 1,
-        kind: "imap_password",
-        username: "msant262@gmail.com",
-        password: "abcdefghijklmnop",
-      },
     });
   });
 
@@ -486,7 +484,7 @@ describe("InboxPage", () => {
     ).toBeVisible();
   });
 
-  it("configures Gmail with its official servers and asks for an app password", async () => {
+  it("connects Gmail through a Desktop OAuth JSON and never asks for the Google password", async () => {
     const { api } = renderInbox();
     await screen.findByText("Projetos");
     await userEvent.click(
@@ -495,45 +493,19 @@ describe("InboxPage", () => {
     const dialog = screen.getByRole("dialog");
 
     await userEvent.click(within(dialog).getByRole("radio", { name: /Gmail/ }));
-    await userEvent.type(
-      within(dialog).getByLabelText("Email da conta"),
-      "marcos@gmail.com",
-    );
-    await userEvent.type(
-      within(dialog).getByLabelText("Nome da conta"),
-      "Gmail pessoal",
-    );
-    await userEvent.type(
-      within(dialog).getByLabelText("Senha de app do Google"),
-      "app-password",
-    );
-    expect(within(dialog).getByLabelText("Servidor IMAP")).toHaveValue(
-      "imap.gmail.com",
-    );
-    expect(within(dialog).getByLabelText("Porta IMAP")).toHaveValue(993);
+    expect(within(dialog).queryByLabelText(/senha/i)).toBeNull();
+    expect(within(dialog).queryByLabelText("Servidor IMAP")).toBeNull();
     expect(
-      within(dialog).getByText(/senha de app de 16 caracteres/i),
+      within(dialog).getByText(/sua senha nunca entra no Okami/i),
     ).toBeVisible();
     await userEvent.click(
-      within(dialog).getByRole("button", { name: "Conectar conta" }),
+      within(dialog).getByRole("button", {
+        name: "Escolher JSON e entrar com Google",
+      }),
     );
 
-    expect(vi.mocked(api.addAccount).mock.calls[0]?.[0]).toEqual({
-      provider: "gmail",
-      displayName: "Gmail pessoal",
-      address: "marcos@gmail.com",
-      configuration: {
-        host: "imap.gmail.com",
-        port: 993,
-        secure: true,
-      },
-      credential: {
-        version: 1,
-        kind: "imap_password",
-        username: "marcos@gmail.com",
-        password: "app-password",
-      },
-    });
+    expect(api.connectGoogle).toHaveBeenCalledOnce();
+    expect(api.addAccount).not.toHaveBeenCalled();
   });
 
   it("filters unread threads, confirms removal and hides actions without a conversation", async () => {

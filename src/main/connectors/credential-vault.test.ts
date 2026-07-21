@@ -73,6 +73,11 @@ describe("ConnectorCredentialVault", () => {
       accessToken: "access-token-not-on-disk",
       refreshToken: "refresh-token-not-on-disk",
       expiresAt: "2026-08-01T00:00:00.000Z",
+      google: {
+        clientId: "desktop-client.apps.googleusercontent.com",
+        clientSecret: "desktop-client-secret-not-on-disk",
+        scopes: ["openid", "email", "https://mail.google.com/"],
+      },
     };
 
     await vault.set("imap-account", imap);
@@ -94,6 +99,9 @@ describe("ConnectorCredentialVault", () => {
     );
     expect(Buffer.concat(blobs).toString("utf8")).not.toContain(
       oauth.refreshToken,
+    );
+    expect(Buffer.concat(blobs).toString("utf8")).not.toContain(
+      oauth.google.clientSecret,
     );
   });
 

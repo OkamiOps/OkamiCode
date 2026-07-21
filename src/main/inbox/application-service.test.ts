@@ -180,7 +180,7 @@ describe("InboxApplicationService", () => {
     });
   });
 
-  it("accepts a Gmail app password and provisions the official Gmail SMTP endpoint", async () => {
+  it("keeps legacy Gmail credentials compatible with the official SMTP endpoint", async () => {
     const { fx, service, vault } = fixture();
 
     const added = await service.addImapAccount(
@@ -223,7 +223,7 @@ describe("InboxApplicationService", () => {
     ).toEqual({ host: "smtp.gmail.com", port: 465, secure: 1 });
   });
 
-  it("updates an existing Gmail app password and synchronizes without recreating the account", async () => {
+  it("updates a legacy Gmail credential without recreating the account", async () => {
     const { service, vault } = fixture();
     const added = await service.addImapAccount(
       addInput({
@@ -386,7 +386,7 @@ describe("InboxApplicationService", () => {
 
   it("preserves an actionable Gmail authentication error and marks the account auth_required", async () => {
     const message =
-      "O Gmail exige uma senha de app. Atualize o acesso usando o código de 16 caracteres da Conta Google.";
+      "O Gmail recusou a conexão antiga. Reconecte a conta usando Entrar com Google.";
     const { service } = fixture({
       sync: vi
         .fn()

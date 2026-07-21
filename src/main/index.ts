@@ -4,8 +4,19 @@ import { mkdirSync } from "node:fs";
 import { homedir } from "node:os";
 import path from "node:path";
 import { promisify } from "node:util";
-import { app, BrowserWindow, ipcMain, safeStorage } from "electron";
+import {
+  app,
+  BrowserWindow,
+  dialog,
+  ipcMain,
+  safeStorage,
+  shell,
+} from "electron";
 import { ConnectorCredentialVault } from "./connectors/credential-vault";
+import {
+  GoogleOAuthAuthorizer,
+  RefreshingCredentialVault,
+} from "./connectors/google-oauth";
 import { openDatabase } from "./db/connection";
 import { createAppState, type AppState } from "./ipc/app-state";
 import { registerIpcHandlers } from "./ipc/handlers";
@@ -35,6 +46,7 @@ import { locateLocalBinary } from "./ecosystem/cli-capabilities";
 import { AgyCompanionServer } from "./runtime/agy/companion-server";
 import { AgyPluginManager } from "./runtime/agy/plugin";
 import { createAgyPolicyAuthorizer } from "./runtime/agy/policy-authorizer";
+import { GoogleInboxOAuthService } from "./inbox/google-oauth-service";
 
 const execFileAsync = promisify(execFile);
 
@@ -305,9 +317,12 @@ async function bootstrap(): Promise<void> {
   for (const failure of memoryStart.failed) {
     console.warn("[okami] memory source unavailable", failure);
   }
-  const inboxCredentialVault = new ConnectorCredentialVault(
+  const storedInboxCredentialVault = new ConnectorCredentialVault(
     path.join(app.getPath("userData"), "inbox-credentials"),
     safeStorage,
+  );
+  const inboxCredentialVault = new RefreshingCredentialVault(
+    storedInboxCredentialVault,
   );
   const calendarService = new CalendarApplicationService({
     db: database,
@@ -335,6 +350,27 @@ async function bootstrap(): Promise<void> {
     db: database,
     vault: inboxCredentialVault,
   });
+  const googleInboxOAuthService = new GoogleInboxOAuthService({
+    authorizer: new GoogleOAuthAuthorizer({
+      openExternal: (url) => shell.openExternal(url),
+    }),
+    inbox: inboxService,
+    vault: storedInboxCredentialVault,
+    pickClientFile: async () => {
+      const result = await dialog.showOpenDialog({
+        title: "Selecionar credenciais OAuth do Google",
+        buttonLabel: "Usar este JSON",
+        filters: [
+          {
+            name: "Credenciais OAuth do Google",
+            extensions: ["json"],
+          },
+        ],
+        properties: ["openFile"],
+      });
+      return result.canceled ? null : (result.filePaths[0] ?? null);
+    },
+  });
   const recoveredReplyDispatches =
     inboxReplyDispatchService.recoverInterruptedDispatches();
   if (recoveredReplyDispatches > 0) {
@@ -353,6 +389,7 @@ async function bootstrap(): Promise<void> {
     memoryService,
     inboxService,
     inboxReplyDispatchService,
+    googleInboxOAuthService,
     calendarService,
   });
 }

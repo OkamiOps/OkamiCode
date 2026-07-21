@@ -1018,6 +1018,7 @@ const inboxUpdateCredentialRequestSchema = z
     credential: inboxCredentialSchema,
   })
   .strict();
+const inboxConnectGoogleRequestSchema = z.object({}).strict();
 const inboxOutgoingSettingsConfigurationSchema = z
   .object({
     host: z.string().trim().min(1).max(255),
@@ -1529,6 +1530,8 @@ export const ipcRequestSchemas = {
   "inbox:account:remove": inboxAccountIdRequestSchema,
   "inbox:account:sync": inboxAccountIdRequestSchema,
   "inbox:account:updateCredential": inboxUpdateCredentialRequestSchema,
+  "inbox:account:connectGoogle": inboxConnectGoogleRequestSchema,
+  "inbox:account:reauthorizeGoogle": inboxAccountIdRequestSchema,
   "inbox:account:outgoing:get": inboxAccountIdRequestSchema,
   "inbox:account:outgoing:set": inboxOutgoingSettingsRequestSchema,
   "inbox:threads:list": inboxThreadsListRequestSchema,
@@ -1610,6 +1613,8 @@ export const ipcResponseSchemas = {
   "inbox:account:remove": inboxRemoveAccountResultSchema,
   "inbox:account:sync": inboxSyncResultSchema,
   "inbox:account:updateCredential": inboxSyncResultSchema,
+  "inbox:account:connectGoogle": inboxAccountSummarySchema,
+  "inbox:account:reauthorizeGoogle": inboxSyncResultSchema,
   "inbox:account:outgoing:get": inboxOutgoingSettingsSchema.nullable(),
   "inbox:account:outgoing:set": inboxOutgoingSettingsSchema,
   "inbox:threads:list": inboxThreadPageSchema,

@@ -71,6 +71,7 @@ import { InboxTaskActionService } from "../inbox/task-action-service";
 import { InboxOutgoingSettingsService } from "../inbox/outgoing-settings-service";
 import { ReplyDispatchService } from "../inbox/reply-dispatch-service";
 import type { CalendarApplicationService } from "../calendar/application-service";
+import type { GoogleInboxOAuthService } from "../inbox/google-oauth-service";
 
 export type { ModelCatalogEntry };
 
@@ -114,6 +115,11 @@ export type InboxReplyDispatchIpcService = Pick<
   "approveAndSend"
 >;
 
+export type GoogleInboxOAuthIpcService = Pick<
+  GoogleInboxOAuthService,
+  "connectGmail" | "reauthorizeGmail"
+>;
+
 export type CalendarIpcService = Pick<
   CalendarApplicationService,
   | "listSources"
@@ -139,6 +145,7 @@ interface RegisterIpcHandlersOptions {
   inboxReplyGenerationService?: InboxReplyGenerationIpcService;
   inboxOutgoingSettingsService?: InboxOutgoingSettingsIpcService;
   inboxReplyDispatchService?: InboxReplyDispatchIpcService;
+  googleInboxOAuthService?: GoogleInboxOAuthIpcService;
   calendarService?: CalendarIpcService;
 }
 
@@ -169,6 +176,7 @@ export function registerIpcHandlers({
   inboxReplyGenerationService,
   inboxOutgoingSettingsService,
   inboxReplyDispatchService,
+  googleInboxOAuthService,
   calendarService,
 }: RegisterIpcHandlersOptions): void {
   const openedLanes = new Map<string, OpenedLane>();
@@ -232,6 +240,12 @@ export function registerIpcHandlers({
     }
     return inboxReplyDispatchService;
   };
+  const getGoogleInboxOAuthService = () => {
+    if (!googleInboxOAuthService) {
+      throw new Error("Google OAuth is unavailable.");
+    }
+    return googleInboxOAuthService;
+  };
   const getCalendarService = () => {
     if (!calendarService) throw new Error("Calendar is unavailable.");
     return calendarService;
@@ -260,6 +274,7 @@ export function registerIpcHandlers({
         getInboxReplyGenerationService,
         getInboxOutgoingSettingsService,
         getInboxReplyDispatchService,
+        getGoogleInboxOAuthService,
         getCalendarService,
       );
       return ipcResponseSchemas[channel].parse(response);
@@ -286,6 +301,7 @@ async function dispatch(
   inboxReplyGenerationService: () => InboxReplyGenerationIpcService,
   inboxOutgoingSettingsService: () => InboxOutgoingSettingsIpcService,
   inboxReplyDispatchService: () => InboxReplyDispatchIpcService,
+  googleInboxOAuthService: () => GoogleInboxOAuthIpcService,
   calendarService: () => CalendarIpcService,
 ): Promise<unknown> {
   switch (channel) {
@@ -536,6 +552,12 @@ async function dispatch(
         update.credential,
       );
     }
+    case "inbox:account:connectGoogle":
+      return googleInboxOAuthService().connectGmail();
+    case "inbox:account:reauthorizeGoogle":
+      return googleInboxOAuthService().reauthorizeGmail(
+        (request as IpcRequest<"inbox:account:reauthorizeGoogle">).accountId,
+      );
     case "inbox:account:outgoing:get":
       return inboxOutgoingSettingsService().get(
         (request as IpcRequest<"inbox:account:outgoing:get">).accountId,

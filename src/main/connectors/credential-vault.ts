@@ -30,6 +30,11 @@ export type OAuthCredential = {
   accessToken: string;
   refreshToken?: string;
   expiresAt?: string;
+  google?: {
+    clientId: string;
+    clientSecret?: string;
+    scopes: string[];
+  };
 };
 
 export type ConnectorCredential = ImapPasswordCredential | OAuthCredential;
@@ -168,6 +173,7 @@ function validateCredential(value: unknown): ConnectorCredential {
       "accessToken",
       "refreshToken",
       "expiresAt",
+      "google",
     ]);
     assertNonEmptyString(value.username);
     assertNonEmptyString(value.accessToken);
@@ -175,6 +181,9 @@ function validateCredential(value: unknown): ConnectorCredential {
       assertNonEmptyString(value.refreshToken);
     if (Object.hasOwn(value, "expiresAt"))
       assertNonEmptyString(value.expiresAt);
+    const google = Object.hasOwn(value, "google")
+      ? validateGoogleOAuthClient(value.google)
+      : undefined;
     return {
       version: 1,
       kind: "oauth",
@@ -186,9 +195,40 @@ function validateCredential(value: unknown): ConnectorCredential {
       ...(Object.hasOwn(value, "expiresAt")
         ? { expiresAt: value.expiresAt as string }
         : {}),
+      ...(google ? { google } : {}),
     };
   }
   throw new Error("invalid");
+}
+
+function validateGoogleOAuthClient(value: unknown): {
+  clientId: string;
+  clientSecret?: string;
+  scopes: string[];
+} {
+  if (!isPlainRecord(value)) throw new Error("invalid");
+  assertExactKeys(value, ["clientId", "clientSecret", "scopes"]);
+  assertNonEmptyString(value.clientId);
+  if (Object.hasOwn(value, "clientSecret")) {
+    assertNonEmptyString(value.clientSecret);
+  }
+  if (
+    !Array.isArray(value.scopes) ||
+    value.scopes.length === 0 ||
+    value.scopes.length > 20 ||
+    !value.scopes.every(
+      (scope) => typeof scope === "string" && scope.trim().length > 0,
+    )
+  ) {
+    throw new Error("invalid");
+  }
+  return {
+    clientId: value.clientId,
+    ...(Object.hasOwn(value, "clientSecret")
+      ? { clientSecret: value.clientSecret as string }
+      : {}),
+    scopes: [...value.scopes],
+  };
 }
 
 function validateEnvelope(

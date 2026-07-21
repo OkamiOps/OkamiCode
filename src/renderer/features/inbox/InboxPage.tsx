@@ -67,6 +67,10 @@ export interface InboxApi {
   updateAccountCredential(
     request: IpcRequest<"inbox:account:updateCredential">,
   ): Promise<IpcResponse<"inbox:account:updateCredential">>;
+  connectGoogle(): Promise<IpcResponse<"inbox:account:connectGoogle">>;
+  reauthorizeGoogle(
+    request: IpcRequest<"inbox:account:reauthorizeGoogle">,
+  ): Promise<IpcResponse<"inbox:account:reauthorizeGoogle">>;
   getOutgoingSettings(
     request: IpcRequest<"inbox:account:outgoing:get">,
   ): Promise<IpcResponse<"inbox:account:outgoing:get">>;
@@ -115,6 +119,8 @@ const defaultApi: InboxApi = {
   removeAccount: workbenchClient.inboxAccountRemove,
   syncAccount: workbenchClient.inboxAccountSync,
   updateAccountCredential: workbenchClient.inboxAccountUpdateCredential,
+  connectGoogle: workbenchClient.inboxAccountConnectGoogle,
+  reauthorizeGoogle: workbenchClient.inboxAccountReauthorizeGoogle,
   getOutgoingSettings: workbenchClient.inboxAccountOutgoingGet,
   setOutgoingSettings: workbenchClient.inboxAccountOutgoingSet,
   listThreads: workbenchClient.inboxThreadsList,
@@ -198,6 +204,14 @@ export function InboxPage({ api = defaultApi }: { api?: InboxApi }) {
   });
   const updateAccountCredential = useMutation({
     mutationFn: api.updateAccountCredential,
+    onSettled: refresh,
+  });
+  const connectGoogle = useMutation({
+    mutationFn: api.connectGoogle,
+    onSuccess: refresh,
+  });
+  const reauthorizeGoogle = useMutation({
+    mutationFn: api.reauthorizeGoogle,
     onSettled: refresh,
   });
   const removeAccount = useMutation({
@@ -428,14 +442,18 @@ export function InboxPage({ api = defaultApi }: { api?: InboxApi }) {
         accounts={accounts.data ?? []}
         activeFilter={filter}
         accountsError={accounts.isError ? errorMessage(accounts.error) : null}
-        isAdding={addAccount.isPending}
+        isAdding={addAccount.isPending || connectGoogle.isPending}
         isLoading={accounts.isLoading}
         onAdd={(request) => addAccount.mutateAsync(request)}
+        onConnectGoogle={() => connectGoogle.mutateAsync()}
         onFilterChange={setFilter}
         onRemove={(accountId) => removeAccount.mutate({ accountId })}
         onSync={(accountId) => syncAccount.mutate({ accountId })}
         onUpdateCredential={(request) =>
           updateAccountCredential.mutateAsync(request)
+        }
+        onReauthorizeGoogle={(request) =>
+          reauthorizeGoogle.mutateAsync(request)
         }
         getOutgoingSettings={api.getOutgoingSettings}
         setOutgoingSettings={async (request) => {
@@ -450,9 +468,11 @@ export function InboxPage({ api = defaultApi }: { api?: InboxApi }) {
           syncAccount.isPending ? syncAccount.variables?.accountId : null
         }
         pendingCredentialAccountId={
-          updateAccountCredential.isPending
-            ? updateAccountCredential.variables?.accountId
-            : null
+          reauthorizeGoogle.isPending
+            ? reauthorizeGoogle.variables?.accountId
+            : updateAccountCredential.isPending
+              ? updateAccountCredential.variables?.accountId
+              : null
         }
         removingAccountId={
           removeAccount.isPending ? removeAccount.variables?.accountId : null
@@ -545,9 +565,11 @@ function InboxSidebar({
   isLoading,
   getOutgoingSettings,
   onAdd,
+  onConnectGoogle,
   onFilterChange,
   onRemove,
   onSync,
+  onReauthorizeGoogle,
   onUpdateCredential,
   setOutgoingSettings,
   pendingAccountId,
@@ -562,9 +584,13 @@ function InboxSidebar({
   isLoading: boolean;
   getOutgoingSettings: InboxApi["getOutgoingSettings"];
   onAdd: (request: IpcRequest<"inbox:account:add">) => Promise<unknown>;
+  onConnectGoogle: () => Promise<unknown>;
   onFilterChange: (filter: AccountFilter) => void;
   onRemove: (accountId: string) => void;
   onSync: (accountId: string) => void;
+  onReauthorizeGoogle: (
+    request: IpcRequest<"inbox:account:reauthorizeGoogle">,
+  ) => Promise<unknown>;
   onUpdateCredential: (
     request: IpcRequest<"inbox:account:updateCredential">,
   ) => Promise<unknown>;
@@ -581,7 +607,11 @@ function InboxSidebar({
           <p className="inbox-eyebrow">Comunicação local</p>
           <h1>Inbox</h1>
         </div>
-        <InboxAccountModal isPending={isAdding} onSubmit={onAdd} />
+        <InboxAccountModal
+          isPending={isAdding}
+          onConnectGoogle={onConnectGoogle}
+          onSubmit={onAdd}
+        />
       </header>
       <div className="inbox-sidebar-scroll">
         <section className="inbox-nav-section" aria-label="Caixas de entrada">
@@ -636,6 +666,7 @@ function InboxSidebar({
                   <InboxCredentialModal
                     account={account}
                     isPending={pendingCredentialAccountId === account.id}
+                    onConnectGoogle={onReauthorizeGoogle}
                     onSubmit={onUpdateCredential}
                   />
                   <InboxOutgoingSettingsModal
