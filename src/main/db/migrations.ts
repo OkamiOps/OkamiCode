@@ -13,6 +13,7 @@ const MIGRATIONS = [
   "schema/008-external-outbox.sql",
   "schema/009-inbox-core.sql",
   "schema/010-inbox-account-settings.sql",
+  "schema/011-inbox-task-actions.sql",
 ];
 
 export function runMigrations(db: InstanceType<typeof SqliteDatabase>): void {

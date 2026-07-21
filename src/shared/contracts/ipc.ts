@@ -1087,6 +1087,41 @@ export const kanbanAssignRequestSchema = z
   })
   .strict();
 
+const inboxThreadCreateTaskRequestSchema = z
+  .object({
+    threadId: entityIdSchema,
+    mode: z.enum(["manual", "delegate"]),
+    laneId: entityIdSchema.nullable(),
+    title: z.string().trim().min(1).max(240).optional(),
+    idempotencyKey: entityIdSchema,
+  })
+  .strict()
+  .superRefine((value, context) => {
+    if (value.mode === "manual" && value.laneId !== null) {
+      context.addIssue({
+        code: "custom",
+        message: "manual tasks require laneId to be null",
+        path: ["laneId"],
+      });
+    }
+    if (value.mode === "delegate" && value.laneId === null) {
+      context.addIssue({
+        code: "custom",
+        message: "delegated tasks require a laneId",
+        path: ["laneId"],
+      });
+    }
+  });
+
+const inboxThreadCreateTaskResultSchema = z
+  .object({
+    actionId: entityIdSchema,
+    sourceThreadId: entityIdSchema,
+    card: kanbanCardSchema,
+    executionStarted: z.literal(false),
+  })
+  .strict();
+
 export const ipcRequestSchemas = {
   "system:doctor": emptyRequestSchema,
   "models:list": emptyRequestSchema,
@@ -1144,6 +1179,7 @@ export const ipcRequestSchemas = {
   "inbox:threads:list": inboxThreadsListRequestSchema,
   "inbox:thread:get": inboxThreadIdRequestSchema,
   "inbox:thread:markRead": inboxThreadIdRequestSchema,
+  "inbox:thread:createTask": inboxThreadCreateTaskRequestSchema,
 } satisfies Record<IpcChannel, z.ZodType>;
 
 export const ipcResponseSchemas = {
@@ -1208,6 +1244,7 @@ export const ipcResponseSchemas = {
   "inbox:threads:list": inboxThreadPageSchema,
   "inbox:thread:get": inboxThreadDetailSchema,
   "inbox:thread:markRead": inboxThreadSchema,
+  "inbox:thread:createTask": inboxThreadCreateTaskResultSchema,
 } satisfies Record<IpcChannel, z.ZodType>;
 
 export type IpcRequest<C extends IpcChannel> = z.input<

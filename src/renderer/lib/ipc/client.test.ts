@@ -183,6 +183,7 @@ it("exposes exactly the enumerated command surface", () => {
     "inbox:threads:list",
     "inbox:thread:get",
     "inbox:thread:markRead",
+    "inbox:thread:createTask",
   ]);
   expect(Object.keys(window.okami.invoke)).toEqual(ipcChannels);
 });
@@ -238,6 +239,27 @@ it("provides typed Inbox account and thread commands through the bridge", async 
       },
       messages: [],
     },
+    "inbox:thread:createTask": {
+      actionId: "0f7c4f9c-33dd-4dbd-98cb-8e768646b386",
+      sourceThreadId: threadId,
+      card: {
+        id: "94c8fd0f-708b-46b7-b929-852a92bc9437",
+        taskId: null,
+        title: "Subject",
+        description: "Conteúdo externo não confiável",
+        status: "backlog",
+        ownerKind: "human",
+        laneId: null,
+        activationPolicy: "manual",
+        position: 0,
+        stateHash: "hash",
+        lastProcessedHash: "hash",
+        lastProcessedCursor: 1,
+        createdAt: now,
+        updatedAt: now,
+      },
+      executionStarted: false,
+    },
   });
 
   await expect(workbenchClient.inboxAccountsList()).resolves.toEqual([summary]);
@@ -261,6 +283,17 @@ it("provides typed Inbox account and thread commands through the bridge", async 
   await expect(
     workbenchClient.inboxThreadGet({ threadId }),
   ).resolves.toMatchObject({ thread: { id: threadId } });
+  await expect(
+    workbenchClient.inboxThreadCreateTask({
+      threadId,
+      mode: "manual",
+      laneId: null,
+      idempotencyKey: "f1db4f0c-a4ff-4fd2-9966-7fa6315d160d",
+    }),
+  ).resolves.toMatchObject({
+    executionStarted: false,
+    sourceThreadId: threadId,
+  });
 });
 
 it("parses events before notifying consumers", () => {

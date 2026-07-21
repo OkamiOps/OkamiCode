@@ -61,6 +61,7 @@ import {
   type KanbanCardMutationResult,
 } from "../kanban/service";
 import type { InboxApplicationService } from "../inbox/application-service";
+import { InboxTaskActionService } from "../inbox/task-action-service";
 
 export type { ModelCatalogEntry };
 
@@ -75,6 +76,11 @@ export type InboxIpcService = Pick<
   | "markThreadRead"
 >;
 
+export type InboxTaskActionIpcService = Pick<
+  InboxTaskActionService,
+  "createKanbanTask"
+>;
+
 interface RegisterIpcHandlersOptions {
   ipcMain: Pick<IpcMain, "handle">;
   rendererUrl: string;
@@ -84,6 +90,7 @@ interface RegisterIpcHandlersOptions {
   clientCapabilities?: () => Promise<CliCapability[]>;
   memoryService?: MemoryService;
   inboxService?: InboxIpcService;
+  inboxTaskActionService?: InboxTaskActionIpcService;
 }
 
 interface TaskRow {
@@ -108,6 +115,7 @@ export function registerIpcHandlers({
   clientCapabilities = createCliCapabilityDetector(),
   memoryService,
   inboxService,
+  inboxTaskActionService,
 }: RegisterIpcHandlersOptions): void {
   const openedLanes = new Map<string, OpenedLane>();
   let memory = memoryService;
@@ -142,6 +150,13 @@ export function registerIpcHandlers({
     if (!inboxService) throw new Error("Inbox is unavailable.");
     return inboxService;
   };
+  let inboxActions = inboxTaskActionService;
+  const getInboxTaskActionService = () =>
+    (inboxActions ??= new InboxTaskActionService({
+      db: state.database,
+      createId: state.createId,
+      clock: () => state.clock().toISOString(),
+    }));
 
   for (const channel of ipcChannels) {
     ipcMain.handle(channel, async (event, payload) => {
@@ -161,6 +176,7 @@ export function registerIpcHandlers({
         getMemoryService,
         kanbanService,
         getInboxService,
+        getInboxTaskActionService,
       );
       return ipcResponseSchemas[channel].parse(response);
     });
@@ -181,6 +197,7 @@ async function dispatch(
   getMemoryService: () => MemoryService,
   kanbanService: () => KanbanCardService,
   inboxService: () => InboxIpcService,
+  inboxTaskActionService: () => InboxTaskActionIpcService,
 ): Promise<unknown> {
   switch (channel) {
     case "system:doctor":
@@ -402,6 +419,10 @@ async function dispatch(
     case "inbox:thread:markRead":
       return inboxService().markThreadRead(
         (request as IpcRequest<"inbox:thread:markRead">).threadId,
+      );
+    case "inbox:thread:createTask":
+      return inboxTaskActionService().createKanbanTask(
+        request as IpcRequest<"inbox:thread:createTask">,
       );
   }
 }

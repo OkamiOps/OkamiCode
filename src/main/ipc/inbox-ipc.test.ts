@@ -33,6 +33,8 @@ function harness() {
     createId: randomUUID,
     clock: () => new Date(now),
   });
+  const sendTurn = vi.fn();
+  state.laneService = { sendTurn } as unknown as typeof state.laneService;
   const inboxService = {
     listAccounts: vi.fn(async () => [
       {
@@ -96,6 +98,32 @@ function harness() {
       updatedAt: now,
     })),
   };
+  const inboxTaskActionService = {
+    createKanbanTask: vi.fn(
+      () =>
+        ({
+          actionId: "0f7c4f9c-33dd-4dbd-98cb-8e768646b386",
+          sourceThreadId: threadId,
+          card: {
+            id: "94c8fd0f-708b-46b7-b929-852a92bc9437",
+            taskId: null,
+            title: "Subject",
+            description: "Conteúdo externo não confiável",
+            status: "backlog",
+            ownerKind: "human",
+            laneId: null,
+            activationPolicy: "manual",
+            position: 0,
+            stateHash: "hash",
+            lastProcessedHash: "hash",
+            lastProcessedCursor: 1,
+            createdAt: now,
+            updatedAt: now,
+          },
+          executionStarted: false,
+        }) as const,
+    ),
+  };
   const handlers = new Map<IpcChannel, Parameters<IpcMain["handle"]>[1]>();
   registerIpcHandlers({
     ipcMain: {
@@ -107,13 +135,14 @@ function harness() {
     state,
     clientCapabilities: async () => [],
     inboxService,
+    inboxTaskActionService,
   });
   const senderFrame = { url: "http://127.0.0.1:5173/inbox" };
   const event = {
     senderFrame,
     sender: { mainFrame: senderFrame, send: vi.fn() },
   } as unknown as IpcMainInvokeEvent;
-  return { handlers, inboxService, event };
+  return { handlers, inboxService, inboxTaskActionService, event, sendTurn };
 }
 
 it("routes all Inbox commands once and rejects invalid payloads before dispatch", async () => {
@@ -154,6 +183,51 @@ it("routes all Inbox commands once and rejects invalid payloads before dispatch"
     handlers.get("inbox:account:add")?.(event, { ...add, unexpected: true }),
   ).rejects.toThrow();
   expect(inboxService.addImapAccount).toHaveBeenCalledOnce();
+});
+
+it("creates a task through the strict trusted Inbox channel without starting a lane", async () => {
+  const { handlers, inboxTaskActionService, event, sendTurn } = harness();
+  const idempotencyKey = "f1db4f0c-a4ff-4fd2-9966-7fa6315d160d";
+
+  await expect(
+    handlers.get("inbox:thread:createTask")?.(event, {
+      threadId,
+      mode: "manual",
+      laneId: null,
+      idempotencyKey,
+    }),
+  ).resolves.toMatchObject({
+    executionStarted: false,
+    sourceThreadId: threadId,
+  });
+  expect(inboxTaskActionService.createKanbanTask).toHaveBeenCalledOnce();
+  expect(inboxTaskActionService.createKanbanTask).toHaveBeenCalledWith({
+    threadId,
+    mode: "manual",
+    laneId: null,
+    idempotencyKey,
+  });
+  expect(sendTurn).not.toHaveBeenCalled();
+  await expect(
+    handlers.get("inbox:thread:createTask")?.(event, {
+      threadId,
+      mode: "delegate",
+      laneId: null,
+      idempotencyKey,
+    }),
+  ).rejects.toThrow();
+  expect(inboxTaskActionService.createKanbanTask).toHaveBeenCalledOnce();
+
+  const untrustedEvent = {
+    senderFrame: { url: "https://evil.example/inbox" },
+    sender: { mainFrame: { url: "https://evil.example/inbox" }, send: vi.fn() },
+  } as unknown as IpcMainInvokeEvent;
+  await expect(
+    handlers.get("inbox:thread:createTask")?.(untrustedEvent, {
+      unexpected: true,
+    }),
+  ).rejects.toThrow("Untrusted renderer origin");
+  expect(inboxTaskActionService.createKanbanTask).toHaveBeenCalledOnce();
 });
 
 it("rejects a response that leaks credential fields", async () => {

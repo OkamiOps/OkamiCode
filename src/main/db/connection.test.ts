@@ -11,7 +11,7 @@ describe("openDatabase", () => {
     const key = Buffer.alloc(32, 7);
     const db = openDatabase(file, key);
     expect(db.prepare("SELECT sqlite3mc_version()").pluck().get()).toBeTruthy();
-    expect(db.pragma("user_version", { simple: true })).toBe(10);
+    expect(db.pragma("user_version", { simple: true })).toBe(11);
     const settingsSql = db
       .prepare(
         "SELECT sql FROM sqlite_master WHERE type = 'table' AND name = 'inbox_account_settings'",
