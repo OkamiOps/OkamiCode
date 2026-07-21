@@ -1075,6 +1075,25 @@ const inboxReplyDispatchSchema = z
 const inboxThreadIdRequestSchema = z
   .object({ threadId: entityIdSchema })
   .strict();
+const inboxThreadMoveToSpamRequestSchema = z
+  .object({
+    threadId: entityIdSchema,
+    confirmation: z.literal("move_to_spam"),
+  })
+  .strict();
+const inboxThreadMoveToTrashRequestSchema = z
+  .object({
+    threadId: entityIdSchema,
+    confirmation: z.literal("move_to_trash"),
+  })
+  .strict();
+const inboxThreadMoveResultSchema = z
+  .object({
+    threadId: entityIdSchema,
+    destination: z.enum(["spam", "trash"]),
+    moved: z.literal(true),
+  })
+  .strict();
 
 export const kanbanStatuses = [
   "backlog",
@@ -1537,6 +1556,8 @@ export const ipcRequestSchemas = {
   "inbox:threads:list": inboxThreadsListRequestSchema,
   "inbox:thread:get": inboxThreadIdRequestSchema,
   "inbox:thread:markRead": inboxThreadIdRequestSchema,
+  "inbox:thread:moveToSpam": inboxThreadMoveToSpamRequestSchema,
+  "inbox:thread:moveToTrash": inboxThreadMoveToTrashRequestSchema,
   "inbox:thread:createTask": inboxThreadCreateTaskRequestSchema,
   "inbox:thread:createReplyDraft": inboxThreadCreateReplyDraftRequestSchema,
   "inbox:thread:createForwardDraft": inboxThreadCreateForwardDraftRequestSchema,
@@ -1620,6 +1641,8 @@ export const ipcResponseSchemas = {
   "inbox:threads:list": inboxThreadPageSchema,
   "inbox:thread:get": inboxThreadDetailSchema,
   "inbox:thread:markRead": inboxThreadSchema,
+  "inbox:thread:moveToSpam": inboxThreadMoveResultSchema,
+  "inbox:thread:moveToTrash": inboxThreadMoveResultSchema,
   "inbox:thread:createTask": inboxThreadCreateTaskResultSchema,
   "inbox:thread:createReplyDraft": inboxThreadCreateReplyDraftResultSchema,
   "inbox:thread:createForwardDraft": inboxThreadCreateReplyDraftResultSchema,

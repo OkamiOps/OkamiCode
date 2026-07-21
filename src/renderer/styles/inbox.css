@@ -569,6 +569,52 @@
 .inbox-details-drawer-trigger {
   display: none;
 }
+.inbox-conversation__header-actions {
+  display: flex;
+  flex: 0 0 auto;
+  align-items: center;
+  gap: 3px;
+}
+.inbox-thread-action {
+  display: grid;
+  width: 32px;
+  height: 32px;
+  padding: 0;
+  place-items: center;
+  border: 1px solid transparent;
+  border-radius: var(--ok-radius-sm);
+  background: transparent;
+  color: var(--ok-text-muted);
+  cursor: pointer;
+  transition:
+    color 140ms ease,
+    border-color 140ms ease,
+    background-color 140ms ease;
+}
+.inbox-thread-action:hover,
+.inbox-thread-action:focus-visible {
+  border-color: var(--ok-border);
+  background: var(--ok-surface-2);
+  color: var(--ok-orange);
+  outline: none;
+}
+.inbox-thread-action--danger:hover,
+.inbox-thread-action--danger:focus-visible {
+  border-color: color-mix(in srgb, var(--ok-red) 38%, var(--ok-border));
+  color: var(--ok-red);
+}
+.inbox-thread-action[aria-disabled="true"] {
+  cursor: wait;
+  opacity: 0.55;
+}
+.inbox-thread-move-error {
+  margin: 0;
+  padding: 8px 18px;
+  border-bottom: 1px solid color-mix(in srgb, var(--ok-red) 30%, transparent);
+  background: color-mix(in srgb, var(--ok-red) 8%, transparent);
+  color: var(--ok-red);
+  font-size: 11px;
+}
 
 .inbox-conversation__scroll {
   padding: 24px clamp(20px, 4vw, 54px) 30px;
@@ -2618,30 +2664,93 @@
     padding: 13px 18px;
   }
 }
+.inbox-confirm-dialog-container {
+  width: min(430px, calc(100vw - 32px));
+}
 .inbox-confirm-dialog {
-  width: min(390px, calc(100vw - 32px));
+  position: relative;
+  width: 100%;
+  overflow: hidden;
   border: 1px solid var(--ok-border);
-  border-radius: var(--ok-radius-md);
-  background: var(--ok-surface-1);
+  border-radius: 14px;
+  background: var(--ok-surface-1) !important;
   color: var(--ok-text);
+  box-shadow: 0 24px 70px rgb(0 0 0 / 55%);
 }
-.inbox-confirm-dialog [data-slot="alert-dialog-header"] {
-  padding: 17px 17px 0;
+.inbox-confirm-dialog__header {
+  display: grid;
+  grid-template-columns: 40px minmax(0, 1fr) 28px;
+  align-items: center;
+  gap: 13px;
+  padding: 20px 20px 12px;
 }
-.inbox-confirm-dialog [data-slot="alert-dialog-body"] {
-  padding: 9px 17px;
+.inbox-confirm-dialog__icon {
+  display: grid;
+  width: 40px;
+  height: 40px;
+  place-items: center;
+  border: 1px solid color-mix(in srgb, var(--ok-orange) 42%, var(--ok-border));
+  border-radius: 11px;
+  background: color-mix(in srgb, var(--ok-orange) 12%, var(--ok-surface-2));
+  color: var(--ok-orange);
+}
+.inbox-confirm-dialog__icon--danger {
+  border-color: color-mix(in srgb, var(--ok-red) 42%, var(--ok-border));
+  background: color-mix(in srgb, var(--ok-red) 10%, var(--ok-surface-2));
+  color: var(--ok-red);
+}
+.inbox-confirm-dialog__heading-copy {
+  display: grid;
+  min-width: 0;
+  gap: 3px;
+}
+.inbox-confirm-dialog__heading-copy small {
+  color: var(--ok-text-muted);
+  font: 600 8.5px/1.2 var(--ok-font-mono);
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+}
+.inbox-confirm-dialog__heading-copy h2 {
+  margin: 0;
+  color: var(--ok-text);
+  font: 650 15px/1.3 var(--ok-font-ui);
+}
+.inbox-confirm-dialog__body {
+  padding: 0 20px 20px 73px;
   color: var(--ok-text-muted);
   font-size: 11.5px;
   line-height: 1.55;
 }
-.inbox-confirm-dialog [data-slot="alert-dialog-footer"] {
+.inbox-confirm-dialog__footer {
   display: flex;
   justify-content: flex-end;
-  gap: 7px;
-  padding: 12px 17px 17px;
+  gap: 8px;
+  padding: 13px 20px;
+  border-top: 1px solid var(--ok-border);
+  background: color-mix(in srgb, var(--ok-surface-2) 58%, transparent);
+}
+.inbox-confirm-dialog__close {
+  display: grid;
+  width: 28px;
+  height: 28px;
+  flex: 0 0 auto;
+  place-items: center;
+  border: 1px solid transparent;
+  border-radius: var(--ok-radius-sm);
+  background: transparent;
+  color: var(--ok-text-muted);
+}
+.inbox-confirm-dialog__close:hover,
+.inbox-confirm-dialog__close:focus-visible {
+  border-color: var(--ok-border);
+  background: var(--ok-surface-2);
+  color: var(--ok-text);
+  outline: none;
 }
 .inbox-confirm-cancel,
-.inbox-confirm-remove {
+.inbox-confirm-remove,
+.inbox-confirm-spam,
+.inbox-confirm-danger {
   min-height: 32px;
   padding: 0 10px;
   border: 1px solid var(--ok-border);
@@ -2652,6 +2761,16 @@
 }
 .inbox-confirm-remove {
   border-color: color-mix(in srgb, var(--ok-red) 48%, var(--ok-border));
+  color: var(--ok-red);
+}
+.inbox-confirm-spam {
+  border-color: color-mix(in srgb, var(--ok-orange) 48%, var(--ok-border));
+  background: color-mix(in srgb, var(--ok-orange) 12%, var(--ok-surface-2));
+  color: var(--ok-orange);
+}
+.inbox-confirm-danger {
+  border-color: color-mix(in srgb, var(--ok-red) 48%, var(--ok-border));
+  background: color-mix(in srgb, var(--ok-red) 10%, var(--ok-surface-2));
   color: var(--ok-red);
 }
 .inbox-confirm-remove {

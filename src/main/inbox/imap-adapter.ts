@@ -57,8 +57,18 @@ export interface ImapClient {
   logout(): Promise<unknown>;
   getMailboxLock(
     mailbox: string,
-    options: { readOnly: true },
+    options: { readOnly: boolean },
   ): Promise<{ release(): void }>;
+  list(): Promise<Array<{ path: string; specialUse?: string }>>;
+  search(
+    query: { header: Record<string, string> },
+    options: { uid: true },
+  ): Promise<number[] | false>;
+  messageMove(
+    range: number[],
+    destination: string,
+    options: { uid: true },
+  ): Promise<unknown | false>;
   fetchAll(
     range: string,
     query: Record<string, boolean>,
@@ -86,6 +96,13 @@ export type ImapClientConstructor = new (
 
 export interface CredentialReader {
   get(accountId: string): Promise<ConnectorCredential | null>;
+}
+
+export type InboxThreadDestination = "spam" | "trash";
+
+export interface ImapMoveMessagesInput extends ImapSyncInput {
+  externalMessageIds: string[];
+  destination: InboxThreadDestination;
 }
 
 export class ImapSyncError extends Error {
@@ -120,47 +137,7 @@ export class ImapSyncAdapter {
       throw new ImapSyncError("Invalid IMAP sync cursor");
     }
 
-    let credential: ConnectorCredential | null;
-    try {
-      credential = await this.vault.get(input.account.id);
-    } catch (cause) {
-      if (cause instanceof GoogleOAuthRefreshRequiredError) {
-        throw new ImapSyncError(cause.message, "auth_required");
-      }
-      throw new ImapSyncError("IMAP credentials unavailable");
-    }
-    if (!credential) throw new ImapSyncError("IMAP credentials unavailable");
-    if (
-      (credential.kind !== "imap_password" && credential.kind !== "oauth") ||
-      typeof credential.username !== "string" ||
-      credential.username.trim().length === 0 ||
-      (credential.kind === "imap_password" &&
-        (typeof credential.password !== "string" ||
-          credential.password.length === 0)) ||
-      (credential.kind === "oauth" &&
-        (typeof credential.accessToken !== "string" ||
-          credential.accessToken.length === 0))
-    ) {
-      throw new ImapSyncError("IMAP credentials unavailable");
-    }
-
-    let client: ImapClient;
-    try {
-      client = this.clientFactory({
-        host: configuration.host,
-        port: configuration.port,
-        secure: configuration.secure,
-        auth:
-          credential.kind === "imap_password"
-            ? { user: credential.username, pass: credential.password }
-            : {
-                user: credential.username,
-                accessToken: credential.accessToken,
-              },
-      });
-    } catch {
-      throw new ImapSyncError();
-    }
+    const client = await this.createClient(input, configuration);
 
     let lock: { release(): void } | undefined;
     let primaryError: ImapSyncError | null = null;
@@ -201,6 +178,101 @@ export class ImapSyncAdapter {
     if (primaryError) throw primaryError;
     if (cleanupFailed || !result) throw new ImapSyncError();
     return result;
+  }
+
+  async moveMessages(input: ImapMoveMessagesInput): Promise<void> {
+    let configuration: ValidatedConfiguration;
+    try {
+      configuration = validateConfiguration(input.configuration);
+    } catch {
+      throw new ImapSyncError("Invalid IMAP configuration");
+    }
+    if (input.externalMessageIds.length === 0) {
+      throw new ImapSyncError("No messages available to move");
+    }
+
+    const client = await this.createClient(input, configuration);
+    let lock: { release(): void } | undefined;
+    let primaryError: ImapSyncError | null = null;
+    try {
+      await client.connect();
+      const mailboxes = await client.list();
+      const destination = resolveDestinationMailbox(
+        mailboxes,
+        input.destination,
+        input.account.provider,
+      );
+      lock = await client.getMailboxLock(configuration.mailbox, {
+        readOnly: false,
+      });
+      const uids = await resolveMessageUids(client, input.externalMessageIds);
+      if (uids.length === 0) {
+        throw new ImapSyncError("Messages are no longer available");
+      }
+      const moved = await client.messageMove(uids, destination, { uid: true });
+      if (moved === false) throw new ImapSyncError("Message move failed");
+    } catch (cause) {
+      primaryError =
+        cause instanceof ImapSyncError
+          ? cause
+          : classifyImapFailure(cause, input.account.provider);
+      const error = safeImapError(cause);
+      console.warn("[okami] IMAP message move failed", {
+        accountId: input.account.id,
+        provider: input.account.provider,
+        destination: input.destination,
+        errorName: error.errorName,
+        errorCode: error.errorCode,
+      });
+    }
+
+    let cleanupFailed = false;
+    try {
+      lock?.release();
+    } catch {
+      cleanupFailed = true;
+    }
+    try {
+      await client.logout();
+    } catch {
+      cleanupFailed = true;
+    }
+    if (primaryError) throw primaryError;
+    if (cleanupFailed) throw new ImapSyncError();
+  }
+
+  private async createClient(
+    input: ImapSyncInput,
+    configuration: ValidatedConfiguration,
+  ): Promise<ImapClient> {
+    let credential: ConnectorCredential | null;
+    try {
+      credential = await this.vault.get(input.account.id);
+    } catch (cause) {
+      if (cause instanceof GoogleOAuthRefreshRequiredError) {
+        throw new ImapSyncError(cause.message, "auth_required");
+      }
+      throw new ImapSyncError("IMAP credentials unavailable");
+    }
+    if (!validCredential(credential)) {
+      throw new ImapSyncError("IMAP credentials unavailable");
+    }
+    try {
+      return this.clientFactory({
+        host: configuration.host,
+        port: configuration.port,
+        secure: configuration.secure,
+        auth:
+          credential.kind === "imap_password"
+            ? { user: credential.username, pass: credential.password }
+            : {
+                user: credential.username,
+                accessToken: credential.accessToken,
+              },
+      });
+    } catch {
+      throw new ImapSyncError();
+    }
   }
 
   private async readBatch(
@@ -283,6 +355,70 @@ export class ImapSyncAdapter {
       syncedAt: this.clock().toISOString(),
     };
   }
+}
+
+function validCredential(
+  credential: ConnectorCredential | null,
+): credential is Extract<
+  ConnectorCredential,
+  { kind: "imap_password" | "oauth" }
+> {
+  return Boolean(
+    credential &&
+    (credential.kind === "imap_password" || credential.kind === "oauth") &&
+    typeof credential.username === "string" &&
+    credential.username.trim().length > 0 &&
+    (credential.kind === "imap_password"
+      ? typeof credential.password === "string" &&
+        credential.password.length > 0
+      : typeof credential.accessToken === "string" &&
+        credential.accessToken.length > 0),
+  );
+}
+
+function resolveDestinationMailbox(
+  mailboxes: Array<{ path: string; specialUse?: string }>,
+  destination: InboxThreadDestination,
+  provider: ConnectorAccount["provider"],
+): string {
+  const specialUse = destination === "trash" ? "\\Trash" : "\\Junk";
+  const discovered = mailboxes.find(
+    (mailbox) => mailbox.specialUse?.toLowerCase() === specialUse.toLowerCase(),
+  );
+  if (discovered) return discovered.path;
+  if (provider === "gmail") {
+    return destination === "trash" ? "[Gmail]/Trash" : "[Gmail]/Spam";
+  }
+  return destination === "trash" ? "Trash" : "Junk";
+}
+
+async function resolveMessageUids(
+  client: ImapClient,
+  externalMessageIds: string[],
+): Promise<number[]> {
+  const uids = new Set<number>();
+  for (const externalMessageId of externalMessageIds) {
+    const fallbackUid = fallbackMessageUid(externalMessageId);
+    if (fallbackUid !== null) {
+      uids.add(fallbackUid);
+      continue;
+    }
+    const matches = await client.search(
+      { header: { "message-id": externalMessageId } },
+      { uid: true },
+    );
+    for (const uid of matches || []) {
+      if (Number.isSafeInteger(uid) && uid > 0) uids.add(uid);
+    }
+  }
+  return [...uids].sort((left, right) => left - right);
+}
+
+function fallbackMessageUid(externalMessageId: string): number | null {
+  const match = /^imap:\d+:(\d+)$/u.exec(externalMessageId);
+  if (!match) return null;
+  const uid = Number(match[1]);
+  return Number.isSafeInteger(uid) && uid > 0 ? uid : null;
 }
 
 const GMAIL_APP_PASSWORD_ERROR =

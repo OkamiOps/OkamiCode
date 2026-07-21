@@ -189,6 +189,16 @@ function makeApi(overrides: Partial<InboxApi> = {}): InboxApi {
       ],
     }),
     markThreadRead: vi.fn().mockResolvedValue({ ...thread, unreadCount: 0 }),
+    moveThreadToSpam: vi.fn().mockResolvedValue({
+      threadId,
+      destination: "spam",
+      moved: true,
+    }),
+    moveThreadToTrash: vi.fn().mockResolvedValue({
+      threadId,
+      destination: "trash",
+      moved: true,
+    }),
     listLanes: vi.fn().mockResolvedValue([]),
     createTask: vi.fn().mockResolvedValue(taskResult),
     createReplyDraft: vi.fn().mockResolvedValue(replyDraftResult),
@@ -244,6 +254,64 @@ async function configureAgentDraft(dialog: HTMLElement, model = "gpt-5.6") {
 describe("InboxPage", () => {
   beforeEach(() => localStorage.clear());
   afterEach(cleanup);
+
+  it("moves the selected conversation to spam after explicit confirmation", async () => {
+    const moveThreadToSpam = vi.fn().mockResolvedValue({
+      threadId,
+      destination: "spam",
+      moved: true,
+    });
+    const api = Object.assign(makeApi(), { moveThreadToSpam });
+    renderInbox(api);
+
+    await userEvent.click(
+      await screen.findByRole("button", { name: /Proposta para landing page/ }),
+    );
+    await userEvent.click(
+      await screen.findByRole("button", { name: "Mover conversa para spam" }),
+    );
+    await userEvent.click(
+      screen.getByRole("button", { name: "Confirmar spam" }),
+    );
+
+    await vi.waitFor(() => expect(moveThreadToSpam).toHaveBeenCalledOnce());
+    expect(moveThreadToSpam.mock.calls[0]?.[0]).toEqual({
+      threadId,
+      confirmation: "move_to_spam",
+    });
+    expect(
+      await screen.findByRole("heading", { name: "Selecione uma conversa" }),
+    ).toBeVisible();
+  });
+
+  it("moves the selected conversation to trash after explicit confirmation", async () => {
+    const moveThreadToTrash = vi.fn().mockResolvedValue({
+      threadId,
+      destination: "trash",
+      moved: true,
+    });
+    const api = Object.assign(makeApi(), { moveThreadToTrash });
+    renderInbox(api);
+
+    await userEvent.click(
+      await screen.findByRole("button", { name: /Proposta para landing page/ }),
+    );
+    await userEvent.click(
+      await screen.findByRole("button", { name: "Excluir conversa" }),
+    );
+    await userEvent.click(
+      screen.getByRole("button", { name: "Confirmar exclusão" }),
+    );
+
+    await vi.waitFor(() => expect(moveThreadToTrash).toHaveBeenCalledOnce());
+    expect(moveThreadToTrash.mock.calls[0]?.[0]).toEqual({
+      threadId,
+      confirmation: "move_to_trash",
+    });
+    expect(
+      await screen.findByRole("heading", { name: "Selecione uma conversa" }),
+    ).toBeVisible();
+  });
 
   it("renders the focused inbox, selects a thread and marks it read only once", async () => {
     const { api } = renderInbox();

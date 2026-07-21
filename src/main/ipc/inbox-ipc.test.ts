@@ -101,6 +101,11 @@ function harness() {
       createdAt: now,
       updatedAt: now,
     })),
+    moveThread: vi.fn(async (id: string, destination: "spam" | "trash") => ({
+      threadId: id,
+      destination,
+      moved: true as const,
+    })),
   };
   const inboxTaskActionService = {
     createKanbanTask: vi.fn(
@@ -319,6 +324,14 @@ it("routes all Inbox commands once and rejects invalid payloads before dispatch"
   });
   await handlers.get("inbox:thread:get")?.(event, { threadId });
   await handlers.get("inbox:thread:markRead")?.(event, { threadId });
+  await handlers.get("inbox:thread:moveToSpam")?.(event, {
+    threadId,
+    confirmation: "move_to_spam",
+  });
+  await handlers.get("inbox:thread:moveToTrash")?.(event, {
+    threadId,
+    confirmation: "move_to_trash",
+  });
   expect(inboxService.listAccounts).toHaveBeenCalledOnce();
   expect(inboxService.addImapAccount).toHaveBeenCalledWith(add);
   expect(inboxService.removeAccount).toHaveBeenCalledWith(accountId);
@@ -337,6 +350,8 @@ it("routes all Inbox commands once and rejects invalid payloads before dispatch"
   });
   expect(inboxService.getThread).toHaveBeenCalledWith(threadId);
   expect(inboxService.markThreadRead).toHaveBeenCalledWith(threadId);
+  expect(inboxService.moveThread).toHaveBeenNthCalledWith(1, threadId, "spam");
+  expect(inboxService.moveThread).toHaveBeenNthCalledWith(2, threadId, "trash");
   await expect(
     handlers.get("inbox:account:add")?.(event, { ...add, unexpected: true }),
   ).rejects.toThrow();

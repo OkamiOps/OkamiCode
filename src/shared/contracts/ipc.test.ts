@@ -111,6 +111,8 @@ it("exposes strict Inbox contracts in both IPC maps", () => {
     "inbox:threads:list",
     "inbox:thread:get",
     "inbox:thread:markRead",
+    "inbox:thread:moveToSpam",
+    "inbox:thread:moveToTrash",
   ] as const;
 
   for (const channel of inboxChannels) {
@@ -158,6 +160,18 @@ it("exposes strict Inbox contracts in both IPC maps", () => {
   expect(
     ipcRequestSchemas["inbox:thread:get"].safeParse({ threadId: accountId }),
   ).toMatchObject({ success: true });
+  expect(
+    ipcRequestSchemas["inbox:thread:moveToSpam"].safeParse({
+      threadId: accountId,
+      confirmation: "move_to_spam",
+    }).success,
+  ).toBe(true);
+  expect(
+    ipcRequestSchemas["inbox:thread:moveToTrash"].safeParse({
+      threadId: accountId,
+      confirmation: "move_to_trash",
+    }).success,
+  ).toBe(true);
   expect(
     ipcRequestSchemas["inbox:reply:discard"].safeParse({
       outboxId: accountId,

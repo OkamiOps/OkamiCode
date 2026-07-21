@@ -3,7 +3,9 @@ import type { Database } from "../db/connection";
 import {
   ImapSyncError,
   type ImapAccountConfiguration,
+  type ImapMoveMessagesInput,
   type ImapSyncInput,
+  type InboxThreadDestination,
 } from "./imap-adapter";
 import {
   InboxInvalidInputError,
@@ -38,7 +40,13 @@ export interface ImapSyncer {
   sync(input: ImapSyncInput): Promise<ApplyInboxSyncBatch>;
 }
 
-export type CreateImapAdapter = (vault: CredentialVault) => ImapSyncer;
+export interface ImapMessageMover {
+  moveMessages(input: ImapMoveMessagesInput): Promise<void>;
+}
+
+export type CreateImapAdapter = (
+  vault: CredentialVault,
+) => ImapSyncer & Partial<ImapMessageMover>;
 
 export interface AddImapAccountInput {
   provider: "gmail" | "imap" | "zoho";
@@ -290,6 +298,45 @@ export class InboxApplicationService {
 
   markThreadRead(id: string): InboxThread {
     return this.inbox.markThreadRead(id);
+  }
+
+  async moveThread(
+    id: string,
+    destination: InboxThreadDestination,
+  ): Promise<{
+    threadId: string;
+    destination: InboxThreadDestination;
+    moved: true;
+  }> {
+    const detail = this.inbox.getThread(id);
+    const account = this.findAccount(detail.thread.accountId);
+    const configuration = this.findConfiguration(detail.thread.accountId);
+    if (!account || !configuration) throw new InboxApplicationError();
+    const adapter = this.options.createAdapter(this.options.vault);
+    if (!adapter.moveMessages) throw new InboxApplicationError();
+
+    try {
+      await adapter.moveMessages({
+        account,
+        configuration,
+        externalMessageIds: detail.messages.map(
+          (message) => message.externalMessageId,
+        ),
+        destination,
+      });
+      this.inbox.deleteThread(id);
+      return { threadId: id, destination, moved: true };
+    } catch (cause) {
+      if (cause instanceof ImapSyncError && cause.code === "auth_required") {
+        this.setPublicStatus(account.id, "auth_required", cause.message);
+        throw new InboxApplicationError(cause.message);
+      }
+      throw new InboxApplicationError(
+        destination === "spam"
+          ? "Não foi possível mover a conversa para spam."
+          : "Não foi possível excluir a conversa.",
+      );
+    }
   }
 
   private async executeSync(

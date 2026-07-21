@@ -3,6 +3,7 @@ import {
   Badge,
   Button,
   Drawer,
+  Modal,
   Spinner,
   useOverlayState,
 } from "@heroui/react";
@@ -18,10 +19,12 @@ import {
   Paperclip,
   RefreshCw,
   Send,
+  ShieldAlert,
   ShieldCheck,
   Tag,
   Trash2,
   Users,
+  X,
 } from "lucide-react";
 import {
   useEffect,
@@ -86,6 +89,12 @@ export interface InboxApi {
   markThreadRead(
     request: IpcRequest<"inbox:thread:markRead">,
   ): Promise<IpcResponse<"inbox:thread:markRead">>;
+  moveThreadToSpam(
+    request: IpcRequest<"inbox:thread:moveToSpam">,
+  ): Promise<IpcResponse<"inbox:thread:moveToSpam">>;
+  moveThreadToTrash(
+    request: IpcRequest<"inbox:thread:moveToTrash">,
+  ): Promise<IpcResponse<"inbox:thread:moveToTrash">>;
   listLanes(
     request: IpcRequest<"lane:list">,
   ): Promise<IpcResponse<"lane:list">>;
@@ -126,6 +135,8 @@ const defaultApi: InboxApi = {
   listThreads: workbenchClient.inboxThreadsList,
   getThread: workbenchClient.inboxThreadGet,
   markThreadRead: workbenchClient.inboxThreadMarkRead,
+  moveThreadToSpam: workbenchClient.inboxThreadMoveToSpam,
+  moveThreadToTrash: workbenchClient.inboxThreadMoveToTrash,
   listLanes: workbenchClient.laneList,
   createTask: workbenchClient.inboxThreadCreateTask,
   createReplyDraft: workbenchClient.inboxThreadCreateReplyDraft,
@@ -260,6 +271,14 @@ export function InboxPage({ api = defaultApi }: { api?: InboxApi }) {
         (current) => (current ? { ...current, thread: updated } : current),
       );
     },
+  });
+  const moveToSpam = useMutation({
+    mutationFn: api.moveThreadToSpam,
+    onSuccess: clearMovedThread,
+  });
+  const moveToTrash = useMutation({
+    mutationFn: api.moveThreadToTrash,
+    onSuccess: clearMovedThread,
   });
   const createTask = useMutation({
     mutationFn: api.createTask,
@@ -426,6 +445,19 @@ export function InboxPage({ api = defaultApi }: { api?: InboxApi }) {
     setSelectedThreadId(thread.id);
   }
 
+  function clearMovedThread(result: { threadId: string }) {
+    queryClient.removeQueries({
+      queryKey: ["inbox", "thread", result.threadId],
+    });
+    queryClient.removeQueries({
+      queryKey: ["inbox", "reply-actions", result.threadId],
+    });
+    markedRead.current.delete(result.threadId);
+    setSelectedThreadId(null);
+    detailsDrawer.close();
+    void queryClient.invalidateQueries({ queryKey: ["inbox", "threads"] });
+  }
+
   return (
     <section
       aria-label="Inbox"
@@ -515,6 +547,14 @@ export function InboxPage({ api = defaultApi }: { api?: InboxApi }) {
         }
         isLoadingFromAddresses={outgoingForSelectedAccount.isLoading}
         isCreatingTask={createTask.isPending}
+        isMovingThread={moveToSpam.isPending || moveToTrash.isPending}
+        moveThreadError={
+          moveToSpam.isError
+            ? errorMessage(moveToSpam.error)
+            : moveToTrash.isError
+              ? errorMessage(moveToTrash.error)
+              : null
+        }
         replyActions={replyActions.data ?? []}
         replyActionsError={
           replyActions.isError ? errorMessage(replyActions.error) : null
@@ -531,6 +571,18 @@ export function InboxPage({ api = defaultApi }: { api?: InboxApi }) {
           generateReplyDraft.mutateAsync(request)
         }
         onOpenDetails={detailsDrawer.open}
+        onMoveToSpam={(threadId) =>
+          moveToSpam.mutateAsync({
+            threadId,
+            confirmation: "move_to_spam",
+          })
+        }
+        onMoveToTrash={(threadId) =>
+          moveToTrash.mutateAsync({
+            threadId,
+            confirmation: "move_to_trash",
+          })
+        }
         onCreateTask={(request) => createTask.mutateAsync(request)}
         taskCreated={taskCreatedForThreadId === detail.data?.thread.id}
         listLanes={api.listLanes}
@@ -954,6 +1006,8 @@ function Conversation({
   isSavingForward,
   isGeneratingReply,
   isCreatingTask,
+  isMovingThread,
+  moveThreadError,
   listLanes,
   listModels,
   onApproveReply,
@@ -963,6 +1017,8 @@ function Conversation({
   onGenerateReplyDraft,
   onCreateTask,
   onOpenDetails,
+  onMoveToSpam,
+  onMoveToTrash,
   replyActions,
   replyActionsError,
   taskCreated,
@@ -978,6 +1034,8 @@ function Conversation({
   isSavingForward: boolean;
   isGeneratingReply: boolean;
   isCreatingTask: boolean;
+  isMovingThread: boolean;
+  moveThreadError: string | null;
   listLanes: InboxApi["listLanes"];
   listModels: InboxApi["listModels"];
   onApproveReply: (
@@ -995,6 +1053,8 @@ function Conversation({
   onGenerateReplyDraft: InboxApi["generateReplyDraft"];
   onCreateTask: InboxApi["createTask"];
   onOpenDetails: () => void;
+  onMoveToSpam: (threadId: string) => Promise<unknown>;
+  onMoveToTrash: (threadId: string) => Promise<unknown>;
   replyActions: IpcResponse<"inbox:thread:replyActions:list">;
   replyActionsError: string | null;
   taskCreated: boolean;
@@ -1021,17 +1081,38 @@ function Conversation({
           </p>
           <h2>{detail?.thread.subject || "(sem assunto)"}</h2>
         </div>
-        <Button
-          aria-label="Abrir detalhes"
-          className="inbox-details-drawer-trigger"
-          isIconOnly
-          onPress={onOpenDetails}
-          size="sm"
-          variant="ghost"
-        >
-          <MoreHorizontal aria-hidden="true" size={16} />
-        </Button>
+        <div className="inbox-conversation__header-actions">
+          {detail && (
+            <>
+              <ThreadMoveAction
+                action="spam"
+                isPending={isMovingThread}
+                onConfirm={() => onMoveToSpam(detail.thread.id)}
+              />
+              <ThreadMoveAction
+                action="trash"
+                isPending={isMovingThread}
+                onConfirm={() => onMoveToTrash(detail.thread.id)}
+              />
+            </>
+          )}
+          <Button
+            aria-label="Abrir detalhes"
+            className="inbox-details-drawer-trigger"
+            isIconOnly
+            onPress={onOpenDetails}
+            size="sm"
+            variant="ghost"
+          >
+            <MoreHorizontal aria-hidden="true" size={16} />
+          </Button>
+        </div>
       </header>
+      {moveThreadError && (
+        <p className="inbox-thread-move-error" role="alert">
+          {moveThreadError}
+        </p>
+      )}
       <div className="inbox-conversation__scroll">
         {isLoading && (
           <ListState
@@ -1137,6 +1218,101 @@ function Conversation({
         thread={detail?.thread}
       />
     </section>
+  );
+}
+
+function ThreadMoveAction({
+  action,
+  isPending,
+  onConfirm,
+}: {
+  action: "spam" | "trash";
+  isPending: boolean;
+  onConfirm: () => Promise<unknown>;
+}) {
+  const dialog = useOverlayState();
+  const isSpam = action === "spam";
+  const triggerLabel = isSpam ? "Mover conversa para spam" : "Excluir conversa";
+  return (
+    <>
+      <Button
+        aria-label={triggerLabel}
+        aria-disabled={isPending || undefined}
+        className={`inbox-thread-action${isSpam ? "" : " inbox-thread-action--danger"}`}
+        isIconOnly
+        onPress={dialog.open}
+        size="sm"
+        variant="ghost"
+      >
+        {isPending ? (
+          <Spinner size="sm" />
+        ) : isSpam ? (
+          <ShieldAlert aria-hidden="true" size={15} />
+        ) : (
+          <Trash2 aria-hidden="true" size={15} />
+        )}
+      </Button>
+      <Modal.Root state={dialog}>
+        <Modal.Backdrop className="inbox-modal-backdrop">
+          <Modal.Container
+            className="inbox-confirm-dialog-container"
+            placement="center"
+          >
+            <Modal.Dialog className="inbox-confirm-dialog">
+              <Modal.Header className="inbox-confirm-dialog__header">
+                <span
+                  aria-hidden="true"
+                  className={`inbox-confirm-dialog__icon${isSpam ? "" : " inbox-confirm-dialog__icon--danger"}`}
+                >
+                  {isSpam ? <ShieldAlert size={18} /> : <Trash2 size={18} />}
+                </span>
+                <span className="inbox-confirm-dialog__heading-copy">
+                  <small>Gerenciar conversa</small>
+                  <Modal.Heading>
+                    {isSpam
+                      ? "Marcar como spam?"
+                      : "Mover conversa para a lixeira?"}
+                  </Modal.Heading>
+                </span>
+                <Modal.CloseTrigger
+                  aria-label="Fechar"
+                  className="inbox-confirm-dialog__close"
+                >
+                  <X aria-hidden="true" size={15} />
+                </Modal.CloseTrigger>
+              </Modal.Header>
+              <Modal.Body className="inbox-confirm-dialog__body">
+                {isSpam
+                  ? "A conversa sairá da caixa de entrada e será movida para a pasta de spam desta conta."
+                  : "A conversa sairá da caixa de entrada e será movida para a lixeira desta conta."}
+              </Modal.Body>
+              <Modal.Footer className="inbox-confirm-dialog__footer">
+                <Button
+                  className="inbox-confirm-cancel"
+                  onPress={dialog.close}
+                  variant="ghost"
+                >
+                  Cancelar
+                </Button>
+                <Button
+                  aria-label={isSpam ? "Confirmar spam" : "Confirmar exclusão"}
+                  className={
+                    isSpam ? "inbox-confirm-spam" : "inbox-confirm-danger"
+                  }
+                  isDisabled={isPending}
+                  onPress={() => {
+                    dialog.close();
+                    void onConfirm().catch(() => undefined);
+                  }}
+                >
+                  {isSpam ? "Mover para spam" : "Mover para lixeira"}
+                </Button>
+              </Modal.Footer>
+            </Modal.Dialog>
+          </Modal.Container>
+        </Modal.Backdrop>
+      </Modal.Root>
+    </>
   );
 }
 

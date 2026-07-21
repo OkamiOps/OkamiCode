@@ -85,6 +85,7 @@ export type InboxIpcService = Pick<
   | "listThreads"
   | "getThread"
   | "markThreadRead"
+  | "moveThread"
 >;
 
 export type InboxTaskActionIpcService = Pick<
@@ -580,6 +581,16 @@ async function dispatch(
     case "inbox:thread:markRead":
       return inboxService().markThreadRead(
         (request as IpcRequest<"inbox:thread:markRead">).threadId,
+      );
+    case "inbox:thread:moveToSpam":
+      return inboxService().moveThread(
+        (request as IpcRequest<"inbox:thread:moveToSpam">).threadId,
+        "spam",
+      );
+    case "inbox:thread:moveToTrash":
+      return inboxService().moveThread(
+        (request as IpcRequest<"inbox:thread:moveToTrash">).threadId,
+        "trash",
       );
     case "inbox:thread:createTask":
       return inboxTaskActionService().createKanbanTask(

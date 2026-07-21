@@ -6,6 +6,7 @@ import {
   InboxApplicationError,
   InboxApplicationService,
   type CredentialVault,
+  type ImapMessageMover,
   type ImapSyncer,
 } from "./application-service";
 import { ImapSyncError } from "./imap-adapter";
@@ -82,7 +83,7 @@ function batch(accountId: string): ApplyInboxSyncBatch {
   };
 }
 
-function fixture(adapter?: ImapSyncer) {
+function fixture(adapter?: ImapSyncer & Partial<ImapMessageMover>) {
   const fx = createTestDatabase();
   const vault = new MemoryVault();
   const adapterCalls: string[] = [];
@@ -121,6 +122,46 @@ function addInput(overrides: Record<string, unknown> = {}) {
 }
 
 describe("InboxApplicationService", () => {
+  it("moves every message in a thread remotely before removing the local conversation", async () => {
+    const moveMessages = vi.fn().mockResolvedValue(undefined);
+    const { service } = fixture({
+      sync: async (input) => batch(input.account.id),
+      moveMessages,
+    });
+    const added = await service.addImapAccount(addInput());
+    await service.syncAccount(added.account.id);
+    const selected = service.listThreads().threads[0];
+
+    await expect(service.moveThread(selected!.id, "trash")).resolves.toEqual({
+      threadId: selected!.id,
+      destination: "trash",
+      moved: true,
+    });
+    expect(moveMessages).toHaveBeenCalledWith(
+      expect.objectContaining({
+        account: expect.objectContaining({ id: added.account.id }),
+        externalMessageIds: ["message-1"],
+        destination: "trash",
+      }),
+    );
+    expect(service.listThreads().threads).toEqual([]);
+  });
+
+  it("keeps the local conversation when the remote move fails", async () => {
+    const { service } = fixture({
+      sync: async (input) => batch(input.account.id),
+      moveMessages: vi.fn().mockRejectedValue(new ImapSyncError()),
+    });
+    const added = await service.addImapAccount(addInput());
+    await service.syncAccount(added.account.id);
+    const selected = service.listThreads().threads[0];
+
+    await expect(service.moveThread(selected!.id, "spam")).rejects.toThrow(
+      "Não foi possível mover a conversa para spam.",
+    );
+    expect(service.listThreads().threads).toHaveLength(1);
+  });
+
   it("recovers an orphaned syncing status when the desktop service restarts", async () => {
     const { fx, service, vault } = fixture();
     const added = await service.addImapAccount(addInput());

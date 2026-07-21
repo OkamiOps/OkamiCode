@@ -137,6 +137,12 @@ function fakeClient(overrides: Partial<ImapClient> = {}) {
     connect: vi.fn(),
     logout: vi.fn(),
     getMailboxLock: vi.fn().mockResolvedValue(lock),
+    list: vi.fn().mockResolvedValue([
+      { path: "Trash", specialUse: "\\Trash" },
+      { path: "Junk", specialUse: "\\Junk" },
+    ]),
+    search: vi.fn().mockResolvedValue([4]),
+    messageMove: vi.fn().mockResolvedValue({ destination: "Trash" }),
     fetchAll: vi.fn().mockResolvedValue([message(4), message(3)]),
     download: vi.fn().mockResolvedValue({ content: Readable.from([rfc822()]) }),
     ...overrides,
@@ -165,6 +171,55 @@ function adapter(
 }
 
 describe("ImapSyncAdapter", () => {
+  it("moves provider messages to the discovered special-use mailbox", async () => {
+    const search = vi
+      .fn()
+      .mockResolvedValueOnce([14])
+      .mockResolvedValueOnce([9]);
+    const messageMove = vi.fn().mockResolvedValue({ destination: "Spam" });
+    const { client } = fakeClient({
+      list: vi.fn().mockResolvedValue([
+        { path: "Deleted", specialUse: "\\Trash" },
+        { path: "Spam", specialUse: "\\Junk" },
+      ]),
+      search,
+      messageMove,
+    });
+
+    await adapter(client).adapter.moveMessages({
+      account,
+      configuration: { host: "mail.example.com", port: 993, secure: true },
+      externalMessageIds: ["<one@example.com>", "<two@example.com>"],
+      destination: "spam",
+    });
+
+    expect(client.getMailboxLock).toHaveBeenCalledWith("INBOX", {
+      readOnly: false,
+    });
+    expect(search).toHaveBeenNthCalledWith(
+      1,
+      { header: { "message-id": "<one@example.com>" } },
+      { uid: true },
+    );
+    expect(messageMove).toHaveBeenCalledWith([9, 14], "Spam", { uid: true });
+  });
+
+  it("uses the stored fallback UID without searching message headers", async () => {
+    const search = vi.fn();
+    const messageMove = vi.fn().mockResolvedValue({ destination: "Trash" });
+    const { client } = fakeClient({ search, messageMove });
+
+    await adapter(client).adapter.moveMessages({
+      account,
+      configuration: { host: "mail.example.com", port: 993, secure: true },
+      externalMessageIds: ["imap:99:27"],
+      destination: "trash",
+    });
+
+    expect(search).not.toHaveBeenCalled();
+    expect(messageMove).toHaveBeenCalledWith([27], "Trash", { uid: true });
+  });
+
   it("marks an expired Google refresh grant as auth_required before opening IMAP", async () => {
     const { client } = fakeClient();
     const factory: ImapClientFactory = vi.fn().mockReturnValue(client);

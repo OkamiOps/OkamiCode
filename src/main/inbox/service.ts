@@ -453,6 +453,13 @@ export class InboxService {
     return thread;
   }
 
+  deleteThread(id: string): void {
+    const changed = this.db
+      .prepare("DELETE FROM inbox_threads WHERE id = ?")
+      .run(id);
+    if (changed.changes === 0) throw new InboxThreadNotFoundError(id);
+  }
+
   private upsertThread(
     accountId: string,
     input: SyncThread,

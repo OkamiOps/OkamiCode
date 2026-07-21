@@ -69,6 +69,8 @@ export const ipcChannels = [
   "inbox:threads:list",
   "inbox:thread:get",
   "inbox:thread:markRead",
+  "inbox:thread:moveToSpam",
+  "inbox:thread:moveToTrash",
   "inbox:thread:createTask",
   "inbox:thread:createReplyDraft",
   "inbox:thread:createForwardDraft",

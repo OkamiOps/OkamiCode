@@ -182,6 +182,10 @@ export const workbenchClient = {
     invokeCommand("inbox:thread:get", request),
   inboxThreadMarkRead: (request: IpcRequest<"inbox:thread:markRead">) =>
     invokeCommand("inbox:thread:markRead", request),
+  inboxThreadMoveToSpam: (request: IpcRequest<"inbox:thread:moveToSpam">) =>
+    invokeCommand("inbox:thread:moveToSpam", request),
+  inboxThreadMoveToTrash: (request: IpcRequest<"inbox:thread:moveToTrash">) =>
+    invokeCommand("inbox:thread:moveToTrash", request),
   inboxThreadCreateTask: (request: IpcRequest<"inbox:thread:createTask">) =>
     invokeCommand("inbox:thread:createTask", request),
   inboxThreadCreateReplyDraft: (
