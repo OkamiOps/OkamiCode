@@ -196,8 +196,7 @@ function QuickChatContent({
     readHistoryPreferences,
   );
   const [editingChat, setEditingChat] = useState<QuickChatSummary | null>(null);
-  const [runtime, setRuntime] =
-    useState<Exclude<RuntimeKind, "cursor">>(DEFAULT_RUNTIME);
+  const [runtime, setRuntime] = useState<QuickChatRuntime>(DEFAULT_RUNTIME);
   const [model, setModel] = useState(DEFAULT_MODEL);
   const [effort, setEffort] = useState<string | null>(DEFAULT_EFFORT);
   const chatsQuery = useQuery({
@@ -219,7 +218,7 @@ function QuickChatContent({
   const updateModel = useMutation({
     mutationFn: api.updateModel,
     onSuccess: (updated) => {
-      setRuntime(updated.runtime as Exclude<RuntimeKind, "cursor">);
+      setRuntime(updated.runtime as QuickChatRuntime);
       setModel(updated.model);
       void queryClient.invalidateQueries({
         queryKey: ["quick-chat", "history", updated.id],
@@ -312,8 +311,7 @@ function QuickChatContent({
   const localModelSelection = updateModel.isPending || updateModel.data;
   const activeRuntime = localModelSelection
     ? runtime
-    : ((historyQuery.data?.runtime as Exclude<RuntimeKind, "cursor">) ??
-      runtime);
+    : ((historyQuery.data?.runtime as QuickChatRuntime) ?? runtime);
   const activeModel = localModelSelection
     ? model
     : (historyQuery.data?.model ?? model);
@@ -1073,3 +1071,4 @@ function createQuickChatStore(
 function firstError(...errors: unknown[]): Error | null {
   return errors.find((error): error is Error => error instanceof Error) ?? null;
 }
+type QuickChatRuntime = Extract<RuntimeKind, "claude" | "codex" | "agy">;

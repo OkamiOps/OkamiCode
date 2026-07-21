@@ -5,6 +5,7 @@ import { homedir } from "node:os";
 import path from "node:path";
 import readline from "node:readline";
 import { promisify } from "node:util";
+import { spawn as spawnPty } from "node-pty";
 import type { RuntimeKind } from "../../shared/contracts/lane";
 import { locateLocalBinary } from "../ecosystem/cli-capabilities";
 
@@ -237,6 +238,11 @@ export interface ModelCatalogServiceOptions {
   cursorCachePath?: string;
   cursorBinary?: string | null;
   executeCursor?: CursorModelListExecutor;
+  agyCachePath?: string;
+  agyBinary?: string | null;
+  grokCachePath?: string;
+  grokBinary?: string | null;
+  executeNative?: CursorModelListExecutor;
   now?: () => Date;
 }
 
@@ -350,7 +356,7 @@ function asCursorCatalogModels(ids: readonly string[]): CatalogModel[] {
   });
 }
 
-// Cursor documents `--list-models` as a read-only account catalog command.
+// Cursor exposes `models` as its account-aware, read-only catalog command.
 // No prompt, print mode, session, login, or model turn is involved here.
 export function parseCursorModelsFromCli(output: string): CatalogModel[] {
   const clean = output.replace(ANSI_ESCAPE, "").trim();
@@ -390,6 +396,43 @@ async function executeCursorModelList(
   return `${stdout}\n${stderr}`;
 }
 
+function executeAgyModelList(binaryPath: string): Promise<string> {
+  return new Promise((resolve, reject) => {
+    const terminal = spawnPty(binaryPath, ["models"], {
+      cols: 120,
+      cwd: process.cwd(),
+      env: process.env as Record<string, string>,
+      name: "xterm-256color",
+      rows: 40,
+    });
+    let output = "";
+    let settled = false;
+    const finish = (result: string | Error) => {
+      if (settled) return;
+      settled = true;
+      clearTimeout(timer);
+      if (result instanceof Error) reject(result);
+      else resolve(result);
+    };
+    const append = (chunk: Buffer) => {
+      output += chunk.toString("utf8");
+      if (Buffer.byteLength(output, "utf8") > 4 * 1024 * 1024) {
+        terminal.kill();
+        finish(new Error("agy models output exceeded the safe limit"));
+      }
+    };
+    terminal.onData((data) => append(Buffer.from(data, "utf8")));
+    terminal.onExit(({ exitCode }) => {
+      if (exitCode === 0) finish(output);
+      else finish(new Error("agy models exited before returning a catalog"));
+    });
+    const timer = setTimeout(() => {
+      terminal.kill();
+      finish(new Error("agy models timed out"));
+    }, 30_000);
+  });
+}
+
 function readCursorCatalog(cachePath: string): PersistedCursorCatalog | null {
   try {
     const parsed = JSON.parse(
@@ -411,10 +454,70 @@ function readCursorCatalog(cachePath: string): PersistedCursorCatalog | null {
   }
 }
 
+function readNamedCatalog(cachePath: string): PersistedCursorCatalog | null {
+  try {
+    const parsed = JSON.parse(
+      readFileSync(cachePath, "utf8"),
+    ) as Partial<PersistedCursorCatalog>;
+    const models = (parsed.models ?? []).filter(
+      (model): model is CatalogModel =>
+        typeof model?.id === "string" &&
+        model.id.length > 0 &&
+        typeof model.label === "string" &&
+        model.label.length > 0,
+    );
+    if (
+      typeof parsed.cliPath !== "string" ||
+      typeof parsed.fetchedAt !== "string" ||
+      models.length === 0
+    ) {
+      return null;
+    }
+    return { cliPath: parsed.cliPath, fetchedAt: parsed.fetchedAt, models };
+  } catch {
+    return null;
+  }
+}
+
+export function parseNamedModelsFromCli(output: string): CatalogModel[] {
+  const clean = output.replace(ANSI_ESCAPE, "");
+  // PTYs redraw spinners with bare carriage returns. Treat those redraws as
+  // line boundaries so the first model is not glued to the progress marker.
+  const lines = clean.split(/\r\n|\r|\n/u).map((line) => line.trim());
+  const marker = lines.findIndex((line) =>
+    /(?:available models:|fetching available models\.\.\.)/iu.test(line),
+  );
+  const candidates = marker >= 0 ? lines.slice(marker + 1) : lines;
+  const seen = new Set<string>();
+  return candidates.flatMap((line) => {
+    const value = line
+      .replace(/^\*\s+/u, "")
+      .replace(/\s+\(default\)$/iu, "")
+      .trim();
+    if (
+      !value ||
+      value.length > 120 ||
+      /(?:^|\s)[IEWF]\d{4}\s/u.test(value) ||
+      /fetching available models/iu.test(value) ||
+      /\b(error|failed|warning|not authenticated|not logged)\b/iu.test(value)
+    )
+      return [];
+    if (seen.has(value)) return [];
+    const columns = /^([a-z0-9][a-z0-9._:/-]+)\s{2,}(.+)$/u.exec(value);
+    const id = columns?.[1] ?? value;
+    const label = columns?.[2]?.trim() || id;
+    if (seen.has(id)) return [];
+    seen.add(id);
+    return [{ id, label }];
+  });
+}
+
 export interface ModelCatalogService {
   list(): ModelCatalogEntry[];
   refreshClaude(): Promise<void>;
   refreshCursor(): Promise<void>;
+  refreshAgy(): Promise<void>;
+  refreshGrok(): Promise<void>;
 }
 
 // Serves the catalog instantly from cache while a background refresh asks the
@@ -424,8 +527,12 @@ export function createModelCatalogService(
 ): ModelCatalogService {
   let claude: PersistedClaudeCatalog | null = null;
   let cursor: PersistedCursorCatalog | null = null;
+  let agy: PersistedCursorCatalog | null = null;
+  let grok: PersistedCursorCatalog | null = null;
   let refreshingClaude: Promise<void> | null = null;
   let refreshingCursor: Promise<void> | null = null;
+  let refreshingAgy: Promise<void> | null = null;
+  let refreshingGrok: Promise<void> | null = null;
   const cursorCachePath =
     options.cursorCachePath ??
     path.join(path.dirname(options.cachePath), "cursor-models.json");
@@ -433,7 +540,22 @@ export function createModelCatalogService(
     options.cursorBinary === undefined
       ? locateLocalBinary("cursor")
       : options.cursorBinary;
+  const agyCachePath =
+    options.agyCachePath ??
+    path.join(path.dirname(options.cachePath), "agy-models.json");
+  const agyBinary =
+    options.agyBinary === undefined
+      ? locateLocalBinary("agy")
+      : options.agyBinary;
+  const grokCachePath =
+    options.grokCachePath ??
+    path.join(path.dirname(options.cachePath), "grok-models.json");
+  const grokBinary =
+    options.grokBinary === undefined
+      ? locateLocalBinary("grok")
+      : options.grokBinary;
   const executeCursor = options.executeCursor ?? executeCursorModelList;
+  const executeNative = options.executeNative ?? executeCursorModelList;
   const now = options.now ?? (() => new Date());
   try {
     claude = JSON.parse(
@@ -443,6 +565,8 @@ export function createModelCatalogService(
     claude = null;
   }
   cursor = readCursorCatalog(cursorCachePath);
+  agy = readNamedCatalog(agyCachePath);
+  grok = readNamedCatalog(grokCachePath);
 
   const refreshClaude = async () => {
     refreshingClaude ??= (async () => {
@@ -474,7 +598,7 @@ export function createModelCatalogService(
       try {
         if (!cursorBinary) return;
         const models = parseCursorModelsFromCli(
-          await executeCursor(cursorBinary, ["--list-models"]),
+          await executeCursor(cursorBinary, ["models"]),
         );
         if (models.length === 0) return;
         cursor = {
@@ -496,9 +620,58 @@ export function createModelCatalogService(
     await refreshingCursor;
   };
 
+  const refreshAgy = async () => {
+    refreshingAgy ??= (async () => {
+      try {
+        if (!agyBinary) return;
+        // `agy models` waits indefinitely when stdout is a plain pipe. A
+        // node-pty session gives its picker the terminal it expects while
+        // still returning captured text to the desktop process. Injected
+        // executors stay unwrapped so tests remain deterministic.
+        const output = options.executeNative
+          ? await executeNative(agyBinary, ["models"])
+          : await executeAgyModelList(agyBinary);
+        const models = parseNamedModelsFromCli(output);
+        if (models.length === 0) return;
+        agy = { cliPath: agyBinary, fetchedAt: now().toISOString(), models };
+        mkdirSync(path.dirname(agyCachePath), { recursive: true });
+        writeFileSync(agyCachePath, JSON.stringify(agy, null, 2));
+        console.log("[okami] Antigravity model catalog refreshed");
+      } catch {
+        console.error("[okami] Antigravity model catalog refresh failed");
+      } finally {
+        refreshingAgy = null;
+      }
+    })();
+    await refreshingAgy;
+  };
+
+  const refreshGrok = async () => {
+    refreshingGrok ??= (async () => {
+      try {
+        if (!grokBinary) return;
+        const models = parseNamedModelsFromCli(
+          await executeNative(grokBinary, ["models"]),
+        );
+        if (models.length === 0) return;
+        grok = { cliPath: grokBinary, fetchedAt: now().toISOString(), models };
+        mkdirSync(path.dirname(grokCachePath), { recursive: true });
+        writeFileSync(grokCachePath, JSON.stringify(grok, null, 2));
+        console.log("[okami] Grok model catalog refreshed");
+      } catch {
+        console.error("[okami] Grok model catalog refresh failed");
+      } finally {
+        refreshingGrok = null;
+      }
+    })();
+    await refreshingGrok;
+  };
+
   return {
     refreshClaude,
     refreshCursor,
+    refreshAgy,
+    refreshGrok,
     list() {
       const codexModels = readCodexModelsCache();
       return [
@@ -526,7 +699,7 @@ export function createModelCatalogService(
           providerLabel: "Cursor",
           routeKind: "native",
           source: cursor
-            ? `--list-models do Cursor CLI · ${cursor.fetchedAt}`
+            ? `cursor-agent models · ${cursor.fetchedAt}`
             : cursorBinary
               ? "catálogo do Cursor indisponível — autentique o Cursor"
               : "Cursor CLI não encontrado",
@@ -542,14 +715,23 @@ export function createModelCatalogService(
           runtimeKind: "agy",
           providerLabel: "Antigravity",
           routeKind: "native",
-          source: "modelo escolhido pela assinatura Antigravity",
-          models: [
-            {
-              id: "default",
-              label: "Automático",
-              description: "Modelo escolhido pela sua assinatura Antigravity",
-            },
-          ],
+          source: agy
+            ? `agy models · ${agy.fetchedAt}`
+            : agyBinary
+              ? "consultando agy models…"
+              : "Antigravity CLI não encontrado",
+          models: agy?.models ?? [],
+        },
+        {
+          runtimeKind: "grok",
+          providerLabel: "Grok",
+          routeKind: "native",
+          source: grok
+            ? `grok models · ${grok.fetchedAt}`
+            : grokBinary
+              ? "consultando grok models…"
+              : "Grok CLI não encontrado",
+          models: grok?.models ?? [],
         },
       ];
     },

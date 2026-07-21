@@ -121,6 +121,31 @@ const clientCapabilityRules = {
     statuses: ["needs_adapter", "unavailable"],
     capabilities: ["sessions", "models", "sandbox", "plugins"],
   },
+  grok: {
+    role: "runtime",
+    statuses: ["ready", "needs_adapter", "unavailable"],
+    capabilities: [
+      "sessions",
+      "models",
+      "effort",
+      "approvals",
+      "sandbox",
+      "mcp",
+      "hooks",
+      "subagents",
+      "background",
+      "git",
+      "worktrees",
+      "usage",
+      "structured_output",
+      "plugins",
+    ],
+  },
+  minimax: {
+    role: "launcher",
+    statuses: ["ready", "needs_adapter", "unavailable"],
+    capabilities: ["models", "usage", "launcher"],
+  },
 } as const;
 
 function hasExactCapabilities(
@@ -135,7 +160,7 @@ function hasExactCapabilities(
 
 export const cliCapabilitySchema = z
   .object({
-    client: z.enum(["codex", "claude", "cursor", "agy"]),
+    client: z.enum(["codex", "claude", "cursor", "agy", "grok", "minimax"]),
     label: z.string().min(1),
     binaryPath: z.string().min(1).nullable(),
     version: z.string().min(1).nullable(),
@@ -219,11 +244,16 @@ export const cliCapabilitySchema = z
       });
     }
     const capabilitiesValid =
-      client.client === "cursor" || client.client === "agy"
+      client.integrationStatus === "needs_adapter"
         ? client.capabilities.every((capability) =>
             (rule.capabilities as readonly string[]).includes(capability),
           ) && new Set(client.capabilities).size === client.capabilities.length
-        : hasExactCapabilities(client.capabilities, rule.capabilities);
+        : client.client === "cursor" || client.client === "agy"
+          ? client.capabilities.every((capability) =>
+              (rule.capabilities as readonly string[]).includes(capability),
+            ) &&
+            new Set(client.capabilities).size === client.capabilities.length
+          : hasExactCapabilities(client.capabilities, rule.capabilities);
     if (!capabilitiesValid) {
       context.addIssue({
         code: "custom",

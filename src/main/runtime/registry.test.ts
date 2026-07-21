@@ -1,5 +1,6 @@
 import { expect, it } from "vitest";
 import { AgyAdapter } from "./agy/adapter";
+import { GrokAdapter } from "./grok/adapter";
 import { createRuntimeRegistry } from "./registry";
 
 it("registers the native Antigravity adapter", () => {
@@ -8,7 +9,9 @@ it("registers the native Antigravity adapter", () => {
     codex: {} as never,
     cursor: {} as never,
     agy: {} as never,
+    grok: {} as never,
   });
 
   expect(registry.lookup("agy")).toBeInstanceOf(AgyAdapter);
+  expect(registry.lookup("grok")).toBeInstanceOf(GrokAdapter);
 });

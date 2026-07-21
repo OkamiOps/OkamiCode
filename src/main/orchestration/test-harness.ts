@@ -160,6 +160,7 @@ export function createLaneHarness(
     claude: new FakeRuntimeAdapter("claude"),
     codex: new FakeRuntimeAdapter("codex"),
     cursor: new FakeRuntimeAdapter("cursor"),
+    grok: new FakeRuntimeAdapter("grok"),
   };
   if (runtime === "agy") {
     throw new Error("AGY is not registered in the test harness");
@@ -170,6 +171,7 @@ export function createLaneHarness(
   registry.register(runtimes.claude);
   registry.register(runtimes.codex);
   registry.register(runtimes.cursor);
+  registry.register(runtimes.grok);
   const deltaBuilder = new DeltaBuilder({
     db: fx.db,
     tasks: fx.tasks,
@@ -252,6 +254,7 @@ function providerForRuntime(runtime: RuntimeKind) {
   if (runtime === "claude") return "claude_max" as const;
   if (runtime === "codex") return "chatgpt" as const;
   if (runtime === "agy") return "antigravity" as const;
+  if (runtime === "grok") return "grok" as const;
   return "cursor" as const;
 }
 

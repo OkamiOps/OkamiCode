@@ -1,11 +1,18 @@
 import { z } from "zod";
 
-export const runtimeKindSchema = z.enum(["claude", "codex", "cursor", "agy"]);
+export const runtimeKindSchema = z.enum([
+  "claude",
+  "codex",
+  "cursor",
+  "agy",
+  "grok",
+]);
 export const providerKindSchema = z.enum([
   "claude_max",
   "chatgpt",
   "cursor",
   "antigravity",
+  "grok",
 ]);
 export const laneStatusSchema = z.enum([
   "ready",
@@ -38,11 +45,18 @@ const agyPermissionModes: readonly PermissionMode[] = [
   "acceptEdits",
   "plan",
 ];
+const grokPermissionModes: readonly PermissionMode[] = [
+  "manual",
+  "acceptEdits",
+  "plan",
+  "bypassPermissions",
+];
 
 export function permissionModesForRuntime(
   runtime: RuntimeKind,
 ): readonly PermissionMode[] {
   if (runtime === "cursor") return cursorPermissionModes;
   if (runtime === "agy") return agyPermissionModes;
+  if (runtime === "grok") return grokPermissionModes;
   return permissionModes;
 }

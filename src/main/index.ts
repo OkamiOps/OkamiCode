@@ -262,6 +262,10 @@ async function bootstrap(): Promise<void> {
           stateRef().lanes.findById(laneId)?.permissionMode ?? undefined,
       }),
     },
+    grok: {
+      taskIdForRun,
+      command: locateLocalBinary("grok") ?? "grok",
+    },
   });
 
   const chatgptProfile = createGatewayProfile({
@@ -288,9 +292,15 @@ async function bootstrap(): Promise<void> {
     cachePath: path.join(app.getPath("userData"), "claude-models.json"),
     cursorCachePath: path.join(app.getPath("userData"), "cursor-models.json"),
     cursorBinary: locateLocalBinary("cursor"),
+    agyCachePath: path.join(app.getPath("userData"), "agy-models.json"),
+    agyBinary: agyCommand,
+    grokCachePath: path.join(app.getPath("userData"), "grok-models.json"),
+    grokBinary: locateLocalBinary("grok"),
   });
   void modelCatalogService.refreshClaude();
   void modelCatalogService.refreshCursor();
+  void modelCatalogService.refreshAgy();
+  void modelCatalogService.refreshGrok();
 
   const state = createAppState({
     database,

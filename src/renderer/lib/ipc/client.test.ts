@@ -827,6 +827,12 @@ it("runs doctor and task handlers through real state dependencies", async () => 
         version: "1.2.3",
         detail: null,
       },
+      {
+        runtime: "grok",
+        status: "ready",
+        version: "1.2.3",
+        detail: null,
+      },
     ],
     clients: [],
   });

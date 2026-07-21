@@ -6,7 +6,14 @@ import { promisify } from "node:util";
 
 const execFileAsync = promisify(execFile);
 
-const CLIENTS = ["codex", "claude", "cursor", "agy"] as const;
+const CLIENTS = [
+  "codex",
+  "claude",
+  "cursor",
+  "agy",
+  "grok",
+  "minimax",
+] as const;
 type Capability =
   | "sessions"
   | "models"
@@ -68,6 +75,8 @@ const CAPABILITIES = {
   ],
   cursor: [],
   agy: [],
+  grok: [],
+  minimax: [],
 } as const satisfies Record<(typeof CLIENTS)[number], readonly Capability[]>;
 
 type CliClient = (typeof CLIENTS)[number];
@@ -94,15 +103,21 @@ const labels: Record<CliClient, string> = {
   claude: "Claude Code",
   cursor: "Cursor",
   agy: "Antigravity",
+  grok: "Grok",
+  minimax: "MiniMax CLI",
 };
 
 function roleFor(client: CliClient): "runtime" | "launcher" {
-  void client;
-  return "runtime";
+  return client === "minimax" ? "launcher" : "runtime";
 }
 
 export function localBinaryCandidates(client: CliClient): string[] {
-  const binary = client === "cursor" ? "cursor-agent" : client;
+  const binary =
+    client === "cursor"
+      ? "cursor-agent"
+      : client === "minimax"
+        ? "mmx"
+        : client;
   const fromPath = (process.env.PATH ?? "")
     .split(path.delimiter)
     .filter(Boolean)
@@ -310,7 +325,10 @@ async function detectClient(
       version: null,
       role: roleFor(client),
       integrationStatus: "unavailable",
-      detail: "CLI não encontrado neste computador.",
+      detail:
+        client === "minimax"
+          ? "mmx não encontrado. Instale o CLI oficial do Token Plan com npm install -g mmx-cli."
+          : "CLI não encontrado neste computador.",
       capabilities: [],
     };
   }
@@ -356,6 +374,73 @@ async function detectClient(
         ? "CLI cursor-agent encontrado e protocolo stream-json compatível com o runtime."
         : "CLI cursor-agent encontrado, mas o protocolo necessário não foi comprovado pelo --help.",
       capabilities: cursorCapabilities(agentHelp),
+    };
+  }
+
+  if (client === "grok") {
+    let help = "";
+    try {
+      help = await dependencies.execute(binaryPath, ["--help"]);
+    } catch {
+      // A failed help probe cannot prove the native streaming protocol.
+    }
+    const protocolReady =
+      helpHasOption(help, "--output-format") &&
+      helpHasLiteral(help, "streaming-json") &&
+      helpHasOption(help, "--resume") &&
+      helpHasOption(help, "--session-id") &&
+      helpHasCommand(help, "models");
+    return {
+      client,
+      label: labels.grok,
+      binaryPath,
+      version,
+      role: "runtime",
+      integrationStatus: protocolReady ? "ready" : "needs_adapter",
+      detail: protocolReady
+        ? "Grok CLI encontrado com sessões, catálogo e streaming-json nativos."
+        : "Grok CLI encontrado, mas o protocolo streaming-json não foi comprovado.",
+      capabilities: protocolReady
+        ? [
+            "sessions",
+            "models",
+            "effort",
+            "approvals",
+            "sandbox",
+            "mcp",
+            "hooks",
+            "subagents",
+            "background",
+            "git",
+            "worktrees",
+            "usage",
+            "structured_output",
+            "plugins",
+          ]
+        : [],
+    };
+  }
+
+  if (client === "minimax") {
+    let help = "";
+    try {
+      help = await dependencies.execute(binaryPath, ["--help"]);
+    } catch {
+      // A failed help probe still leaves the executable visible to the user.
+    }
+    const textReady =
+      helpHasLiteral(help, "text") || helpHasCommand(help, "resources");
+    return {
+      client,
+      label: labels.minimax,
+      binaryPath,
+      version,
+      role: "launcher",
+      integrationStatus: textReady ? "ready" : "needs_adapter",
+      detail: textReady
+        ? "MiniMax Token Plan CLI encontrado; disponível para ações de texto e mídia, sem harness de workspace."
+        : "MiniMax CLI encontrado, mas os comandos do Token Plan não foram comprovados.",
+      capabilities: textReady ? ["models", "usage", "launcher"] : [],
     };
   }
 

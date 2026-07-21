@@ -6,6 +6,7 @@ import {
   createModelCatalogService,
   formatCursorModelLabel,
   parseCursorModelsFromCli,
+  parseNamedModelsFromCli,
 } from "./model-catalog";
 
 function cachePaths() {
@@ -13,33 +14,113 @@ function cachePaths() {
   return {
     claude: path.join(directory, "claude-models.json"),
     cursor: path.join(directory, "cursor-models.json"),
+    agy: path.join(directory, "agy-models.json"),
+    grok: path.join(directory, "grok-models.json"),
   };
 }
 
 describe("Cursor model catalog", () => {
-  it("exposes Antigravity as one honest subscription-selected model", () => {
+  it("extracts AGY models from pseudo-terminal output without treating logs as models", () => {
+    expect(
+      parseNamedModelsFromCli(
+        [
+          "^D\b\bI0721 23:10:16.037219 common.go:130] Launching CLI mode",
+          "\r⠋ Fetching available models...",
+          "I0721 23:10:17.989365 http_helpers.go:228] request completed",
+          "\u001B[Kgemini-3.6-flash-high     Gemini 3.6 Flash (High)\r",
+          "claude-opus-4-6-thinking  Claude Opus 4.6 (Thinking)\r",
+        ].join("\n"),
+      ),
+    ).toEqual([
+      {
+        id: "gemini-3.6-flash-high",
+        label: "Gemini 3.6 Flash (High)",
+      },
+      {
+        id: "claude-opus-4-6-thinking",
+        label: "Claude Opus 4.6 (Thinking)",
+      },
+    ]);
+  });
+
+  it("loads the real Antigravity model list instead of a fake automatic model", async () => {
     const paths = cachePaths();
+    const executeNative = vi
+      .fn()
+      .mockResolvedValue(
+        [
+          "Fetching available models...",
+          "gemini-3.6-flash-high     Gemini 3.6 Flash (High)",
+          "gemini-3.5-flash-low      Gemini 3.5 Flash (Low)",
+          "claude-sonnet-4-6         Claude Sonnet 4.6 (Thinking)",
+        ].join("\n"),
+      );
     const service = createModelCatalogService({
       cachePath: paths.claude,
       cursorCachePath: paths.cursor,
       cursorBinary: null,
+      agyCachePath: paths.agy,
+      agyBinary: "/real/agy",
+      executeNative,
+      now: () => new Date("2026-07-21T12:00:00.000Z"),
     });
+
+    await service.refreshAgy();
 
     expect(service.list().find((entry) => entry.runtimeKind === "agy")).toEqual(
       {
         runtimeKind: "agy",
         providerLabel: "Antigravity",
         routeKind: "native",
-        source: "modelo escolhido pela assinatura Antigravity",
+        source: "agy models · 2026-07-21T12:00:00.000Z",
         models: [
           {
-            id: "default",
-            label: "Automático",
-            description: "Modelo escolhido pela sua assinatura Antigravity",
+            id: "gemini-3.6-flash-high",
+            label: "Gemini 3.6 Flash (High)",
+          },
+          {
+            id: "gemini-3.5-flash-low",
+            label: "Gemini 3.5 Flash (Low)",
+          },
+          {
+            id: "claude-sonnet-4-6",
+            label: "Claude Sonnet 4.6 (Thinking)",
           },
         ],
       },
     );
+    expect(executeNative).toHaveBeenCalledWith("/real/agy", ["models"]);
+  });
+
+  it("refreshes Grok from its native models command", async () => {
+    const paths = cachePaths();
+    const executeNative = vi
+      .fn()
+      .mockResolvedValue(
+        "Default model: grok-build\n\nAvailable models:\n  * grok-build (default)\n",
+      );
+    const service = createModelCatalogService({
+      cachePath: paths.claude,
+      cursorBinary: null,
+      agyBinary: null,
+      grokCachePath: paths.grok,
+      grokBinary: "/real/grok",
+      executeNative,
+      now: () => new Date("2026-07-21T12:00:00.000Z"),
+    });
+
+    await service.refreshGrok();
+
+    expect(executeNative).toHaveBeenCalledWith("/real/grok", ["models"]);
+    expect(
+      service.list().find((entry) => entry.runtimeKind === "grok"),
+    ).toEqual({
+      runtimeKind: "grok",
+      providerLabel: "Grok",
+      routeKind: "native",
+      source: "grok models · 2026-07-21T12:00:00.000Z",
+      models: [{ id: "grok-build", label: "grok-build" }],
+    });
   });
 
   it("formats Cursor model labels without exposing parameter blocks", () => {
@@ -114,7 +195,7 @@ describe("Cursor model catalog", () => {
     ]);
   });
 
-  it("refreshes Cursor through only --list-models and serves the separate cached catalog", async () => {
+  it("refreshes Cursor through its account-aware models command and serves the separate cached catalog", async () => {
     const paths = cachePaths();
     const executeCursor = vi
       .fn()
@@ -130,7 +211,7 @@ describe("Cursor model catalog", () => {
     await service.refreshCursor();
 
     expect(executeCursor).toHaveBeenCalledWith("/real/cursor-agent", [
-      "--list-models",
+      "models",
     ]);
     expect(
       service.list().find((entry) => entry.runtimeKind === "cursor"),
@@ -138,7 +219,7 @@ describe("Cursor model catalog", () => {
       runtimeKind: "cursor",
       providerLabel: "Cursor",
       routeKind: "native",
-      source: "--list-models do Cursor CLI · 2026-07-21T12:00:00.000Z",
+      source: "cursor-agent models · 2026-07-21T12:00:00.000Z",
       models: [
         {
           id: "gpt-5.3-codex",
@@ -192,7 +273,7 @@ describe("Cursor model catalog", () => {
     expect(
       service.list().find((entry) => entry.runtimeKind === "cursor"),
     ).toMatchObject({
-      source: "--list-models do Cursor CLI · 2026-07-20T12:00:00.000Z",
+      source: "cursor-agent models · 2026-07-20T12:00:00.000Z",
       models: [{ id: "gpt-5.3-codex" }],
     });
     expect(JSON.parse(readFileSync(paths.cursor, "utf8"))).toMatchObject({

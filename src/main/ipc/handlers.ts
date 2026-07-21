@@ -166,7 +166,7 @@ interface TaskRow {
   updated_at: string;
 }
 
-const runtimeKinds = ["claude", "codex", "cursor", "agy"] as const;
+const runtimeKinds = ["claude", "codex", "cursor", "agy", "grok"] as const;
 
 export function registerIpcHandlers({
   ipcMain,
@@ -1583,6 +1583,7 @@ function providerForRuntime(runtime: RuntimeKind): ProviderKind {
   if (runtime === "claude") return "claude_max";
   if (runtime === "codex") return "chatgpt";
   if (runtime === "agy") return "antigravity";
+  if (runtime === "grok") return "grok";
   return "cursor";
 }
 

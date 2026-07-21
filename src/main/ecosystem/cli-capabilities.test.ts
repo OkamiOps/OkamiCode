@@ -60,6 +60,27 @@ it("reports unavailable clients without probing a missing binary", async () => {
       detail: "CLI não encontrado neste computador.",
       capabilities: [],
     },
+    {
+      client: "grok",
+      label: "Grok",
+      binaryPath: null,
+      version: null,
+      role: "runtime",
+      integrationStatus: "unavailable",
+      detail: "CLI não encontrado neste computador.",
+      capabilities: [],
+    },
+    {
+      client: "minimax",
+      label: "MiniMax CLI",
+      binaryPath: null,
+      version: null,
+      role: "launcher",
+      integrationStatus: "unavailable",
+      detail:
+        "mmx não encontrado. Instale o CLI oficial do Token Plan com npm install -g mmx-cli.",
+      capabilities: [],
+    },
   ]);
   expect(injected.execute).not.toHaveBeenCalled();
 });
@@ -262,6 +283,38 @@ it("locates Cursor through cursor-agent candidates without treating the GUI laun
   );
   expect(candidates.every((candidate) => !candidate.endsWith("/cursor"))).toBe(
     true,
+  );
+});
+
+it("detects Grok as a native runtime and MiniMax as a Token Plan launcher", async () => {
+  const injected = dependencies(
+    { grok: "/bin/grok", minimax: "/bin/mmx" },
+    {
+      "--version": "1.0.0",
+      "--help": [
+        "--output-format plain|json|streaming-json",
+        "--resume ID",
+        "--session-id ID",
+        "models List available models",
+        "resources List MiniMax resources",
+        "text Chat with MiniMax",
+      ].join("\n"),
+    },
+  );
+
+  const clients = await createCliCapabilityDetector(injected)();
+  expect(clients.find((client) => client.client === "grok")).toMatchObject({
+    role: "runtime",
+    integrationStatus: "ready",
+    capabilities: expect.arrayContaining(["sessions", "models", "effort"]),
+  });
+  expect(clients.find((client) => client.client === "minimax")).toMatchObject({
+    role: "launcher",
+    integrationStatus: "ready",
+    capabilities: ["models", "usage", "launcher"],
+  });
+  expect(localBinaryCandidates("minimax")).toEqual(
+    expect.arrayContaining([expect.stringMatching(/\/mmx$/u)]),
   );
 });
 
