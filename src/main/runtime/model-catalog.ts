@@ -1,10 +1,14 @@
-import { execFileSync, spawn } from "node:child_process";
+import { execFile, execFileSync, spawn } from "node:child_process";
 import { randomUUID } from "node:crypto";
 import { mkdirSync, readFileSync, realpathSync, writeFileSync } from "node:fs";
 import { homedir } from "node:os";
 import path from "node:path";
 import readline from "node:readline";
+import { promisify } from "node:util";
 import type { RuntimeKind } from "../../shared/contracts/lane";
+import { locateLocalBinary } from "../ecosystem/cli-capabilities";
+
+const execFileAsync = promisify(execFile);
 
 export interface CatalogModel {
   id: string;
@@ -217,18 +221,220 @@ interface PersistedClaudeCatalog {
   models: CatalogModel[];
 }
 
+interface PersistedCursorCatalog {
+  cliPath: string;
+  fetchedAt: string;
+  models: CatalogModel[];
+}
+
+export type CursorModelListExecutor = (
+  binaryPath: string,
+  args: string[],
+) => Promise<string>;
+
+export interface ModelCatalogServiceOptions {
+  cachePath: string;
+  cursorCachePath?: string;
+  cursorBinary?: string | null;
+  executeCursor?: CursorModelListExecutor;
+  now?: () => Date;
+}
+
+const ANSI_ESCAPE = new RegExp(
+  `${String.fromCharCode(27)}\\[[0-?]*[ -/]*[@-~]`,
+  "gu",
+);
+const CURSOR_PARAMETER = "[A-Za-z][A-Za-z0-9_-]*=[^,\\]\\s]+";
+const CURSOR_MODEL_ID = new RegExp(
+  `^[A-Za-z][A-Za-z0-9._:/-]*(?:\\[${CURSOR_PARAMETER}(?:,${CURSOR_PARAMETER})*\\])?$`,
+  "u",
+);
+
+function cursorModelId(value: unknown): string | null {
+  if (typeof value !== "string") return null;
+  const id = value.trim();
+  if (!CURSOR_MODEL_ID.test(id)) return null;
+  const base = id.split("[", 1)[0] ?? id;
+  // Requiring both a version-like digit and a separator avoids treating
+  // headings and ordinary status text as models.
+  if (!/[0-9]/u.test(base) || !/[-_.]/u.test(base)) return null;
+  return id;
+}
+
+function cursorModelsFromJson(value: unknown): string[] {
+  const items = Array.isArray(value)
+    ? value
+    : typeof value === "object" && value !== null
+      ? (value as { models?: unknown }).models
+      : undefined;
+  if (!Array.isArray(items)) return [];
+  return items.flatMap((item) => {
+    if (typeof item === "string") return [item];
+    if (typeof item !== "object" || item === null) return [];
+    const record = item as { id?: unknown; value?: unknown };
+    return [record.id, record.value].filter(
+      (candidate): candidate is string => typeof candidate === "string",
+    );
+  });
+}
+
+function cursorBaseAndParameters(id: string): {
+  base: string;
+  parameters: string[];
+} {
+  const bracket = id.indexOf("[");
+  if (bracket === -1) return { base: id, parameters: [] };
+  return {
+    base: id.slice(0, bracket),
+    parameters: id
+      .slice(bracket + 1, -1)
+      .split(",")
+      .filter((parameter) => parameter.includes("=")),
+  };
+}
+
+const CURSOR_LABEL_WORDS: Record<string, string> = {
+  gpt: "GPT",
+  claude: "Claude",
+  grok: "Grok",
+  gemini: "Gemini",
+  composer: "Composer",
+};
+
+function titleCaseModelWord(value: string): string {
+  return (
+    CURSOR_LABEL_WORDS[value.toLowerCase()] ??
+    `${value.slice(0, 1).toUpperCase()}${value.slice(1)}`
+  );
+}
+
+// The label is display-only. The raw ID remains the value passed back to the
+// Cursor CLI, including every bracket parameter it returned.
+export function formatCursorModelLabel(id: string): string {
+  const { base } = cursorBaseAndParameters(id);
+  const parts = base.split("-");
+  const label: string[] = [];
+  for (let index = 0; index < parts.length; index += 1) {
+    const part = parts[index] ?? "";
+    const next = parts[index + 1];
+    if (/^\d+$/u.test(part) && next && /^\d+$/u.test(next)) {
+      label.push(`${part}.${next}`);
+      index += 1;
+      continue;
+    }
+    label.push(/^\d+(?:\.\d+)*$/u.test(part) ? part : titleCaseModelWord(part));
+  }
+  return label.join(" ");
+}
+
+function asCursorCatalogModels(ids: readonly string[]): CatalogModel[] {
+  const seen = new Set<string>();
+  return ids.flatMap((candidate) => {
+    const id = cursorModelId(candidate);
+    if (!id || seen.has(id)) return [];
+    seen.add(id);
+    // Cursor models can include bracket parameters. Keep every observed
+    // variant independent rather than guessing whether an effort switch is
+    // supported by this CLI version.
+    const { parameters } = cursorBaseAndParameters(id);
+    return [
+      {
+        id,
+        label: formatCursorModelLabel(id),
+        description:
+          parameters.length > 0
+            ? `Parâmetros observados: ${parameters.join(" · ")}`
+            : `ID técnico: ${id}`,
+      },
+    ];
+  });
+}
+
+// Cursor documents `--list-models` as a read-only account catalog command.
+// No prompt, print mode, session, login, or model turn is involved here.
+export function parseCursorModelsFromCli(output: string): CatalogModel[] {
+  const clean = output.replace(ANSI_ESCAPE, "").trim();
+  if (!clean) return [];
+  try {
+    const json = JSON.parse(clean) as unknown;
+    return asCursorCatalogModels(cursorModelsFromJson(json));
+  } catch {
+    // The current CLI emits text. JSON is only a forward-compatible path.
+  }
+
+  return asCursorCatalogModels(
+    clean.split(/\r?\n/u).flatMap((line) => {
+      if (
+        /\b(error|not logged|login|sign in|unauthorized|forbidden|failed)\b/iu.test(
+          line,
+        )
+      ) {
+        return [];
+      }
+      const normalized = line.trim().replace(/^(?:[-*•]\s+|\d+[.)]\s+)/u, "");
+      const [candidate] = normalized.split(/\s+/u);
+      return candidate ? [candidate] : [];
+    }),
+  );
+}
+
+async function executeCursorModelList(
+  binaryPath: string,
+  args: string[],
+): Promise<string> {
+  const { stdout, stderr } = await execFileAsync(binaryPath, args, {
+    env: process.env,
+    timeout: 10_000,
+    windowsHide: true,
+  });
+  return `${stdout}\n${stderr}`;
+}
+
+function readCursorCatalog(cachePath: string): PersistedCursorCatalog | null {
+  try {
+    const parsed = JSON.parse(
+      readFileSync(cachePath, "utf8"),
+    ) as Partial<PersistedCursorCatalog>;
+    const models = asCursorCatalogModels(
+      parsed.models?.map((model) => model.id) ?? [],
+    );
+    if (
+      typeof parsed.cliPath !== "string" ||
+      typeof parsed.fetchedAt !== "string" ||
+      models.length === 0
+    ) {
+      return null;
+    }
+    return { cliPath: parsed.cliPath, fetchedAt: parsed.fetchedAt, models };
+  } catch {
+    return null;
+  }
+}
+
 export interface ModelCatalogService {
   list(): ModelCatalogEntry[];
   refreshClaude(): Promise<void>;
+  refreshCursor(): Promise<void>;
 }
 
 // Serves the catalog instantly from cache while a background refresh asks the
 // CLI for the authoritative list (which reflects the account's entitlements).
-export function createModelCatalogService(options: {
-  cachePath: string;
-}): ModelCatalogService {
+export function createModelCatalogService(
+  options: ModelCatalogServiceOptions,
+): ModelCatalogService {
   let claude: PersistedClaudeCatalog | null = null;
-  let refreshing: Promise<void> | null = null;
+  let cursor: PersistedCursorCatalog | null = null;
+  let refreshingClaude: Promise<void> | null = null;
+  let refreshingCursor: Promise<void> | null = null;
+  const cursorCachePath =
+    options.cursorCachePath ??
+    path.join(path.dirname(options.cachePath), "cursor-models.json");
+  const cursorBinary =
+    options.cursorBinary === undefined
+      ? locateLocalBinary("cursor")
+      : options.cursorBinary;
+  const executeCursor = options.executeCursor ?? executeCursorModelList;
+  const now = options.now ?? (() => new Date());
   try {
     claude = JSON.parse(
       readFileSync(options.cachePath, "utf8"),
@@ -236,9 +442,10 @@ export function createModelCatalogService(options: {
   } catch {
     claude = null;
   }
+  cursor = readCursorCatalog(cursorCachePath);
 
   const refreshClaude = async () => {
-    refreshing ??= (async () => {
+    refreshingClaude ??= (async () => {
       try {
         const models = await fetchClaudeModelsFromCli();
         if (models.length === 0) return;
@@ -256,14 +463,42 @@ export function createModelCatalogService(options: {
       } catch (error) {
         console.error("[okami] claude list_models failed", error);
       } finally {
-        refreshing = null;
+        refreshingClaude = null;
       }
     })();
-    await refreshing;
+    await refreshingClaude;
+  };
+
+  const refreshCursor = async () => {
+    refreshingCursor ??= (async () => {
+      try {
+        if (!cursorBinary) return;
+        const models = parseCursorModelsFromCli(
+          await executeCursor(cursorBinary, ["--list-models"]),
+        );
+        if (models.length === 0) return;
+        cursor = {
+          cliPath: cursorBinary,
+          fetchedAt: now().toISOString(),
+          models,
+        };
+        mkdirSync(path.dirname(cursorCachePath), { recursive: true });
+        writeFileSync(cursorCachePath, JSON.stringify(cursor, null, 2));
+        console.log("[okami] Cursor model catalog refreshed");
+      } catch {
+        // The CLI can return account/auth failures. Never leak its output and
+        // keep the last known-good local catalog intact.
+        console.error("[okami] Cursor model catalog refresh failed");
+      } finally {
+        refreshingCursor = null;
+      }
+    })();
+    await refreshingCursor;
   };
 
   return {
     refreshClaude,
+    refreshCursor,
     list() {
       const codexModels = readCodexModelsCache();
       return [
@@ -290,9 +525,12 @@ export function createModelCatalogService(options: {
           runtimeKind: "cursor",
           providerLabel: "Cursor",
           routeKind: "native",
-          source:
-            "seleção automática do cursor-agent; catálogo da conta exige login",
-          models: [
+          source: cursor
+            ? `--list-models do Cursor CLI · ${cursor.fetchedAt}`
+            : cursorBinary
+              ? "catálogo do Cursor indisponível — autentique o Cursor"
+              : "Cursor CLI não encontrado",
+          models: cursor?.models ?? [
             {
               id: "default",
               label: "Automático",

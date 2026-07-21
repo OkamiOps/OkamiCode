@@ -210,8 +210,11 @@ async function bootstrap(): Promise<void> {
 
   const modelCatalogService = createModelCatalogService({
     cachePath: path.join(app.getPath("userData"), "claude-models.json"),
+    cursorCachePath: path.join(app.getPath("userData"), "cursor-models.json"),
+    cursorBinary: locateLocalBinary("cursor"),
   });
   void modelCatalogService.refreshClaude();
+  void modelCatalogService.refreshCursor();
 
   const state = createAppState({
     database,
