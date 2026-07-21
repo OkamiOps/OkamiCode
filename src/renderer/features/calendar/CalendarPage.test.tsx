@@ -253,6 +253,9 @@ describe("CalendarPage", () => {
       await screen.findByRole("heading", { name: "Conectar agenda" }),
     ).toBeVisible();
     expect(screen.getByText("IMAP sozinho não lê sua agenda.")).toBeVisible();
+    fireEvent.change(screen.getByLabelText("Tipo de conexão"), {
+      target: { value: "caldav" },
+    });
     expect(screen.getByLabelText("Conta do Inbox")).toHaveTextContent(
       "Marcos · trabalho",
     );
@@ -273,8 +276,43 @@ describe("CalendarPage", () => {
       expect(api.createLinkedSource).toHaveBeenCalledWith({
         accountId: inboxAccounts[0].account.id,
         protocol: "caldav",
+        authentication: "account",
         calendarUrl: "https://calendar.zoho.eu/caldav/marcos",
         displayName: "Zoho trabalho",
+        color: "#FF7A1A",
+        timezone: Intl.DateTimeFormat().resolvedOptions().timeZone,
+      }),
+    );
+  });
+
+  it("connects Google Agenda through its private iCal address without API billing", async () => {
+    const { api } = renderCalendar();
+    await userEvent.click(
+      await screen.findByRole("button", { name: "Nova agenda" }),
+    );
+
+    expect(screen.getByLabelText("Tipo de conexão")).toHaveValue("google");
+    expect(screen.getByText(/endereço secreto em formato iCal/i)).toBeVisible();
+    fireEvent.change(screen.getByLabelText("URL da agenda"), {
+      target: {
+        value: "https://calendar.google.com/calendar/ical/private/basic.ics",
+      },
+    });
+    fireEvent.change(screen.getByLabelText("Nome da agenda"), {
+      target: { value: "Google pessoal" },
+    });
+    await userEvent.click(
+      screen.getByRole("button", { name: "Vincular agenda" }),
+    );
+
+    await vi.waitFor(() =>
+      expect(api.createLinkedSource).toHaveBeenCalledWith({
+        accountId: inboxAccounts[0].account.id,
+        protocol: "ics",
+        authentication: "none",
+        calendarUrl:
+          "https://calendar.google.com/calendar/ical/private/basic.ics",
+        displayName: "Google pessoal",
         color: "#FF7A1A",
         timezone: Intl.DateTimeFormat().resolvedOptions().timeZone,
       }),

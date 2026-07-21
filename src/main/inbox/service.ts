@@ -98,12 +98,18 @@ export interface SyncMessage {
   attachments: InboxAttachment[];
 }
 
+export interface InboxCalendarInvitation {
+  externalMessageId: string;
+  payload: string;
+}
+
 export interface ApplyInboxSyncBatch {
   accountId: string;
   previousCursor: string | null;
   nextCursor: string | null;
   threads: SyncThread[];
   messages: SyncMessage[];
+  calendarInvitations?: InboxCalendarInvitation[];
   syncedAt: string;
 }
 

@@ -432,6 +432,56 @@ describe("InboxPage", () => {
     ).toBeVisible();
   });
 
+  it("configures Gmail with its official servers and asks for an app password", async () => {
+    const { api } = renderInbox();
+    await screen.findByText("Projetos");
+    await userEvent.click(
+      screen.getByRole("button", { name: "Adicionar conta" }),
+    );
+    const dialog = screen.getByRole("dialog");
+
+    await userEvent.click(within(dialog).getByRole("radio", { name: /Gmail/ }));
+    await userEvent.type(
+      within(dialog).getByLabelText("Email da conta"),
+      "marcos@gmail.com",
+    );
+    await userEvent.type(
+      within(dialog).getByLabelText("Nome da conta"),
+      "Gmail pessoal",
+    );
+    await userEvent.type(
+      within(dialog).getByLabelText("Senha de app do Google"),
+      "app-password",
+    );
+    expect(within(dialog).getByLabelText("Servidor IMAP")).toHaveValue(
+      "imap.gmail.com",
+    );
+    expect(within(dialog).getByLabelText("Porta IMAP")).toHaveValue(993);
+    expect(
+      within(dialog).getByText(/senha de app de 16 caracteres/i),
+    ).toBeVisible();
+    await userEvent.click(
+      within(dialog).getByRole("button", { name: "Conectar conta" }),
+    );
+
+    expect(vi.mocked(api.addAccount).mock.calls[0]?.[0]).toEqual({
+      provider: "gmail",
+      displayName: "Gmail pessoal",
+      address: "marcos@gmail.com",
+      configuration: {
+        host: "imap.gmail.com",
+        port: 993,
+        secure: true,
+      },
+      credential: {
+        version: 1,
+        kind: "imap_password",
+        username: "marcos@gmail.com",
+        password: "app-password",
+      },
+    });
+  });
+
   it("filters unread threads, confirms removal and hides actions without a conversation", async () => {
     const { api } = renderInbox();
     await screen.findByText("Projetos");

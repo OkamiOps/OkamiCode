@@ -123,6 +123,7 @@ it("routes all seven strict Calendar commands once with public data only", async
     handlers.get("calendar:source:createLinked" as IpcChannel)?.(event, {
       accountId: sourceId,
       protocol: "caldav",
+      authentication: "account",
       calendarUrl: "https://calendar.example/caldav/marcos",
       displayName: "Trabalho",
       color: "#FF7A1A",

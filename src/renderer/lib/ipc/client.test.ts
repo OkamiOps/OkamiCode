@@ -306,6 +306,7 @@ it("sends strict Calendar commands through the typed bridge", async () => {
   const linkedRequest = {
     accountId: sourceId,
     protocol: "caldav" as const,
+    authentication: "account" as const,
     calendarUrl: "https://calendar.example/caldav/marcos",
     displayName: "Trabalho",
     color: "#FF7A1A",

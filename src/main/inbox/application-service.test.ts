@@ -1,4 +1,4 @@
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import { createTestDatabase } from "../db/test-support";
 import type { ConnectorCredential } from "../connectors/credential-vault";
 import type { ApplyInboxSyncBatch } from "./service";
@@ -176,6 +176,83 @@ describe("InboxApplicationService", () => {
       port: 465,
       secure: 1,
       from_addresses_json: "[]",
+    });
+  });
+
+  it("accepts a Gmail app password and provisions the official Gmail SMTP endpoint", async () => {
+    const { fx, service } = fixture();
+
+    const added = await service.addImapAccount(
+      addInput({
+        provider: "gmail",
+        displayName: "Gmail pessoal",
+        address: "marcos@gmail.com",
+        configuration: {
+          host: "imap.gmail.com",
+          port: 993,
+          secure: true,
+        },
+        credential: {
+          version: 1,
+          kind: "imap_password",
+          username: "marcos@gmail.com",
+          password: "app-password",
+        },
+      }) as never,
+    );
+
+    expect(added.account).toMatchObject({
+      provider: "gmail",
+      address: "marcos@gmail.com",
+    });
+    expect(
+      fx.db
+        .prepare(
+          `SELECT host, port, secure
+             FROM inbox_outgoing_settings
+            WHERE account_id = 'account-1'`,
+        )
+        .get(),
+    ).toEqual({ host: "smtp.gmail.com", port: 465, secure: 1 });
+  });
+
+  it("passes calendar invitations from synchronized email to the calendar importer", async () => {
+    const imported = vi.fn();
+    const fx = createTestDatabase();
+    const vault = new MemoryVault();
+    const service = new InboxApplicationService({
+      db: fx.db,
+      vault,
+      createAdapter: () => ({
+        sync: async (input) => ({
+          ...batch(input.account.id),
+          calendarInvitations: [
+            {
+              externalMessageId: "message-1",
+              payload: "BEGIN:VCALENDAR\nEND:VCALENDAR",
+            },
+          ],
+        }),
+      }),
+      calendarInvitations: { import: imported },
+      createId: () => "account-1",
+      clock: () => new Date("2026-07-21T11:00:00.000Z"),
+    });
+    const added = await service.addImapAccount(addInput());
+
+    await service.syncAccount(added.account.id);
+
+    expect(imported).toHaveBeenCalledWith({
+      accountId: "account-1",
+      accountDisplayName: "Titan mailbox",
+      accountAddress: "marcos@example.com",
+      invitations: [
+        {
+          externalMessageId: "message-1",
+          payload: "BEGIN:VCALENDAR\nEND:VCALENDAR",
+        },
+      ],
+      syncedAt: "2026-07-21T12:00:00.000Z",
     });
   });
 

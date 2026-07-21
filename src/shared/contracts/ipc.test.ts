@@ -123,6 +123,22 @@ it("exposes strict Inbox contracts in both IPC maps", () => {
   expect(
     ipcRequestSchemas["inbox:account:add"].safeParse({
       ...base,
+      provider: "gmail",
+      address: "marcos@gmail.com",
+      configuration: {
+        ...base.configuration,
+        host: "imap.gmail.com",
+      },
+      credential: {
+        ...base.credential,
+        username: "marcos@gmail.com",
+        password: "app-password",
+      },
+    }).success,
+  ).toBe(true);
+  expect(
+    ipcRequestSchemas["inbox:account:add"].safeParse({
+      ...base,
       credential: { ...base.credential, password: "secret", extra: true },
     }).success,
   ).toBe(false);
@@ -158,10 +174,20 @@ it("exposes a strict public-only linked Calendar source contract", () => {
     displayName: "Trabalho",
     color: "#FF7A1A",
     timezone: "America/Sao_Paulo",
+    authentication: "account",
   };
   expect(
     ipcRequestSchemas["calendar:source:createLinked"].safeParse(request)
       .success,
+  ).toBe(true);
+  expect(
+    ipcRequestSchemas["calendar:source:createLinked"].safeParse({
+      ...request,
+      protocol: "ics",
+      authentication: "none",
+      calendarUrl:
+        "https://calendar.google.com/calendar/ical/private/basic.ics",
+    }).success,
   ).toBe(true);
   expect(
     ipcRequestSchemas["calendar:source:createLinked"].safeParse({

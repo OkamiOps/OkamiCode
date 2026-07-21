@@ -8,6 +8,8 @@ import {
   type InboxThread,
   type InboxThreadDetail,
   type InboxThreadPage,
+  type InboxCalendarInvitation,
+  type InboxAccountProvider,
   type ListInboxThreadsOptions,
   type SyncBatchCounts,
 } from "./service";
@@ -33,7 +35,7 @@ export interface ImapSyncer {
 export type CreateImapAdapter = (vault: CredentialVault) => ImapSyncer;
 
 export interface AddImapAccountInput {
-  provider: "imap" | "zoho";
+  provider: "gmail" | "imap" | "zoho";
   displayName: string;
   address: string;
   configuration: ImapAccountConfiguration;
@@ -66,6 +68,15 @@ export interface InboxApplicationServiceOptions {
   createAdapter: CreateImapAdapter;
   createId: () => string;
   clock: () => Date;
+  calendarInvitations?: {
+    import(input: {
+      accountId: string;
+      accountDisplayName: string;
+      accountAddress: string;
+      invitations: InboxCalendarInvitation[];
+      syncedAt: string;
+    }): void | Promise<void>;
+  };
 }
 
 export class InboxApplicationError extends Error {
@@ -77,7 +88,7 @@ export class InboxApplicationError extends Error {
 
 type AccountRow = {
   id: string;
-  provider: "imap" | "zoho";
+  provider: InboxAccountProvider;
   display_name: string;
   address: string;
   status: ConnectorAccount["status"];
@@ -274,6 +285,15 @@ export class InboxApplicationService {
         configuration,
       });
       const counts = this.inbox.applySyncBatch(batch);
+      if (this.options.calendarInvitations) {
+        await this.options.calendarInvitations.import({
+          accountId: account.id,
+          accountDisplayName: account.displayName,
+          accountAddress: account.address,
+          invitations: batch.calendarInvitations ?? [],
+          syncedAt: batch.syncedAt,
+        });
+      }
       const connected = this.setPublicStatus(account.id, "connected", null);
       return { account: connected, counts };
     } catch {
@@ -337,19 +357,23 @@ export class InboxApplicationService {
 }
 
 function inferredOutgoingConfiguration(incomingHost: string) {
-  if (incomingHost.trim().toLowerCase() === "imap.hostinger.com") {
+  const host = incomingHost.trim().toLowerCase();
+  if (host === "imap.hostinger.com") {
     return { host: "smtp.hostinger.com", port: 465, secure: true };
+  }
+  if (host === "imap.gmail.com") {
+    return { host: "smtp.gmail.com", port: 465, secure: true };
   }
   return null;
 }
 
 function validateAddInput(input: AddImapAccountInput): {
-  provider: "imap" | "zoho";
+  provider: "gmail" | "imap" | "zoho";
   displayName: string;
   address: string;
   configuration: StoredImapAccountConfiguration;
 } {
-  if (!input || (input.provider !== "imap" && input.provider !== "zoho"))
+  if (!input || !["gmail", "imap", "zoho"].includes(input.provider))
     throw new InboxApplicationError();
   const displayName = text(input.displayName);
   const address = text(input.address).toLowerCase();

@@ -64,6 +64,7 @@ END:VCALENDAR]]></c:calendar-data></prop></propstat></response></multistatus>`),
       source,
       accountId,
       protocol: "caldav",
+      authentication: "account",
       calendarUrl: "https://calendar.example/caldav/marcos",
     });
 
@@ -118,6 +119,7 @@ END:VCALENDAR]]></c:calendar-data></prop></propstat></response></multistatus>`),
         source: { ...source, kind: "ics" },
         accountId,
         protocol: "ics",
+        authentication: "account",
         calendarUrl: "https://calendar.example/feed.ics",
       }),
     ).rejects.toThrow("Calendar server returned HTTP 401");
@@ -135,8 +137,50 @@ END:VCALENDAR]]></c:calendar-data></prop></propstat></response></multistatus>`),
         source: { ...source, kind: "ics" },
         accountId,
         protocol: "ics",
+        authentication: "account",
         calendarUrl: "https://calendar.example/feed.ics",
       }),
     ).rejects.not.toThrow(/access-token-secret/u);
+  });
+
+  it("downloads a private Google iCal feed without leaking Inbox credentials", async () => {
+    const getCredential = vi.fn();
+    const fetch = vi.fn(async () =>
+      response(`BEGIN:VCALENDAR
+BEGIN:VEVENT
+UID:google-1
+SUMMARY:Reunião Google
+DTSTART:20260721T090000Z
+DTEND:20260721T100000Z
+END:VEVENT
+END:VCALENDAR`),
+    );
+    const adapter = new RemoteCalendarAdapter(
+      { get: getCredential },
+      fetch,
+      () => new Date("2026-07-21T12:00:00.000Z"),
+    );
+
+    const snapshot = await adapter.synchronize({
+      source: { ...source, kind: "ics" },
+      accountId,
+      protocol: "ics",
+      authentication: "none",
+      calendarUrl:
+        "https://calendar.google.com/calendar/ical/private/basic.ics",
+    } as never);
+
+    expect(getCredential).not.toHaveBeenCalled();
+    expect(fetch).toHaveBeenCalledWith(
+      "https://calendar.google.com/calendar/ical/private/basic.ics",
+      {
+        method: "GET",
+        headers: { Accept: "text/calendar, application/xml;q=0.9" },
+      },
+    );
+    expect(snapshot.upserts[0]).toMatchObject({
+      externalId: "google-1",
+      title: "Reunião Google",
+    });
   });
 });

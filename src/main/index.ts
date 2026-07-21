@@ -309,10 +309,25 @@ async function bootstrap(): Promise<void> {
     path.join(app.getPath("userData"), "inbox-credentials"),
     safeStorage,
   );
+  const calendarService = new CalendarApplicationService({
+    db: database,
+    calendar: new CalendarService({
+      db: database,
+      createId: randomUUID,
+      clock: () => new Date().toISOString(),
+    }),
+    synchronizer: new RemoteCalendarAdapter(inboxCredentialVault),
+    createId: randomUUID,
+    clock: () => new Date(),
+  });
+  calendarService.reconcileInboxInvitationSources();
   const inboxService = new InboxApplicationService({
     db: database,
     vault: inboxCredentialVault,
     createAdapter: (vault) => new ImapSyncAdapter(vault),
+    calendarInvitations: {
+      import: (input) => calendarService.importInboxInvitations(input),
+    },
     createId: randomUUID,
     clock: () => new Date(),
   });
@@ -327,17 +342,6 @@ async function bootstrap(): Promise<void> {
       recoveredReplyDispatches,
     });
   }
-  const calendarService = new CalendarApplicationService({
-    db: database,
-    calendar: new CalendarService({
-      db: database,
-      createId: randomUUID,
-      clock: () => new Date().toISOString(),
-    }),
-    synchronizer: new RemoteCalendarAdapter(inboxCredentialVault),
-    createId: randomUUID,
-    clock: () => new Date(),
-  });
   registerIpcHandlers({
     ipcMain,
     laneEffort,

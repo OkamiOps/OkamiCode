@@ -106,6 +106,29 @@ function rfc822WithHtmlAlternative() {
   );
 }
 
+function rfc822WithCalendarInvitation() {
+  const invitation = `BEGIN:VCALENDAR\r\nBEGIN:VEVENT\r\nUID:invite-1\r\nSUMMARY:Reunião com cliente\r\nDTSTART:20260722T090000Z\r\nDTEND:20260722T100000Z\r\nEND:VEVENT\r\nEND:VCALENDAR`;
+  return Buffer.from(
+    [
+      "Message-ID: <calendar-invite@example.com>",
+      "From: Client <client@example.com>",
+      "To: Me <me@example.com>",
+      "Content-Type: multipart/mixed; boundary=calendar-boundary",
+      "",
+      "--calendar-boundary",
+      "Content-Type: text/plain; charset=utf-8",
+      "",
+      "Meeting invitation",
+      "--calendar-boundary",
+      'Content-Type: text/calendar; method=REQUEST; name="invite.ics"',
+      'Content-Disposition: attachment; filename="invite.ics"',
+      "",
+      invitation,
+      "--calendar-boundary--",
+    ].join("\r\n"),
+  );
+}
+
 function fakeClient(overrides: Partial<ImapClient> = {}) {
   const lock = { release: vi.fn() };
   const client: ImapClient = {
@@ -332,7 +355,7 @@ describe("ImapSyncAdapter", () => {
     expect(result).toMatchObject({
       previousCursor: null,
       nextCursor: JSON.stringify({
-        version: 2,
+        version: 3,
         uidValidity: "99",
         lastUid: 204,
       }),
@@ -380,7 +403,7 @@ describe("ImapSyncAdapter", () => {
 
   it("handles incremental no-op, UID validity reset, empty mailbox and invalid cursor", async () => {
     const cursor = JSON.stringify({
-      version: 2,
+      version: 3,
       uidValidity: "99",
       lastUid: 4,
     });
@@ -426,7 +449,7 @@ describe("ImapSyncAdapter", () => {
       configuration: { host: "mail.example.com", port: 993, secure: true },
     });
     expect(emptyResult.nextCursor).toBe(
-      JSON.stringify({ version: 2, uidValidity: "3", lastUid: 0 }),
+      JSON.stringify({ version: 3, uidValidity: "3", lastUid: 0 }),
     );
     expect(empty.client.fetchAll).not.toHaveBeenCalled();
     await expect(
@@ -437,7 +460,7 @@ describe("ImapSyncAdapter", () => {
     ).rejects.toBeInstanceOf(ImapSyncError);
   });
 
-  it("rehydrates the recent window once for a legacy text-first cursor", async () => {
+  it("rehydrates the recent window once for a cursor before calendar extraction", async () => {
     const legacy = fakeClient({
       mailbox: { uidValidity: 99, uidNext: 5, exists: 4 },
       fetchAll: vi.fn().mockResolvedValue([message(4)]),
@@ -447,7 +470,7 @@ describe("ImapSyncAdapter", () => {
       account: {
         ...account,
         syncCursor: JSON.stringify({
-          version: 1,
+          version: 2,
           uidValidity: "99",
           lastUid: 4,
         }),
@@ -461,7 +484,7 @@ describe("ImapSyncAdapter", () => {
       { uid: true },
     );
     expect(JSON.parse(result.nextCursor ?? "{}")).toMatchObject({
-      version: 2,
+      version: 3,
       lastUid: 4,
     });
   });
@@ -486,6 +509,26 @@ describe("ImapSyncAdapter", () => {
       },
     ]);
     expect(result.messages[0].attachments[0]).not.toHaveProperty("content");
+  });
+
+  it("extracts bounded calendar invitations for the unified Agenda", async () => {
+    const { client } = fakeClient({
+      fetchAll: vi.fn().mockResolvedValue([message(3)]),
+      download: vi.fn().mockResolvedValue({
+        content: Readable.from([rfc822WithCalendarInvitation()]),
+      }),
+    });
+    const result = await adapter(client).adapter.sync({
+      account,
+      configuration: { host: "mail.example.com", port: 993, secure: true },
+    });
+
+    expect(result.calendarInvitations).toEqual([
+      {
+        externalMessageId: "<calendar-invite@example.com>",
+        payload: expect.stringContaining("UID:invite-1"),
+      },
+    ]);
   });
 
   it("bounds downloaded stream bytes and always releases resources after failures", async () => {

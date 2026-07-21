@@ -851,7 +851,7 @@ const inboxDirectionSchema = z.enum(["incoming", "outgoing", "draft"]);
 const inboxAccountSchema = z
   .object({
     id: entityIdSchema,
-    provider: z.enum(["imap", "zoho"]),
+    provider: z.enum(["gmail", "imap", "zoho"]),
     displayName: z.string().min(1).max(240),
     address: z.string().min(1).max(320),
     status: inboxAccountStatusSchema,
@@ -1002,7 +1002,7 @@ const inboxRemoveAccountResultSchema = z
   .strict();
 const inboxAddAccountRequestSchema = z
   .object({
-    provider: z.enum(["imap", "zoho"]),
+    provider: z.enum(["gmail", "imap", "zoho"]),
     displayName: z.string().trim().min(1).max(240),
     address: z.string().trim().min(1).max(320),
     configuration: inboxConfigurationSchema,
@@ -1370,12 +1370,22 @@ export const calendarCreateLinkedSourceRequestSchema = z
   .object({
     accountId: entityIdSchema,
     protocol: z.enum(["caldav", "ics"]),
+    authentication: z.enum(["account", "none"]),
     calendarUrl: calendarSafeHttpUrlSchema,
     displayName: calendarTextSchema(255),
     color: z.string().regex(/^#[0-9A-Fa-f]{6}$/u),
     timezone: calendarTextSchema(255),
   })
-  .strict();
+  .strict()
+  .superRefine((value, context) => {
+    if (value.protocol === "caldav" && value.authentication !== "account") {
+      context.addIssue({
+        code: "custom",
+        path: ["authentication"],
+        message: "CalDAV requires account authentication",
+      });
+    }
+  });
 
 export const calendarCreateLocalEventRequestSchema = z.discriminatedUnion(
   "allDay",

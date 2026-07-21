@@ -20,6 +20,7 @@ const MIGRATIONS = [
   "schema/015-inbox-reply-dismissals.sql",
   "schema/016-inbox-sender-aliases.sql",
   "schema/017-inbox-hostinger-outgoing.sql",
+  "schema/018-calendar-auth-and-inbox-invitations.sql",
 ];
 
 export function runMigrations(db: InstanceType<typeof SqliteDatabase>): void {

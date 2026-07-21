@@ -7,6 +7,7 @@ import type {
 } from "./service";
 
 export type LinkedCalendarProtocol = "caldav" | "ics";
+export type LinkedCalendarAuthentication = "account" | "none";
 
 export interface CalendarCredentialReader {
   get(accountId: string): Promise<ConnectorCredential | null>;
@@ -32,6 +33,7 @@ export interface RemoteCalendarSyncInput {
   source: CalendarSource;
   accountId: string;
   protocol: LinkedCalendarProtocol;
+  authentication: LinkedCalendarAuthentication;
   calendarUrl: string;
 }
 
@@ -68,11 +70,14 @@ export class RemoteCalendarAdapter implements RemoteCalendarSynchronizer {
   async synchronize(
     input: RemoteCalendarSyncInput,
   ): Promise<RemoteCalendarSnapshot> {
-    const credential = await this.readCredential(input.accountId);
     const headers: Record<string, string> = {
       Accept: "text/calendar, application/xml;q=0.9",
-      Authorization: authorizationFor(credential),
     };
+    if (input.authentication === "account") {
+      headers.Authorization = authorizationFor(
+        await this.readCredential(input.accountId),
+      );
+    }
     const init =
       input.protocol === "caldav"
         ? {
@@ -148,10 +153,10 @@ function authorizationFor(credential: ConnectorCredential): string {
   ).toString("base64")}`;
 }
 
-function parseCalendarPayload(
+export function parseCalendarPayload(
   payload: string,
   defaultTimezone: string,
-  calendarUrl: string,
+  calendarUrl: string | null,
   etag: string | null,
   syncedAt: string,
 ): CalendarSyncUpsert[] {
@@ -199,7 +204,7 @@ interface IcalProperty {
 function parseEvent(
   block: string,
   defaultTimezone: string,
-  calendarUrl: string,
+  calendarUrl: string | null,
   etag: string | null,
   syncedAt: string,
 ): CalendarSyncUpsert {

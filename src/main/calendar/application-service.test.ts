@@ -62,6 +62,7 @@ describe("CalendarApplicationService", () => {
     const source = await service.createLinkedSource({
       accountId,
       protocol: "caldav",
+      authentication: "account",
       calendarUrl: "https://calendar.example/caldav/marcos",
       displayName: "Trabalho",
       color: "#ff7a1a",
@@ -100,6 +101,7 @@ describe("CalendarApplicationService", () => {
     const source = await service.createLinkedSource({
       accountId,
       protocol: "ics",
+      authentication: "account",
       calendarUrl: "https://calendar.example/feed.ics",
       displayName: "Trabalho",
       color: "#FF7A1A",
@@ -121,6 +123,7 @@ describe("CalendarApplicationService", () => {
     await service.createLinkedSource({
       accountId,
       protocol: "ics",
+      authentication: "account",
       calendarUrl: "https://calendar.example/feed.ics",
       displayName: "Trabalho",
       color: "#FF7A1A",
@@ -138,5 +141,77 @@ describe("CalendarApplicationService", () => {
       .run("2026-07-21T11:54:59.999Z", "2026-07-21T11:54:59.999Z", sourceId);
     await service.listEvents({ sourceIds: [sourceId] });
     expect(synchronizer.synchronize).toHaveBeenCalledOnce();
+  });
+
+  it("creates one Inbox invitation source per account and imports ICS events", async () => {
+    const { fx, service } = fixture();
+
+    service.importInboxInvitations({
+      accountId,
+      accountDisplayName: "OkamiOps",
+      accountAddress: "marcos@okamiops.com",
+      syncedAt: "2026-07-21T12:00:00.000Z",
+      invitations: [
+        {
+          externalMessageId: "invite-message-1",
+          payload: `BEGIN:VCALENDAR
+BEGIN:VEVENT
+UID:invite-1
+SUMMARY:Reunião com cliente
+DTSTART:20260722T090000Z
+DTEND:20260722T100000Z
+ORGANIZER:mailto:cliente@example.com
+END:VEVENT
+END:VCALENDAR`,
+        },
+      ],
+    });
+
+    expect(service.listSources()).toEqual([
+      expect.objectContaining({
+        displayName: "Convites · OkamiOps",
+        kind: "ics",
+        status: "active",
+      }),
+    ]);
+    await expect(service.listEvents()).resolves.toEqual([
+      expect.objectContaining({
+        externalId: "invite-1",
+        title: "Reunião com cliente",
+      }),
+    ]);
+    expect(
+      fx.db.prepare("SELECT account_id FROM calendar_inbox_sources").get(),
+    ).toEqual({ account_id: accountId });
+  });
+
+  it("exposes an empty Inbox invitation source after the first successful mail sync", () => {
+    const { service } = fixture();
+
+    service.importInboxInvitations({
+      accountId,
+      accountDisplayName: "OkamiOps",
+      accountAddress: "marcos@okamiops.com",
+      syncedAt: "2026-07-21T12:00:00.000Z",
+      invitations: [],
+    });
+
+    expect(service.listSources()).toEqual([
+      expect.objectContaining({
+        displayName: "Convites · OkamiOps",
+        kind: "ics",
+        status: "active",
+      }),
+    ]);
+  });
+
+  it("reconciles existing Inbox accounts so Agenda is complete on startup", () => {
+    const { service } = fixture();
+
+    expect(service.reconcileInboxInvitationSources()).toBe(1);
+    expect(service.reconcileInboxInvitationSources()).toBe(0);
+    expect(service.listSources()).toEqual([
+      expect.objectContaining({ displayName: "Convites · Trabalho" }),
+    ]);
   });
 });

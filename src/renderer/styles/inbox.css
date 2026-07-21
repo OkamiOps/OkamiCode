@@ -2172,8 +2172,15 @@
 }
 .inbox-account-modal__type {
   display: grid;
-  grid-template-columns: repeat(2, minmax(0, 1fr));
+  grid-template-columns: repeat(3, minmax(0, 1fr));
   gap: 8px;
+}
+.inbox-account-modal__credential-help {
+  margin: 10px 0 0;
+  padding-left: 12px;
+  border-left: 2px solid color-mix(in srgb, var(--ok-cyan) 72%, transparent);
+  color: var(--ok-text-muted);
+  font: 11.5px/1.5 var(--ok-font-ui);
 }
 .inbox-account-modal__type label {
   display: grid;

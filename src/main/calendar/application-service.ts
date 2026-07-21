@@ -1,7 +1,10 @@
+import { createHash } from "node:crypto";
 import type { Database } from "../db/connection";
 import { isSafeCalendarHttpUrl } from "../../shared/contracts/calendar-url";
 import {
   RemoteCalendarError,
+  parseCalendarPayload,
+  type LinkedCalendarAuthentication,
   type LinkedCalendarProtocol,
   type RemoteCalendarSynchronizer,
 } from "./remote-adapter";
@@ -18,6 +21,7 @@ import {
 export interface CreateLinkedSourceInput {
   accountId: string;
   protocol: LinkedCalendarProtocol;
+  authentication: LinkedCalendarAuthentication;
   calendarUrl: string;
   displayName: string;
   color: string;
@@ -28,7 +32,16 @@ interface LinkedSourceRow {
   source_id: string;
   account_id: string;
   protocol: LinkedCalendarProtocol;
+  authentication: LinkedCalendarAuthentication;
   calendar_url: string;
+}
+
+export interface ImportInboxInvitationsInput {
+  accountId: string;
+  accountDisplayName: string;
+  accountAddress: string;
+  invitations: Array<{ externalMessageId: string; payload: string }>;
+  syncedAt: string;
 }
 
 export class CalendarApplicationService {
@@ -55,10 +68,41 @@ export class CalendarApplicationService {
     return this.dependencies.calendar.createLocalSource(input);
   }
 
+  reconcileInboxInvitationSources(): number {
+    const accounts = this.dependencies.db
+      .prepare(
+        `SELECT account.id, account.display_name, account.address
+           FROM connector_accounts account
+           LEFT JOIN calendar_inbox_sources linked
+             ON linked.account_id = account.id
+          WHERE linked.account_id IS NULL
+          ORDER BY account.created_at ASC, account.id ASC`,
+      )
+      .all() as Array<{
+      id: string;
+      display_name: string;
+      address: string;
+    }>;
+    const syncedAt = this.dependencies.clock().toISOString();
+    for (const account of accounts) {
+      this.importInboxInvitations({
+        accountId: account.id,
+        accountDisplayName: account.display_name,
+        accountAddress: account.address,
+        invitations: [],
+        syncedAt,
+      });
+    }
+    return accounts.length;
+  }
+
   async createLinkedSource(
     input: CreateLinkedSourceInput,
   ): Promise<CalendarSource> {
     this.requireAccount(input.accountId);
+    if (input.protocol === "caldav" && input.authentication !== "account") {
+      throw new Error("CalDAV requires account authentication");
+    }
     if (!isSafeCalendarHttpUrl(input.calendarUrl)) {
       throw new Error(
         "Calendar URL must be public HTTP(S) without credentials",
@@ -91,14 +135,16 @@ export class CalendarApplicationService {
       this.dependencies.db
         .prepare(
           `INSERT INTO calendar_linked_sources
-           (source_id, account_id, protocol, calendar_url, created_at, updated_at)
-           VALUES (?, ?, ?, ?, ?, ?)`,
+           (source_id, account_id, protocol, calendar_url, authentication,
+            created_at, updated_at)
+           VALUES (?, ?, ?, ?, ?, ?, ?)`,
         )
         .run(
           sourceId,
           input.accountId,
           input.protocol,
           input.calendarUrl,
+          input.authentication,
           now,
           now,
         );
@@ -115,6 +161,76 @@ export class CalendarApplicationService {
         .map((mapping) => this.synchronizeSource(mapping.source_id)),
     );
     return this.dependencies.calendar.listEvents(input);
+  }
+
+  importInboxInvitations(input: ImportInboxInvitationsInput): void {
+    this.requireAccount(input.accountId);
+    const timezone = Intl.DateTimeFormat().resolvedOptions().timeZone || "UTC";
+    const upserts = input.invitations.flatMap((invitation) => {
+      try {
+        return parseCalendarPayload(
+          invitation.payload,
+          timezone,
+          null,
+          null,
+          input.syncedAt,
+        );
+      } catch {
+        return [];
+      }
+    });
+    const existing = this.dependencies.db
+      .prepare(
+        `SELECT source_id FROM calendar_inbox_sources WHERE account_id = ?`,
+      )
+      .get(input.accountId) as { source_id: string } | undefined;
+    const sourceId = existing?.source_id ?? this.dependencies.createId();
+    const now = this.dependencies.clock().toISOString();
+    if (!existing) {
+      const displayName = requiredText(
+        input.accountDisplayName.trim() || input.accountAddress,
+        "account display name",
+      );
+      this.dependencies.db.transaction(() => {
+        this.dependencies.db
+          .prepare(
+            `INSERT INTO calendar_sources
+             (id, kind, display_name, color, timezone, status, sync_cursor,
+              last_error, last_synced_at, created_at, updated_at)
+             VALUES (?, 'ics', ?, '#22D3EE', ?, 'active', NULL, NULL, NULL, ?, ?)`,
+          )
+          .run(sourceId, `Convites · ${displayName}`, timezone, now, now);
+        this.dependencies.db
+          .prepare(
+            `INSERT INTO calendar_inbox_sources
+             (source_id, account_id, created_at, updated_at)
+             VALUES (?, ?, ?, ?)`,
+          )
+          .run(sourceId, input.accountId, now, now);
+      })();
+    }
+    const source = this.requireSource(sourceId);
+    const nextCursor = createHash("sha256")
+      .update(
+        input.invitations
+          .map(
+            (invitation) =>
+              `${invitation.externalMessageId}\u0000${invitation.payload}`,
+          )
+          .join("\u0001"),
+      )
+      .digest("hex");
+    const uniqueUpserts = [
+      ...new Map(upserts.map((event) => [event.externalId, event])).values(),
+    ];
+    this.dependencies.calendar.applySyncBatch({
+      sourceId,
+      previousCursor: source.syncCursor,
+      nextCursor,
+      syncedAt: input.syncedAt,
+      upserts: uniqueUpserts,
+      tombstones: [],
+    });
   }
 
   createLocalEvent(input: CreateLocalEventInput): CalendarEvent {
@@ -138,6 +254,7 @@ export class CalendarApplicationService {
         source,
         accountId: mapping.account_id,
         protocol: mapping.protocol,
+        authentication: mapping.authentication,
         calendarUrl: mapping.calendar_url,
       });
       const received = new Set(

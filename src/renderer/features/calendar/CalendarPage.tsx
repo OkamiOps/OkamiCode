@@ -28,6 +28,7 @@ type CalendarEvent = IpcResponse<"calendar:events:list">[number];
 type InboxAccount = IpcResponse<"inbox:accounts:list">[number];
 type CalendarView = "day" | "week" | "month";
 type SourceMode = "linked" | "local";
+type LinkedConnection = "google" | "caldav" | "ics";
 type CreateLinkedSourceRequest = IpcRequest<"calendar:source:createLinked">;
 
 const HOURS = Array.from({ length: 24 }, (_, index) => index);
@@ -81,9 +82,8 @@ export function CalendarPage({
   const [sourceColor, setSourceColor] = useState("#FF7A1A");
   const [sourceTimezone, setSourceTimezone] = useState(defaultTimezone);
   const [linkedAccountId, setLinkedAccountId] = useState("");
-  const [linkedProtocol, setLinkedProtocol] = useState<"caldav" | "ics">(
-    "caldav",
-  );
+  const [linkedConnection, setLinkedConnection] =
+    useState<LinkedConnection>("google");
   const [linkedCalendarUrl, setLinkedCalendarUrl] = useState("");
   const [eventTitle, setEventTitle] = useState("");
   const [eventSourceId, setEventSourceId] = useState("");
@@ -112,7 +112,11 @@ export function CalendarPage({
     queryFn: api.listAccounts,
   });
   const effectiveLinkedAccountId =
-    linkedAccountId || accounts.data?.[0]?.account.id || "";
+    linkedAccountId ||
+    accounts.data?.find(({ account }) => account.provider === "gmail")?.account
+      .id ||
+    accounts.data?.[0]?.account.id ||
+    "";
   const readableSources = useMemo(
     () =>
       (sources.data ?? []).filter(
@@ -248,7 +252,8 @@ export function CalendarPage({
     }
     createLinkedSource.mutate({
       accountId: effectiveLinkedAccountId,
-      protocol: linkedProtocol,
+      protocol: linkedConnection === "caldav" ? "caldav" : "ics",
+      authentication: linkedConnection === "caldav" ? "account" : "none",
       calendarUrl: linkedCalendarUrl.trim(),
       displayName: sourceName.trim(),
       color: sourceColor.trim(),
@@ -509,7 +514,7 @@ export function CalendarPage({
         error={createSource.isError || createLinkedSource.isError}
         linkedAccountId={effectiveLinkedAccountId}
         linkedCalendarUrl={linkedCalendarUrl}
-        linkedProtocol={linkedProtocol}
+        linkedConnection={linkedConnection}
         mode={sourceMode}
         name={sourceName}
         onAccountChange={setLinkedAccountId}
@@ -518,7 +523,7 @@ export function CalendarPage({
         onLinkedSubmit={submitLinkedSource}
         onModeChange={setSourceMode}
         onNameChange={setSourceName}
-        onProtocolChange={setLinkedProtocol}
+        onConnectionChange={setLinkedConnection}
         onSubmit={submitSource}
         onTimezoneChange={setSourceTimezone}
         state={sourceModal}
@@ -924,12 +929,12 @@ function SourceModal({
   color,
   timezone,
   linkedAccountId,
-  linkedProtocol,
+  linkedConnection,
   linkedCalendarUrl,
   error,
   onModeChange,
   onAccountChange,
-  onProtocolChange,
+  onConnectionChange,
   onCalendarUrlChange,
   onNameChange,
   onColorChange,
@@ -946,12 +951,12 @@ function SourceModal({
   color: string;
   timezone: string;
   linkedAccountId: string;
-  linkedProtocol: "caldav" | "ics";
+  linkedConnection: LinkedConnection;
   linkedCalendarUrl: string;
   error: boolean;
   onModeChange: (mode: SourceMode) => void;
   onAccountChange: (value: string) => void;
-  onProtocolChange: (value: "caldav" | "ics") => void;
+  onConnectionChange: (value: LinkedConnection) => void;
   onCalendarUrlChange: (value: string) => void;
   onNameChange: (value: string) => void;
   onColorChange: (value: string) => void;
@@ -994,7 +999,8 @@ function SourceModal({
                       <Link2 aria-hidden="true" size={16} />
                       <p>
                         <strong>IMAP sozinho não lê sua agenda.</strong> Use uma
-                        URL CalDAV ou ICS da conta conectada.
+                        conexão de agenda abaixo; convites `.ics` recebidos no
+                        Inbox entram automaticamente em “Convites”.
                       </p>
                     </div>
                     {accountsLoading ? (
@@ -1028,18 +1034,19 @@ function SourceModal({
                     )}
                     <div className="calendar-modal__split">
                       <label>
-                        Protocolo
+                        Tipo de conexão
                         <select
-                          aria-label="Protocolo da agenda"
+                          aria-label="Tipo de conexão"
                           onChange={(event) =>
-                            onProtocolChange(
-                              event.target.value as "caldav" | "ics",
+                            onConnectionChange(
+                              event.target.value as LinkedConnection,
                             )
                           }
-                          value={linkedProtocol}
+                          value={linkedConnection}
                         >
+                          <option value="google">Google Agenda · iCal</option>
                           <option value="caldav">CalDAV</option>
-                          <option value="ics">ICS</option>
+                          <option value="ics">Outro feed ICS</option>
                         </select>
                       </label>
                       <label>
@@ -1053,6 +1060,17 @@ function SourceModal({
                         />
                       </label>
                     </div>
+                    {linkedConnection === "google" && (
+                      <div className="calendar-modal__notice calendar-modal__notice--google">
+                        <CalendarDays aria-hidden="true" size={16} />
+                        <p>
+                          Cole o{" "}
+                          <strong>endereço secreto em formato iCal</strong> das
+                          configurações do Google Agenda. A leitura é direta e
+                          não consome API.
+                        </p>
+                      </div>
+                    )}
                     <label>
                       URL da agenda
                       <input
@@ -1060,7 +1078,11 @@ function SourceModal({
                         onChange={(event) =>
                           onCalendarUrlChange(event.target.value)
                         }
-                        placeholder="https://calendar.example.com/principal"
+                        placeholder={
+                          linkedConnection === "google"
+                            ? "https://calendar.google.com/calendar/ical/…/basic.ics"
+                            : "https://calendar.example.com/principal"
+                        }
                         type="url"
                         value={linkedCalendarUrl}
                       />

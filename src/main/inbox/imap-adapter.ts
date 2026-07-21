@@ -13,6 +13,7 @@ const DEFAULT_INITIAL_MESSAGES = 100;
 const MAX_INITIAL_MESSAGES = 500;
 const DEFAULT_MESSAGE_BYTES = 2 * 1024 * 1024;
 const MAX_MESSAGE_BYTES = 10 * 1024 * 1024;
+const MAX_CALENDAR_INVITATION_BYTES = 512 * 1024;
 
 export interface ImapAccountConfiguration {
   host: string;
@@ -193,7 +194,7 @@ export class ImapSyncAdapter {
     const reset = !cursor || cursor.uidValidity !== uidValidity;
     const lastUid = reset ? 0 : cursor.lastUid;
     const nextCursor = (value: number) =>
-      JSON.stringify({ version: 2, uidValidity, lastUid: value });
+      JSON.stringify({ version: 3, uidValidity, lastUid: value });
 
     if (mailbox.exists === 0) {
       return emptyBatch(input.account, nextCursor(0), this.clock());
@@ -223,6 +224,7 @@ export class ImapSyncAdapter {
       .filter((item) => Number.isInteger(item.uid) && item.uid > 0)
       .sort((a, b) => a.uid - b.uid);
     const messages: SyncMessage[] = [];
+    const calendarInvitations: ApplyInboxSyncBatch["calendarInvitations"] = [];
     const threadInputs: ThreadInput[] = [];
     for (const item of sorted) {
       const download = await client.download(String(item.uid), undefined, {
@@ -239,6 +241,12 @@ export class ImapSyncAdapter {
         uidValidity,
       );
       messages.push(normalized.message);
+      calendarInvitations.push(
+        ...calendarInvitationsFrom(
+          parsed,
+          normalized.message.externalMessageId,
+        ),
+      );
       threadInputs.push(normalized.thread);
     }
     const maxUid = sorted.reduce(
@@ -251,13 +259,14 @@ export class ImapSyncAdapter {
       nextCursor: nextCursor(maxUid),
       threads: groupThreads(threadInputs),
       messages,
+      calendarInvitations,
       syncedAt: this.clock().toISOString(),
     };
   }
 }
 
 type ValidatedConfiguration = Required<ImapAccountConfiguration>;
-type Cursor = { version: 2; uidValidity: string; lastUid: number };
+type Cursor = { version: 3; uidValidity: string; lastUid: number };
 type ThreadInput = {
   externalThreadId: string;
   subject: string;
@@ -328,7 +337,7 @@ function parseCursor(value: string | null): Cursor | null {
     !Object.hasOwn(parsed, "version") ||
     !Object.hasOwn(parsed, "uidValidity") ||
     !Object.hasOwn(parsed, "lastUid") ||
-    (parsed.version !== 1 && parsed.version !== 2) ||
+    ![1, 2, 3].includes(parsed.version as number) ||
     typeof parsed.uidValidity !== "string" ||
     !/^[0-9]+$/.test(parsed.uidValidity) ||
     typeof parsed.lastUid !== "number" ||
@@ -336,11 +345,11 @@ function parseCursor(value: string | null): Cursor | null {
     parsed.lastUid < 0
   )
     throw new Error("invalid");
-  // Cursor v1 stored messages with the text alternative even when HTML was
-  // available. Rehydrate the recent window once, then persist v2 normally.
-  if (parsed.version === 1) return null;
+  // Older cursors predate either HTML preservation or calendar invitation
+  // extraction. Rehydrate the bounded recent window once, then persist v3.
+  if (parsed.version === 1 || parsed.version === 2) return null;
   return {
-    version: 2,
+    version: 3,
     uidValidity: parsed.uidValidity as string,
     lastUid: parsed.lastUid as number,
   };
@@ -478,8 +487,32 @@ function emptyBatch(
     nextCursor,
     threads: [],
     messages: [],
+    calendarInvitations: [],
     syncedAt: clock.toISOString(),
   };
+}
+
+function calendarInvitationsFrom(
+  parsed: ParsedMail,
+  externalMessageId: string,
+): NonNullable<ApplyInboxSyncBatch["calendarInvitations"]> {
+  return parsed.attachments.flatMap((attachment) => {
+    const isCalendar =
+      attachment.contentType?.toLowerCase() === "text/calendar" ||
+      attachment.filename?.toLowerCase().endsWith(".ics") === true;
+    if (
+      !isCalendar ||
+      !Buffer.isBuffer(attachment.content) ||
+      attachment.content.length === 0 ||
+      attachment.content.length > MAX_CALENDAR_INVITATION_BYTES
+    ) {
+      return [];
+    }
+    const payload = attachment.content.toString("utf8");
+    return /BEGIN:VCALENDAR/iu.test(payload)
+      ? [{ externalMessageId, payload }]
+      : [];
+  });
 }
 
 function toAttachment(

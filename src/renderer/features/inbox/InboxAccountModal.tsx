@@ -11,7 +11,7 @@ interface InboxAccountModalProps {
 }
 
 interface AccountForm {
-  provider: "imap" | "zoho";
+  provider: "gmail" | "imap" | "zoho";
   displayName: string;
   address: string;
   host: string;
@@ -49,6 +49,21 @@ export function InboxAccountModal({
 
   function close() {
     state.close();
+  }
+
+  function selectProvider(provider: AccountForm["provider"]) {
+    setForm((current) => ({
+      ...current,
+      provider,
+      ...(provider === "gmail"
+        ? {
+            host: "imap.gmail.com",
+            port: "993",
+            secure: true,
+            username: current.address.trim() || current.username,
+          }
+        : {}),
+    }));
   }
 
   async function submit(event: FormEvent<HTMLFormElement>) {
@@ -108,7 +123,8 @@ export function InboxAccountModal({
                 <div>
                   <Modal.Heading>Conectar caixa</Modal.Heading>
                   <p>
-                    O acesso fica local e a sincronização só começa por clique.
+                    A credencial fica local e a caixa sincroniza ao entrar no
+                    Inbox.
                   </p>
                 </div>
                 <Modal.CloseTrigger
@@ -124,17 +140,24 @@ export function InboxAccountModal({
                   <legend>Provedor da caixa</legend>
                   <div className="inbox-account-modal__type">
                     <label
+                      data-selected={form.provider === "gmail" || undefined}
+                    >
+                      <input
+                        checked={form.provider === "gmail"}
+                        name="provider"
+                        onChange={() => selectProvider("gmail")}
+                        type="radio"
+                      />
+                      <span>Gmail</span>
+                      <small>Senha de app</small>
+                    </label>
+                    <label
                       data-selected={form.provider === "imap" || undefined}
                     >
                       <input
                         checked={form.provider === "imap"}
                         name="provider"
-                        onChange={() =>
-                          setForm((current) => ({
-                            ...current,
-                            provider: "imap",
-                          }))
-                        }
+                        onChange={() => selectProvider("imap")}
                         type="radio"
                       />
                       <span>IMAP</span>
@@ -146,12 +169,7 @@ export function InboxAccountModal({
                       <input
                         checked={form.provider === "zoho"}
                         name="provider"
-                        onChange={() =>
-                          setForm((current) => ({
-                            ...current,
-                            provider: "zoho",
-                          }))
-                        }
+                        onChange={() => selectProvider("zoho")}
                         type="radio"
                       />
                       <span>Zoho</span>
@@ -190,6 +208,9 @@ export function InboxAccountModal({
                           setForm((current) => ({
                             ...current,
                             address: event.target.value,
+                            ...(current.provider === "gmail"
+                              ? { username: event.target.value }
+                              : {}),
                           }))
                         }
                         placeholder="voce@dominio.com"
@@ -261,9 +282,19 @@ export function InboxAccountModal({
                         value={form.username}
                       />
                     </Field>
-                    <Field label="Senha da conta">
+                    <Field
+                      label={
+                        form.provider === "gmail"
+                          ? "Senha de app do Google"
+                          : "Senha da conta"
+                      }
+                    >
                       <input
-                        aria-label="Senha da conta"
+                        aria-label={
+                          form.provider === "gmail"
+                            ? "Senha de app do Google"
+                            : "Senha da conta"
+                        }
                         autoComplete="new-password"
                         onChange={(event) =>
                           setForm((current) => ({
@@ -276,6 +307,13 @@ export function InboxAccountModal({
                       />
                     </Field>
                   </div>
+                  {form.provider === "gmail" && (
+                    <p className="inbox-account-modal__credential-help">
+                      Use a senha de app de 16 caracteres da sua Conta Google.
+                      Ela exige verificação em duas etapas e não é sua senha
+                      normal do Gmail.
+                    </p>
+                  )}
                 </section>
 
                 <label className="inbox-tls-toggle">
