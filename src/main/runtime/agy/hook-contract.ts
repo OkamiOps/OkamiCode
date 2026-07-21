@@ -180,6 +180,7 @@ export class AgyHookProjector {
   private sequence = 0;
   private sessionEmitted = false;
   private conversationId: string | undefined;
+  private pendingTerminal: AgyStopHook | undefined;
   private readonly tools = new Map<
     string,
     { toolName: string; input: NativeRecord }
@@ -227,14 +228,32 @@ export class AgyHookProjector {
     } else if (hook.hookName === "PostToolUse") {
       events.push(this.postToolEvent(hook));
     } else if (hook.hookName === "Stop" && hook.fullyIdle) {
-      const failed = isFailedStop(hook);
+      // The native Stop can arrive before the process closes stdout. Keep it
+      // pending so the final assistant message always precedes the terminal.
+      this.pendingTerminal = hook;
+    }
+    return events;
+  }
+
+  completeStdout(stdout: string, includeTerminal = true): CanonicalEvent[] {
+    const events: CanonicalEvent[] = [];
+    if (stdout) {
+      events.push(
+        this.syntheticEvent("message_completed", "stdout", {
+          text: stdout,
+        }),
+      );
+    }
+    if (this.pendingTerminal && includeTerminal) {
+      const hook = this.pendingTerminal;
+      this.pendingTerminal = undefined;
       events.push(
         this.event(
-          failed ? "run_failed" : "run_completed",
+          isFailedStop(hook) ? "run_failed" : "run_completed",
           hook,
           hook.conversationId,
           {
-            error: hook.error,
+            ...(hook.error ? { error: hook.error } : {}),
             terminationReason: hook.terminationReason,
             native: hook.native,
           },
@@ -242,6 +261,24 @@ export class AgyHookProjector {
       );
     }
     return events;
+  }
+
+  discardPendingTerminal(): void {
+    this.pendingTerminal = undefined;
+  }
+
+  projectFailure(reason: string): CanonicalEvent {
+    return this.syntheticEvent("run_failed", "failure", { reason });
+  }
+
+  projectCancellation(): CanonicalEvent {
+    return this.syntheticEvent("run_cancelled", "cancelled", {
+      reason: "user_cancelled",
+    });
+  }
+
+  get hasPendingTerminal(): boolean {
+    return this.pendingTerminal !== undefined;
   }
 
   private postToolEvent(hook: AgyPostToolHook): CanonicalEvent {
@@ -274,6 +311,26 @@ export class AgyHookProjector {
       occurredAt: this.now(),
       kind,
       nativeEventId: `agy:${this.context.runId}:${hook.hookName}:${nativeAnchor}:${sequence}`,
+      payload: { runtime: "agy", ...payload },
+    });
+  }
+
+  private syntheticEvent(
+    kind: CanonicalEventKind,
+    anchor: string,
+    payload: NativeRecord,
+  ): CanonicalEvent {
+    const sequence = this.sequence++;
+    return canonicalEventSchema.parse({
+      schemaVersion: 1,
+      id: this.context.createEventId(sequence),
+      taskId: this.context.taskId,
+      laneId: this.context.laneId,
+      runId: this.context.runId,
+      sequence,
+      occurredAt: this.now(),
+      kind,
+      nativeEventId: `agy:${this.context.runId}:${anchor}:${sequence}`,
       payload: { runtime: "agy", ...payload },
     });
   }

@@ -66,12 +66,14 @@ describe("AGY hook contract", () => {
       ...projector.project("PreToolUse", native[1]),
       ...projector.project("PostToolUse", native[2]),
       ...projector.project("Stop", native[3]),
+      ...projector.completeStdout("Final answer"),
     ];
 
     expect(events.map((event) => event.kind)).toEqual([
       "session_started",
       "tool_call_started",
       "tool_call_completed",
+      "message_completed",
       "run_completed",
     ]);
     expect(
@@ -260,21 +262,17 @@ describe("AGY hook contract", () => {
     expect(
       projector.project("Stop", { ...base, fullyIdle: false }).at(-1)?.kind,
     ).toBe("session_started");
+    projector.project("Stop", { ...base, error: "hook failed" });
+    expect(projector.completeStdout("").at(-1)?.kind).toBe("run_failed");
     expect(
-      projector
-        .project("Stop", {
-          ...base,
-          error: "hook failed",
-        })
-        .at(-1)?.kind,
-    ).toBe("run_failed");
-    expect(
-      new AgyHookProjector(testIds())
-        .project("Stop", {
+      (() => {
+        const failed = new AgyHookProjector(testIds());
+        failed.project("Stop", {
           ...base,
           terminationReason: "max_steps_exceeded",
-        })
-        .at(-1)?.kind,
+        });
+        return failed.completeStdout("").at(-1)?.kind;
+      })(),
     ).toBe("run_failed");
   });
 

@@ -21,4 +21,12 @@ describe("permission modes by runtime", () => {
       ]);
     }
   });
+
+  it("limits AGY to the modes its native turn adapter supports safely", () => {
+    expect(permissionModesForRuntime("agy")).toEqual([
+      "manual",
+      "acceptEdits",
+      "plan",
+    ]);
+  });
 });

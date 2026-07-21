@@ -49,6 +49,26 @@ export class AgyCompanionIngress {
     this.delivered.add(replayKey);
     return events;
   }
+
+  completeStdout(stdout: string, includeTerminal = true): CanonicalEvent[] {
+    return this.projector.completeStdout(stdout, includeTerminal);
+  }
+
+  projectFailure(reason: string): CanonicalEvent {
+    return this.projector.projectFailure(reason);
+  }
+
+  projectCancellation(): CanonicalEvent {
+    return this.projector.projectCancellation();
+  }
+
+  get hasPendingTerminal(): boolean {
+    return this.projector.hasPendingTerminal;
+  }
+
+  discardPendingTerminal(): void {
+    this.projector.discardPendingTerminal();
+  }
 }
 
 function hookReplayKey(hook: ParsedAgyHook, payload: unknown): string {

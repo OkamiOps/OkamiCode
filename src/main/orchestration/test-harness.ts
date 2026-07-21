@@ -161,6 +161,9 @@ export function createLaneHarness(
     codex: new FakeRuntimeAdapter("codex"),
     cursor: new FakeRuntimeAdapter("cursor"),
   };
+  if (runtime === "agy") {
+    throw new Error("AGY is not registered in the test harness");
+  }
   const fakeRuntime = runtimes[runtime];
   fakeRuntime.deferredStart = options.deferredStart ?? false;
   const registry = new RuntimeRegistry();

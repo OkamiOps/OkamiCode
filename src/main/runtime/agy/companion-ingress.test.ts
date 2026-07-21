@@ -77,14 +77,16 @@ describe("AgyCompanionIngress", () => {
     ]);
   });
 
-  it("projects an idle Stop once and deduplicates its exact replay", () => {
+  it("holds an idle Stop until stdout has been projected and deduplicates its replay", () => {
     const ingress = new AgyCompanionIngress(context());
     const envelope = { hookName: "Stop" as const, payload: fixture("stop") };
 
     expect(ingress.receive(envelope).map((event) => event.kind)).toEqual([
       "session_started",
-      "run_completed",
     ]);
+    expect(
+      ingress.completeStdout("Final answer").map((event) => event.kind),
+    ).toEqual(["message_completed", "run_completed"]);
     expect(ingress.receive(envelope)).toEqual([]);
   });
 
@@ -107,7 +109,10 @@ describe("AgyCompanionIngress", () => {
           payload: { ...stop, fullyIdle: true },
         })
         .map((event) => event.kind),
-    ).toEqual(["run_completed"]);
+    ).toEqual([]);
+    expect(ingress.completeStdout("").map((event) => event.kind)).toEqual([
+      "run_completed",
+    ]);
   });
 
   it("fails closed when a later envelope switches conversations", () => {
