@@ -322,6 +322,20 @@ it("provides typed Inbox account and thread commands through the bridge", async 
       createdAt: now,
       updatedAt: now,
     },
+    "inbox:thread:generateReplyDraft": {
+      id: "0f7c4f9c-33dd-4dbd-98cb-8e768646b386",
+      sourceThreadId: threadId,
+      connectorAccountId: accountId,
+      to: ["client@example.com"],
+      subject: "Re: Subject",
+      body: "Thanks",
+      status: "approval_pending",
+      requiresApproval: true,
+      safeRetry: false,
+      attempts: 0,
+      createdAt: now,
+      updatedAt: now,
+    },
     "inbox:thread:replyActions:list": [
       {
         id: "0f7c4f9c-33dd-4dbd-98cb-8e768646b386",
@@ -395,6 +409,17 @@ it("provides typed Inbox account and thread commands through the bridge", async 
       threadId,
       body: "Thanks",
       idempotencyKey: "f1db4f0c-a4ff-4fd2-9966-7fa6315d160d",
+    }),
+  ).resolves.toMatchObject({
+    sourceThreadId: threadId,
+    status: "approval_pending",
+  });
+  await expect(
+    workbenchClient.inboxThreadGenerateReplyDraft({
+      threadId,
+      runtimeKind: "codex",
+      model: "gpt-5.6",
+      effort: "medium",
     }),
   ).resolves.toMatchObject({
     sourceThreadId: threadId,

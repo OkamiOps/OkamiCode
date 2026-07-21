@@ -4,7 +4,6 @@ import {
   Button,
   Drawer,
   Spinner,
-  Tooltip,
   useOverlayState,
 } from "@heroui/react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
@@ -19,7 +18,6 @@ import {
   MoreHorizontal,
   Paperclip,
   RefreshCw,
-  Sparkles,
   Tag,
   Trash2,
 } from "lucide-react";
@@ -29,6 +27,7 @@ import { workbenchClient } from "../../lib/ipc/client";
 import { InboxAccountModal } from "./InboxAccountModal";
 import { InboxOutgoingSettingsModal } from "./InboxOutgoingSettingsModal";
 import { InboxReplyApprovalCard } from "./InboxReplyApprovalCard";
+import { InboxAgentReplyModal } from "./InboxAgentReplyModal";
 import { InboxReplyModal } from "./InboxReplyModal";
 import { InboxTaskModal } from "./InboxTaskModal";
 
@@ -71,6 +70,10 @@ export interface InboxApi {
   createReplyDraft(
     request: IpcRequest<"inbox:thread:createReplyDraft">,
   ): Promise<IpcResponse<"inbox:thread:createReplyDraft">>;
+  listModels(): Promise<IpcResponse<"models:list">>;
+  generateReplyDraft(
+    request: IpcRequest<"inbox:thread:generateReplyDraft">,
+  ): Promise<IpcResponse<"inbox:thread:generateReplyDraft">>;
   listReplyActions(
     request: IpcRequest<"inbox:thread:replyActions:list">,
   ): Promise<IpcResponse<"inbox:thread:replyActions:list">>;
@@ -92,6 +95,8 @@ const defaultApi: InboxApi = {
   listLanes: workbenchClient.laneList,
   createTask: workbenchClient.inboxThreadCreateTask,
   createReplyDraft: workbenchClient.inboxThreadCreateReplyDraft,
+  listModels: workbenchClient.modelsList,
+  generateReplyDraft: workbenchClient.inboxThreadGenerateReplyDraft,
   listReplyActions: workbenchClient.inboxThreadReplyActionsList,
   approveReply: workbenchClient.inboxReplyApproveAndSend,
 };
@@ -207,6 +212,18 @@ export function InboxPage({ api = defaultApi }: { api?: InboxApi }) {
       void queryClient.invalidateQueries({ queryKey });
     },
   });
+  const generateReplyDraft = useMutation({
+    mutationFn: api.generateReplyDraft,
+    onSuccess: async (result) => {
+      const queryKey = ["inbox", "reply-actions", result.sourceThreadId];
+      await queryClient.cancelQueries({ queryKey });
+      queryClient.setQueryData<IpcResponse<"inbox:thread:replyActions:list">>(
+        queryKey,
+        (current = []) => [replyActionFromDraft(result), ...current],
+      );
+      void queryClient.invalidateQueries({ queryKey, refetchType: "none" });
+    },
+  });
   const approveReply = useMutation({
     mutationFn: ({ outboxId }: { outboxId: string; threadId: string }) =>
       api.approveReply({ outboxId, confirmation: "approve_and_send" }),
@@ -288,6 +305,7 @@ export function InboxPage({ api = defaultApi }: { api?: InboxApi }) {
         detail={detail.data}
         error={detail.isError ? errorMessage(detail.error) : null}
         isSavingReply={createReplyDraft.isPending}
+        isGeneratingReply={generateReplyDraft.isPending}
         isLoading={detail.isLoading}
         isCreatingTask={createTask.isPending}
         replyActions={replyActions.data ?? []}
@@ -298,10 +316,14 @@ export function InboxPage({ api = defaultApi }: { api?: InboxApi }) {
           approveReply.mutateAsync({ outboxId, threadId: actionThreadId })
         }
         onCreateReplyDraft={(request) => createReplyDraft.mutateAsync(request)}
+        onGenerateReplyDraft={(request) =>
+          generateReplyDraft.mutateAsync(request)
+        }
         onOpenDetails={detailsDrawer.open}
         onCreateTask={(request) => createTask.mutateAsync(request)}
         taskCreated={taskCreatedForThreadId === detail.data?.thread.id}
         listLanes={api.listLanes}
+        listModels={api.listModels}
       />
       <aside className="inbox-details-region" aria-label="Detalhes da conversa">
         <InboxDetails
@@ -672,10 +694,13 @@ function Conversation({
   error,
   isLoading,
   isSavingReply,
+  isGeneratingReply,
   isCreatingTask,
   listLanes,
+  listModels,
   onApproveReply,
   onCreateReplyDraft,
+  onGenerateReplyDraft,
   onCreateTask,
   onOpenDetails,
   replyActions,
@@ -686,13 +711,16 @@ function Conversation({
   error: string | null;
   isLoading: boolean;
   isSavingReply: boolean;
+  isGeneratingReply: boolean;
   isCreatingTask: boolean;
   listLanes: InboxApi["listLanes"];
+  listModels: InboxApi["listModels"];
   onApproveReply: (
     outboxId: string,
     threadId: string,
   ) => Promise<IpcResponse<"inbox:reply:approveAndSend">>;
   onCreateReplyDraft: InboxApi["createReplyDraft"];
+  onGenerateReplyDraft: InboxApi["generateReplyDraft"];
   onCreateTask: InboxApi["createTask"];
   onOpenDetails: () => void;
   replyActions: IpcResponse<"inbox:thread:replyActions:list">;
@@ -709,6 +737,14 @@ function Conversation({
           <h2>Selecione uma conversa</h2>
           <p>Leia e organize suas caixas sem iniciar nenhum agente.</p>
         </div>
+        <footer className="inbox-future-actions">
+          <InboxAgentReplyModal
+            isGenerating={isGeneratingReply}
+            listModels={listModels}
+            onGenerate={onGenerateReplyDraft}
+            thread={undefined}
+          />
+        </footer>
       </section>
     );
   return (
@@ -810,9 +846,12 @@ function Conversation({
       <FutureActions
         detail={detail}
         isCreatingTask={isCreatingTask}
+        isGeneratingReply={isGeneratingReply}
         isSavingReply={isSavingReply}
         listLanes={listLanes}
+        listModels={listModels}
         onCreateReplyDraft={onCreateReplyDraft}
+        onGenerateReplyDraft={onGenerateReplyDraft}
         onCreateTask={onCreateTask}
         thread={detail?.thread}
       />
@@ -823,21 +862,26 @@ function Conversation({
 function FutureActions({
   detail,
   isCreatingTask,
+  isGeneratingReply,
   isSavingReply,
   listLanes,
+  listModels,
   onCreateReplyDraft,
+  onGenerateReplyDraft,
   onCreateTask,
   thread,
 }: {
   detail: InboxThreadDetail | undefined;
   isCreatingTask: boolean;
+  isGeneratingReply: boolean;
   isSavingReply: boolean;
   listLanes: InboxApi["listLanes"];
+  listModels: InboxApi["listModels"];
   onCreateReplyDraft: InboxApi["createReplyDraft"];
+  onGenerateReplyDraft: InboxApi["generateReplyDraft"];
   onCreateTask: InboxApi["createTask"];
   thread: InboxThread | undefined;
 }) {
-  const actions = [{ label: "Pedir rascunho", icon: <Sparkles size={14} /> }];
   return (
     <footer className="inbox-future-actions">
       <InboxTaskModal
@@ -851,23 +895,12 @@ function FutureActions({
         isSaving={isSavingReply}
         onCreateReplyDraft={onCreateReplyDraft}
       />
-      {actions.map((action) => (
-        <Tooltip.Root closeDelay={0} delay={250} key={action.label}>
-          <Button
-            aria-label={action.label}
-            className="inbox-future-action"
-            isDisabled
-            size="sm"
-            variant="ghost"
-          >
-            {action.icon}
-            {action.label}
-          </Button>
-          <Tooltip.Content className="ok-tooltip" placement="top">
-            Em breve
-          </Tooltip.Content>
-        </Tooltip.Root>
-      ))}
+      <InboxAgentReplyModal
+        isGenerating={isGeneratingReply}
+        listModels={listModels}
+        onGenerate={onGenerateReplyDraft}
+        thread={thread}
+      />
     </footer>
   );
 }

@@ -161,6 +161,9 @@ export const workbenchClient = {
   inboxThreadCreateReplyDraft: (
     request: IpcRequest<"inbox:thread:createReplyDraft">,
   ) => invokeCommand("inbox:thread:createReplyDraft", request),
+  inboxThreadGenerateReplyDraft: (
+    request: IpcRequest<"inbox:thread:generateReplyDraft">,
+  ) => invokeCommand("inbox:thread:generateReplyDraft", request),
   inboxThreadReplyActionsList: (
     request: IpcRequest<"inbox:thread:replyActions:list">,
   ) => invokeCommand("inbox:thread:replyActions:list", request),

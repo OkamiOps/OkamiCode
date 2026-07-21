@@ -98,6 +98,32 @@ const replyAction = {
   lastError: null,
 } as IpcResponse<"inbox:thread:replyActions:list">[number];
 
+const replyModels = [
+  {
+    runtimeKind: "codex" as const,
+    providerLabel: "ChatGPT Plus",
+    routeKind: "direct" as const,
+    source: "subscription",
+    models: [
+      {
+        id: "gpt-5.6",
+        label: "GPT-5.6",
+        description: "Rascunhos cuidadosos",
+        efforts: ["low", "medium", "high"],
+        defaultEffort: "medium",
+      },
+      { id: "gpt-5.6-mini", label: "GPT-5.6 mini" },
+    ],
+  },
+  {
+    runtimeKind: "claude" as const,
+    providerLabel: "Claude Max",
+    routeKind: "unavailable" as const,
+    source: "subscription",
+    models: [{ id: "claude-hidden", label: "Não deve aparecer" }],
+  },
+] satisfies IpcResponse<"models:list">;
+
 function makeApi(overrides: Partial<InboxApi> = {}): InboxApi {
   return {
     listAccounts: vi.fn().mockResolvedValue([account]),
@@ -144,6 +170,8 @@ function makeApi(overrides: Partial<InboxApi> = {}): InboxApi {
     listLanes: vi.fn().mockResolvedValue([]),
     createTask: vi.fn().mockResolvedValue(taskResult),
     createReplyDraft: vi.fn().mockResolvedValue(replyDraftResult),
+    listModels: vi.fn().mockResolvedValue(replyModels),
+    generateReplyDraft: vi.fn().mockResolvedValue(replyDraftResult),
     listReplyActions: vi.fn().mockResolvedValue([]),
     approveReply: vi.fn().mockResolvedValue({
       id: replyAction.id,
@@ -162,6 +190,7 @@ function renderInbox(api = makeApi()) {
   });
   return {
     api,
+    queryClient,
     ...render(
       <QueryClientProvider client={queryClient}>
         <InboxPage api={api} />
@@ -253,7 +282,7 @@ describe("InboxPage", () => {
     );
   });
 
-  it("filters unread threads and confirms removal while keeping the AI draft action disabled", async () => {
+  it("filters unread threads and confirms removal while keeping the AI draft action disabled without a conversation", async () => {
     const { api } = renderInbox();
     await screen.findByText("Projetos");
     await userEvent.click(screen.getByRole("button", { name: "Não lidos" }));
@@ -271,16 +300,201 @@ describe("InboxPage", () => {
       accountId,
     });
 
-    await userEvent.click(
-      screen.getByRole("button", { name: /Proposta para landing page/ }),
-    );
-    await screen.findByText("Ana Silva <ana@cliente.com>");
-
-    expect(screen.getByRole("button", { name: "Virar tarefa" })).toBeEnabled();
     expect(
       screen.getByRole("button", { name: "Pedir rascunho" }),
     ).toBeDisabled();
-    expect(screen.getByRole("button", { name: "Responder" })).toBeEnabled();
+  });
+
+  it("generates an approval-pending agent draft only after an explicit catalog choice", async () => {
+    const { api } = renderInbox();
+    expect(api.listModels).not.toHaveBeenCalled();
+    await userEvent.click(
+      await screen.findByRole("button", { name: /Proposta para landing page/ }),
+    );
+    const draft = screen.getByRole("button", { name: "Pedir rascunho" });
+    expect(draft).toBeEnabled();
+    expect(api.listModels).not.toHaveBeenCalled();
+
+    await userEvent.click(draft);
+    const dialog = await screen.findByRole("dialog");
+    expect(api.listModels).toHaveBeenCalledOnce();
+    expect(within(dialog).queryByText("Não deve aparecer")).toBeNull();
+    expect(
+      within(dialog).getByText(/Esta ação usa uma turn da sua assinatura/i),
+    ).toBeVisible();
+
+    await userEvent.click(
+      within(dialog).getByLabelText("Provider ChatGPT Plus"),
+    );
+    await userEvent.click(within(dialog).getByLabelText("Modelo GPT-5.6"));
+    expect(within(dialog).getByLabelText("Effort medium")).toBeChecked();
+    await userEvent.click(
+      within(dialog).getByRole("button", { name: "Gerar rascunho" }),
+    );
+
+    await vi.waitFor(() =>
+      expect(api.generateReplyDraft).toHaveBeenCalledOnce(),
+    );
+    expect(vi.mocked(api.generateReplyDraft).mock.calls[0]?.[0]).toEqual({
+      threadId,
+      runtimeKind: "codex",
+      model: "gpt-5.6",
+      effort: "medium",
+    });
+    expect(api.approveReply).not.toHaveBeenCalled();
+    expect(await screen.findByText("Aguardando sua aprovação")).toBeVisible();
+  });
+
+  it("omits effort for models that do not declare it and blocks duplicate generation", async () => {
+    let resolveDraft: (() => void) | undefined;
+    const generateReplyDraft = vi.fn<InboxApi["generateReplyDraft"]>(
+      () =>
+        new Promise<IpcResponse<"inbox:thread:generateReplyDraft">>(
+          (resolve) => {
+            resolveDraft = () => resolve(replyDraftResult);
+          },
+        ),
+    );
+    renderInbox(makeApi({ generateReplyDraft }));
+    await userEvent.click(
+      await screen.findByRole("button", { name: /Proposta para landing page/ }),
+    );
+    await userEvent.click(
+      screen.getByRole("button", { name: "Pedir rascunho" }),
+    );
+    const dialog = await screen.findByRole("dialog");
+    await userEvent.click(
+      within(dialog).getByLabelText("Provider ChatGPT Plus"),
+    );
+    await userEvent.click(within(dialog).getByLabelText("Modelo GPT-5.6 mini"));
+    expect(within(dialog).queryByText("Escolha o effort")).toBeNull();
+
+    const submit = within(dialog).getByRole("button", {
+      name: "Gerar rascunho",
+    });
+    await userEvent.click(submit);
+    await userEvent.click(submit);
+    expect(
+      within(dialog).getByRole("button", { name: "Gerando…" }),
+    ).toBeDisabled();
+    expect(generateReplyDraft).toHaveBeenCalledOnce();
+    expect(generateReplyDraft.mock.calls[0]?.[0]).toEqual({
+      threadId,
+      runtimeKind: "codex",
+      model: "gpt-5.6-mini",
+    });
+    await userEvent.keyboard("{Escape}");
+    expect(screen.getByRole("dialog")).toBeVisible();
+    fireEvent.click(document.querySelector('[data-slot="modal-backdrop"]')!);
+    expect(screen.getByRole("dialog")).toBeVisible();
+    resolveDraft?.();
+    await vi.waitFor(() => expect(screen.queryByRole("dialog")).toBeNull());
+  });
+
+  it("keeps a generated approval card when an older reply-actions query resolves late", async () => {
+    let resolveReplyActions:
+      | ((value: IpcResponse<"inbox:thread:replyActions:list">) => void)
+      | undefined;
+    const listReplyActions = vi.fn<InboxApi["listReplyActions"]>(
+      () =>
+        new Promise<IpcResponse<"inbox:thread:replyActions:list">>(
+          (resolve) => {
+            resolveReplyActions = resolve;
+          },
+        ),
+    );
+    const { queryClient } = renderInbox(makeApi({ listReplyActions }));
+    const cancelQueries = vi.spyOn(queryClient, "cancelQueries");
+    await userEvent.click(
+      await screen.findByRole("button", { name: /Proposta para landing page/ }),
+    );
+    await vi.waitFor(() => expect(listReplyActions).toHaveBeenCalledOnce());
+    await userEvent.click(
+      screen.getByRole("button", { name: "Pedir rascunho" }),
+    );
+    const dialog = await screen.findByRole("dialog");
+    await userEvent.click(
+      within(dialog).getByLabelText("Provider ChatGPT Plus"),
+    );
+    await userEvent.click(within(dialog).getByLabelText("Modelo GPT-5.6"));
+    await userEvent.click(
+      within(dialog).getByRole("button", { name: "Gerar rascunho" }),
+    );
+    await vi.waitFor(() => expect(screen.queryByRole("dialog")).toBeNull());
+    expect(cancelQueries).toHaveBeenCalledWith({
+      queryKey: ["inbox", "reply-actions", threadId],
+    });
+
+    resolveReplyActions?.([]);
+    expect(await screen.findByText("Aguardando sua aprovação")).toBeVisible();
+  });
+
+  it("keeps choices open and exposes a Portuguese alert when draft generation fails", async () => {
+    const generateReplyDraft = vi
+      .fn()
+      .mockRejectedValue(new Error("Serviço indisponível"));
+    renderInbox(makeApi({ generateReplyDraft }));
+    await userEvent.click(
+      await screen.findByRole("button", { name: /Proposta para landing page/ }),
+    );
+    await userEvent.click(
+      screen.getByRole("button", { name: "Pedir rascunho" }),
+    );
+    const dialog = await screen.findByRole("dialog");
+    await userEvent.click(
+      within(dialog).getByLabelText("Provider ChatGPT Plus"),
+    );
+    await userEvent.click(within(dialog).getByLabelText("Modelo GPT-5.6"));
+    await userEvent.click(
+      within(dialog).getByRole("button", { name: "Gerar rascunho" }),
+    );
+
+    expect(await within(dialog).findByRole("alert")).toHaveTextContent(
+      "Serviço indisponível",
+    );
+    expect(within(dialog).getByLabelText("Modelo GPT-5.6")).toBeChecked();
+  });
+
+  it("maps backend errors to Portuguese without leaking unknown English text", async () => {
+    const generateReplyDraft = vi
+      .fn()
+      .mockRejectedValueOnce(
+        new Error("Selected reply-generation runtime is unavailable"),
+      )
+      .mockRejectedValueOnce(new Error("Internal provider error 5xx"));
+    renderInbox(makeApi({ generateReplyDraft }));
+    await userEvent.click(
+      await screen.findByRole("button", { name: /Proposta para landing page/ }),
+    );
+    await userEvent.click(
+      screen.getByRole("button", { name: "Pedir rascunho" }),
+    );
+    const dialog = await screen.findByRole("dialog");
+    await userEvent.click(
+      within(dialog).getByLabelText("Provider ChatGPT Plus"),
+    );
+    await userEvent.click(within(dialog).getByLabelText("Modelo GPT-5.6"));
+    const submit = within(dialog).getByRole("button", {
+      name: "Gerar rascunho",
+    });
+    await userEvent.click(submit);
+    expect(await within(dialog).findByRole("alert")).toHaveTextContent(
+      "O runtime selecionado não está disponível. Escolha outra opção.",
+    );
+    expect(
+      within(dialog).queryByText(
+        "Selected reply-generation runtime is unavailable",
+      ),
+    ).toBeNull();
+
+    await userEvent.click(submit);
+    expect(await within(dialog).findByRole("alert")).toHaveTextContent(
+      "Não foi possível gerar o rascunho. Tente novamente.",
+    );
+    expect(
+      within(dialog).queryByText("Internal provider error 5xx"),
+    ).toBeNull();
+    expect(within(dialog).getByLabelText("Modelo GPT-5.6")).toBeChecked();
   });
 
   it("saves a trimmed reply as approval pending without sending an email", async () => {
