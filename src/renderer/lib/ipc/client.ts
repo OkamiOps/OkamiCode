@@ -137,6 +137,21 @@ export const workbenchClient = {
     invokeCommand("memory:search", request),
   memoryReindex: (request: IpcRequest<"memory:reindex">) =>
     invokeCommand("memory:reindex", request),
+  calendarSourcesList: () => invokeCommand("calendar:sources:list", {}),
+  calendarSourceCreateLocal: (
+    request: IpcRequest<"calendar:source:createLocal">,
+  ) => invokeCommand("calendar:source:createLocal", request),
+  calendarEventsList: (request: IpcRequest<"calendar:events:list"> = {}) =>
+    invokeCommand("calendar:events:list", request),
+  calendarEventCreateLocal: (
+    request: IpcRequest<"calendar:event:createLocal">,
+  ) => invokeCommand("calendar:event:createLocal", request),
+  calendarEventUpdateLocal: (
+    request: IpcRequest<"calendar:event:updateLocal">,
+  ) => invokeCommand("calendar:event:updateLocal", request),
+  calendarEventDeleteLocal: (
+    request: IpcRequest<"calendar:event:deleteLocal">,
+  ) => invokeCommand("calendar:event:deleteLocal", request),
   inboxAccountsList: () => invokeCommand("inbox:accounts:list", {}),
   inboxAccountAdd: (request: IpcRequest<"inbox:account:add">) =>
     invokeCommand("inbox:account:add", request),

@@ -1219,6 +1219,172 @@ const inboxThreadReplyActionSchema = z
   })
   .strict();
 
+const calendarDateSchema = z.string().regex(/^\d{4}-\d{2}-\d{2}$/u);
+const calendarTextSchema = (maximum: number) =>
+  z.string().trim().min(1).max(maximum);
+const calendarOptionalTextSchema = (maximum: number) =>
+  calendarTextSchema(maximum).nullable().optional();
+const calendarTimestampSchema = z.iso.datetime({ offset: true });
+const calendarEventStatusSchema = z.enum([
+  "confirmed",
+  "tentative",
+  "cancelled",
+]);
+
+export const calendarSourceSchema = z
+  .object({
+    id: entityIdSchema,
+    kind: z.enum(["local", "google", "outlook", "caldav", "ics"]),
+    displayName: calendarTextSchema(240),
+    color: z.string().regex(/^#[0-9A-F]{6}$/u),
+    timezone: calendarTextSchema(255),
+    status: z.enum(["active", "not_configured", "paused", "degraded"]),
+    syncCursor: z.string().min(1).max(8_192).nullable(),
+    lastError: z.string().min(1).max(2_000).nullable(),
+    lastSyncedAt: calendarTimestampSchema.nullable(),
+    createdAt: calendarTimestampSchema,
+    updatedAt: calendarTimestampSchema,
+  })
+  .strict();
+
+const calendarEventFieldsSchema = {
+  id: entityIdSchema,
+  sourceId: entityIdSchema,
+  externalId: calendarTextSchema(4_096),
+  title: calendarTextSchema(2_000),
+  description: calendarTextSchema(20_000).nullable(),
+  location: calendarTextSchema(2_000).nullable(),
+  organizer: calendarTextSchema(512).nullable(),
+  joinUrl: calendarTextSchema(4_096).nullable(),
+  sourceUrl: calendarTextSchema(4_096).nullable(),
+  etag: calendarTextSchema(4_096).nullable(),
+  providerUpdatedAt: calendarTimestampSchema.nullable(),
+  attendees: z.array(calendarTextSchema(512)).max(100),
+  status: calendarEventStatusSchema,
+  timezone: calendarTextSchema(255),
+  deletedAt: calendarTimestampSchema.nullable(),
+  createdAt: calendarTimestampSchema,
+  updatedAt: calendarTimestampSchema,
+};
+
+export const calendarEventSchema = z.discriminatedUnion("allDay", [
+  z
+    .object({
+      ...calendarEventFieldsSchema,
+      allDay: z.literal(false),
+      startsAt: calendarTimestampSchema,
+      endsAt: calendarTimestampSchema,
+      startDate: z.null(),
+      endDate: z.null(),
+    })
+    .strict(),
+  z
+    .object({
+      ...calendarEventFieldsSchema,
+      allDay: z.literal(true),
+      startsAt: z.null(),
+      endsAt: z.null(),
+      startDate: calendarDateSchema,
+      endDate: calendarDateSchema,
+    })
+    .strict(),
+]);
+
+const calendarEventInputFields = {
+  sourceId: entityIdSchema,
+  title: calendarTextSchema(2_000),
+  timezone: calendarTextSchema(255),
+  description: calendarOptionalTextSchema(20_000),
+  location: calendarOptionalTextSchema(2_000),
+  organizer: calendarOptionalTextSchema(512),
+  joinUrl: calendarOptionalTextSchema(4_096),
+  sourceUrl: calendarOptionalTextSchema(4_096),
+  attendees: z.array(calendarTextSchema(512)).max(100).optional(),
+  status: calendarEventStatusSchema.optional(),
+};
+
+export const calendarCreateLocalSourceRequestSchema = z
+  .object({
+    displayName: calendarTextSchema(240),
+    color: z.string().regex(/^#[0-9A-Fa-f]{6}$/u),
+    timezone: calendarTextSchema(255),
+  })
+  .strict();
+
+export const calendarCreateLocalEventRequestSchema = z.discriminatedUnion(
+  "allDay",
+  [
+    z
+      .object({
+        ...calendarEventInputFields,
+        allDay: z.literal(false),
+        startsAt: calendarTimestampSchema,
+        endsAt: calendarTimestampSchema,
+      })
+      .strict(),
+    z
+      .object({
+        ...calendarEventInputFields,
+        allDay: z.literal(true),
+        startDate: calendarDateSchema,
+        endDate: calendarDateSchema,
+      })
+      .strict(),
+  ],
+);
+
+export const calendarUpdateLocalEventRequestSchema = z
+  .object({
+    eventId: entityIdSchema,
+    sourceId: entityIdSchema,
+    title: calendarTextSchema(2_000).optional(),
+    timezone: calendarTextSchema(255).optional(),
+    description: calendarOptionalTextSchema(20_000),
+    location: calendarOptionalTextSchema(2_000),
+    organizer: calendarOptionalTextSchema(512),
+    joinUrl: calendarOptionalTextSchema(4_096),
+    sourceUrl: calendarOptionalTextSchema(4_096),
+    attendees: z.array(calendarTextSchema(512)).max(100).optional(),
+    status: calendarEventStatusSchema.optional(),
+    allDay: z.boolean().optional(),
+    startsAt: calendarTimestampSchema.optional(),
+    endsAt: calendarTimestampSchema.optional(),
+    startDate: calendarDateSchema.optional(),
+    endDate: calendarDateSchema.optional(),
+  })
+  .strict();
+
+export const calendarListEventsRequestSchema = z
+  .object({
+    sourceIds: z.array(entityIdSchema).max(100).optional(),
+    startsAt: calendarTimestampSchema.optional(),
+    endsAt: calendarTimestampSchema.optional(),
+    startDate: calendarDateSchema.optional(),
+    endDate: calendarDateSchema.optional(),
+  })
+  .strict()
+  .superRefine((input, context) => {
+    for (const [start, end, label] of [
+      ["startsAt", "endsAt", "timed"],
+      ["startDate", "endDate", "all-day"],
+    ] as const) {
+      if ((input[start] === undefined) !== (input[end] === undefined)) {
+        context.addIssue({
+          code: "custom",
+          path: [start],
+          message: `${label} window requires both boundaries`,
+        });
+      }
+    }
+  });
+
+export const calendarDeleteLocalEventRequestSchema = z
+  .object({ eventId: entityIdSchema, sourceId: entityIdSchema })
+  .strict();
+const calendarDeleteLocalEventResultSchema = z
+  .object({ eventId: entityIdSchema, deleted: z.literal(true) })
+  .strict();
+
 export const ipcRequestSchemas = {
   "system:doctor": emptyRequestSchema,
   "models:list": emptyRequestSchema,
@@ -1269,6 +1435,12 @@ export const ipcRequestSchemas = {
   "memory:list": emptyRequestSchema,
   "memory:search": memorySearchRequestSchema,
   "memory:reindex": memoryReindexRequestSchema,
+  "calendar:sources:list": emptyRequestSchema,
+  "calendar:source:createLocal": calendarCreateLocalSourceRequestSchema,
+  "calendar:events:list": calendarListEventsRequestSchema,
+  "calendar:event:createLocal": calendarCreateLocalEventRequestSchema,
+  "calendar:event:updateLocal": calendarUpdateLocalEventRequestSchema,
+  "calendar:event:deleteLocal": calendarDeleteLocalEventRequestSchema,
   "inbox:accounts:list": emptyRequestSchema,
   "inbox:account:add": inboxAddAccountRequestSchema,
   "inbox:account:remove": inboxAccountIdRequestSchema,
@@ -1340,6 +1512,12 @@ export const ipcResponseSchemas = {
       removed: z.number().int().nonnegative(),
     })
     .strict(),
+  "calendar:sources:list": z.array(calendarSourceSchema),
+  "calendar:source:createLocal": calendarSourceSchema,
+  "calendar:events:list": z.array(calendarEventSchema),
+  "calendar:event:createLocal": calendarEventSchema,
+  "calendar:event:updateLocal": calendarEventSchema,
+  "calendar:event:deleteLocal": calendarDeleteLocalEventResultSchema,
   "inbox:accounts:list": z.array(inboxAccountSummarySchema),
   "inbox:account:add": inboxAccountSummarySchema,
   "inbox:account:remove": inboxRemoveAccountResultSchema,

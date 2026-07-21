@@ -204,6 +204,12 @@ it("exposes exactly the enumerated command surface", () => {
     "memory:list",
     "memory:search",
     "memory:reindex",
+    "calendar:sources:list",
+    "calendar:source:createLocal",
+    "calendar:events:list",
+    "calendar:event:createLocal",
+    "calendar:event:updateLocal",
+    "calendar:event:deleteLocal",
     "inbox:accounts:list",
     "inbox:account:add",
     "inbox:account:remove",
@@ -220,6 +226,66 @@ it("exposes exactly the enumerated command surface", () => {
     "inbox:reply:approveAndSend",
   ]);
   expect(Object.keys(window.okami.invoke)).toEqual(ipcChannels);
+});
+
+it("sends strict Calendar commands through the typed bridge", async () => {
+  const sourceId = "b672d2e8-688b-48ac-a618-3294bfc96a99";
+  const eventId = "4d32d86d-3199-4327-9d0c-e283268ed239";
+  const now = "2026-07-21T12:00:00.000Z";
+  const event = {
+    id: eventId,
+    sourceId,
+    externalId: eventId,
+    title: "Planejamento",
+    description: null,
+    location: null,
+    organizer: null,
+    joinUrl: null,
+    sourceUrl: null,
+    etag: null,
+    providerUpdatedAt: null,
+    attendees: [],
+    status: "confirmed",
+    allDay: false,
+    timezone: "America/Sao_Paulo",
+    startsAt: "2026-07-21T15:00:00.000Z",
+    endsAt: "2026-07-21T16:00:00.000Z",
+    startDate: null,
+    endDate: null,
+    deletedAt: null,
+    createdAt: now,
+    updatedAt: now,
+  };
+  const createLocal = vi.fn(async () => event);
+  const deleteLocal = vi.fn(async () => ({ eventId, deleted: true }));
+  Object.defineProperty(window, "okami", {
+    configurable: true,
+    value: {
+      ...window.okami,
+      invoke: {
+        ...window.okami.invoke,
+        "calendar:event:createLocal": createLocal,
+        "calendar:event:deleteLocal": deleteLocal,
+      },
+    },
+  });
+  const createRequest = {
+    sourceId,
+    title: "Planejamento",
+    timezone: "America/Sao_Paulo",
+    allDay: false as const,
+    startsAt: "2026-07-21T12:00:00-03:00",
+    endsAt: "2026-07-21T13:00:00-03:00",
+  };
+
+  await expect(
+    workbenchClient.calendarEventCreateLocal(createRequest),
+  ).resolves.toEqual(event);
+  await expect(
+    workbenchClient.calendarEventDeleteLocal({ eventId, sourceId }),
+  ).resolves.toEqual({ eventId, deleted: true });
+  expect(createLocal).toHaveBeenCalledWith(createRequest);
+  expect(deleteLocal).toHaveBeenCalledWith({ eventId, sourceId });
 });
 
 it("provides typed Inbox account and thread commands through the bridge", async () => {

@@ -66,6 +66,7 @@ import { InboxReplyGenerationService } from "../inbox/reply-generation-service";
 import { InboxTaskActionService } from "../inbox/task-action-service";
 import { InboxOutgoingSettingsService } from "../inbox/outgoing-settings-service";
 import { ReplyDispatchService } from "../inbox/reply-dispatch-service";
+import { CalendarService } from "../calendar/service";
 
 export type { ModelCatalogEntry };
 
@@ -105,6 +106,16 @@ export type InboxReplyDispatchIpcService = Pick<
   "approveAndSend"
 >;
 
+export type CalendarIpcService = Pick<
+  CalendarService,
+  | "listSources"
+  | "createLocalSource"
+  | "listEvents"
+  | "createLocalEvent"
+  | "updateLocalEvent"
+  | "deleteLocalEvent"
+>;
+
 interface RegisterIpcHandlersOptions {
   ipcMain: Pick<IpcMain, "handle">;
   rendererUrl: string;
@@ -119,6 +130,7 @@ interface RegisterIpcHandlersOptions {
   inboxReplyGenerationService?: InboxReplyGenerationIpcService;
   inboxOutgoingSettingsService?: InboxOutgoingSettingsIpcService;
   inboxReplyDispatchService?: InboxReplyDispatchIpcService;
+  calendarService?: CalendarIpcService;
 }
 
 interface TaskRow {
@@ -148,6 +160,7 @@ export function registerIpcHandlers({
   inboxReplyGenerationService,
   inboxOutgoingSettingsService,
   inboxReplyDispatchService,
+  calendarService,
 }: RegisterIpcHandlersOptions): void {
   const openedLanes = new Map<string, OpenedLane>();
   let memory = memoryService;
@@ -210,6 +223,13 @@ export function registerIpcHandlers({
     }
     return inboxReplyDispatchService;
   };
+  let calendar = calendarService;
+  const getCalendarService = () =>
+    (calendar ??= new CalendarService({
+      db: state.database,
+      createId: state.createId,
+      clock: () => state.clock().toISOString(),
+    }));
 
   for (const channel of ipcChannels) {
     ipcMain.handle(channel, async (event, payload) => {
@@ -234,6 +254,7 @@ export function registerIpcHandlers({
         getInboxReplyGenerationService,
         getInboxOutgoingSettingsService,
         getInboxReplyDispatchService,
+        getCalendarService,
       );
       return ipcResponseSchemas[channel].parse(response);
     });
@@ -259,6 +280,7 @@ async function dispatch(
   inboxReplyGenerationService: () => InboxReplyGenerationIpcService,
   inboxOutgoingSettingsService: () => InboxOutgoingSettingsIpcService,
   inboxReplyDispatchService: () => InboxReplyDispatchIpcService,
+  calendarService: () => CalendarIpcService,
 ): Promise<unknown> {
   switch (channel) {
     case "system:doctor":
@@ -455,6 +477,29 @@ async function dispatch(
       return getMemoryService().reindex(
         (request as IpcRequest<"memory:reindex">).sourceId,
       );
+    case "calendar:sources:list":
+      return calendarService().listSources();
+    case "calendar:source:createLocal":
+      return calendarService().createLocalSource(
+        request as IpcRequest<"calendar:source:createLocal">,
+      );
+    case "calendar:events:list":
+      return calendarService().listEvents(
+        request as IpcRequest<"calendar:events:list">,
+      );
+    case "calendar:event:createLocal":
+      return calendarService().createLocalEvent(
+        request as IpcRequest<"calendar:event:createLocal">,
+      );
+    case "calendar:event:updateLocal":
+      return calendarService().updateLocalEvent(
+        request as IpcRequest<"calendar:event:updateLocal">,
+      );
+    case "calendar:event:deleteLocal": {
+      const deletion = request as IpcRequest<"calendar:event:deleteLocal">;
+      calendarService().deleteLocalEvent(deletion.eventId, deletion.sourceId);
+      return { eventId: deletion.eventId, deleted: true as const };
+    }
     case "inbox:accounts:list":
       return inboxService().listAccounts();
     case "inbox:account:add":
