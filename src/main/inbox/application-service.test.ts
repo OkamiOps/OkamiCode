@@ -150,6 +150,35 @@ describe("InboxApplicationService", () => {
     expect(JSON.stringify(added)).not.toContain("do-not-persist-this");
   });
 
+  it("provisions the official SMTP endpoint when a Hostinger mailbox is connected", async () => {
+    const { fx, service } = fixture();
+
+    await service.addImapAccount(
+      addInput({
+        configuration: {
+          host: "imap.hostinger.com",
+          port: 993,
+          secure: true,
+        },
+      }),
+    );
+
+    expect(
+      fx.db
+        .prepare(
+          `SELECT host, port, secure, from_addresses_json
+             FROM inbox_outgoing_settings
+            WHERE account_id = 'account-1'`,
+        )
+        .get(),
+    ).toEqual({
+      host: "smtp.hostinger.com",
+      port: 465,
+      secure: 1,
+      from_addresses_json: "[]",
+    });
+  });
+
   it("keeps SQLite empty when the vault fails and compensates the vault when SQLite rejects the account", async () => {
     const { fx, service, vault } = fixture();
     vault.failSet = true;

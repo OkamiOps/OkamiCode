@@ -57,6 +57,7 @@ interface ReplyDispatchDependencies {
 }
 
 const PUBLIC_UNAVAILABLE_ERROR = "Reply dispatch is unavailable";
+const PUBLIC_OUTGOING_UNCONFIGURED_ERROR = "Outgoing email is not configured";
 const PUBLIC_UNCERTAIN_ERROR = "Email dispatch outcome is uncertain.";
 
 export class ReplyDispatchService {
@@ -115,6 +116,9 @@ export class ReplyDispatchService {
       ]);
     } catch {
       throw new Error(PUBLIC_UNAVAILABLE_ERROR);
+    }
+    if (settings === null) {
+      throw new Error(PUBLIC_OUTGOING_UNCONFIGURED_ERROR);
     }
     if (!isValidSettings(settings) || !isValidCredential(credential)) {
       throw new Error(PUBLIC_UNAVAILABLE_ERROR);

@@ -207,6 +207,12 @@ function cardState(status: ReplyAction["status"], isApproving: boolean) {
 function messageFor(cause: unknown) {
   if (
     cause instanceof Error &&
+    cause.message === "Outgoing email is not configured"
+  ) {
+    return "Configure o envio SMTP desta caixa antes de enviar. O rascunho foi preservado.";
+  }
+  if (
+    cause instanceof Error &&
     cause.message === "Reply dispatch is unavailable"
   ) {
     return "O envio não está disponível agora. O email continua aguardando aprovação.";

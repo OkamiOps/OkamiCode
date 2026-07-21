@@ -151,6 +151,26 @@ export class InboxApplicationService {
             createdAt: now,
             updatedAt: now,
           });
+        const outgoing = inferredOutgoingConfiguration(
+          normalized.configuration.host,
+        );
+        if (outgoing) {
+          this.options.db
+            .prepare(
+              `INSERT INTO inbox_outgoing_settings
+               (account_id, host, port, secure, from_addresses_json,
+                created_at, updated_at)
+               VALUES (@accountId, @host, @port, @secure, '[]',
+                       @createdAt, @updatedAt)`,
+            )
+            .run({
+              accountId,
+              ...outgoing,
+              secure: outgoing.secure ? 1 : 0,
+              createdAt: now,
+              updatedAt: now,
+            });
+        }
       })();
     } catch {
       try {
@@ -314,6 +334,13 @@ export class InboxApplicationService {
       throw new InboxApplicationError();
     }
   }
+}
+
+function inferredOutgoingConfiguration(incomingHost: string) {
+  if (incomingHost.trim().toLowerCase() === "imap.hostinger.com") {
+    return { host: "smtp.hostinger.com", port: 465, secure: true };
+  }
+  return null;
 }
 
 function validateAddInput(input: AddImapAccountInput): {

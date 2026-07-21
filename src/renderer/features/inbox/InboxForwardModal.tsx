@@ -201,8 +201,8 @@ export function InboxForwardModal({
                     : "O encaminhamento não possui anexos para retransmitir."}
                 </p>
                 <p className="inbox-reply-safety">
-                  Salvar não envia o email. O encaminhamento ficará aguardando
-                  sua aprovação.
+                  Ao confirmar, o email será encaminhado usando o endereço
+                  selecionado acima.
                 </p>
                 {error && (
                   <p className="inbox-form-error" role="alert">
@@ -225,7 +225,7 @@ export function InboxForwardModal({
                   size="sm"
                   type="submit"
                 >
-                  {isSaving ? "Salvando…" : "Salvar para aprovação"}
+                  {isSaving ? "Encaminhando…" : "Encaminhar agora"}
                 </Button>
               </Modal.Footer>
             </form>
@@ -269,6 +269,12 @@ function createUuid() {
 }
 
 function messageFor(cause: unknown) {
+  if (
+    cause instanceof Error &&
+    cause.message === "Outgoing email is not configured"
+  ) {
+    return "Configure o envio SMTP desta caixa antes de encaminhar. O rascunho foi preservado.";
+  }
   return cause instanceof Error && cause.message
     ? cause.message
     : "Não foi possível salvar o encaminhamento.";

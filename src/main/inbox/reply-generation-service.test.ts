@@ -223,14 +223,15 @@ describe("InboxReplyGenerationService", () => {
       { onEvent },
     );
 
+    const generatedLaneId = laneService.open.mock.calls[0]?.[0] as string;
     const lane = fixture.db
       .prepare(
         `SELECT t.kind, t.workspace_path AS taskWorkspace, l.workspace_path AS laneWorkspace,
                 l.permission_mode AS permissionMode
          FROM runtime_lanes l JOIN tasks t ON t.id = l.task_id
-         ORDER BY t.created_at DESC, t.id DESC LIMIT 1`,
+         WHERE l.id = ?`,
       )
-      .get() as Record<string, unknown>;
+      .get(generatedLaneId) as Record<string, unknown>;
     expect(lane).toMatchObject({
       kind: "quick_chat",
       permissionMode: "plan",

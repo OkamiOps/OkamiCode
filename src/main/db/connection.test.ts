@@ -11,7 +11,7 @@ describe("openDatabase", () => {
     const key = Buffer.alloc(32, 7);
     const db = openDatabase(file, key);
     expect(db.prepare("SELECT sqlite3mc_version()").pluck().get()).toBeTruthy();
-    expect(db.pragma("user_version", { simple: true })).toBe(16);
+    expect(db.pragma("user_version", { simple: true })).toBe(17);
     const settingsSql = db
       .prepare(
         "SELECT sql FROM sqlite_master WHERE type = 'table' AND name = 'inbox_account_settings'",
@@ -97,5 +97,45 @@ describe("openDatabase", () => {
     ).toThrow();
     db.close();
     expect(() => openDatabase(file, Buffer.alloc(32, 8))).toThrow();
+  });
+
+  it("backfills the official Hostinger SMTP endpoint for existing IMAP accounts", () => {
+    const dir = mkdtempSync(path.join(tmpdir(), "okami-db-hostinger-"));
+    const file = path.join(dir, "workbench.db");
+    const key = Buffer.alloc(32, 9);
+    const db = openDatabase(file, key);
+    db.prepare(
+      `INSERT INTO connector_accounts
+       (id, provider, display_name, address, status, sync_cursor, last_error,
+        last_synced_at, created_at, updated_at)
+       VALUES ('hostinger-account', 'imap', 'Projetos', 'me@example.com',
+               'connected', NULL, NULL, NULL, 'created', 'updated')`,
+    ).run();
+    db.prepare(
+      `INSERT INTO inbox_account_settings
+       (account_id, host, port, secure, mailbox, max_initial_messages,
+        max_message_bytes, created_at, updated_at)
+       VALUES ('hostinger-account', 'imap.hostinger.com', 993, 1, 'INBOX',
+               100, 2097152, 'created', 'updated')`,
+    ).run();
+    db.pragma("user_version = 16");
+    db.close();
+
+    const migrated = openDatabase(file, key);
+    expect(
+      migrated
+        .prepare(
+          `SELECT host, port, secure, from_addresses_json
+             FROM inbox_outgoing_settings
+            WHERE account_id = 'hostinger-account'`,
+        )
+        .get(),
+    ).toEqual({
+      host: "smtp.hostinger.com",
+      port: 465,
+      secure: 1,
+      from_addresses_json: "[]",
+    });
+    migrated.close();
   });
 });

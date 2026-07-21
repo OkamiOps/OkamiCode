@@ -195,14 +195,30 @@ describe("ReplyDispatchService", () => {
     });
   });
 
-  it.each([
-    ["missing SMTP settings", { settings: false }],
-    ["missing credential", { credential: null }],
-  ])("fails closed for %s without a claim or send", async (_name, options) => {
-    const { outbox, pending, service, transport } = fixture(options);
+  it.each([["missing credential", { credential: null }]])(
+    "fails closed for %s without a claim or send",
+    async (_name, options) => {
+      const { outbox, pending, service, transport } = fixture(options);
+
+      await expect(service.approveAndSend(pending.id)).rejects.toThrow(
+        "Reply dispatch is unavailable",
+      );
+      expect(outbox.findById(pending.id)).toMatchObject({
+        status: "approval_pending",
+        approvedAt: null,
+        attempts: 0,
+      });
+      expect(transport.send).not.toHaveBeenCalled();
+    },
+  );
+
+  it("explains that outgoing email is not configured before claiming", async () => {
+    const { outbox, pending, service, transport } = fixture({
+      settings: false,
+    });
 
     await expect(service.approveAndSend(pending.id)).rejects.toThrow(
-      "Reply dispatch is unavailable",
+      "Outgoing email is not configured",
     );
     expect(outbox.findById(pending.id)).toMatchObject({
       status: "approval_pending",

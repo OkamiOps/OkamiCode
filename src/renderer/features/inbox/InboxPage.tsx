@@ -257,14 +257,32 @@ export function InboxPage({ api = defaultApi }: { api?: InboxApi }) {
       void queryClient.invalidateQueries({ queryKey, refetchType: "none" });
     },
   });
-  const createForwardDraft = useMutation({
-    mutationFn: api.createForwardDraft,
-    onSuccess: async (result) => {
-      const queryKey = ["inbox", "reply-actions", result.sourceThreadId];
+  const sendForward = useMutation({
+    mutationFn: async (
+      request: IpcRequest<"inbox:thread:createForwardDraft">,
+    ) => {
+      const draft = await api.createForwardDraft(request);
+      const dispatch = await api.approveReply({
+        outboxId: draft.id,
+        confirmation: "approve_and_send",
+      });
+      return { draft, dispatch };
+    },
+    onSuccess: async ({ draft, dispatch }) => {
+      const queryKey = ["inbox", "reply-actions", draft.sourceThreadId];
       await queryClient.cancelQueries({ queryKey });
       queryClient.setQueryData<IpcResponse<"inbox:thread:replyActions:list">>(
         queryKey,
-        (current = []) => [replyActionFromDraft(result), ...current],
+        (current = []) => [
+          {
+            ...replyActionFromDraft(draft),
+            status: dispatch.status,
+            attempts: dispatch.attempts,
+            approvedAt: dispatch.approvedAt,
+            lastError: dispatch.lastError,
+          },
+          ...current.filter((action) => action.id !== draft.id),
+        ],
       );
       void queryClient.invalidateQueries({ queryKey, refetchType: "none" });
     },
@@ -449,7 +467,7 @@ export function InboxPage({ api = defaultApi }: { api?: InboxApi }) {
         defaultFromAddress={preferredFromAddress}
         error={detail.isError ? errorMessage(detail.error) : null}
         isSavingReply={createReplyDraft.isPending}
-        isSavingForward={createForwardDraft.isPending}
+        isSavingForward={sendForward.isPending}
         isGeneratingReply={generateReplyDraft.isPending}
         isLoading={detail.isLoading}
         fromAddresses={replyFromAddresses}
@@ -471,9 +489,7 @@ export function InboxPage({ api = defaultApi }: { api?: InboxApi }) {
           discardReply.mutateAsync({ outboxId, threadId: actionThreadId })
         }
         onCreateReplyDraft={(request) => createReplyDraft.mutateAsync(request)}
-        onCreateForwardDraft={(request) =>
-          createForwardDraft.mutateAsync(request)
-        }
+        onCreateForwardDraft={(request) => sendForward.mutateAsync(request)}
         onGenerateReplyDraft={(request) =>
           generateReplyDraft.mutateAsync(request)
         }
@@ -909,7 +925,9 @@ function Conversation({
     threadId: string,
   ) => Promise<IpcResponse<"inbox:reply:discard">>;
   onCreateReplyDraft: InboxApi["createReplyDraft"];
-  onCreateForwardDraft: InboxApi["createForwardDraft"];
+  onCreateForwardDraft: (
+    request: IpcRequest<"inbox:thread:createForwardDraft">,
+  ) => Promise<unknown>;
   onGenerateReplyDraft: InboxApi["generateReplyDraft"];
   onCreateTask: InboxApi["createTask"];
   onOpenDetails: () => void;
@@ -1088,7 +1106,9 @@ function FutureActions({
   listLanes: InboxApi["listLanes"];
   listModels: InboxApi["listModels"];
   onCreateReplyDraft: InboxApi["createReplyDraft"];
-  onCreateForwardDraft: InboxApi["createForwardDraft"];
+  onCreateForwardDraft: (
+    request: IpcRequest<"inbox:thread:createForwardDraft">,
+  ) => Promise<unknown>;
   onGenerateReplyDraft: InboxApi["generateReplyDraft"];
   onCreateTask: InboxApi["createTask"];
   thread: InboxThread | undefined;

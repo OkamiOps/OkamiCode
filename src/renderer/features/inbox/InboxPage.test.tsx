@@ -703,7 +703,7 @@ describe("InboxPage", () => {
     expect(api).not.toHaveProperty("laneSendTurn");
   });
 
-  it("creates a forward draft with sender, recipients and an optional note", async () => {
+  it("sends a human-authored forward directly with sender, recipients and an optional note", async () => {
     const { api } = renderInbox(
       makeApi({
         getOutgoingSettings: vi.fn().mockResolvedValue({
@@ -713,6 +713,13 @@ describe("InboxPage", () => {
           fromAddresses: ["propostas@okamiops.com"],
           createdAt: now,
           updatedAt: now,
+        }),
+        approveReply: vi.fn().mockResolvedValue({
+          id: forwardDraftResult.id,
+          status: "confirmed",
+          attempts: 1,
+          approvedAt: now,
+          lastError: null,
         }),
       }),
     );
@@ -741,7 +748,7 @@ describe("InboxPage", () => {
       within(dialog).getByText(/Anexos do email original não serão incluídos/i),
     ).toBeVisible();
     await userEvent.click(
-      within(dialog).getByRole("button", { name: "Salvar para aprovação" }),
+      within(dialog).getByRole("button", { name: "Encaminhar agora" }),
     );
 
     await vi.waitFor(() =>
@@ -756,7 +763,40 @@ describe("InboxPage", () => {
         /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i,
       ),
     });
-    expect(await screen.findByText("Encaminhamento por email")).toBeVisible();
+    await vi.waitFor(() => expect(api.approveReply).toHaveBeenCalledOnce());
+    expect(api.approveReply).toHaveBeenCalledWith({
+      outboxId: forwardDraftResult.id,
+      confirmation: "approve_and_send",
+    });
+    expect(await screen.findByText("Email enviado")).toBeVisible();
+  });
+
+  it("keeps the forward open with a useful error when SMTP is not configured", async () => {
+    const { api } = renderInbox(
+      makeApi({
+        approveReply: vi
+          .fn()
+          .mockRejectedValue(new Error("Outgoing email is not configured")),
+      }),
+    );
+    await userEvent.click(
+      await screen.findByRole("button", { name: /Proposta para landing page/ }),
+    );
+    await userEvent.click(screen.getByRole("button", { name: "Encaminhar" }));
+    const dialog = screen.getByRole("dialog");
+    await userEvent.type(
+      within(dialog).getByLabelText("Destinatários"),
+      "destino@cliente.com",
+    );
+    await userEvent.click(
+      within(dialog).getByRole("button", { name: "Encaminhar agora" }),
+    );
+
+    expect(await within(dialog).findByRole("alert")).toHaveTextContent(
+      "Configure o envio SMTP desta caixa antes de encaminhar. O rascunho foi preservado.",
+    );
+    expect(api.createForwardDraft).toHaveBeenCalledOnce();
+    expect(api.approveReply).toHaveBeenCalledOnce();
   });
 
   it("validates reply body and preserves it with one key across a failed retry", async () => {
