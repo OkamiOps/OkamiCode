@@ -39,6 +39,7 @@ import { ImapSyncAdapter } from "./inbox/imap-adapter";
 import { ReplyDispatchService } from "./inbox/reply-dispatch-service";
 import { CalendarService } from "./calendar/service";
 import { CalendarApplicationService } from "./calendar/application-service";
+import { GoogleCalendarAdapter } from "./calendar/google-adapter";
 import { RemoteCalendarAdapter } from "./calendar/remote-adapter";
 import type { Capability } from "./policy/action";
 import type { TaskId } from "../shared/ids";
@@ -332,10 +333,12 @@ async function bootstrap(): Promise<void> {
       clock: () => new Date().toISOString(),
     }),
     synchronizer: new RemoteCalendarAdapter(inboxCredentialVault),
+    googleSynchronizer: new GoogleCalendarAdapter(inboxCredentialVault),
     createId: randomUUID,
     clock: () => new Date(),
   });
   calendarService.reconcileInboxInvitationSources();
+  await calendarService.reconcileGoogleSources();
   const inboxService = new InboxApplicationService({
     db: database,
     vault: inboxCredentialVault,
@@ -356,6 +359,7 @@ async function bootstrap(): Promise<void> {
     }),
     inbox: inboxService,
     vault: storedInboxCredentialVault,
+    calendar: calendarService,
     pickClientFile: async () => {
       const result = await dialog.showOpenDialog({
         title: "Selecionar credenciais OAuth do Google",

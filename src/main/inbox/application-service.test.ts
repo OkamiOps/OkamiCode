@@ -7,6 +7,7 @@ import {
   InboxApplicationService,
   type CredentialVault,
   type ImapMessageMover,
+  type ImapReadStateUpdater,
   type ImapSyncer,
 } from "./application-service";
 import { ImapSyncError } from "./imap-adapter";
@@ -83,7 +84,9 @@ function batch(accountId: string): ApplyInboxSyncBatch {
   };
 }
 
-function fixture(adapter?: ImapSyncer & Partial<ImapMessageMover>) {
+function fixture(
+  adapter?: ImapSyncer & Partial<ImapMessageMover & ImapReadStateUpdater>,
+) {
   const fx = createTestDatabase();
   const vault = new MemoryVault();
   const adapterCalls: string[] = [];
@@ -122,6 +125,48 @@ function addInput(overrides: Record<string, unknown> = {}) {
 }
 
 describe("InboxApplicationService", () => {
+  it("marks every provider message unseen before updating the local thread", async () => {
+    const setMessagesSeen = vi.fn().mockResolvedValue(undefined);
+    const { service } = fixture({
+      sync: async (input: { account: { id: string } }) =>
+        batch(input.account.id),
+      setMessagesSeen,
+    } as never);
+    const added = await service.addImapAccount(addInput());
+    await service.syncAccount(added.account.id);
+    const selected = service.listThreads().threads[0]!;
+    service.markThreadRead(selected.id);
+
+    await expect(service.markThreadUnread(selected.id)).resolves.toMatchObject({
+      id: selected.id,
+      unreadCount: 1,
+    });
+    expect(setMessagesSeen).toHaveBeenCalledWith(
+      expect.objectContaining({
+        account: expect.objectContaining({ id: added.account.id }),
+        externalMessageIds: ["message-1"],
+        seen: false,
+      }),
+    );
+  });
+
+  it("keeps a read thread local when marking it unseen fails remotely", async () => {
+    const { service } = fixture({
+      sync: async (input: { account: { id: string } }) =>
+        batch(input.account.id),
+      setMessagesSeen: vi.fn().mockRejectedValue(new ImapSyncError()),
+    } as never);
+    const added = await service.addImapAccount(addInput());
+    await service.syncAccount(added.account.id);
+    const selected = service.listThreads().threads[0]!;
+    service.markThreadRead(selected.id);
+
+    await expect(service.markThreadUnread(selected.id)).rejects.toThrow(
+      "Não foi possível marcar a conversa como não lida.",
+    );
+    expect(service.getThread(selected.id).thread.unreadCount).toBe(0);
+  });
+
   it("moves every message in a thread remotely before removing the local conversation", async () => {
     const moveMessages = vi.fn().mockResolvedValue(undefined);
     const { service } = fixture({

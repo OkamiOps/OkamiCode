@@ -79,6 +79,9 @@ describe("GoogleOAuthAuthorizer", () => {
       expect(request.searchParams.get("scope")).toContain(
         "https://mail.google.com/",
       );
+      expect(request.searchParams.get("scope")).toContain(
+        "https://www.googleapis.com/auth/calendar.readonly",
+      );
       const redirect = new URL(request.searchParams.get("redirect_uri")!);
       redirect.searchParams.set("code", "authorization-code");
       redirect.searchParams.set("state", request.searchParams.get("state")!);
@@ -106,7 +109,12 @@ describe("GoogleOAuthAuthorizer", () => {
       google: {
         clientId: "desktop-client.apps.googleusercontent.com",
         clientSecret: "desktop-client-secret",
-        scopes: ["openid", "email", "https://mail.google.com/"],
+        scopes: [
+          "openid",
+          "email",
+          "https://mail.google.com/",
+          "https://www.googleapis.com/auth/calendar.readonly",
+        ],
       },
     });
     const tokenCall = fetchRequest.mock.calls.find(

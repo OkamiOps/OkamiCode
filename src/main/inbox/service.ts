@@ -453,6 +453,19 @@ export class InboxService {
     return thread;
   }
 
+  markThreadUnread(id: string): InboxThread {
+    this.db
+      .prepare(
+        `UPDATE inbox_threads
+         SET unread_count = MAX(unread_count, 1), updated_at = @updatedAt
+         WHERE id = @id AND unread_count = 0`,
+      )
+      .run({ id, updatedAt: new Date().toISOString() });
+    const thread = this.findThread(id);
+    if (!thread) throw new InboxThreadNotFoundError(id);
+    return thread;
+  }
+
   deleteThread(id: string): void {
     const changed = this.db
       .prepare("DELETE FROM inbox_threads WHERE id = ?")

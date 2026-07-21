@@ -11,7 +11,7 @@ describe("openDatabase", () => {
     const key = Buffer.alloc(32, 7);
     const db = openDatabase(file, key);
     expect(db.prepare("SELECT sqlite3mc_version()").pluck().get()).toBeTruthy();
-    expect(db.pragma("user_version", { simple: true })).toBe(18);
+    expect(db.pragma("user_version", { simple: true })).toBe(19);
     const settingsSql = db
       .prepare(
         "SELECT sql FROM sqlite_master WHERE type = 'table' AND name = 'inbox_account_settings'",
@@ -65,6 +65,14 @@ describe("openDatabase", () => {
     expect(linkedCalendarSql).toContain("REFERENCES connector_accounts(id)");
     expect(linkedCalendarSql).toContain("authentication");
     expect(linkedCalendarSql).not.toMatch(/credential|secret|token|password/i);
+    const googleCalendarSql = db
+      .prepare(
+        "SELECT sql FROM sqlite_master WHERE type = 'table' AND name = 'calendar_google_sources'",
+      )
+      .pluck()
+      .get() as string;
+    expect(googleCalendarSql).toContain("REFERENCES connector_accounts(id)");
+    expect(googleCalendarSql).not.toMatch(/credential|secret|token|password/i);
     expect(() =>
       db
         .prepare(
@@ -120,6 +128,8 @@ describe("openDatabase", () => {
                100, 2097152, 'created', 'updated')`,
     ).run();
     db.exec(`
+      DROP TRIGGER calendar_google_source_delete_source;
+      DROP TABLE calendar_google_sources;
       DROP TRIGGER calendar_inbox_source_delete_source;
       DROP TABLE calendar_inbox_sources;
       ALTER TABLE calendar_linked_sources DROP COLUMN authentication;

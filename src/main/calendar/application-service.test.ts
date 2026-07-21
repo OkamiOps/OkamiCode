@@ -44,18 +44,55 @@ function fixture(options: { fail?: Error; lastSyncedAt?: string } = {}) {
       };
     }),
   };
+  const googleSynchronizer = {
+    synchronize: vi.fn(async () => ({
+      nextCursor: "google-cursor-1",
+      syncedAt: "2026-07-21T12:00:00.000Z",
+      upserts: [timedUpsert],
+    })),
+  };
   const service = new CalendarApplicationService({
     db: fx.db,
     calendar,
     synchronizer,
+    googleSynchronizer,
     createId: () => sourceId,
     clock: () => new Date("2026-07-21T12:00:00.000Z"),
     syncTtlMs: 5 * 60 * 1000,
   });
-  return { fx, calendar, synchronizer, service };
+  return { fx, calendar, synchronizer, googleSynchronizer, service };
 }
 
 describe("CalendarApplicationService", () => {
+  it("creates one Google source per account and synchronizes it idempotently", async () => {
+    const { fx, googleSynchronizer, service } = fixture();
+
+    const first = await service.ensureGoogleSource(
+      accountId,
+      "Pessoal",
+      "Europe/Berlin",
+    );
+    const second = await service.ensureGoogleSource(
+      accountId,
+      "Pessoal",
+      "Europe/Berlin",
+    );
+
+    expect(first).toMatchObject({
+      id: sourceId,
+      kind: "google",
+      displayName: "Google Agenda · Pessoal",
+      status: "active",
+    });
+    expect(second.id).toBe(first.id);
+    expect(googleSynchronizer.synchronize).toHaveBeenCalledTimes(2);
+    expect(
+      fx.db
+        .prepare("SELECT COUNT(*) AS count FROM calendar_google_sources")
+        .get(),
+    ).toEqual({ count: 1 });
+  });
+
   it("persists only the public account mapping and synchronizes on linked-source creation", async () => {
     const { fx, synchronizer, service } = fixture();
 

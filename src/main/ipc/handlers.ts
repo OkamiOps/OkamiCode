@@ -85,6 +85,7 @@ export type InboxIpcService = Pick<
   | "listThreads"
   | "getThread"
   | "markThreadRead"
+  | "markThreadUnread"
   | "moveThread"
 >;
 
@@ -581,6 +582,10 @@ async function dispatch(
     case "inbox:thread:markRead":
       return inboxService().markThreadRead(
         (request as IpcRequest<"inbox:thread:markRead">).threadId,
+      );
+    case "inbox:thread:markUnread":
+      return inboxService().markThreadUnread(
+        (request as IpcRequest<"inbox:thread:markUnread">).threadId,
       );
     case "inbox:thread:moveToSpam":
       return inboxService().moveThread(

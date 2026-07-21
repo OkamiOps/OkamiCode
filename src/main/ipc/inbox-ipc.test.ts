@@ -101,6 +101,19 @@ function harness() {
       createdAt: now,
       updatedAt: now,
     })),
+    markThreadUnread: vi.fn(async () => ({
+      id: threadId,
+      accountId,
+      externalThreadId: "x",
+      subject: "Subject",
+      snippet: "",
+      participants: [],
+      unreadCount: 1,
+      lastMessageAt: now,
+      labels: [],
+      createdAt: now,
+      updatedAt: now,
+    })),
     moveThread: vi.fn(async (id: string, destination: "spam" | "trash") => ({
       threadId: id,
       destination,
@@ -324,6 +337,7 @@ it("routes all Inbox commands once and rejects invalid payloads before dispatch"
   });
   await handlers.get("inbox:thread:get")?.(event, { threadId });
   await handlers.get("inbox:thread:markRead")?.(event, { threadId });
+  await handlers.get("inbox:thread:markUnread")?.(event, { threadId });
   await handlers.get("inbox:thread:moveToSpam")?.(event, {
     threadId,
     confirmation: "move_to_spam",
@@ -350,6 +364,7 @@ it("routes all Inbox commands once and rejects invalid payloads before dispatch"
   });
   expect(inboxService.getThread).toHaveBeenCalledWith(threadId);
   expect(inboxService.markThreadRead).toHaveBeenCalledWith(threadId);
+  expect(inboxService.markThreadUnread).toHaveBeenCalledWith(threadId);
   expect(inboxService.moveThread).toHaveBeenNthCalledWith(1, threadId, "spam");
   expect(inboxService.moveThread).toHaveBeenNthCalledWith(2, threadId, "trash");
   await expect(

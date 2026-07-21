@@ -17,6 +17,7 @@ import {
   type ListEventsInput,
   type UpdateLocalEventInput,
 } from "./service";
+import type { GoogleCalendarSynchronizer } from "./google-adapter";
 
 export interface CreateLinkedSourceInput {
   accountId: string;
@@ -36,6 +37,11 @@ interface LinkedSourceRow {
   calendar_url: string;
 }
 
+interface GoogleSourceRow {
+  source_id: string;
+  account_id: string;
+}
+
 export interface ImportInboxInvitationsInput {
   accountId: string;
   accountDisplayName: string;
@@ -52,6 +58,7 @@ export class CalendarApplicationService {
       db: Database;
       calendar: CalendarService;
       synchronizer: RemoteCalendarSynchronizer;
+      googleSynchronizer?: GoogleCalendarSynchronizer;
       createId: () => string;
       clock: () => Date;
       syncTtlMs?: number;
@@ -92,6 +99,24 @@ export class CalendarApplicationService {
         invitations: [],
         syncedAt,
       });
+    }
+    return accounts.length;
+  }
+
+  async reconcileGoogleSources(): Promise<number> {
+    const accounts = this.dependencies.db
+      .prepare(
+        `SELECT account.id, account.display_name
+           FROM connector_accounts account
+           LEFT JOIN calendar_google_sources linked
+             ON linked.account_id = account.id
+          WHERE account.provider = 'gmail' AND linked.account_id IS NULL
+          ORDER BY account.created_at ASC, account.id ASC`,
+      )
+      .all() as Array<{ id: string; display_name: string }>;
+    const timezone = Intl.DateTimeFormat().resolvedOptions().timeZone || "UTC";
+    for (const account of accounts) {
+      await this.ensureGoogleSource(account.id, account.display_name, timezone);
     }
     return accounts.length;
   }
@@ -155,12 +180,68 @@ export class CalendarApplicationService {
 
   async listEvents(input: ListEventsInput = {}): Promise<CalendarEvent[]> {
     const mappings = this.linkedSources(input.sourceIds);
+    const googleMappings = this.googleSources(input.sourceIds);
     await Promise.all(
-      mappings
+      [
+        ...mappings.map((mapping) => ({
+          ...mapping,
+          provider: "linked" as const,
+        })),
+        ...googleMappings.map((mapping) => ({
+          ...mapping,
+          provider: "google" as const,
+        })),
+      ]
         .filter((mapping) => this.isSyncDue(mapping.source_id))
-        .map((mapping) => this.synchronizeSource(mapping.source_id)),
+        .map((mapping) =>
+          mapping.provider === "google"
+            ? this.synchronizeGoogleSource(mapping.source_id)
+            : this.synchronizeSource(mapping.source_id),
+        ),
     );
     return this.dependencies.calendar.listEvents(input);
+  }
+
+  async ensureGoogleSource(
+    accountId: string,
+    displayName: string,
+    timezone: string,
+  ): Promise<CalendarSource> {
+    this.requireAccount(accountId);
+    const existing = this.dependencies.db
+      .prepare(
+        "SELECT source_id FROM calendar_google_sources WHERE account_id = ?",
+      )
+      .get(accountId) as { source_id: string } | undefined;
+    const sourceId = existing?.source_id ?? this.dependencies.createId();
+    if (!existing) {
+      const now = this.dependencies.clock().toISOString();
+      this.dependencies.db.transaction(() => {
+        this.dependencies.db
+          .prepare(
+            `INSERT INTO calendar_sources
+             (id, kind, display_name, color, timezone, status, sync_cursor,
+              last_error, last_synced_at, created_at, updated_at)
+             VALUES (?, 'google', ?, '#4285F4', ?, 'active', NULL, NULL, NULL, ?, ?)`,
+          )
+          .run(
+            sourceId,
+            `Google Agenda · ${requiredText(displayName, "display name")}`,
+            requiredText(timezone, "timezone"),
+            now,
+            now,
+          );
+        this.dependencies.db
+          .prepare(
+            `INSERT INTO calendar_google_sources
+             (source_id, account_id, created_at, updated_at)
+             VALUES (?, ?, ?, ?)`,
+          )
+          .run(sourceId, accountId, now, now);
+      })();
+    }
+    await this.synchronizeGoogleSource(sourceId);
+    return this.requireSource(sourceId);
   }
 
   importInboxInvitations(input: ImportInboxInvitationsInput): void {
@@ -294,6 +375,57 @@ export class CalendarApplicationService {
     }
   }
 
+  private async synchronizeGoogleSource(sourceId: string): Promise<void> {
+    const mapping = this.googleSources([sourceId])[0];
+    if (!mapping) return;
+    const source = this.requireSource(sourceId);
+    try {
+      if (!this.dependencies.googleSynchronizer) {
+        throw new RemoteCalendarError(
+          "Google Agenda synchronization unavailable",
+        );
+      }
+      const snapshot = await this.dependencies.googleSynchronizer.synchronize({
+        accountId: mapping.account_id,
+        timezone: source.timezone,
+      });
+      const received = new Set(
+        snapshot.upserts.map((event) => event.externalId),
+      );
+      const existing = this.dependencies.db
+        .prepare(
+          "SELECT external_id FROM calendar_events WHERE source_id = ? AND deleted_at IS NULL",
+        )
+        .all(sourceId) as Array<{ external_id: string }>;
+      this.dependencies.calendar.applySyncBatch({
+        sourceId,
+        previousCursor: source.syncCursor,
+        nextCursor: snapshot.nextCursor,
+        syncedAt: snapshot.syncedAt,
+        upserts: snapshot.upserts,
+        tombstones: existing
+          .filter((event) => !received.has(event.external_id))
+          .map((event) => ({
+            externalId: event.external_id,
+            providerUpdatedAt: snapshot.syncedAt,
+          })),
+      });
+    } catch (error) {
+      const attemptedAt = this.dependencies.clock().toISOString();
+      const publicMessage =
+        error instanceof Error
+          ? error.message
+          : "Google Agenda synchronization failed";
+      this.dependencies.db
+        .prepare(
+          `UPDATE calendar_sources
+           SET status = 'degraded', last_error = ?, updated_at = ?
+           WHERE id = ?`,
+        )
+        .run(publicMessage.slice(0, 2_000), attemptedAt, sourceId);
+    }
+  }
+
   private linkedSources(sourceIds?: string[]): LinkedSourceRow[] {
     if (sourceIds?.length === 0) return [];
     if (!sourceIds) {
@@ -308,6 +440,22 @@ export class CalendarApplicationService {
          ORDER BY rowid ASC`,
       )
       .all(...sourceIds) as LinkedSourceRow[];
+  }
+
+  private googleSources(sourceIds?: string[]): GoogleSourceRow[] {
+    if (sourceIds?.length === 0) return [];
+    if (!sourceIds) {
+      return this.dependencies.db
+        .prepare("SELECT * FROM calendar_google_sources ORDER BY rowid ASC")
+        .all() as GoogleSourceRow[];
+    }
+    return this.dependencies.db
+      .prepare(
+        `SELECT * FROM calendar_google_sources
+         WHERE source_id IN (${sourceIds.map(() => "?").join(", ")})
+         ORDER BY rowid ASC`,
+      )
+      .all(...sourceIds) as GoogleSourceRow[];
   }
 
   private isSyncDue(sourceId: string): boolean {

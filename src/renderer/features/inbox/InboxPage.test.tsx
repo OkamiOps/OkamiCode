@@ -189,6 +189,7 @@ function makeApi(overrides: Partial<InboxApi> = {}): InboxApi {
       ],
     }),
     markThreadRead: vi.fn().mockResolvedValue({ ...thread, unreadCount: 0 }),
+    markThreadUnread: vi.fn().mockResolvedValue({ ...thread, unreadCount: 1 }),
     moveThreadToSpam: vi.fn().mockResolvedValue({
       threadId,
       destination: "spam",
@@ -386,6 +387,28 @@ describe("InboxPage", () => {
         "Imagens externas bloqueadas para proteger sua privacidade.",
       ),
     ).toBeNull();
+  });
+
+  it("marks the selected conversation as unread without reopening it", async () => {
+    const { api } = renderInbox();
+    await userEvent.click(
+      await screen.findByRole("button", { name: /Proposta para landing page/ }),
+    );
+    await screen.findByRole("button", {
+      name: "Marcar conversa como não lida",
+    });
+
+    await userEvent.click(
+      screen.getByRole("button", { name: "Marcar conversa como não lida" }),
+    );
+
+    await vi.waitFor(() =>
+      expect(api.markThreadUnread).toHaveBeenCalledWith(
+        { threadId },
+        expect.anything(),
+      ),
+    );
+    expect(await screen.findByText("Selecione uma conversa")).toBeVisible();
   });
 
   it("restores persisted column widths and exposes three resize handles", () => {

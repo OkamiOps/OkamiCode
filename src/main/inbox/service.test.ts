@@ -349,6 +349,9 @@ describe("InboxService", () => {
     const marked = service.markThreadRead(threadId);
     expect(marked.unreadCount).toBe(0);
     expect(service.markThreadRead(threadId)).toEqual(marked);
+    const unread = service.markThreadUnread(threadId);
+    expect(unread.unreadCount).toBe(1);
+    expect(service.markThreadUnread(threadId)).toEqual(unread);
     expect(
       fx.db.prepare("SELECT count(*) FROM external_outbox").pluck().get(),
     ).toBe(0);

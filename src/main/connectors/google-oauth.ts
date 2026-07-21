@@ -8,7 +8,14 @@ const GOOGLE_AUTHORIZATION_ENDPOINT =
 const GOOGLE_TOKEN_ENDPOINT = "https://oauth2.googleapis.com/token";
 const GOOGLE_USERINFO_ENDPOINT =
   "https://openidconnect.googleapis.com/v1/userinfo";
-const GMAIL_SCOPES = ["openid", "email", "https://mail.google.com/"];
+export const GOOGLE_CALENDAR_READONLY_SCOPE =
+  "https://www.googleapis.com/auth/calendar.readonly";
+const GOOGLE_SCOPES = [
+  "openid",
+  "email",
+  "https://mail.google.com/",
+  GOOGLE_CALENDAR_READONLY_SCOPE,
+];
 const CALLBACK_PATH = "/oauth/google/callback";
 const CALLBACK_TIMEOUT_MS = 3 * 60_000;
 const REFRESH_WINDOW_MS = 2 * 60_000;
@@ -137,7 +144,7 @@ export class GoogleOAuthAuthorizer {
       client_id: client.clientId,
       redirect_uri: callback.redirectUri,
       response_type: "code",
-      scope: GMAIL_SCOPES.join(" "),
+      scope: GOOGLE_SCOPES.join(" "),
       access_type: "offline",
       prompt: "consent",
       state,
@@ -175,7 +182,7 @@ export class GoogleOAuthAuthorizer {
             ...(client.clientSecret
               ? { clientSecret: client.clientSecret }
               : {}),
-            scopes: [...GMAIL_SCOPES],
+            scopes: [...GOOGLE_SCOPES],
           },
         },
       };

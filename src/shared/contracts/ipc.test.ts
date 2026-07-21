@@ -111,6 +111,7 @@ it("exposes strict Inbox contracts in both IPC maps", () => {
     "inbox:threads:list",
     "inbox:thread:get",
     "inbox:thread:markRead",
+    "inbox:thread:markUnread",
     "inbox:thread:moveToSpam",
     "inbox:thread:moveToTrash",
   ] as const;

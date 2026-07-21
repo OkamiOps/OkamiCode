@@ -182,6 +182,8 @@ export const workbenchClient = {
     invokeCommand("inbox:thread:get", request),
   inboxThreadMarkRead: (request: IpcRequest<"inbox:thread:markRead">) =>
     invokeCommand("inbox:thread:markRead", request),
+  inboxThreadMarkUnread: (request: IpcRequest<"inbox:thread:markUnread">) =>
+    invokeCommand("inbox:thread:markUnread", request),
   inboxThreadMoveToSpam: (request: IpcRequest<"inbox:thread:moveToSpam">) =>
     invokeCommand("inbox:thread:moveToSpam", request),
   inboxThreadMoveToTrash: (request: IpcRequest<"inbox:thread:moveToTrash">) =>

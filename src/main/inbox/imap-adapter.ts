@@ -69,6 +69,16 @@ export interface ImapClient {
     destination: string,
     options: { uid: true },
   ): Promise<unknown | false>;
+  messageFlagsAdd(
+    range: number[],
+    flags: string[],
+    options: { uid: true },
+  ): Promise<unknown | false>;
+  messageFlagsRemove(
+    range: number[],
+    flags: string[],
+    options: { uid: true },
+  ): Promise<unknown | false>;
   fetchAll(
     range: string,
     query: Record<string, boolean>,
@@ -103,6 +113,11 @@ export type InboxThreadDestination = "spam" | "trash";
 export interface ImapMoveMessagesInput extends ImapSyncInput {
   externalMessageIds: string[];
   destination: InboxThreadDestination;
+}
+
+export interface ImapSetMessagesSeenInput extends ImapSyncInput {
+  externalMessageIds: string[];
+  seen: boolean;
 }
 
 export class ImapSyncError extends Error {
@@ -221,6 +236,62 @@ export class ImapSyncAdapter {
         accountId: input.account.id,
         provider: input.account.provider,
         destination: input.destination,
+        errorName: error.errorName,
+        errorCode: error.errorCode,
+      });
+    }
+
+    let cleanupFailed = false;
+    try {
+      lock?.release();
+    } catch {
+      cleanupFailed = true;
+    }
+    try {
+      await client.logout();
+    } catch {
+      cleanupFailed = true;
+    }
+    if (primaryError) throw primaryError;
+    if (cleanupFailed) throw new ImapSyncError();
+  }
+
+  async setMessagesSeen(input: ImapSetMessagesSeenInput): Promise<void> {
+    let configuration: ValidatedConfiguration;
+    try {
+      configuration = validateConfiguration(input.configuration);
+    } catch {
+      throw new ImapSyncError("Invalid IMAP configuration");
+    }
+    if (input.externalMessageIds.length === 0) {
+      throw new ImapSyncError("No messages available to update");
+    }
+
+    const client = await this.createClient(input, configuration);
+    let lock: { release(): void } | undefined;
+    let primaryError: ImapSyncError | null = null;
+    try {
+      await client.connect();
+      lock = await client.getMailboxLock(configuration.mailbox, {
+        readOnly: false,
+      });
+      const uids = await resolveMessageUids(client, input.externalMessageIds);
+      if (uids.length === 0) {
+        throw new ImapSyncError("Messages are no longer available");
+      }
+      const updated = input.seen
+        ? await client.messageFlagsAdd(uids, ["\\Seen"], { uid: true })
+        : await client.messageFlagsRemove(uids, ["\\Seen"], { uid: true });
+      if (updated === false) throw new ImapSyncError("Message update failed");
+    } catch (cause) {
+      primaryError =
+        cause instanceof ImapSyncError
+          ? cause
+          : classifyImapFailure(cause, input.account.provider);
+      const error = safeImapError(cause);
+      console.warn("[okami] IMAP read state update failed", {
+        accountId: input.account.id,
+        provider: input.account.provider,
         errorName: error.errorName,
         errorCode: error.errorCode,
       });

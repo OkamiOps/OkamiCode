@@ -4,6 +4,7 @@ import {
   ImapSyncError,
   type ImapAccountConfiguration,
   type ImapMoveMessagesInput,
+  type ImapSetMessagesSeenInput,
   type ImapSyncInput,
   type InboxThreadDestination,
 } from "./imap-adapter";
@@ -44,9 +45,13 @@ export interface ImapMessageMover {
   moveMessages(input: ImapMoveMessagesInput): Promise<void>;
 }
 
+export interface ImapReadStateUpdater {
+  setMessagesSeen(input: ImapSetMessagesSeenInput): Promise<void>;
+}
+
 export type CreateImapAdapter = (
   vault: CredentialVault,
-) => ImapSyncer & Partial<ImapMessageMover>;
+) => ImapSyncer & Partial<ImapMessageMover & ImapReadStateUpdater>;
 
 export interface AddImapAccountInput {
   provider: "gmail" | "imap" | "zoho";
@@ -298,6 +303,35 @@ export class InboxApplicationService {
 
   markThreadRead(id: string): InboxThread {
     return this.inbox.markThreadRead(id);
+  }
+
+  async markThreadUnread(id: string): Promise<InboxThread> {
+    const detail = this.inbox.getThread(id);
+    const account = this.findAccount(detail.thread.accountId);
+    const configuration = this.findConfiguration(detail.thread.accountId);
+    if (!account || !configuration) throw new InboxApplicationError();
+    const adapter = this.options.createAdapter(this.options.vault);
+    if (!adapter.setMessagesSeen) throw new InboxApplicationError();
+
+    try {
+      await adapter.setMessagesSeen({
+        account,
+        configuration,
+        externalMessageIds: detail.messages.map(
+          (message) => message.externalMessageId,
+        ),
+        seen: false,
+      });
+      return this.inbox.markThreadUnread(id);
+    } catch (cause) {
+      if (cause instanceof ImapSyncError && cause.code === "auth_required") {
+        this.setPublicStatus(account.id, "auth_required", cause.message);
+        throw new InboxApplicationError(cause.message);
+      }
+      throw new InboxApplicationError(
+        "Não foi possível marcar a conversa como não lida.",
+      );
+    }
   }
 
   async moveThread(

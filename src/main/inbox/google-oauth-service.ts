@@ -36,11 +36,21 @@ interface GoogleCredentialReader {
   get(accountId: string): Promise<ConnectorCredential | null>;
 }
 
+interface GoogleCalendarApi {
+  ensureGoogleSource(
+    accountId: string,
+    displayName: string,
+    timezone: string,
+  ): Promise<unknown>;
+}
+
 interface GoogleInboxOAuthServiceOptions {
   authorizer: GoogleOAuthAuthorizerApi | GoogleOAuthAuthorizer;
   inbox: GoogleInboxApi;
   vault: GoogleCredentialReader;
   pickClientFile: () => Promise<string | null>;
+  calendar?: GoogleCalendarApi;
+  timezone?: () => string;
 }
 
 export class GoogleInboxOAuthService {
@@ -50,7 +60,7 @@ export class GoogleInboxOAuthService {
     const filename = await this.requireClientFile();
     const authorization =
       await this.options.authorizer.authorizeFromFile(filename);
-    return this.options.inbox.addImapAccount({
+    const summary = await this.options.inbox.addImapAccount({
       provider: "gmail",
       displayName: authorization.profile.displayName,
       address: authorization.profile.email,
@@ -61,6 +71,8 @@ export class GoogleInboxOAuthService {
       },
       credential: authorization.credential,
     });
+    await this.ensureCalendar(summary);
+    return summary;
   }
 
   async reauthorizeGmail(accountId: string): Promise<InboxSyncResult> {
@@ -89,9 +101,22 @@ export class GoogleInboxOAuthService {
         `Você autorizou outra Conta Google (${authorization.profile.email}). Entre com ${summary.account.address}.`,
       );
     }
-    return this.options.inbox.updateCredentialAndSync(
+    const result = await this.options.inbox.updateCredentialAndSync(
       accountId,
       authorization.credential,
+    );
+    await this.ensureCalendar(summary);
+    return result;
+  }
+
+  private async ensureCalendar(summary: InboxAccountSummary): Promise<void> {
+    if (!this.options.calendar) return;
+    await this.options.calendar.ensureGoogleSource(
+      summary.account.id,
+      summary.account.displayName,
+      this.options.timezone?.() ??
+        Intl.DateTimeFormat().resolvedOptions().timeZone ??
+        "UTC",
     );
   }
 

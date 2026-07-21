@@ -15,6 +15,7 @@ import {
   CircleAlert,
   Inbox as InboxIcon,
   Mail,
+  MailOpen,
   MoreHorizontal,
   Paperclip,
   RefreshCw,
@@ -89,6 +90,9 @@ export interface InboxApi {
   markThreadRead(
     request: IpcRequest<"inbox:thread:markRead">,
   ): Promise<IpcResponse<"inbox:thread:markRead">>;
+  markThreadUnread(
+    request: IpcRequest<"inbox:thread:markUnread">,
+  ): Promise<IpcResponse<"inbox:thread:markUnread">>;
   moveThreadToSpam(
     request: IpcRequest<"inbox:thread:moveToSpam">,
   ): Promise<IpcResponse<"inbox:thread:moveToSpam">>;
@@ -135,6 +139,7 @@ const defaultApi: InboxApi = {
   listThreads: workbenchClient.inboxThreadsList,
   getThread: workbenchClient.inboxThreadGet,
   markThreadRead: workbenchClient.inboxThreadMarkRead,
+  markThreadUnread: workbenchClient.inboxThreadMarkUnread,
   moveThreadToSpam: workbenchClient.inboxThreadMoveToSpam,
   moveThreadToTrash: workbenchClient.inboxThreadMoveToTrash,
   listLanes: workbenchClient.laneList,
@@ -275,6 +280,15 @@ export function InboxPage({ api = defaultApi }: { api?: InboxApi }) {
   const moveToSpam = useMutation({
     mutationFn: api.moveThreadToSpam,
     onSuccess: clearMovedThread,
+  });
+  const markUnread = useMutation({
+    mutationFn: api.markThreadUnread,
+    onSuccess: (updated) => {
+      markedRead.current.delete(updated.id);
+      setSelectedThreadId(null);
+      detailsDrawer.close();
+      void queryClient.invalidateQueries({ queryKey: ["inbox", "threads"] });
+    },
   });
   const moveToTrash = useMutation({
     mutationFn: api.moveThreadToTrash,
@@ -548,6 +562,7 @@ export function InboxPage({ api = defaultApi }: { api?: InboxApi }) {
         isLoadingFromAddresses={outgoingForSelectedAccount.isLoading}
         isCreatingTask={createTask.isPending}
         isMovingThread={moveToSpam.isPending || moveToTrash.isPending}
+        isMarkingUnread={markUnread.isPending}
         moveThreadError={
           moveToSpam.isError
             ? errorMessage(moveToSpam.error)
@@ -583,6 +598,7 @@ export function InboxPage({ api = defaultApi }: { api?: InboxApi }) {
             confirmation: "move_to_trash",
           })
         }
+        onMarkUnread={(threadId) => markUnread.mutateAsync({ threadId })}
         onCreateTask={(request) => createTask.mutateAsync(request)}
         taskCreated={taskCreatedForThreadId === detail.data?.thread.id}
         listLanes={api.listLanes}
@@ -1007,6 +1023,7 @@ function Conversation({
   isGeneratingReply,
   isCreatingTask,
   isMovingThread,
+  isMarkingUnread,
   moveThreadError,
   listLanes,
   listModels,
@@ -1019,6 +1036,7 @@ function Conversation({
   onOpenDetails,
   onMoveToSpam,
   onMoveToTrash,
+  onMarkUnread,
   replyActions,
   replyActionsError,
   taskCreated,
@@ -1035,6 +1053,7 @@ function Conversation({
   isGeneratingReply: boolean;
   isCreatingTask: boolean;
   isMovingThread: boolean;
+  isMarkingUnread: boolean;
   moveThreadError: string | null;
   listLanes: InboxApi["listLanes"];
   listModels: InboxApi["listModels"];
@@ -1055,6 +1074,7 @@ function Conversation({
   onOpenDetails: () => void;
   onMoveToSpam: (threadId: string) => Promise<unknown>;
   onMoveToTrash: (threadId: string) => Promise<unknown>;
+  onMarkUnread: (threadId: string) => Promise<unknown>;
   replyActions: IpcResponse<"inbox:thread:replyActions:list">;
   replyActionsError: string | null;
   taskCreated: boolean;
@@ -1084,6 +1104,21 @@ function Conversation({
         <div className="inbox-conversation__header-actions">
           {detail && (
             <>
+              <Button
+                aria-label="Marcar conversa como não lida"
+                className="inbox-thread-action"
+                isDisabled={isMarkingUnread}
+                isIconOnly
+                onPress={() => void onMarkUnread(detail.thread.id)}
+                size="sm"
+                variant="ghost"
+              >
+                {isMarkingUnread ? (
+                  <Spinner size="sm" />
+                ) : (
+                  <MailOpen aria-hidden="true" size={15} />
+                )}
+              </Button>
               <ThreadMoveAction
                 action="spam"
                 isPending={isMovingThread}

@@ -143,6 +143,8 @@ function fakeClient(overrides: Partial<ImapClient> = {}) {
     ]),
     search: vi.fn().mockResolvedValue([4]),
     messageMove: vi.fn().mockResolvedValue({ destination: "Trash" }),
+    messageFlagsAdd: vi.fn().mockResolvedValue(true),
+    messageFlagsRemove: vi.fn().mockResolvedValue(true),
     fetchAll: vi.fn().mockResolvedValue([message(4), message(3)]),
     download: vi.fn().mockResolvedValue({ content: Readable.from([rfc822()]) }),
     ...overrides,
@@ -171,6 +173,25 @@ function adapter(
 }
 
 describe("ImapSyncAdapter", () => {
+  it("removes the Seen flag from every provider message in the thread", async () => {
+    const messageFlagsRemove = vi.fn().mockResolvedValue(true);
+    const { client } = fakeClient({ messageFlagsRemove } as never);
+
+    await adapter(client).adapter.setMessagesSeen({
+      account,
+      configuration: { host: "mail.example.com", port: 993, secure: true },
+      externalMessageIds: ["imap:99:27", "<two@example.com>"],
+      seen: false,
+    });
+
+    expect(client.getMailboxLock).toHaveBeenCalledWith("INBOX", {
+      readOnly: false,
+    });
+    expect(messageFlagsRemove).toHaveBeenCalledWith([4, 27], ["\\Seen"], {
+      uid: true,
+    });
+  });
+
   it("moves provider messages to the discovered special-use mailbox", async () => {
     const search = vi
       .fn()
