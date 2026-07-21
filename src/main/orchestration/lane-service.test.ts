@@ -126,6 +126,39 @@ describe("LaneService", () => {
     expect(h.runtimes.claude.startRequests).toHaveLength(0);
   });
 
+  it("keeps Cursor native even when its selected model is Claude", async () => {
+    const h = createLaneHarness({
+      runtime: "cursor",
+      model: "claude-sonnet-4-6",
+      gateway: {
+        port: 43123,
+        bearerToken: "gateway-session-token",
+        accounts: [
+          {
+            provider: "chatgpt",
+            bridgedProfile: chatGptProfile,
+            nativeRuntime: "codex",
+          },
+        ],
+      },
+    });
+
+    const opened = await h.openExisting();
+
+    expect(opened).toMatchObject({
+      harness: "native",
+      runtimeKind: "cursor",
+      providerAccountLabel: "Cursor",
+      routeKind: "native",
+      routeReason: "native_requested",
+      displayQuotaAccount: "Cursor subscription",
+    });
+    expect(h.runtimes.cursor.startRequests).toHaveLength(1);
+    expect(h.runtimes.cursor.startRequests[0]?.env).toBeUndefined();
+    expect(h.runtimes.claude.startRequests).toHaveLength(0);
+    expect(h.runtimes.codex.startRequests).toHaveLength(0);
+  });
+
   it("records the resolved route and quota account for every turn", async () => {
     const h = createLaneHarness({
       runtime: "codex",
@@ -276,6 +309,24 @@ describe("LaneService", () => {
       "runtime rejected delta",
     );
     expect(h.fx.lanes.findById(h.fx.laneId)?.lastEventCursor).toBe(0);
+    const failed = h.fx.db
+      .prepare(
+        `SELECT status, finished_at, error_json FROM runs
+         WHERE lane_id = ? AND id <> ? ORDER BY started_at DESC LIMIT 1`,
+      )
+      .get(h.fx.laneId, h.fx.runId) as {
+      status: string;
+      finished_at: string | null;
+      error_json: string | null;
+    };
+    expect(failed).toMatchObject({
+      status: "failed",
+      finished_at: expect.any(String),
+    });
+    expect(JSON.parse(failed.error_json ?? "{}")).toEqual({
+      name: "Error",
+      message: "runtime rejected delta",
+    });
 
     await h.service.sendTurn(opened, "continue");
     expect(h.fx.lanes.findById(h.fx.laneId)?.lastEventCursor).toBe(2);

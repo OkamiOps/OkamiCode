@@ -1,0 +1,2 @@
+{"type":"system","subtype":"init","session_id":"chat-123","cwd":"/workspace","model":"auto","permissionMode":"default"}
+{"type":"assistant","message":{"role":"assistant","content":[{"type":"text","text":"Partial response before exit."}]},"session_id":"chat-123"}

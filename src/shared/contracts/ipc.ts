@@ -2,6 +2,7 @@ import { z } from "zod";
 import { canonicalEventSchema } from "./event";
 import {
   laneStatusSchema,
+  permissionModes,
   providerKindSchema,
   runtimeKindSchema,
 } from "./lane";
@@ -13,6 +14,10 @@ import type { IpcChannel } from "./channels";
 const emptyRequestSchema = z.object({}).strict();
 const entityIdSchema = z.uuid();
 const userTextSchema = z.string().trim().min(1).max(100_000);
+// Workspace-free chat and delegated email generation still have dedicated
+// lifecycle tests only for the two original runtimes. Cursor is exposed first
+// in Workbench and fails closed here until those flows gain equivalent tests.
+const delegatedRuntimeKindSchema = z.enum(["claude", "codex"]);
 const opaqueReferenceSchema = z
   .string()
   .regex(/^[a-z][a-zA-Z0-9_-]*:[a-zA-Z0-9._~-]+$/u);
@@ -72,9 +77,19 @@ const clientCapabilityRules = {
     ],
   },
   cursor: {
-    role: "launcher",
-    statuses: ["needs_adapter", "update_required", "unavailable"],
-    capabilities: ["launcher", "mcp"],
+    role: "runtime",
+    statuses: ["ready", "needs_adapter", "unavailable"],
+    capabilities: [
+      "sessions",
+      "models",
+      "approvals",
+      "sandbox",
+      "mcp",
+      "git",
+      "worktrees",
+      "structured_output",
+      "plugins",
+    ],
   },
   agy: {
     role: "launcher",
@@ -142,11 +157,15 @@ export const cliCapabilitySchema = z
   .strict()
   .superRefine((client, context) => {
     const rule = clientCapabilityRules[client.client];
-    if (client.role !== rule.role) {
+    const expectedRole =
+      client.client === "cursor" && client.integrationStatus === "needs_adapter"
+        ? "launcher"
+        : rule.role;
+    if (client.role !== expectedRole) {
       context.addIssue({
         code: "custom",
         path: ["role"],
-        message: `${client.client} must be a ${rule.role}`,
+        message: `${client.client} must be a ${expectedRole}`,
       });
     }
     if (
@@ -181,7 +200,13 @@ export const cliCapabilitySchema = z
         message: "Installed clients require a binary path",
       });
     }
-    if (!hasExactCapabilities(client.capabilities, rule.capabilities)) {
+    const capabilitiesValid =
+      client.client === "cursor"
+        ? client.capabilities.every((capability) =>
+            (rule.capabilities as readonly string[]).includes(capability),
+          ) && new Set(client.capabilities).size === client.capabilities.length
+        : hasExactCapabilities(client.capabilities, rule.capabilities);
+    if (!capabilitiesValid) {
       context.addIssue({
         code: "custom",
         path: ["capabilities"],
@@ -401,14 +426,6 @@ export const runEventsRequestSchema = z
 
 export const runEventsSchema = z.array(canonicalEventSchema);
 
-export const permissionModes = [
-  "manual",
-  "acceptEdits",
-  "plan",
-  "auto",
-  "bypassPermissions",
-] as const;
-
 export const laneSetPermissionModeRequestSchema = z
   .object({
     laneId: entityIdSchema,
@@ -615,7 +632,7 @@ export const approvalResultSchema = z
   .strict();
 
 export const quickChatCreateRequestSchema = z
-  .object({ runtime: runtimeKindSchema })
+  .object({ runtime: delegatedRuntimeKindSchema })
   .strict();
 
 const quickChatTurnRequestSchema = z
@@ -1171,7 +1188,7 @@ const inboxThreadCreateReplyDraftRequestSchema = z
 const inboxThreadGenerateReplyDraftRequestSchema = z
   .object({
     threadId: entityIdSchema,
-    runtimeKind: runtimeKindSchema,
+    runtimeKind: delegatedRuntimeKindSchema,
     model: z.string().trim().min(1).max(120),
     effort: z.string().trim().min(1).max(20).optional(),
   })

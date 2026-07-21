@@ -44,7 +44,7 @@ const CAPABILITIES = {
     "automations",
     "structured_output",
   ],
-  cursor: ["launcher", "mcp"],
+  cursor: [],
   agy: ["sessions", "models", "approvals", "sandbox", "subagents", "plugins"],
 } as const;
 
@@ -76,11 +76,11 @@ const labels: Record<CliClient, string> = {
 };
 
 function roleFor(client: CliClient): "runtime" | "launcher" {
-  return client === "codex" || client === "claude" ? "runtime" : "launcher";
+  return client === "agy" ? "launcher" : "runtime";
 }
 
-function localBinaryCandidates(client: CliClient): string[] {
-  const binary = client;
+export function localBinaryCandidates(client: CliClient): string[] {
+  const binary = client === "cursor" ? "cursor-agent" : client;
   const fromPath = (process.env.PATH ?? "")
     .split(path.delimiter)
     .filter(Boolean)
@@ -90,7 +90,7 @@ function localBinaryCandidates(client: CliClient): string[] {
     : [];
   const cursorCandidates =
     client === "cursor"
-      ? ["/Applications/Cursor.app/Contents/Resources/app/bin/cursor"]
+      ? ["/Applications/Cursor.app/Contents/Resources/app/bin/cursor-agent"]
       : [];
 
   return [
@@ -106,7 +106,7 @@ function localBinaryCandidates(client: CliClient): string[] {
   ];
 }
 
-function locateLocalBinary(client: CliClient): string | null {
+export function locateLocalBinary(client: CliClient): string | null {
   for (const candidate of localBinaryCandidates(client)) {
     try {
       if (!existsSync(candidate) || !statSync(candidate).isFile()) continue;
@@ -159,13 +159,95 @@ function versionFrom(output: string): string | null {
   );
 }
 
-function cursorAgentNeedsUpdate(help: string): boolean {
-  const marksVersionObsolete = /\b(?:old|outdated|too old)\b/iu.test(help);
-  const identifiesInstalledCursor =
-    /\b(?:current|installed|this)\b.*\b(?:cursor|version)\b|\b(?:cursor|version)\b.*\b(?:current|installed|this)\b|\bcursor\s+version\b/iu.test(
-      help,
-    );
-  return marksVersionObsolete && identifiesInstalledCursor;
+function helpHasLiteral(help: string, literal: string): boolean {
+  const escaped = literal.replace(/[.*+?^${}()|[\]\\]/gu, "\\$&");
+  return new RegExp(`(?:^|[^\\w-])${escaped}(?=$|[^\\w-])`, "iu").test(help);
+}
+
+function helpHasCommand(help: string, command: string): boolean {
+  const escaped = command.replace(/[.*+?^${}()|[\]\\]/gu, "\\$&");
+  return new RegExp(
+    `^\\s*(?:cursor-agent\\s+)?${escaped}(?=\\s|$)`,
+    "imu",
+  ).test(help);
+}
+
+function helpHasOption(help: string, option: string): boolean {
+  return helpHasLiteral(help, option);
+}
+
+function helpHasCommandOrOption(help: string, name: string): boolean {
+  return helpHasCommand(help, name) || helpHasOption(help, `--${name}`);
+}
+
+function cursorProtocolReady(help: string): boolean {
+  return (
+    helpHasOption(help, "--print") &&
+    helpHasOption(help, "--output-format") &&
+    helpHasLiteral(help, "stream-json") &&
+    helpHasOption(help, "--stream-partial-output") &&
+    helpHasOption(help, "--resume") &&
+    helpHasOption(help, "--mode") &&
+    helpHasOption(help, "--auto-review") &&
+    helpHasOption(help, "--sandbox") &&
+    helpHasCommand(help, "create-chat")
+  );
+}
+
+function cursorCapabilities(help: string): Capability[] {
+  const capabilities: Capability[] = [];
+  const add = (capability: Capability, present: boolean) => {
+    if (present) capabilities.push(capability);
+  };
+
+  add(
+    "sessions",
+    helpHasOption(help, "--resume") && helpHasCommand(help, "create-chat"),
+  );
+  add("checkpoints", helpHasCommandOrOption(help, "checkpoints"));
+  add("models", helpHasOption(help, "--model"));
+  add(
+    "approvals",
+    ["--approval-mode", "--permission-mode", "--ask-before-tool"].some(
+      (option) => helpHasOption(help, option),
+    ),
+  );
+  add("sandbox", helpHasCommandOrOption(help, "sandbox"));
+  add("browser", helpHasCommandOrOption(help, "browser"));
+  add("mcp", helpHasCommandOrOption(help, "mcp"));
+  add("skills", helpHasCommandOrOption(help, "skills"));
+  add("hooks", helpHasCommandOrOption(help, "hooks"));
+  add(
+    "subagents",
+    helpHasCommandOrOption(help, "subagent") ||
+      helpHasCommandOrOption(help, "subagents"),
+  );
+  add("background", helpHasOption(help, "--background"));
+  add("git", helpHasCommandOrOption(help, "git"));
+  add(
+    "worktrees",
+    helpHasCommandOrOption(help, "worktree") ||
+      helpHasCommandOrOption(help, "worktrees"),
+  );
+  add(
+    "usage",
+    helpHasCommandOrOption(help, "usage") ||
+      helpHasCommandOrOption(help, "quota"),
+  );
+  add("automations", helpHasCommandOrOption(help, "automations"));
+  add(
+    "structured_output",
+    helpHasOption(help, "--output-format") &&
+      helpHasLiteral(help, "stream-json"),
+  );
+  add("app_server", helpHasCommandOrOption(help, "app-server"));
+  add(
+    "plugins",
+    helpHasCommandOrOption(help, "plugin") ||
+      helpHasCommandOrOption(help, "plugins"),
+  );
+
+  return capabilities;
 }
 
 async function detectClient(
@@ -211,22 +293,22 @@ async function detectClient(
   if (client === "cursor") {
     let agentHelp = "";
     try {
-      agentHelp = await dependencies.execute(binaryPath, ["agent", "--help"]);
+      agentHelp = await dependencies.execute(binaryPath, ["--help"]);
     } catch {
-      // A missing/failed help probe does not prove that a newer Cursor exists.
+      // A failed help probe cannot prove runtime protocol compatibility.
     }
-    const updateRequired = cursorAgentNeedsUpdate(agentHelp);
+    const protocolReady = cursorProtocolReady(agentHelp);
     return {
       client,
       label: labels[client],
       binaryPath,
       version,
-      role: "launcher",
-      integrationStatus: updateRequired ? "update_required" : "needs_adapter",
-      detail: updateRequired
-        ? "CLI encontrado, mas o comando agent indica uma versão antiga do Cursor."
-        : "CLI encontrado; a integração de runtime ainda não existe.",
-      capabilities: [...CAPABILITIES.cursor],
+      role: protocolReady ? "runtime" : "launcher",
+      integrationStatus: protocolReady ? "ready" : "needs_adapter",
+      detail: protocolReady
+        ? "CLI cursor-agent encontrado e protocolo stream-json compatível com o runtime."
+        : "CLI cursor-agent encontrado, mas o protocolo necessário não foi comprovado pelo --help.",
+      capabilities: cursorCapabilities(agentHelp),
     };
   }
 

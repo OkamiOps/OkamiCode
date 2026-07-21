@@ -9,15 +9,24 @@ import { ipcChannels } from "./channels";
 const cursor = {
   client: "cursor",
   label: "Cursor",
-  binaryPath: "/bin/cursor",
-  version: "Cursor 1.0.0",
-  role: "launcher",
-  integrationStatus: "needs_adapter",
-  detail: "CLI encontrado; a integração de runtime ainda não existe.",
-  capabilities: ["launcher", "mcp"],
+  binaryPath: "/bin/cursor-agent",
+  version: "2026.07.17-3e2a980",
+  role: "runtime",
+  integrationStatus: "ready",
+  detail: "CLI cursor-agent encontrado e protocolo stream-json compatível.",
+  capabilities: [
+    "sessions",
+    "models",
+    "sandbox",
+    "mcp",
+    "git",
+    "worktrees",
+    "structured_output",
+    "plugins",
+  ],
 };
 
-it("accepts the allowed Cursor launcher capability record", () => {
+it("accepts the verified Cursor runtime capability record", () => {
   expect(cliCapabilitySchema.safeParse(cursor).success).toBe(true);
 });
 
@@ -25,19 +34,18 @@ it("rejects invalid roles, statuses, capability sets, and unavailable invariants
   const invalid = [
     {
       ...cursor,
-      role: "runtime",
-      integrationStatus: "ready",
+      role: "launcher",
     },
     {
       ...cursor,
-      capabilities: ["launcher", "mcp", "app_server"],
+      capabilities: [...cursor.capabilities, "app_server"],
     },
     {
       ...cursor,
       integrationStatus: "unavailable",
-      binaryPath: "/bin/cursor",
-      version: "Cursor 1.0.0",
-      capabilities: ["launcher", "mcp"],
+      binaryPath: "/bin/cursor-agent",
+      version: "2026.07.17-3e2a980",
+      capabilities: cursor.capabilities,
     },
   ];
 

@@ -57,14 +57,22 @@ beforeEach(() => {
         {
           client: "cursor",
           label: "Cursor",
-          binaryPath:
-            "/Applications/Cursor.app/Contents/Resources/app/bin/cursor",
-          version: "Cursor 1.0.0",
-          role: "launcher",
-          integrationStatus: "update_required",
+          binaryPath: "/Users/marcos/.local/bin/cursor-agent",
+          version: "2026.07.17-3e2a980",
+          role: "runtime",
+          integrationStatus: "ready",
           detail:
-            "CLI encontrado, mas o comando agent indica uma versão antiga do Cursor.",
-          capabilities: ["launcher", "mcp"],
+            "CLI cursor-agent encontrado e protocolo stream-json compatível com o runtime.",
+          capabilities: [
+            "sessions",
+            "models",
+            "sandbox",
+            "mcp",
+            "git",
+            "worktrees",
+            "structured_output",
+            "plugins",
+          ],
         },
         {
           client: "agy",
@@ -105,12 +113,10 @@ it("shows all client states without offering a false runtime selector", async ()
   ).toBeVisible();
   expect((await screen.findAllByText("CLI encontrado")).length).toBe(3);
   expect(screen.getByText("CLI ausente")).toBeVisible();
-  expect(screen.getByText("Integração pronta")).toBeVisible();
-  expect(screen.getByText("Atualização necessária")).toBeVisible();
+  expect(screen.getAllByText("Integração pronta")).toHaveLength(2);
   expect(screen.getByText("Integração pendente")).toBeVisible();
-  expect(screen.getByText("launcher")).toBeVisible();
   expect(screen.getAllByText("mcp")).toHaveLength(2);
-  expect(screen.getByText("plugins")).toBeVisible();
+  expect(screen.getAllByText("plugins")).toHaveLength(2);
   expect(screen.getByText(/instalado.*integrado/i)).toBeVisible();
   expect(screen.queryByRole("combobox")).not.toBeInTheDocument();
   expect(screen.queryByRole("radio")).not.toBeInTheDocument();

@@ -1,6 +1,7 @@
 import { Button, ListBox, Skeleton, Tooltip } from "@heroui/react";
 import { ListCollapse } from "lucide-react";
 import type { WorkbenchLane, WorkbenchTask } from "./api";
+import { runtimePresentation as presentRuntime } from "./runtime-presentation";
 
 interface TaskListPaneProps {
   error: Error | null;
@@ -126,12 +127,7 @@ export function TaskListPane({
 
 function runtimePresentation(lane: WorkbenchLane | null) {
   if (!lane) return { glyph: "OB", tone: "task" } as const;
-  const account = `${lane.providerAccountLabel} ${lane.model}`.toLowerCase();
-  if (account.includes("grok")) return { glyph: "GK", tone: "grok" } as const;
-  if (/chatgpt|\bgpt|\bo[134]/u.test(account)) {
-    return { glyph: "GP", tone: "gpt" } as const;
-  }
-  return { glyph: "CL", tone: "claude" } as const;
+  return presentRuntime(lane);
 }
 
 function statusPresentation(status: string) {

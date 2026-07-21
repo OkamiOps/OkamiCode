@@ -6,6 +6,15 @@ import type { IpcRequest, IpcResponse } from "../../../shared/contracts/ipc";
 type InboxThread = IpcResponse<"inbox:threads:list">["threads"][number];
 type ModelCatalog = IpcResponse<"models:list">;
 type GenerateRequest = IpcRequest<"inbox:thread:generateReplyDraft">;
+type ReplyCatalogEntry = ModelCatalog[number] & {
+  runtimeKind: GenerateRequest["runtimeKind"];
+};
+
+function supportsReplyGeneration(
+  provider: ModelCatalog[number],
+): provider is ReplyCatalogEntry {
+  return provider.runtimeKind !== "cursor";
+}
 
 interface InboxAgentReplyModalProps {
   isGenerating: boolean;
@@ -36,6 +45,7 @@ export function InboxAgentReplyModal({
   const providers = useMemo(
     () =>
       catalog
+        .filter(supportsReplyGeneration)
         .map((provider) => ({
           ...provider,
           models: provider.models.filter((model) => model.id.trim().length > 0),

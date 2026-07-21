@@ -9,6 +9,9 @@ describe("cursorArgs", () => {
       "-p",
       "--output-format",
       "stream-json",
+      "--stream-partial-output",
+      "--sandbox",
+      "enabled",
       "--model",
       "auto",
       "Inspect this workspace",
@@ -25,10 +28,52 @@ describe("cursorArgs", () => {
       "-p",
       "--output-format",
       "stream-json",
+      "--stream-partial-output",
+      "--sandbox",
+      "enabled",
       "--resume=<redacted-cursor-session-id>",
       "Continue",
     ]);
     expect(args).not.toContain("--force");
     expect(args.at(-1)).toBe("Continue");
+  });
+
+  it("maps only permission modes with a safe Cursor equivalent", () => {
+    expect(cursorArgs({ prompt: "Plan", permissionMode: "plan" })).toEqual([
+      "-p",
+      "--output-format",
+      "stream-json",
+      "--stream-partial-output",
+      "--mode",
+      "plan",
+      "--sandbox",
+      "enabled",
+      "Plan",
+    ]);
+    expect(cursorArgs({ prompt: "Auto", permissionMode: "auto" })).toEqual([
+      "-p",
+      "--output-format",
+      "stream-json",
+      "--stream-partial-output",
+      "--auto-review",
+      "--sandbox",
+      "enabled",
+      "Auto",
+    ]);
+    expect(() =>
+      cursorArgs({ prompt: "Unsafe", permissionMode: "acceptEdits" }),
+    ).toThrow("Cursor does not safely support permission mode acceptEdits");
+    expect(() =>
+      cursorArgs({ prompt: "Unsafe", permissionMode: "bypassPermissions" }),
+    ).toThrow(
+      "Cursor does not safely support permission mode bypassPermissions",
+    );
+  });
+
+  it("omits the integration sentinel model default", () => {
+    const args = cursorArgs({ prompt: "Inspect", model: "default" });
+
+    expect(args).not.toContain("--model");
+    expect(args.at(-1)).toBe("Inspect");
   });
 });

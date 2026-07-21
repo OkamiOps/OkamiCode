@@ -142,4 +142,17 @@ describe("EventCardRegistry", () => {
     expect(screen.getByText(/\[redacted\]/)).toBeVisible();
     expect(screen.getByText(/unknown but safe/)).toBeVisible();
   });
+
+  it("registers run cancellation as a lifecycle event", () => {
+    render(
+      <EventCardRegistry
+        event={event("run_cancelled", { reason: "user_cancelled" })}
+      />,
+    );
+
+    expect(
+      screen.queryByText("Evento não reconhecido"),
+    ).not.toBeInTheDocument();
+    expect(screen.getByText("run cancelled")).toBeVisible();
+  });
 });

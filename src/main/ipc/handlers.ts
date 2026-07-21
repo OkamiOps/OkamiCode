@@ -23,7 +23,11 @@ import {
   type IpcChannel,
   type IpcRequest,
 } from "../../shared/contracts/ipc";
-import type { RuntimeKind } from "../../shared/contracts/lane";
+import {
+  permissionModesForRuntime,
+  type ProviderKind,
+  type RuntimeKind,
+} from "../../shared/contracts/lane";
 import type { RunId } from "../../shared/ids";
 import { AuditRepository } from "../db/repositories/audit";
 import { exportAuditRepository } from "../audit/export";
@@ -144,7 +148,7 @@ interface TaskRow {
   updated_at: string;
 }
 
-const runtimeKinds = ["claude", "codex"] as const;
+const runtimeKinds = ["claude", "codex", "cursor"] as const;
 
 export function registerIpcHandlers({
   ipcMain,
@@ -323,15 +327,20 @@ async function dispatch(
       return listRunEvents(state, request as IpcRequest<"run:events">);
     case "lane:setPermissionMode": {
       const set = request as IpcRequest<"lane:setPermissionMode">;
+      const lane = state.lanes.findById(set.laneId);
+      if (!lane) throw new Error(`Lane ${set.laneId} not found`);
+      if (!permissionModesForRuntime(lane.runtimeKind).includes(set.mode)) {
+        throw new Error(
+          `Permission mode ${set.mode} is not supported by ${lane.runtimeKind}`,
+        );
+      }
       const result = state.database
         .prepare(
           `UPDATE runtime_lanes SET permission_mode = ?, updated_at = ?
            WHERE id = ?`,
         )
         .run(set.mode, state.clock().toISOString(), set.laneId);
-      if (result.changes !== 1) {
-        throw new Error(`Lane ${set.laneId} not found`);
-      }
+      if (result.changes !== 1) throw new Error(`Lane ${set.laneId} not found`);
       // Dropping the opened lane forces the next turn to spawn the CLI again,
       // which is what actually applies the mode.
       openedLanes.delete(set.laneId);
@@ -870,7 +879,7 @@ function forkTask(state: AppState, request: IpcRequest<"task:fork">) {
        FROM runtime_lanes WHERE task_id = ?`,
     )
     .all(request.taskId) as Array<{
-    runtime_kind: "claude" | "codex";
+    runtime_kind: RuntimeKind;
     provider_kind: string;
     model: string;
     workspace_path: string | null;
@@ -880,7 +889,7 @@ function forkTask(state: AppState, request: IpcRequest<"task:fork">) {
       id: state.createId(),
       taskId: forked.id,
       runtimeKind: lane.runtime_kind,
-      providerKind: lane.provider_kind as "claude_max" | "chatgpt",
+      providerKind: lane.provider_kind as ProviderKind,
       model: lane.model,
       status: "ready",
       workspacePath: lane.workspace_path,
@@ -1424,6 +1433,7 @@ async function ensureLane(
     .get(request.taskId, request.runtimeKind, request.model) as
     { id: string } | undefined;
   let laneId = existing?.id;
+  let created = false;
   if (!laneId) {
     const sibling = state.database
       .prepare(
@@ -1441,7 +1451,7 @@ async function ensureLane(
       id: laneId,
       taskId: request.taskId,
       runtimeKind: request.runtimeKind,
-      providerKind: request.runtimeKind === "claude" ? "claude_max" : "chatgpt",
+      providerKind: providerForRuntime(request.runtimeKind),
       model: request.model,
       status: "ready",
       workspacePath: owner?.workspace_path ?? sibling?.workspace_path ?? null,
@@ -1449,8 +1459,20 @@ async function ensureLane(
       createdAt: now,
       updatedAt: now,
     });
+    created = true;
   }
-  return openLane(state, openedLanes, { laneId });
+  try {
+    return await openLane(state, openedLanes, { laneId });
+  } catch (error) {
+    if (created) state.lanes.deleteById(laneId);
+    throw error;
+  }
+}
+
+function providerForRuntime(runtime: RuntimeKind): ProviderKind {
+  if (runtime === "claude") return "claude_max";
+  if (runtime === "codex") return "chatgpt";
+  return "cursor";
 }
 
 function openedLaneProjection(opened: OpenedLane) {

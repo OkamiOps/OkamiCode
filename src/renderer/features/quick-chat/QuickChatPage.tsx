@@ -22,8 +22,7 @@ import {
 import { useEffect, useRef, useState, type FormEvent } from "react";
 import { useStore } from "zustand";
 import { createStore, type StoreApi } from "zustand/vanilla";
-import type { IpcResponse } from "../../../shared/contracts/ipc";
-import type { RuntimeKind } from "../../../shared/contracts/lane";
+import type { IpcRequest, IpcResponse } from "../../../shared/contracts/ipc";
 import { workbenchClient } from "../../lib/ipc/client";
 import { ContextChips, type ContextChipItem } from "./ContextChips";
 import { MemoryPicker } from "./MemoryPicker";
@@ -48,7 +47,9 @@ type QuickChatPromotionResult = Omit<PromotionResponse, "task"> & {
 };
 
 export interface QuickChatApi {
-  create(request: { runtime: RuntimeKind }): Promise<QuickChatCreateResult>;
+  create(
+    request: IpcRequest<"quickChat:create">,
+  ): Promise<QuickChatCreateResult>;
   send(request: {
     chatId: string;
     input: string;

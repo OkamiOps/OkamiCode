@@ -24,6 +24,11 @@ import { workbenchClient } from "../../lib/ipc/client";
 import type { ModelCatalog, WorkbenchLane } from "./api";
 import { EffortPicker } from "./EffortPicker";
 import { ModelPicker } from "./ModelPicker";
+import {
+  permissionModesForRuntime,
+  type PermissionMode,
+  type RuntimeKind,
+} from "../../../shared/contracts/lane";
 
 interface ComposerProps {
   activeRunId: string | null;
@@ -48,11 +53,11 @@ interface ComposerProps {
   suggestions: string[];
   onOpenPanel: (mode: "files" | "terminal" | "browser" | "tasks") => void;
   onOpenUrl: (url: string) => void;
-  onSelectPermissionMode: (mode: string) => void;
+  onSelectPermissionMode: (mode: PermissionMode) => void;
   onCancel: (runId: string) => Promise<void>;
   onPickFiles: () => Promise<string[]>;
   onSelectEffort: (effort: string) => void;
-  onSelectModel: (runtimeKind: "claude" | "codex", model: string) => void;
+  onSelectModel: (runtimeKind: RuntimeKind, model: string) => void;
   onSend: (input: string) => Promise<void>;
 }
 
@@ -136,7 +141,11 @@ function ComposerAddMenu({
   );
 }
 
-const PERMISSION_MODES: Array<{ id: string; label: string; hint?: string }> = [
+const PERMISSION_MODES: Array<{
+  id: PermissionMode;
+  label: string;
+  hint?: string;
+}> = [
   { id: "manual", label: "Manual" },
   { id: "acceptEdits", label: "Aceitar edições" },
   { id: "plan", label: "Planejar" },
@@ -150,10 +159,12 @@ const PERMISSION_MODES: Array<{ id: string; label: string; hint?: string }> = [
 
 function PermissionModeMenu({
   mode,
+  runtime,
   onSelect,
 }: {
   mode: string;
-  onSelect: (mode: string) => void;
+  runtime: RuntimeKind;
+  onSelect: (mode: PermissionMode) => void;
 }) {
   const [open, setOpen] = useState(false);
   const rootRef = useRef<HTMLDivElement>(null);
@@ -169,6 +180,7 @@ function PermissionModeMenu({
 
   const current =
     PERMISSION_MODES.find((entry) => entry.id === mode) ?? PERMISSION_MODES[0];
+  const allowed = permissionModesForRuntime(runtime);
 
   return (
     <div className="conv-menu" ref={rootRef}>
@@ -185,23 +197,25 @@ function PermissionModeMenu({
       {open && (
         <div className="conv-menu__list conv-menu__list--up" role="menu">
           <span className="conv-menu__label">Modo</span>
-          {PERMISSION_MODES.map((entry, index) => (
-            <button
-              className="conv-menu__item"
-              data-checked={entry.id === current.id || undefined}
-              data-danger={entry.id === "bypassPermissions" || undefined}
-              key={entry.id}
-              onClick={() => {
-                setOpen(false);
-                onSelect(entry.id);
-              }}
-              type="button"
-            >
-              {entry.label}
-              {entry.hint && <small>{entry.hint}</small>}
-              <kbd>{index + 1}</kbd>
-            </button>
-          ))}
+          {PERMISSION_MODES.filter((entry) => allowed.includes(entry.id)).map(
+            (entry, index) => (
+              <button
+                className="conv-menu__item"
+                data-checked={entry.id === current.id || undefined}
+                data-danger={entry.id === "bypassPermissions" || undefined}
+                key={entry.id}
+                onClick={() => {
+                  setOpen(false);
+                  onSelect(entry.id);
+                }}
+                type="button"
+              >
+                {entry.label}
+                {entry.hint && <small>{entry.hint}</small>}
+                <kbd>{index + 1}</kbd>
+              </button>
+            ),
+          )}
           <p className="conv-menu__note">
             A sessão desta lane é reiniciada no próximo turno para aplicar o
             modo.
@@ -517,6 +531,7 @@ export function Composer({
           <PermissionModeMenu
             mode={lane.permissionMode ?? "manual"}
             onSelect={onSelectPermissionMode}
+            runtime={lane.runtimeKind}
           />
         )}
         <ComposerAddMenu

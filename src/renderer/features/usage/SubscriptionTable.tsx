@@ -226,8 +226,8 @@ function runtimePresentation(subscription: UsageSnapshot) {
   if (subscription.provider === "claude_max") {
     return { glyph: "CL", tone: "claude" } as const;
   }
-  if (subscription.provider === "supergrok") {
-    return { glyph: "GK", tone: "grok" } as const;
+  if (subscription.provider === "cursor") {
+    return { glyph: "CU", tone: "cursor" } as const;
   }
   return { glyph: "MX", tone: "task" } as const;
 }

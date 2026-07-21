@@ -26,6 +26,7 @@ import { ImapSyncAdapter } from "./inbox/imap-adapter";
 import { ReplyDispatchService } from "./inbox/reply-dispatch-service";
 import type { Capability } from "./policy/action";
 import type { TaskId } from "../shared/ids";
+import { locateLocalBinary } from "./ecosystem/cli-capabilities";
 
 const GPT_BACKEND_MODEL = "gpt-5.6-sol";
 const LEASED_CAPABILITIES: Capability[] = [
@@ -180,6 +181,10 @@ async function bootstrap(): Promise<void> {
     codex: {
       approvalBroker,
       taskIdForRun,
+    },
+    cursor: {
+      taskIdForRun,
+      command: locateLocalBinary("cursor") ?? "cursor-agent",
     },
   });
 

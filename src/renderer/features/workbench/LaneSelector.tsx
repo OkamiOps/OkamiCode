@@ -6,6 +6,9 @@ import type { UsageSnapshotContract } from "../../../shared/contracts/ipc";
 import { workbenchClient } from "../../lib/ipc/client";
 import { UsageQuickPopover } from "../usage/UsageQuickPopover";
 import type { WorkbenchLane } from "./api";
+import { laneDisplayName, runtimePresentation } from "./runtime-presentation";
+
+export { laneDisplayName } from "./runtime-presentation";
 
 interface LaneSelectorProps {
   error: Error | null;
@@ -15,13 +18,6 @@ interface LaneSelectorProps {
   onCollapse: () => void;
   onOpen: (laneId: string) => void;
   selectedLane: WorkbenchLane | null;
-}
-
-export function laneDisplayName(lane: WorkbenchLane): string {
-  return lane.providerAccountLabel === "ChatGPT" ||
-    /^gpt|^o[134]/i.test(lane.model)
-    ? "Codex"
-    : "Claude";
 }
 
 function harnessLabel(lane: WorkbenchLane): string {
@@ -369,15 +365,6 @@ function SourceNote({ freshness, text }: { freshness: string; text: string }) {
       {text}
     </p>
   );
-}
-
-function runtimePresentation(lane: WorkbenchLane) {
-  const account = `${lane.providerAccountLabel} ${lane.model}`.toLowerCase();
-  if (account.includes("grok")) return { glyph: "GK", tone: "grok" } as const;
-  if (/chatgpt|\bgpt|\bo[134]/u.test(account)) {
-    return { glyph: "GP", tone: "gpt" } as const;
-  }
-  return { glyph: "CL", tone: "claude" } as const;
 }
 
 function format(number: number): string {

@@ -7,6 +7,8 @@ import type { RunHandle } from "../runtime/adapter";
 import type { TaskRecord, TaskRepository } from "../db/repositories/tasks";
 import type { LaneService } from "./lane-service";
 
+type QuickChatRuntime = Exclude<RuntimeKind, "cursor">;
+
 interface QuickChatDependencies {
   db: Database;
   tasks: Pick<TaskRepository, "findById" | "insert">;
@@ -26,7 +28,7 @@ export interface QuickChatConversation {
   id: string;
   taskId: string;
   laneId: string;
-  runtime: RuntimeKind;
+  runtime: QuickChatRuntime;
   workspaceId: null;
   createdAt: string;
 }
@@ -60,7 +62,7 @@ export class QuickChatService {
     this.clock = dependencies.clock ?? (() => new Date());
   }
 
-  create(runtime: RuntimeKind): QuickChatConversation {
+  create(runtime: QuickChatRuntime): QuickChatConversation {
     const now = this.clock().toISOString();
     const taskId = this.dependencies.createId();
     const chatId = this.dependencies.createId();
@@ -341,7 +343,7 @@ interface QuickChatRow {
   id: string;
   taskId: string;
   laneId: string;
-  runtimeKind: RuntimeKind;
+  runtimeKind: QuickChatRuntime;
   providerKind: "claude_max" | "chatgpt";
   model: string;
   workspacePath: string | null;

@@ -15,6 +15,7 @@ export const canonicalEventKindSchema = z.enum([
   "usage_reported",
   "rate_limit_updated",
   "run_failed",
+  "run_cancelled",
   "run_completed",
 ]);
 

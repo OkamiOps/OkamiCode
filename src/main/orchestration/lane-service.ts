@@ -8,6 +8,7 @@ import {
   type ResolvedRoute,
 } from "../gateway/route-resolver";
 import type { RunHandle } from "../runtime/adapter";
+import type { RuntimeKind } from "../../shared/contracts/lane";
 import path from "node:path";
 import { claudeGatewayEnvironment } from "../runtime/claude/command";
 import type { RuntimeRegistry } from "../runtime/registry";
@@ -56,7 +57,7 @@ export interface OpenedLane {
   delta: DeltaPackage | null;
   pendingDeltaEvents: number;
   harness: "claude" | "native";
-  runtimeKind: "claude" | "codex";
+  runtimeKind: RuntimeKind;
   providerAccountLabel: string;
   model: string;
   routeKind: "direct" | "compatible" | "bridged" | "native";
@@ -71,7 +72,7 @@ export interface LaneSummary {
   laneId: string;
   taskId: string;
   harness: "claude" | "native";
-  runtimeKind: "claude" | "codex";
+  runtimeKind: RuntimeKind;
   runtimeVersion: string | null;
   providerAccountLabel: string;
   model: string;
@@ -216,7 +217,7 @@ export class LaneService {
       routeKind: route.kind,
       routeReason: route.reason,
       displayQuotaAccount: route.displayQuotaAccount,
-      permissionMode: null,
+      permissionMode: lane.permissionMode ?? "manual",
       workspacePath: lane.workspacePath,
       status: lane.status,
     };
@@ -289,6 +290,17 @@ export class LaneService {
   }
 
   private resolveLaneRoute(lane: LaneRecord): ResolvedRoute {
+    // Cursor owns its model routing and subscription. A Claude/GPT model name
+    // selected inside Cursor must never be mistaken for a gateway request.
+    if (lane.runtimeKind === "cursor") {
+      return {
+        harness: "native",
+        kind: "native",
+        runtime: "cursor",
+        reason: "native_requested",
+        displayQuotaAccount: "Cursor subscription",
+      };
+    }
     const gateway = this.dependencies.gateway;
     if (gateway) {
       return resolveRoute({
@@ -318,7 +330,9 @@ export class LaneService {
 }
 
 function providerAccountLabel(lane: LaneRecord): string {
-  return lane.providerKind === "claude_max" ? "Claude Max" : "ChatGPT";
+  if (lane.providerKind === "claude_max") return "Claude Max";
+  if (lane.providerKind === "chatgpt") return "ChatGPT";
+  return "Cursor";
 }
 
 function nativeSessionIdPrefix(nativeSessionId: string): string {

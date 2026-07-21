@@ -4,6 +4,7 @@ import { mkdirSync, readFileSync, realpathSync, writeFileSync } from "node:fs";
 import { homedir } from "node:os";
 import path from "node:path";
 import readline from "node:readline";
+import type { RuntimeKind } from "../../shared/contracts/lane";
 
 export interface CatalogModel {
   id: string;
@@ -14,7 +15,7 @@ export interface CatalogModel {
 }
 
 export interface ModelCatalogEntry {
-  runtimeKind: "claude" | "codex";
+  runtimeKind: RuntimeKind;
   providerLabel: string;
   routeKind: "direct" | "compatible" | "bridged" | "native" | "unavailable";
   source: string;
@@ -284,6 +285,20 @@ export function createModelCatalogService(options: {
               ? "catálogo do Codex CLI (models_cache.json)"
               : "indisponível — cache do Codex não encontrado",
           models: codexModels,
+        },
+        {
+          runtimeKind: "cursor",
+          providerLabel: "Cursor",
+          routeKind: "native",
+          source:
+            "seleção automática do cursor-agent; catálogo da conta exige login",
+          models: [
+            {
+              id: "default",
+              label: "Automático",
+              description: "Modelo padrão configurado na assinatura Cursor",
+            },
+          ],
         },
       ];
     },

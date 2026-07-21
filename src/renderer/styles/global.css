@@ -431,6 +431,12 @@ a {
   color: var(--ok-text);
 }
 
+.lane-glyph--cu,
+.runtime-glyph--cursor {
+  background: color-mix(in srgb, var(--ok-cyan) 12%, var(--ok-orange) 8%);
+  color: color-mix(in srgb, var(--ok-cyan) 68%, var(--ok-orange));
+}
+
 .runtime-glyph--task {
   background: var(--ok-surface-3);
   color: var(--ok-text-muted);

@@ -50,6 +50,20 @@ export class CursorProjector {
     return [];
   }
 
+  projectProcessFailure(native: NativeRecord): CanonicalEvent {
+    return this.event("run_failed", native, {
+      reason: "cursor_process_ended_without_terminal_result",
+      native,
+    });
+  }
+
+  projectCancellation(native: NativeRecord): CanonicalEvent {
+    return this.event("run_cancelled", native, {
+      reason: "user_cancelled",
+      native,
+    });
+  }
+
   private projectSystem(native: NativeRecord): CanonicalEvent[] {
     if (native.subtype !== "init") return [];
     const nativeSessionId = cursorSessionIdFromInit(native);

@@ -466,6 +466,10 @@ body {
   background: rgba(236, 236, 238, 0.1);
   color: var(--chat-text);
 }
+.runtime-glyph--cursor {
+  background: color-mix(in srgb, var(--chat-cyan) 13%, var(--chat-accent) 8%);
+  color: color-mix(in srgb, var(--chat-cyan) 70%, var(--chat-accent));
+}
 
 .message-stamp {
   font-size: 10.5px;

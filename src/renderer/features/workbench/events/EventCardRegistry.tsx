@@ -97,6 +97,7 @@ const EVENT_RENDERERS = Object.freeze({
   usage_reported: LifecycleEventCard,
   rate_limit_updated: LifecycleEventCard,
   run_failed: LifecycleEventCard,
+  run_cancelled: LifecycleEventCard,
   run_completed: LifecycleEventCard,
 }) satisfies Record<CanonicalEventKind, EventRenderer>;
 

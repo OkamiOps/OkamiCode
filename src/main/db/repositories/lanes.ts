@@ -1,4 +1,8 @@
-import type { LaneStatus, RuntimeKind } from "../../../shared/contracts/lane";
+import type {
+  LaneStatus,
+  ProviderKind,
+  RuntimeKind,
+} from "../../../shared/contracts/lane";
 import type { Database } from "../connection";
 import { OptimisticConcurrencyError } from "./tasks";
 
@@ -6,7 +10,7 @@ export interface LaneRecord {
   id: string;
   taskId: string;
   runtimeKind: RuntimeKind;
-  providerKind: "claude_max" | "chatgpt";
+  providerKind: ProviderKind;
   model: string;
   status: LaneStatus;
   workspacePath: string | null;
@@ -60,6 +64,13 @@ export class LaneRepository {
                  @updatedAt)`,
       )
       .run({ permissionMode: null, ...lane });
+  }
+
+  deleteById(id: string): boolean {
+    return (
+      this.db.prepare("DELETE FROM runtime_lanes WHERE id = ?").run(id)
+        .changes === 1
+    );
   }
 
   findById(id: string): LaneRecord | undefined {
@@ -138,6 +149,7 @@ export class LaneRepository {
         `UPDATE runtime_lanes
          SET runtime_kind = @runtimeKind, provider_kind = @providerKind,
              model = @model, status = @status, workspace_path = @workspacePath,
+             permission_mode = @permissionMode,
              last_event_cursor = @lastEventCursor, updated_at = @updatedAt
          WHERE id = @id AND updated_at = @expectedUpdatedAt`,
       )

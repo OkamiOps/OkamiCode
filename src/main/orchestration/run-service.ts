@@ -8,7 +8,7 @@ import type { DeltaPackage } from "./delta";
 
 interface RunServiceDependencies {
   lanes: Pick<LaneRepository, "advanceCursor" | "findById">;
-  runs: Pick<RunRepository, "insert">;
+  runs: Pick<RunRepository, "insert" | "update">;
   runtimes: Pick<RuntimeRegistry, "lookup">;
   createRunId: () => string;
   clock?: () => Date;
@@ -58,16 +58,35 @@ export class RunService {
       error: null,
     });
 
-    const handle = await runtime.sendTurn({
-      runId,
-      laneId: lane.id as LaneId,
-      nativeSessionId: request.nativeSessionId,
-      model: lane.model,
-      ...(request.effort ? { effort: request.effort } : {}),
-      input: request.delta
-        ? `${JSON.stringify(request.delta)}\n\n${request.input}`
-        : request.input,
-    });
+    let handle: RunHandle;
+    try {
+      handle = await runtime.sendTurn({
+        runId,
+        laneId: lane.id as LaneId,
+        nativeSessionId: request.nativeSessionId,
+        model: lane.model,
+        ...(request.effort ? { effort: request.effort } : {}),
+        input: request.delta
+          ? `${JSON.stringify(request.delta)}\n\n${request.input}`
+          : request.input,
+      });
+    } catch (error) {
+      const failedAt = this.clock().toISOString();
+      this.dependencies.runs.update(
+        {
+          id: runId,
+          taskId: lane.taskId,
+          laneId: lane.id,
+          status: "failed",
+          startedAt,
+          finishedAt: failedAt,
+          error: serializedError(error),
+          updatedAt: failedAt,
+        },
+        lane.updatedAt,
+      );
+      throw error;
+    }
 
     if (request.delta) {
       this.advanceAcceptedDelta(lane.id, request.delta);
@@ -86,4 +105,10 @@ export class RunService {
       this.clock().toISOString(),
     );
   }
+}
+
+function serializedError(error: unknown): { name: string; message: string } {
+  return error instanceof Error
+    ? { name: error.name, message: error.message }
+    : { name: "Error", message: String(error) };
 }

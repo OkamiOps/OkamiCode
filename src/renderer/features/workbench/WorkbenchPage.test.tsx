@@ -80,6 +80,20 @@ const codexLane: IpcResponse<"lane:list">[number] = {
   pendingDeltaEvents: 3,
 };
 
+const cursorLane: IpcResponse<"lane:list">[number] = {
+  ...codexLane,
+  laneId: "a1c937ea-b035-437b-807f-a0fad86ca036",
+  harness: "native",
+  runtimeKind: "cursor",
+  runtimeVersion: "2026.07.17-3e2a980",
+  providerAccountLabel: "Cursor",
+  model: "default",
+  routeKind: "native",
+  routeReason: "native_requested",
+  displayQuotaAccount: "Cursor subscription",
+  permissionMode: "manual",
+};
+
 function renderWorkbenchFixture({
   lanes,
   history = { userMessages: [], events: [] },
@@ -297,6 +311,23 @@ describe("WorkbenchPage", () => {
 
     await user.click(screen.getByRole("button", { name: "Interromper" }));
     expect(runtime.calls.runCancel).toEqual([{ runId }]);
+  });
+
+  it("hides permission modes the Cursor runtime cannot execute safely", async () => {
+    renderWorkbenchFixture({ lanes: [cursorLane] });
+    const menu = await screen.findByTitle("Modo de permissão da lane");
+
+    await userEvent.click(menu);
+
+    expect(screen.getAllByRole("button", { name: /^Manual/u })).toHaveLength(2);
+    expect(screen.getByRole("button", { name: /^Planejar/u })).toBeVisible();
+    expect(screen.getByRole("button", { name: /^Automático/u })).toBeVisible();
+    expect(
+      screen.queryByRole("button", { name: /^Aceitar edições/u }),
+    ).toBeNull();
+    expect(
+      screen.queryByRole("button", { name: /^Ignorar permissões/u }),
+    ).toBeNull();
   });
 });
 

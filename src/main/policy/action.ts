@@ -1,6 +1,8 @@
+import type { RuntimeKind } from "../../shared/contracts/lane";
+
 export type Actor =
   | { kind: "human"; id: string }
-  | { kind: "runtime"; runtime: "claude" | "codex" }
+  | { kind: "runtime"; runtime: RuntimeKind }
   | { kind: "automation"; id: string };
 export type Capability =
   | "workspace.read"

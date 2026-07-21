@@ -13,4 +13,10 @@ describe("canonicalEventSchema", () => {
       canonicalEventSchema.parse({ ...fixture, kind: "mystery" }),
     ).toThrow();
   });
+
+  it("accepts cancellation as an explicit terminal kind", () => {
+    expect(
+      canonicalEventSchema.parse({ ...fixture, kind: "run_cancelled" }).kind,
+    ).toBe("run_cancelled");
+  });
 });

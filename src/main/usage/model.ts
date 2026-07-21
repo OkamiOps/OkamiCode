@@ -1,4 +1,5 @@
 import type { Database } from "../db/connection";
+import type { ProviderKind, RuntimeKind } from "../../shared/contracts/lane";
 
 export enum UsageSourceKind {
   OfficialStructured = "official_structured",
@@ -35,8 +36,8 @@ export interface UsageSnapshot {
   error: string | null;
   freshness: UsageFreshness;
   plan: string | null;
-  provider: "chatgpt" | "claude_max";
-  runtime: "codex" | "claude";
+  provider: ProviderKind;
+  runtime: RuntimeKind;
   sessionContext?: SessionContext;
   source: UsageSource;
   validUntil: string | null;
@@ -62,9 +63,9 @@ export interface UsageActivityBucket {
   model: string;
   modelCalls: number;
   outputTokens: number;
-  provider: "chatgpt" | "claude_max";
+  provider: ProviderKind;
   reasoningTokens: number;
-  runtime: "codex" | "claude";
+  runtime: RuntimeKind;
   sessions: number;
   taskId: string;
   taskLabel?: string;
@@ -74,7 +75,7 @@ export interface UsageActivityBucket {
 export interface UsageAlert {
   accountRef: string;
   enabled: boolean;
-  provider: "chatgpt" | "claude_max";
+  provider: ProviderKind;
   remainingPercent: number;
 }
 

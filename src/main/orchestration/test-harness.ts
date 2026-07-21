@@ -20,6 +20,7 @@ import type { LaneGatewayRouting } from "./lane-service";
 
 interface LaneHarnessOptions {
   runtime?: RuntimeKind;
+  model?: string;
   nativeSession?: string;
   cursor?: number;
   events?: number[];
@@ -101,6 +102,7 @@ export interface LaneHarness {
   runtimes: {
     claude: FakeRuntimeAdapter;
     codex: FakeRuntimeAdapter;
+    cursor: FakeRuntimeAdapter;
   };
   service: LaneService;
   buildDelta(): ReturnType<DeltaBuilder["build"]>;
@@ -120,8 +122,8 @@ export function createLaneHarness(
     {
       ...lane,
       runtimeKind: runtime,
-      providerKind: runtime === "codex" ? "chatgpt" : "claude_max",
-      model: runtime === "codex" ? "gpt-test" : "claude-test",
+      providerKind: providerForRuntime(runtime),
+      model: options.model ?? modelForRuntime(runtime),
       lastEventCursor: options.cursor ?? 0,
       updatedAt: nextTimestamp(lane.updatedAt),
     },
@@ -144,11 +146,13 @@ export function createLaneHarness(
   const runtimes = {
     claude: new FakeRuntimeAdapter("claude"),
     codex: new FakeRuntimeAdapter("codex"),
+    cursor: new FakeRuntimeAdapter("cursor"),
   };
   const fakeRuntime = runtimes[runtime];
   const registry = new RuntimeRegistry();
   registry.register(runtimes.claude);
   registry.register(runtimes.codex);
+  registry.register(runtimes.cursor);
   const deltaBuilder = new DeltaBuilder({
     db: fx.db,
     tasks: fx.tasks,
@@ -205,8 +209,8 @@ export function createLaneHarness(
         id,
         taskId: fx.taskId,
         runtimeKind: runtime,
-        providerKind: runtime === "codex" ? "chatgpt" : "claude_max",
-        model: runtime === "codex" ? "gpt-test" : "claude-test",
+        providerKind: providerForRuntime(runtime),
+        model: options.model ?? modelForRuntime(runtime),
         status: "ready",
         workspacePath: null,
         lastEventCursor: laneOptions.cursor ?? 0,
@@ -225,6 +229,18 @@ export function createLaneHarness(
       return id;
     },
   };
+}
+
+function providerForRuntime(runtime: RuntimeKind) {
+  if (runtime === "claude") return "claude_max" as const;
+  if (runtime === "codex") return "chatgpt" as const;
+  return "cursor" as const;
+}
+
+function modelForRuntime(runtime: RuntimeKind): string {
+  if (runtime === "claude") return "claude-test";
+  if (runtime === "codex") return "gpt-test";
+  return "default";
 }
 
 function appendEvent(

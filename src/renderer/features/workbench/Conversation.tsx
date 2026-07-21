@@ -9,6 +9,7 @@ import {
   type EventCardEvent,
 } from "./events/EventCardRegistry";
 import { laneDisplayName } from "./LaneSelector";
+import { runtimePresentation as presentRuntime } from "./runtime-presentation";
 import { useWorkbenchStore } from "./store";
 
 const TEXT_EVENT_KINDS = new Set(["message_delta", "message_completed"]);
@@ -19,6 +20,7 @@ const HIDDEN_EVENT_KINDS = new Set([
   "session_resumed",
   "usage_reported",
   "rate_limit_updated",
+  "run_cancelled",
   "run_completed",
 ]);
 
@@ -429,12 +431,7 @@ export function Conversation({
 
 function runtimePresentation(lane: WorkbenchLane | null | undefined) {
   if (!lane) return { glyph: "CL", tone: "claude" } as const;
-  const account = `${lane.providerAccountLabel} ${lane.model}`.toLowerCase();
-  if (account.includes("grok")) return { glyph: "GK", tone: "grok" } as const;
-  if (/chatgpt|\bgpt|\bo[134]/u.test(account)) {
-    return { glyph: "GP", tone: "gpt" } as const;
-  }
-  return { glyph: "CL", tone: "claude" } as const;
+  return presentRuntime(lane);
 }
 
 function shortModel(model: string): string {

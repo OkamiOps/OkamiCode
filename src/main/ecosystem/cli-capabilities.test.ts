@@ -2,6 +2,7 @@ import { expect, it, vi } from "vitest";
 import {
   createCliCapabilityDetector,
   executeProbe,
+  localBinaryCandidates,
   type CliCapabilityDetectorDependencies,
 } from "./cli-capabilities";
 
@@ -44,7 +45,7 @@ it("reports unavailable clients without probing a missing binary", async () => {
       label: "Cursor",
       binaryPath: null,
       version: null,
-      role: "launcher",
+      role: "runtime",
       integrationStatus: "unavailable",
       detail: "CLI não encontrado neste computador.",
       capabilities: [],
@@ -68,12 +69,28 @@ it("derives only the verified local capabilities and statuses from harmless prob
     {
       codex: "/bin/codex",
       claude: "/bin/claude",
-      cursor: "/bin/cursor",
+      cursor: "/bin/cursor-agent",
       agy: "/bin/agy",
     },
     {
       "--version": "AGY 1.2.3\n",
-      "agent --help": "Cursor agent requires Cursor 0.45.0 or later\n",
+      "--help": [
+        "Options:",
+        "  -p, --print",
+        "  --output-format <format> (stream-json)",
+        "  --stream-partial-output",
+        "  --resume <chatId>",
+        "  --model <model>",
+        "  --mode <mode>",
+        "  --auto-review",
+        "  --sandbox <mode>",
+        "Commands:",
+        "  create-chat",
+        "  mcp",
+        "  plugins",
+        "  git",
+        "  worktrees",
+      ].join("\n"),
     },
   );
 
@@ -111,9 +128,19 @@ it("derives only the verified local capabilities and statuses from harmless prob
       }),
       expect.objectContaining({
         client: "cursor",
-        role: "launcher",
-        integrationStatus: "needs_adapter",
-        capabilities: ["launcher", "mcp"],
+        binaryPath: "/bin/cursor-agent",
+        role: "runtime",
+        integrationStatus: "ready",
+        capabilities: [
+          "sessions",
+          "models",
+          "sandbox",
+          "mcp",
+          "git",
+          "worktrees",
+          "structured_output",
+          "plugins",
+        ],
       }),
       expect.objectContaining({
         client: "agy",
@@ -130,27 +157,84 @@ it("derives only the verified local capabilities and statuses from harmless prob
       }),
     ]),
   );
-  expect(injected.execute).toHaveBeenCalledWith("/bin/cursor", [
-    "agent",
+  expect(injected.execute).toHaveBeenCalledWith("/bin/cursor-agent", [
+    "--version",
+  ]);
+  expect(injected.execute).toHaveBeenCalledWith("/bin/cursor-agent", [
     "--help",
   ]);
 });
 
-it("marks Cursor update_required only when its local help explicitly says it is obsolete", async () => {
+it("keeps a partial Cursor protocol honest while reporting only proven capabilities", async () => {
   const injected = dependencies(
-    { cursor: "/bin/cursor" },
+    { cursor: "/bin/cursor-agent" },
     {
-      "--version": "Cursor 0.44.0\n",
-      "agent --help":
-        "Current Cursor version is outdated. Please update Cursor.\n",
+      "--version": "2026.07.01\n",
+      "--help": [
+        "Options:",
+        "  -p, --print",
+        "  --output-format <format> (stream-json)",
+        "  --resume <chatId>",
+        "  --model <model>",
+        "Commands:",
+        "  create-chat",
+        "  mcp",
+      ].join("\n"),
     },
   );
 
   const clients = await createCliCapabilityDetector(injected)();
 
   expect(clients.find((client) => client.client === "cursor")).toMatchObject({
-    integrationStatus: "update_required",
+    role: "launcher",
+    integrationStatus: "needs_adapter",
+    detail: expect.stringMatching(/protocolo.*n.o.*comprovado/iu),
+    capabilities: ["sessions", "models", "mcp", "structured_output"],
   });
+});
+
+it("does not infer Cursor browser, subagents, or human approvals without help evidence", async () => {
+  const injected = dependencies(
+    { cursor: "/bin/cursor-agent" },
+    {
+      "--help": [
+        "-p, --print",
+        "--output-format stream-json",
+        "--stream-partial-output",
+        "--resume",
+        "--mode plan",
+        "--auto-review",
+        "--sandbox enabled",
+        "create-chat",
+      ].join("\n"),
+    },
+  );
+
+  const cursor = (await createCliCapabilityDetector(injected)()).find(
+    (client) => client.client === "cursor",
+  );
+
+  expect(cursor).toMatchObject({
+    role: "runtime",
+    integrationStatus: "ready",
+    capabilities: ["sessions", "sandbox", "structured_output"],
+  });
+  expect(cursor?.capabilities).not.toEqual(
+    expect.arrayContaining(["browser", "subagents", "approvals"]),
+  );
+});
+
+it("locates Cursor through cursor-agent candidates without treating the GUI launcher as the CLI", () => {
+  const candidates = localBinaryCandidates("cursor");
+
+  expect(candidates).toEqual(
+    expect.arrayContaining([
+      expect.stringMatching(/\.local\/bin\/cursor-agent$/u),
+    ]),
+  );
+  expect(candidates.every((candidate) => !candidate.endsWith("/cursor"))).toBe(
+    true,
+  );
 });
 
 it("preserves useful stdout and stderr when a harmless probe exits non-zero", async () => {

@@ -1,12 +1,13 @@
 import { Check, ChevronDown } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
 import type { ModelCatalog, WorkbenchLane } from "./api";
+import type { RuntimeKind } from "../../../shared/contracts/lane";
 
 interface ModelPickerProps {
   catalog: ModelCatalog;
   disabled?: boolean;
   isOpening: boolean;
-  onSelectModel: (runtimeKind: "claude" | "codex", model: string) => void;
+  onSelectModel: (runtimeKind: RuntimeKind, model: string) => void;
   selectedLane: WorkbenchLane | null;
 }
 

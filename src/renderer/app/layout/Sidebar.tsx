@@ -18,6 +18,10 @@ import {
 import { useMemo } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { workbenchClient } from "../../lib/ipc/client";
+import {
+  laneDisplayName,
+  runtimeGlyph,
+} from "../../features/workbench/runtime-presentation";
 
 interface SidebarItem {
   active?: boolean;
@@ -28,7 +32,7 @@ interface SidebarItem {
 }
 
 interface LaneItem {
-  glyph: "CL" | "GP" | "GK";
+  glyph: "CL" | "GP" | "GK" | "CU";
   label: string;
   model: string;
   provider: string;
@@ -141,12 +145,6 @@ interface SidebarProps {
   onCollapse: () => void;
 }
 
-function laneGlyph(runtimeKind: string): LaneItem["glyph"] {
-  if (runtimeKind === "claude") return "CL";
-  if (runtimeKind === "codex") return "GP";
-  return "GK";
-}
-
 export function Sidebar({ areaPath, onCollapse }: SidebarProps) {
   const isWorkbench = !(areaPath in areaSections);
   const tasksQuery = useQuery({
@@ -162,13 +160,11 @@ export function Sidebar({ areaPath, onCollapse }: SidebarProps) {
   const lanes = useMemo<LaneItem[]>(
     () =>
       (lanesQuery.data ?? []).map((lane) => ({
-        glyph: laneGlyph(lane.runtimeKind),
+        glyph: runtimeGlyph(lane.runtimeKind),
         label:
           lane.harness === "claude" && lane.runtimeKind !== "claude"
             ? `${lane.model} · harness Claude`
-            : lane.runtimeKind === "claude"
-              ? "Claude"
-              : lane.runtimeKind,
+            : laneDisplayName(lane),
         model: lane.model,
         provider: lane.providerAccountLabel,
         route: lane.routeKind === "compatible" ? "direct" : lane.routeKind,

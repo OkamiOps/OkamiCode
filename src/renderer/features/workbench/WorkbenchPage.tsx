@@ -329,7 +329,7 @@ export function WorkbenchPage({ api = workbenchApi }: WorkbenchPageProps) {
         void workbenchClient
           .laneSetPermissionMode({
             laneId: selectedLane.laneId,
-            mode: mode as "manual",
+            mode,
           })
           .then(() => lanesQuery.refetch());
       }}
