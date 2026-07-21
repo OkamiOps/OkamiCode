@@ -1195,6 +1195,16 @@ const inboxThreadCreateReplyDraftRequestSchema = z
   })
   .strict();
 
+const inboxThreadCreateForwardDraftRequestSchema = z
+  .object({
+    threadId: entityIdSchema,
+    to: z.array(z.email().trim().max(320)).min(1).max(20),
+    note: z.string().trim().max(20_000).optional(),
+    fromAddress: z.email().trim().max(320).optional(),
+    idempotencyKey: entityIdSchema,
+  })
+  .strict();
+
 const inboxThreadGenerateReplyDraftRequestSchema = z
   .object({
     threadId: entityIdSchema,
@@ -1211,9 +1221,10 @@ const inboxThreadCreateReplyDraftResultSchema = z
     sourceThreadId: entityIdSchema,
     connectorAccountId: entityIdSchema,
     fromAddress: z.email().max(320).nullable(),
+    messageType: z.enum(["reply", "forward"]),
     to: z.array(z.string().min(1).max(2_000)).min(1).max(100),
     subject: z.string().min(1).max(2_000),
-    body: z.string().min(1).max(20_000),
+    body: z.string().min(1).max(100_000),
     status: z.literal("approval_pending"),
     requiresApproval: z.literal(true),
     safeRetry: z.literal(false),
@@ -1228,9 +1239,10 @@ const inboxThreadReplyActionSchema = z
     sourceThreadId: entityIdSchema,
     connectorAccountId: entityIdSchema,
     fromAddress: z.email().max(320).nullable(),
+    messageType: z.enum(["reply", "forward"]),
     to: z.array(z.string().min(1).max(2_000)).min(1).max(100),
     subject: z.string().min(1).max(2_000),
-    body: z.string().min(1).max(20_000),
+    body: z.string().min(1).max(100_000),
     status: z.enum([
       "draft",
       "approval_pending",
@@ -1506,6 +1518,7 @@ export const ipcRequestSchemas = {
   "inbox:thread:markRead": inboxThreadIdRequestSchema,
   "inbox:thread:createTask": inboxThreadCreateTaskRequestSchema,
   "inbox:thread:createReplyDraft": inboxThreadCreateReplyDraftRequestSchema,
+  "inbox:thread:createForwardDraft": inboxThreadCreateForwardDraftRequestSchema,
   "inbox:thread:generateReplyDraft": inboxThreadGenerateReplyDraftRequestSchema,
   "inbox:thread:replyActions:list": inboxThreadIdRequestSchema,
   "inbox:reply:discard": inboxReplyDiscardRequestSchema,
@@ -1585,6 +1598,7 @@ export const ipcResponseSchemas = {
   "inbox:thread:markRead": inboxThreadSchema,
   "inbox:thread:createTask": inboxThreadCreateTaskResultSchema,
   "inbox:thread:createReplyDraft": inboxThreadCreateReplyDraftResultSchema,
+  "inbox:thread:createForwardDraft": inboxThreadCreateReplyDraftResultSchema,
   "inbox:thread:generateReplyDraft": inboxThreadCreateReplyDraftResultSchema,
   "inbox:thread:replyActions:list": z.array(inboxThreadReplyActionSchema),
   "inbox:reply:discard": inboxReplyDiscardResultSchema,

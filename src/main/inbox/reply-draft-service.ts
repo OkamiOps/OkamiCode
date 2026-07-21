@@ -20,11 +20,20 @@ export interface CreateInboxThreadReplyDraftInput {
   idempotencyKey: string;
 }
 
+export interface CreateInboxThreadForwardDraftInput {
+  threadId: string;
+  to: string[];
+  note?: string;
+  fromAddress?: string;
+  idempotencyKey: string;
+}
+
 export interface InboxThreadReplyAction {
   id: string;
   sourceThreadId: string;
   connectorAccountId: string;
   fromAddress: string | null;
+  messageType: "reply" | "forward";
   to: string[];
   subject: string;
   body: string;
@@ -43,6 +52,7 @@ export interface InboxThreadReplyDraftResult {
   sourceThreadId: string;
   connectorAccountId: string;
   fromAddress: string | null;
+  messageType: "reply" | "forward";
   to: string[];
   subject: string;
   body: string;
@@ -69,6 +79,20 @@ interface EmailReplyPayload {
   body: string;
   fromAddress?: string;
 }
+
+interface EmailForwardPayload {
+  threadId: string;
+  externalThreadId: string;
+  sourceMessageId: string;
+  to: string[];
+  subject: string;
+  body: string;
+  note: string;
+  fromAddress?: string;
+}
+
+type EmailActionPayload = EmailReplyPayload | EmailForwardPayload;
+type EmailActionType = InboxThreadReplyAction["messageType"];
 
 export class InboxReplyDraftThreadNotFoundError extends Error {
   constructor(threadId: string) {
@@ -133,7 +157,50 @@ export class InboxReplyDraftService {
       safeRetry: false,
     });
     const pending = this.outbox.requestApproval(draft.id);
-    return responseFromRecord(pending, payload);
+    return responseFromRecord(pending, payload, "reply");
+  }
+
+  createForwardDraft(
+    input: CreateInboxThreadForwardDraftInput,
+  ): InboxThreadReplyDraftResult {
+    const recipients = normalizeRecipients(input.to);
+    const note = normalizeForwardNote(input.note);
+    const replay = this.replayForwardExisting(
+      input.threadId,
+      recipients,
+      note,
+      input.idempotencyKey,
+    );
+    if (replay) return replay;
+
+    const detail = this.readThread(input.threadId);
+    const source = latestForwardable(detail.messages);
+    if (!source) {
+      throw new Error("Inbox thread has no message to forward");
+    }
+    const payload: EmailForwardPayload = {
+      threadId: detail.thread.id,
+      externalThreadId: detail.thread.externalThreadId,
+      sourceMessageId: source.externalMessageId,
+      to: recipients,
+      subject: forwardSubject(detail),
+      body: forwardedBody(detail, source, note),
+      note,
+      fromAddress: this.resolveFromAddress(
+        detail.thread.accountId,
+        input.fromAddress,
+      ),
+    };
+    const draft = this.outbox.createDraft({
+      connectorAccountId: detail.thread.accountId,
+      kind: "email.forward",
+      payload,
+      idempotencyKey: input.idempotencyKey,
+      requiresApproval: true,
+      safeRetry: false,
+    });
+    const pending = this.outbox.requestApproval(draft.id);
+    return responseFromRecord(pending, payload, "forward");
   }
 
   private resolveFromAddress(accountId: string, requested?: string): string {
@@ -178,7 +245,37 @@ export class InboxReplyDraftService {
     ) {
       throw new ExternalOutboxConflictError(idempotencyKey);
     }
-    return responseFromRecord(this.outbox.requestApproval(record.id), payload);
+    return responseFromRecord(
+      this.outbox.requestApproval(record.id),
+      payload,
+      "reply",
+    );
+  }
+
+  private replayForwardExisting(
+    threadId: string,
+    to: string[],
+    note: string,
+    idempotencyKey: string,
+  ): InboxThreadReplyDraftResult | undefined {
+    const record = this.outbox.findByIdempotencyKey(idempotencyKey);
+    if (!record) return undefined;
+    const payload = emailForwardPayload(record.payload);
+    if (
+      record.kind !== "email.forward" ||
+      !payload ||
+      payload.threadId !== threadId ||
+      payload.note !== note ||
+      payload.to.length !== to.length ||
+      payload.to.some((recipient, index) => recipient !== to[index])
+    ) {
+      throw new ExternalOutboxConflictError(idempotencyKey);
+    }
+    return responseFromRecord(
+      this.outbox.requestApproval(record.id),
+      payload,
+      "forward",
+    );
   }
 
   listReplyActions(threadId: string): InboxThreadReplyAction[] {
@@ -194,17 +291,16 @@ export class InboxReplyDraftService {
     return this.outbox
       .list()
       .flatMap((record) => {
-        const payload = emailReplyPayload(record.payload);
+        const action = emailActionPayload(record);
         if (
-          record.kind !== "email.reply" ||
-          !payload ||
-          payload.threadId !== threadId ||
+          !action ||
+          action.payload.threadId !== threadId ||
           dismissed.has(record.id) ||
-          !isPublicReplyAction(record, payload)
+          !isPublicReplyAction(record, action.payload)
         ) {
           return [];
         }
-        return [responseFromAction(record, payload)];
+        return [responseFromAction(record, action.payload, action.messageType)];
       })
       .sort(
         (left, right) =>
@@ -218,13 +314,8 @@ export class InboxReplyDraftService {
     outboxId: string,
   ): DiscardInboxReplyResult {
     const record = this.outbox.findById(outboxId);
-    const payload = record ? emailReplyPayload(record.payload) : undefined;
-    if (
-      !record ||
-      record.kind !== "email.reply" ||
-      !payload ||
-      payload.threadId !== threadId
-    ) {
+    const action = record ? emailActionPayload(record) : undefined;
+    if (!record || !action || action.payload.threadId !== threadId) {
       throw new Error("Reply draft was not found for this thread");
     }
     if (
@@ -255,6 +346,31 @@ function normalizeBody(body: string): string {
   return normalized;
 }
 
+function normalizeRecipients(recipients: string[]): string[] {
+  const normalized = [
+    ...new Set(recipients.map((value) => value.trim().toLowerCase())),
+  ].filter(Boolean);
+  if (
+    normalized.length === 0 ||
+    normalized.length > 20 ||
+    normalized.some(
+      (value) =>
+        value.length > 320 || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/u.test(value),
+    )
+  ) {
+    throw new Error("Enter at least one valid recipient");
+  }
+  return normalized;
+}
+
+function normalizeForwardNote(note: string | undefined): string {
+  const normalized = note?.trim() ?? "";
+  if (normalized.length > 20_000) {
+    throw new Error("Forward note must be at most 20,000 characters");
+  }
+  return normalized;
+}
+
 function latestIncoming(messages: InboxMessage[]): InboxMessage | undefined {
   return [...messages]
     .reverse()
@@ -266,6 +382,16 @@ function latestIncoming(messages: InboxMessage[]): InboxMessage | undefined {
     );
 }
 
+function latestForwardable(messages: InboxMessage[]): InboxMessage | undefined {
+  return [...messages]
+    .reverse()
+    .find(
+      (message) =>
+        message.externalMessageId.trim().length > 0 &&
+        message.body.trim().length > 0,
+    );
+}
+
 function replySubject(detail: InboxThreadDetail): string {
   let subject = detail.thread.subject.trim();
   while (/^re\s*:\s*/iu.test(subject)) {
@@ -273,6 +399,85 @@ function replySubject(detail: InboxThreadDetail): string {
   }
   const value = subject ? `Re: ${subject}` : "Re: (sem assunto)";
   return value.slice(0, 2_000);
+}
+
+function forwardSubject(detail: InboxThreadDetail): string {
+  let subject = detail.thread.subject.trim();
+  while (/^(?:re|fwd?|enc)\s*:\s*/iu.test(subject)) {
+    subject = subject.replace(/^(?:re|fwd?|enc)\s*:\s*/iu, "");
+  }
+  return `Enc: ${subject || "(sem assunto)"}`.slice(0, 2_000);
+}
+
+function forwardedBody(
+  detail: InboxThreadDetail,
+  message: InboxMessage,
+  note: string,
+): string {
+  const original =
+    message.bodyFormat === "html"
+      ? htmlToReadableText(message.body)
+      : message.body;
+  const attachments = message.attachments
+    .map((attachment) => attachment.filename?.trim())
+    .filter((filename): filename is string => Boolean(filename));
+  const sections = [
+    note,
+    "---------- Mensagem encaminhada ----------",
+    `De: ${message.sender}`,
+    `Data: ${message.receivedAt ?? message.sentAt ?? "indisponível"}`,
+    `Assunto: ${detail.thread.subject || "(sem assunto)"}`,
+    `Para: ${message.recipients.join(", ") || "indisponível"}`,
+    attachments.length
+      ? `Anexos no email original: ${attachments.join(", ")} (não incluídos)`
+      : "",
+    original.trim(),
+  ].filter(Boolean);
+  return sections.join("\n").slice(0, 100_000).trim();
+}
+
+function htmlToReadableText(value: string): string {
+  return decodeHtmlEntities(
+    value
+      .replace(
+        /<(?:script|style|head)[^>]*>[\s\S]*?<\/(?:script|style|head)>/giu,
+        "",
+      )
+      .replace(/<br\s*\/?>/giu, "\n")
+      .replace(/<\/(?:p|div|section|article|h[1-6]|li|tr)>/giu, "\n")
+      .replace(/<li[^>]*>/giu, "• ")
+      .replace(/<[^>]+>/gu, "")
+      .replace(/[ \t]+\n/gu, "\n")
+      .replace(/\n{3,}/gu, "\n\n")
+      .trim(),
+  );
+}
+
+function decodeHtmlEntities(value: string): string {
+  const named: Record<string, string> = {
+    amp: "&",
+    apos: "'",
+    gt: ">",
+    lt: "<",
+    nbsp: " ",
+    quot: '"',
+  };
+  return value.replace(
+    /&(#x?[0-9a-f]+|[a-z]+);/giu,
+    (match, entity: string) => {
+      if (entity.startsWith("#")) {
+        const hexadecimal = entity[1]?.toLowerCase() === "x";
+        const code = Number.parseInt(
+          entity.slice(hexadecimal ? 2 : 1),
+          hexadecimal ? 16 : 10,
+        );
+        return Number.isFinite(code) && code >= 0 && code <= 0x10ffff
+          ? String.fromCodePoint(code)
+          : match;
+      }
+      return named[entity.toLowerCase()] ?? match;
+    },
+  );
 }
 
 function emailReplyPayload(value: unknown): EmailReplyPayload | undefined {
@@ -316,9 +521,68 @@ function emailReplyPayload(value: unknown): EmailReplyPayload | undefined {
   };
 }
 
+function emailForwardPayload(value: unknown): EmailForwardPayload | undefined {
+  if (!value || typeof value !== "object" || Array.isArray(value)) {
+    return undefined;
+  }
+  const payload = value as Record<string, unknown>;
+  const requiredKeys = [
+    "threadId",
+    "externalThreadId",
+    "sourceMessageId",
+    "to",
+    "subject",
+    "body",
+    "note",
+  ];
+  const allowedKeys = [...requiredKeys, "fromAddress"];
+  if (
+    !Object.keys(payload).every((key) => allowedKeys.includes(key)) ||
+    !requiredKeys.every((key) => key in payload) ||
+    !requiredKeys
+      .filter((key) => key !== "to")
+      .every((key) => typeof payload[key] === "string") ||
+    (payload.fromAddress !== undefined &&
+      typeof payload.fromAddress !== "string") ||
+    !Array.isArray(payload.to) ||
+    payload.to.length === 0 ||
+    payload.to.length > 20 ||
+    payload.to.some((recipient) => typeof recipient !== "string")
+  ) {
+    return undefined;
+  }
+  return {
+    threadId: payload.threadId as string,
+    externalThreadId: payload.externalThreadId as string,
+    sourceMessageId: payload.sourceMessageId as string,
+    to: payload.to as string[],
+    subject: payload.subject as string,
+    body: payload.body as string,
+    note: payload.note as string,
+    ...(typeof payload.fromAddress === "string"
+      ? { fromAddress: payload.fromAddress }
+      : {}),
+  };
+}
+
+function emailActionPayload(
+  record: ExternalOutboxRecord,
+): { payload: EmailActionPayload; messageType: EmailActionType } | undefined {
+  if (record.kind === "email.reply") {
+    const payload = emailReplyPayload(record.payload);
+    return payload ? { payload, messageType: "reply" } : undefined;
+  }
+  if (record.kind === "email.forward") {
+    const payload = emailForwardPayload(record.payload);
+    return payload ? { payload, messageType: "forward" } : undefined;
+  }
+  return undefined;
+}
+
 function responseFromRecord(
   record: ExternalOutboxRecord,
-  payload: EmailReplyPayload,
+  payload: EmailActionPayload,
+  messageType: EmailActionType,
 ): InboxThreadReplyDraftResult {
   if (
     record.status !== "approval_pending" ||
@@ -329,12 +593,13 @@ function responseFromRecord(
   ) {
     throw new Error(`Unexpected reply draft state: ${record.status}`);
   }
-  const action = responseFromAction(record, payload);
+  const action = responseFromAction(record, payload, messageType);
   return {
     id: action.id,
     sourceThreadId: action.sourceThreadId,
     connectorAccountId: action.connectorAccountId,
     fromAddress: action.fromAddress,
+    messageType: action.messageType,
     to: action.to,
     subject: action.subject,
     body: action.body,
@@ -349,13 +614,15 @@ function responseFromRecord(
 
 function responseFromAction(
   record: ExternalOutboxRecord,
-  payload: EmailReplyPayload,
+  payload: EmailActionPayload,
+  messageType: EmailActionType,
 ): InboxThreadReplyAction {
   return {
     id: record.id,
     sourceThreadId: payload.threadId,
     connectorAccountId: record.connectorAccountId,
     fromAddress: payload.fromAddress ?? null,
+    messageType,
     to: payload.to,
     subject: payload.subject,
     body: payload.body,
@@ -372,20 +639,23 @@ function responseFromAction(
 
 function isPublicReplyAction(
   record: ExternalOutboxRecord,
-  payload: EmailReplyPayload,
+  payload: EmailActionPayload,
 ): boolean {
   return (
     isUuid(record.id) &&
     isUuid(record.connectorAccountId) &&
     isUuid(payload.threadId) &&
     isBoundedText(payload.externalThreadId, 2_000) &&
-    isBoundedText(payload.inReplyTo, 2_000) &&
+    ("inReplyTo" in payload
+      ? isBoundedText(payload.inReplyTo, 2_000)
+      : isBoundedText(payload.sourceMessageId, 2_000)) &&
     (payload.fromAddress === undefined ||
       isBoundedText(payload.fromAddress, 320)) &&
-    payload.to.length === 1 &&
-    isBoundedText(payload.to[0], 2_000) &&
+    payload.to.length >= 1 &&
+    payload.to.length <= 20 &&
+    payload.to.every((recipient) => isBoundedText(recipient, 320)) &&
     isBoundedText(payload.subject, 2_000) &&
-    isBoundedText(payload.body, 20_000) &&
+    isBoundedText(payload.body, messageTypeBodyMaximum(record.kind)) &&
     isOutboxStatus(record.status) &&
     typeof record.requiresApproval === "boolean" &&
     typeof record.safeRetry === "boolean" &&
@@ -396,6 +666,10 @@ function isPublicReplyAction(
     isIsoDateTime(record.createdAt) &&
     isIsoDateTime(record.updatedAt)
   );
+}
+
+function messageTypeBodyMaximum(kind: string): number {
+  return kind === "email.forward" ? 100_000 : 20_000;
 }
 
 function isBoundedText(value: unknown, maximum: number): value is string {

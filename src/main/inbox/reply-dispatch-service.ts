@@ -36,6 +36,19 @@ interface EmailReplyPayload {
   fromAddress?: string;
 }
 
+interface EmailForwardPayload {
+  threadId: string;
+  externalThreadId: string;
+  sourceMessageId: string;
+  to: string[];
+  subject: string;
+  body: string;
+  note: string;
+  fromAddress?: string;
+}
+
+type EmailActionPayload = EmailReplyPayload | EmailForwardPayload;
+
 interface ReplyDispatchDependencies {
   db: Database;
   vault: Pick<ConnectorCredentialVault, "get">;
@@ -106,7 +119,7 @@ export class ReplyDispatchService {
     if (!isValidSettings(settings) || !isValidCredential(credential)) {
       throw new Error(PUBLIC_UNAVAILABLE_ERROR);
     }
-    const payload = requireEmailReplyPayload(record.payload);
+    const payload = requireEmailActionPayload(record);
     let transport: SmtpReplyTransport;
     try {
       transport = (
@@ -131,8 +144,12 @@ export class ReplyDispatchService {
         to: payload.to,
         subject: payload.subject,
         text: payload.body,
-        inReplyTo: payload.inReplyTo,
-        references: payload.inReplyTo,
+        ...(record.kind === "email.reply" && "inReplyTo" in payload
+          ? {
+              inReplyTo: payload.inReplyTo,
+              references: payload.inReplyTo,
+            }
+          : {}),
       },
       transport,
     };
@@ -162,7 +179,7 @@ export class ReplyDispatchService {
   ): ExternalOutboxRecord {
     if (
       !record ||
-      record.kind !== "email.reply" ||
+      (record.kind !== "email.reply" && record.kind !== "email.forward") ||
       !record.requiresApproval ||
       record.safeRetry
     ) {
@@ -242,6 +259,67 @@ function requireEmailReplyPayload(value: unknown): EmailReplyPayload {
       ? { fromAddress: payload.fromAddress }
       : {}),
   };
+}
+
+function requireEmailForwardPayload(value: unknown): EmailForwardPayload {
+  if (!value || typeof value !== "object" || Array.isArray(value)) {
+    throw new Error(PUBLIC_UNAVAILABLE_ERROR);
+  }
+  const payload = value as Record<string, unknown>;
+  const requiredKeys = [
+    "threadId",
+    "externalThreadId",
+    "sourceMessageId",
+    "to",
+    "subject",
+    "body",
+    "note",
+  ];
+  const allowedKeys = [...requiredKeys, "fromAddress"];
+  if (
+    !Object.keys(payload).every((key) => allowedKeys.includes(key)) ||
+    !requiredKeys.every((key) => Object.hasOwn(payload, key)) ||
+    !requiredKeys
+      .filter((key) => key !== "to")
+      .every((key) => typeof payload[key] === "string") ||
+    !isNonEmptyText(payload.threadId) ||
+    !isNonEmptyText(payload.externalThreadId) ||
+    !isNonEmptyText(payload.sourceMessageId) ||
+    !isNonEmptyText(payload.subject) ||
+    !isNonEmptyText(payload.body) ||
+    (payload.fromAddress !== undefined &&
+      !isNonEmptyText(payload.fromAddress)) ||
+    !Array.isArray(payload.to) ||
+    payload.to.length === 0 ||
+    payload.to.length > 20 ||
+    !payload.to.every(isNonEmptyText)
+  ) {
+    throw new Error(PUBLIC_UNAVAILABLE_ERROR);
+  }
+  return {
+    threadId: payload.threadId,
+    externalThreadId: payload.externalThreadId,
+    sourceMessageId: payload.sourceMessageId,
+    to: payload.to,
+    subject: payload.subject,
+    body: payload.body,
+    note: payload.note as string,
+    ...(typeof payload.fromAddress === "string"
+      ? { fromAddress: payload.fromAddress }
+      : {}),
+  };
+}
+
+function requireEmailActionPayload(
+  record: ExternalOutboxRecord,
+): EmailActionPayload {
+  if (record.kind === "email.reply") {
+    return requireEmailReplyPayload(record.payload);
+  }
+  if (record.kind === "email.forward") {
+    return requireEmailForwardPayload(record.payload);
+  }
+  throw new Error(PUBLIC_UNAVAILABLE_ERROR);
 }
 
 function isNonEmptyText(value: unknown): value is string {

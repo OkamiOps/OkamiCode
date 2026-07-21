@@ -19,6 +19,7 @@ function fixture(
     fromAddress?: string;
     fromAddresses?: string[];
     transportFactory?: { create: (input: unknown) => SmtpReplyTransport };
+    kind?: "email.reply" | "email.forward";
   } = {},
 ) {
   const database = createTestDatabase();
@@ -41,18 +42,35 @@ function fixture(
     });
   }
   const outbox = new ExternalOutboxService(database.db);
+  const kind = options.kind ?? "email.reply";
   const draft = outbox.createDraft({
     connectorAccountId: account.id,
-    kind: "email.reply",
-    payload: {
-      threadId: randomUUID(),
-      externalThreadId: "thread-1",
-      inReplyTo: "<incoming@example.com>",
-      to: ["client@example.com"],
-      subject: "Re: Proposal",
-      body: "Thanks, I will send it tomorrow.",
-      ...(options.fromAddress ? { fromAddress: options.fromAddress } : {}),
-    },
+    kind,
+    payload:
+      kind === "email.reply"
+        ? {
+            threadId: randomUUID(),
+            externalThreadId: "thread-1",
+            inReplyTo: "<incoming@example.com>",
+            to: ["client@example.com"],
+            subject: "Re: Proposal",
+            body: "Thanks, I will send it tomorrow.",
+            ...(options.fromAddress
+              ? { fromAddress: options.fromAddress }
+              : {}),
+          }
+        : {
+            threadId: randomUUID(),
+            externalThreadId: "thread-1",
+            sourceMessageId: "<incoming@example.com>",
+            to: ["lead@example.com", "finance@example.com"],
+            subject: "Enc: Proposal",
+            body: "Forwarded message",
+            note: "",
+            ...(options.fromAddress
+              ? { fromAddress: options.fromAddress }
+              : {}),
+          },
     idempotencyKey: randomUUID(),
     requiresApproval: true,
     safeRetry: false,
@@ -159,6 +177,22 @@ describe("ReplyDispatchService", () => {
       attempts: 0,
     });
     expect(forged.transport.send).not.toHaveBeenCalled();
+  });
+
+  it("sends a forward without reply-thread headers", async () => {
+    const { pending, service, transport } = fixture({
+      kind: "email.forward",
+    });
+
+    await expect(service.approveAndSend(pending.id)).resolves.toMatchObject({
+      status: "confirmed",
+    });
+    expect(transport.send).toHaveBeenCalledWith({
+      from: "me@example.com",
+      to: ["lead@example.com", "finance@example.com"],
+      subject: "Enc: Proposal",
+      text: "Forwarded message",
+    });
   });
 
   it.each([

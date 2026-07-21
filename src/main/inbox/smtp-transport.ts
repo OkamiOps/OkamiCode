@@ -7,8 +7,8 @@ export interface SmtpReplyMessage {
   to: string[];
   subject: string;
   text: string;
-  inReplyTo: string;
-  references: string;
+  inReplyTo?: string;
+  references?: string;
 }
 
 export interface SmtpSendReceipt {

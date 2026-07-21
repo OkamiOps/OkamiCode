@@ -130,9 +130,26 @@ function harness() {
       sourceThreadId: threadId,
       connectorAccountId: accountId,
       fromAddress: "me@example.com",
+      messageType: "reply" as const,
       to: ["client@example.com"] as string[],
       subject: "Re: Subject",
       body: "Thanks",
+      status: "approval_pending" as const,
+      requiresApproval: true as const,
+      safeRetry: false as const,
+      attempts: 0 as const,
+      createdAt: now,
+      updatedAt: now,
+    })),
+    createForwardDraft: vi.fn(() => ({
+      id: "1f7c4f9c-33dd-4dbd-98cb-8e768646b386",
+      sourceThreadId: threadId,
+      connectorAccountId: accountId,
+      fromAddress: "me@example.com",
+      messageType: "forward" as const,
+      to: ["lead@example.com"] as string[],
+      subject: "Enc: Subject",
+      body: "Forwarded message",
       status: "approval_pending" as const,
       requiresApproval: true as const,
       safeRetry: false as const,
@@ -146,6 +163,7 @@ function harness() {
         sourceThreadId: threadId,
         connectorAccountId: accountId,
         fromAddress: "me@example.com",
+        messageType: "reply" as const,
         to: ["client@example.com"],
         subject: "Re: Subject",
         body: "Thanks",
@@ -171,6 +189,7 @@ function harness() {
       sourceThreadId: threadId,
       connectorAccountId: accountId,
       fromAddress: "me@example.com",
+      messageType: "reply" as const,
       to: ["client@example.com"] as string[],
       subject: "Re: Subject",
       body: "Generated reply",
@@ -372,6 +391,33 @@ it("creates an approval-pending reply draft through the strict trusted Inbox cha
     }),
   ).rejects.toThrow("Untrusted renderer origin");
   expect(inboxReplyDraftService.createReplyDraft).toHaveBeenCalledOnce();
+});
+
+it("creates an approval-pending forward through the strict trusted Inbox channel", async () => {
+  const { handlers, inboxReplyDraftService, event, sendTurn } = harness();
+  const idempotencyKey = "e30fd1c7-60de-4338-9980-a3c9c2f2fbe2";
+
+  await expect(
+    handlers.get("inbox:thread:createForwardDraft")?.(event, {
+      threadId,
+      to: ["Lead@example.com", "finance@example.com"],
+      note: "  Segue para análise.  ",
+      fromAddress: "me@example.com",
+      idempotencyKey,
+    }),
+  ).resolves.toMatchObject({
+    sourceThreadId: threadId,
+    messageType: "forward",
+    status: "approval_pending",
+  });
+  expect(inboxReplyDraftService.createForwardDraft).toHaveBeenCalledWith({
+    threadId,
+    to: ["Lead@example.com", "finance@example.com"],
+    note: "Segue para análise.",
+    fromAddress: "me@example.com",
+    idempotencyKey,
+  });
+  expect(sendTurn).not.toHaveBeenCalled();
 });
 
 it("generates a reply draft only through the strict trusted Inbox channel", async () => {

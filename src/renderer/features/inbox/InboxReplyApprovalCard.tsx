@@ -65,17 +65,24 @@ export function InboxReplyApprovalCard({
   }
 
   const state = cardState(action.status, isApproving);
+  const isForward = action.messageType === "forward";
 
   return (
     <article
-      aria-label="Aprovação de resposta por email"
+      aria-label={
+        isForward
+          ? "Aprovação de encaminhamento por email"
+          : "Aprovação de resposta por email"
+      }
       className="inbox-reply-approval"
       data-status={action.status}
     >
       <header className="inbox-reply-approval__header">
         <span className="inbox-reply-approval__icon">{state.icon}</span>
         <div>
-          <p className="inbox-eyebrow">Resposta por email</p>
+          <p className="inbox-eyebrow">
+            {isForward ? "Encaminhamento por email" : "Resposta por email"}
+          </p>
           <h3>{state.label}</h3>
         </div>
         <span className="inbox-reply-approval__state" role="status">
@@ -202,9 +209,9 @@ function messageFor(cause: unknown) {
     cause instanceof Error &&
     cause.message === "Reply dispatch is unavailable"
   ) {
-    return "O envio não está disponível agora. A resposta continua aguardando aprovação.";
+    return "O envio não está disponível agora. O email continua aguardando aprovação.";
   }
   return cause instanceof Error && cause.message
     ? cause.message
-    : "Não foi possível iniciar o envio. A resposta continua aguardando aprovação.";
+    : "Não foi possível iniciar o envio. O email continua aguardando aprovação.";
 }

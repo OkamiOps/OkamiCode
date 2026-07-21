@@ -38,6 +38,7 @@ import { InboxAccountModal } from "./InboxAccountModal";
 import { InboxOutgoingSettingsModal } from "./InboxOutgoingSettingsModal";
 import { InboxReplyApprovalCard } from "./InboxReplyApprovalCard";
 import { InboxAgentReplyModal } from "./InboxAgentReplyModal";
+import { InboxForwardModal } from "./InboxForwardModal";
 import { InboxReplyModal } from "./InboxReplyModal";
 import { InboxTaskModal } from "./InboxTaskModal";
 import {
@@ -86,6 +87,9 @@ export interface InboxApi {
   createReplyDraft(
     request: IpcRequest<"inbox:thread:createReplyDraft">,
   ): Promise<IpcResponse<"inbox:thread:createReplyDraft">>;
+  createForwardDraft(
+    request: IpcRequest<"inbox:thread:createForwardDraft">,
+  ): Promise<IpcResponse<"inbox:thread:createForwardDraft">>;
   listModels(): Promise<IpcResponse<"models:list">>;
   generateReplyDraft(
     request: IpcRequest<"inbox:thread:generateReplyDraft">,
@@ -114,6 +118,7 @@ const defaultApi: InboxApi = {
   listLanes: workbenchClient.laneList,
   createTask: workbenchClient.inboxThreadCreateTask,
   createReplyDraft: workbenchClient.inboxThreadCreateReplyDraft,
+  createForwardDraft: workbenchClient.inboxThreadCreateForwardDraft,
   listModels: workbenchClient.modelsList,
   generateReplyDraft: workbenchClient.inboxThreadGenerateReplyDraft,
   listReplyActions: workbenchClient.inboxThreadReplyActionsList,
@@ -242,13 +247,26 @@ export function InboxPage({ api = defaultApi }: { api?: InboxApi }) {
   });
   const createReplyDraft = useMutation({
     mutationFn: api.createReplyDraft,
-    onSuccess: (result) => {
+    onSuccess: async (result) => {
       const queryKey = ["inbox", "reply-actions", result.sourceThreadId];
+      await queryClient.cancelQueries({ queryKey });
       queryClient.setQueryData<IpcResponse<"inbox:thread:replyActions:list">>(
         queryKey,
         (current = []) => [replyActionFromDraft(result), ...current],
       );
-      void queryClient.invalidateQueries({ queryKey });
+      void queryClient.invalidateQueries({ queryKey, refetchType: "none" });
+    },
+  });
+  const createForwardDraft = useMutation({
+    mutationFn: api.createForwardDraft,
+    onSuccess: async (result) => {
+      const queryKey = ["inbox", "reply-actions", result.sourceThreadId];
+      await queryClient.cancelQueries({ queryKey });
+      queryClient.setQueryData<IpcResponse<"inbox:thread:replyActions:list">>(
+        queryKey,
+        (current = []) => [replyActionFromDraft(result), ...current],
+      );
+      void queryClient.invalidateQueries({ queryKey, refetchType: "none" });
     },
   });
   const generateReplyDraft = useMutation({
@@ -431,6 +449,7 @@ export function InboxPage({ api = defaultApi }: { api?: InboxApi }) {
         defaultFromAddress={preferredFromAddress}
         error={detail.isError ? errorMessage(detail.error) : null}
         isSavingReply={createReplyDraft.isPending}
+        isSavingForward={createForwardDraft.isPending}
         isGeneratingReply={generateReplyDraft.isPending}
         isLoading={detail.isLoading}
         fromAddresses={replyFromAddresses}
@@ -452,6 +471,9 @@ export function InboxPage({ api = defaultApi }: { api?: InboxApi }) {
           discardReply.mutateAsync({ outboxId, threadId: actionThreadId })
         }
         onCreateReplyDraft={(request) => createReplyDraft.mutateAsync(request)}
+        onCreateForwardDraft={(request) =>
+          createForwardDraft.mutateAsync(request)
+        }
         onGenerateReplyDraft={(request) =>
           generateReplyDraft.mutateAsync(request)
         }
@@ -849,6 +871,7 @@ function Conversation({
   fromAddressesError,
   isLoadingFromAddresses,
   isSavingReply,
+  isSavingForward,
   isGeneratingReply,
   isCreatingTask,
   listLanes,
@@ -856,6 +879,7 @@ function Conversation({
   onApproveReply,
   onDiscardReply,
   onCreateReplyDraft,
+  onCreateForwardDraft,
   onGenerateReplyDraft,
   onCreateTask,
   onOpenDetails,
@@ -871,6 +895,7 @@ function Conversation({
   fromAddressesError: string | null;
   isLoadingFromAddresses: boolean;
   isSavingReply: boolean;
+  isSavingForward: boolean;
   isGeneratingReply: boolean;
   isCreatingTask: boolean;
   listLanes: InboxApi["listLanes"];
@@ -884,6 +909,7 @@ function Conversation({
     threadId: string,
   ) => Promise<IpcResponse<"inbox:reply:discard">>;
   onCreateReplyDraft: InboxApi["createReplyDraft"];
+  onCreateForwardDraft: InboxApi["createForwardDraft"];
   onGenerateReplyDraft: InboxApi["generateReplyDraft"];
   onCreateTask: InboxApi["createTask"];
   onOpenDetails: () => void;
@@ -1017,10 +1043,12 @@ function Conversation({
         isCreatingTask={isCreatingTask}
         isGeneratingReply={isGeneratingReply}
         isSavingReply={isSavingReply}
+        isSavingForward={isSavingForward}
         isLoadingFromAddresses={isLoadingFromAddresses}
         listLanes={listLanes}
         listModels={listModels}
         onCreateReplyDraft={onCreateReplyDraft}
+        onCreateForwardDraft={onCreateForwardDraft}
         onGenerateReplyDraft={onGenerateReplyDraft}
         onCreateTask={onCreateTask}
         thread={detail?.thread}
@@ -1037,10 +1065,12 @@ function FutureActions({
   isCreatingTask,
   isGeneratingReply,
   isSavingReply,
+  isSavingForward,
   isLoadingFromAddresses,
   listLanes,
   listModels,
   onCreateReplyDraft,
+  onCreateForwardDraft,
   onGenerateReplyDraft,
   onCreateTask,
   thread,
@@ -1052,10 +1082,12 @@ function FutureActions({
   isCreatingTask: boolean;
   isGeneratingReply: boolean;
   isSavingReply: boolean;
+  isSavingForward: boolean;
   isLoadingFromAddresses: boolean;
   listLanes: InboxApi["listLanes"];
   listModels: InboxApi["listModels"];
   onCreateReplyDraft: InboxApi["createReplyDraft"];
+  onCreateForwardDraft: InboxApi["createForwardDraft"];
   onGenerateReplyDraft: InboxApi["generateReplyDraft"];
   onCreateTask: InboxApi["createTask"];
   thread: InboxThread | undefined;
@@ -1087,6 +1119,15 @@ function FutureActions({
           listModels={listModels}
           onGenerate={onGenerateReplyDraft}
           thread={thread}
+        />
+        <InboxForwardModal
+          defaultFromAddress={defaultFromAddress}
+          detail={detail}
+          fromAddresses={fromAddresses}
+          fromAddressesError={fromAddressesError}
+          isLoadingFromAddresses={isLoadingFromAddresses}
+          isSaving={isSavingForward}
+          onCreateForwardDraft={onCreateForwardDraft}
         />
         <InboxReplyModal
           defaultFromAddress={defaultFromAddress}

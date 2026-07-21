@@ -82,6 +82,7 @@ const replyDraftResult = {
   sourceThreadId: threadId,
   connectorAccountId: accountId,
   fromAddress: "contato@okamiops.com",
+  messageType: "reply",
   to: ["Ana Silva <ana@cliente.com>"],
   subject: "Re: Proposta para landing page",
   body: "Obrigado pela mensagem.",
@@ -92,6 +93,15 @@ const replyDraftResult = {
   createdAt: now,
   updatedAt: now,
 } as IpcResponse<"inbox:thread:createReplyDraft">;
+
+const forwardDraftResult = {
+  ...replyDraftResult,
+  id: "99999999-9999-4999-8999-999999999999",
+  messageType: "forward",
+  to: ["propostas@cliente.com"],
+  subject: "Enc: Proposta para landing page",
+  body: "Segue para análise.\n\n---------- Mensagem encaminhada ----------",
+} as IpcResponse<"inbox:thread:createForwardDraft">;
 
 const replyAction = {
   ...replyDraftResult,
@@ -172,6 +182,7 @@ function makeApi(overrides: Partial<InboxApi> = {}): InboxApi {
     listLanes: vi.fn().mockResolvedValue([]),
     createTask: vi.fn().mockResolvedValue(taskResult),
     createReplyDraft: vi.fn().mockResolvedValue(replyDraftResult),
+    createForwardDraft: vi.fn().mockResolvedValue(forwardDraftResult),
     listModels: vi.fn().mockResolvedValue(replyModels),
     generateReplyDraft: vi.fn().mockResolvedValue(replyDraftResult),
     listReplyActions: vi.fn().mockResolvedValue([]),
@@ -643,6 +654,62 @@ describe("InboxPage", () => {
     });
     expect(await screen.findByText("Aguardando sua aprovação")).toBeVisible();
     expect(api).not.toHaveProperty("laneSendTurn");
+  });
+
+  it("creates a forward draft with sender, recipients and an optional note", async () => {
+    const { api } = renderInbox(
+      makeApi({
+        getOutgoingSettings: vi.fn().mockResolvedValue({
+          host: "smtp.okamiops.com",
+          port: 465,
+          secure: true,
+          fromAddresses: ["propostas@okamiops.com"],
+          createdAt: now,
+          updatedAt: now,
+        }),
+      }),
+    );
+    await userEvent.click(
+      await screen.findByRole("button", { name: /Proposta para landing page/ }),
+    );
+    await userEvent.click(screen.getByRole("button", { name: "Encaminhar" }));
+
+    const dialog = screen.getByRole("dialog");
+    expect(
+      within(dialog).getByRole("heading", { name: "Encaminhar email" }),
+    ).toBeVisible();
+    await userEvent.selectOptions(
+      within(dialog).getByLabelText("Enviar como"),
+      "propostas@okamiops.com",
+    );
+    await userEvent.type(
+      within(dialog).getByLabelText("Destinatários"),
+      "propostas@cliente.com, financeiro@cliente.com",
+    );
+    await userEvent.type(
+      within(dialog).getByLabelText("Nota antes da mensagem"),
+      "  Segue para análise.  ",
+    );
+    expect(
+      within(dialog).getByText(/Anexos do email original não serão incluídos/i),
+    ).toBeVisible();
+    await userEvent.click(
+      within(dialog).getByRole("button", { name: "Salvar para aprovação" }),
+    );
+
+    await vi.waitFor(() =>
+      expect(api.createForwardDraft).toHaveBeenCalledOnce(),
+    );
+    expect(vi.mocked(api.createForwardDraft).mock.calls[0]?.[0]).toEqual({
+      threadId,
+      fromAddress: "propostas@okamiops.com",
+      to: ["propostas@cliente.com", "financeiro@cliente.com"],
+      note: "Segue para análise.",
+      idempotencyKey: expect.stringMatching(
+        /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i,
+      ),
+    });
+    expect(await screen.findByText("Encaminhamento por email")).toBeVisible();
   });
 
   it("validates reply body and preserves it with one key across a failed retry", async () => {
@@ -1166,7 +1233,7 @@ describe("InboxPage", () => {
       await screen.findByRole("button", { name: "Aprovar e enviar" }),
     );
     expect(await screen.findByRole("alert")).toHaveTextContent(
-      "O envio não está disponível agora. A resposta continua aguardando aprovação.",
+      "O envio não está disponível agora. O email continua aguardando aprovação.",
     );
     expect(screen.getByText("Aguardando sua aprovação")).toBeVisible();
   });

@@ -204,6 +204,7 @@ describe("InboxReplyDraftService", () => {
     });
 
     expect(result).toMatchObject({
+      messageType: "reply",
       sourceThreadId: threadId,
       to: ["client@example.com"],
       subject: "Re: Landing page proposal",
@@ -234,6 +235,72 @@ describe("InboxReplyDraftService", () => {
         to: ["client@example.com"],
       }),
     });
+  });
+
+  it("creates an approval-pending forward with normalized recipients and the latest message", () => {
+    const { fixture, service, threadId } = harness();
+    fixture.db
+      .prepare(
+        "UPDATE inbox_messages SET body = ?, body_format = ?, attachments_json = ? WHERE thread_id = ? AND external_message_id = ?",
+      )
+      .run(
+        "<section><h1>Newest message</h1><p>With <strong>HTML</strong>.</p></section>",
+        "html",
+        JSON.stringify([{ filename: "brief.pdf", size: 2048 }]),
+        threadId,
+        "incoming-newest",
+      );
+
+    const result = service.createForwardDraft({
+      threadId,
+      to: [" lead@example.com ", "finance@example.com", "LEAD@example.com"],
+      note: "  Segue para análise.  ",
+      idempotencyKey: randomUUID(),
+    });
+
+    expect(result).toMatchObject({
+      messageType: "forward",
+      sourceThreadId: threadId,
+      fromAddress: "me@example.com",
+      to: ["lead@example.com", "finance@example.com"],
+      subject: "Enc: Landing page proposal",
+      status: "approval_pending",
+      requiresApproval: true,
+    });
+    expect(result.body).toContain("Segue para análise.");
+    expect(result.body).toContain("Mensagem encaminhada");
+    expect(result.body).toContain("De: client@example.com");
+    expect(result.body).toContain("Newest message\nWith HTML.");
+    expect(result.body).toContain(
+      "Anexos no email original: brief.pdf (não incluídos)",
+    );
+    expect(
+      fixture.db
+        .prepare("SELECT kind FROM external_outbox WHERE id = ?")
+        .get(result.id),
+    ).toEqual({ kind: "email.forward" });
+    expect(service.listReplyActions(threadId)).toEqual([
+      expect.objectContaining({
+        id: result.id,
+        messageType: "forward",
+      }),
+    ]);
+  });
+
+  it("validates forward recipients before writing to the outbox", () => {
+    const { fixture, service, threadId } = harness();
+
+    expect(() =>
+      service.createForwardDraft({
+        threadId,
+        to: ["not-an-email"],
+        note: "Forward",
+        idempotencyKey: randomUUID(),
+      }),
+    ).toThrow("Enter at least one valid recipient");
+    expect(
+      fixture.db.prepare("SELECT count(*) FROM external_outbox").pluck().get(),
+    ).toBe(0);
   });
 
   it("persists a configured sender alias and rejects an unconfigured address", () => {
