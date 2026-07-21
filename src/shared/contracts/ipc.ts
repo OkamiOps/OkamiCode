@@ -1183,6 +1183,32 @@ const inboxThreadCreateReplyDraftResultSchema = z
     updatedAt: z.iso.datetime({ offset: true }),
   })
   .strict();
+const inboxThreadReplyActionSchema = z
+  .object({
+    id: entityIdSchema,
+    sourceThreadId: entityIdSchema,
+    connectorAccountId: entityIdSchema,
+    to: z.array(z.string().min(1).max(2_000)).min(1).max(100),
+    subject: z.string().min(1).max(2_000),
+    body: z.string().min(1).max(20_000),
+    status: z.enum([
+      "draft",
+      "approval_pending",
+      "dispatching",
+      "confirmed",
+      "uncertain",
+      "failed_retryable",
+      "failed_terminal",
+    ]),
+    requiresApproval: z.boolean(),
+    safeRetry: z.boolean(),
+    attempts: z.number().int().nonnegative(),
+    approvedAt: z.iso.datetime({ offset: true }).nullable(),
+    lastError: z.string().min(1).nullable(),
+    createdAt: z.iso.datetime({ offset: true }),
+    updatedAt: z.iso.datetime({ offset: true }),
+  })
+  .strict();
 
 export const ipcRequestSchemas = {
   "system:doctor": emptyRequestSchema,
@@ -1245,6 +1271,7 @@ export const ipcRequestSchemas = {
   "inbox:thread:markRead": inboxThreadIdRequestSchema,
   "inbox:thread:createTask": inboxThreadCreateTaskRequestSchema,
   "inbox:thread:createReplyDraft": inboxThreadCreateReplyDraftRequestSchema,
+  "inbox:thread:replyActions:list": inboxThreadIdRequestSchema,
   "inbox:reply:approveAndSend": inboxReplyApproveAndSendRequestSchema,
 } satisfies Record<IpcChannel, z.ZodType>;
 
@@ -1314,6 +1341,7 @@ export const ipcResponseSchemas = {
   "inbox:thread:markRead": inboxThreadSchema,
   "inbox:thread:createTask": inboxThreadCreateTaskResultSchema,
   "inbox:thread:createReplyDraft": inboxThreadCreateReplyDraftResultSchema,
+  "inbox:thread:replyActions:list": z.array(inboxThreadReplyActionSchema),
   "inbox:reply:approveAndSend": inboxReplyDispatchSchema,
 } satisfies Record<IpcChannel, z.ZodType>;
 

@@ -3,6 +3,7 @@ import {
   ExternalOutboxConflictError,
   ExternalOutboxService,
   type ExternalOutboxRecord,
+  type ExternalOutboxStatus,
 } from "../outbox/service";
 import {
   InboxService,
@@ -15,6 +16,23 @@ export interface CreateInboxThreadReplyDraftInput {
   threadId: string;
   body: string;
   idempotencyKey: string;
+}
+
+export interface InboxThreadReplyAction {
+  id: string;
+  sourceThreadId: string;
+  connectorAccountId: string;
+  to: string[];
+  subject: string;
+  body: string;
+  status: ExternalOutboxStatus;
+  requiresApproval: boolean;
+  safeRetry: boolean;
+  attempts: number;
+  approvedAt: string | null;
+  lastError: string | null;
+  createdAt: string;
+  updatedAt: string;
 }
 
 export interface InboxThreadReplyDraftResult {
@@ -129,6 +147,28 @@ export class InboxReplyDraftService {
     }
     return responseFromRecord(this.outbox.requestApproval(record.id), payload);
   }
+
+  listReplyActions(threadId: string): InboxThreadReplyAction[] {
+    return this.outbox
+      .list()
+      .flatMap((record) => {
+        const payload = emailReplyPayload(record.payload);
+        if (
+          record.kind !== "email.reply" ||
+          !payload ||
+          payload.threadId !== threadId ||
+          !isPublicReplyAction(record, payload)
+        ) {
+          return [];
+        }
+        return [responseFromAction(record, payload)];
+      })
+      .sort(
+        (left, right) =>
+          right.createdAt.localeCompare(left.createdAt) ||
+          right.id.localeCompare(left.id),
+      );
+  }
 }
 
 function normalizeBody(body: string): string {
@@ -208,6 +248,27 @@ function responseFromRecord(
   ) {
     throw new Error(`Unexpected reply draft state: ${record.status}`);
   }
+  const action = responseFromAction(record, payload);
+  return {
+    id: action.id,
+    sourceThreadId: action.sourceThreadId,
+    connectorAccountId: action.connectorAccountId,
+    to: action.to,
+    subject: action.subject,
+    body: action.body,
+    status: "approval_pending",
+    requiresApproval: true,
+    safeRetry: false,
+    attempts: 0,
+    createdAt: action.createdAt,
+    updatedAt: action.updatedAt,
+  };
+}
+
+function responseFromAction(
+  record: ExternalOutboxRecord,
+  payload: EmailReplyPayload,
+): InboxThreadReplyAction {
   return {
     id: record.id,
     sourceThreadId: payload.threadId,
@@ -215,11 +276,73 @@ function responseFromRecord(
     to: payload.to,
     subject: payload.subject,
     body: payload.body,
-    status: "approval_pending",
-    requiresApproval: true,
-    safeRetry: false,
-    attempts: 0,
+    status: record.status,
+    requiresApproval: record.requiresApproval,
+    safeRetry: record.safeRetry,
+    attempts: record.attempts,
+    approvedAt: record.approvedAt,
+    lastError: record.lastError,
     createdAt: record.createdAt,
     updatedAt: record.updatedAt,
   };
+}
+
+function isPublicReplyAction(
+  record: ExternalOutboxRecord,
+  payload: EmailReplyPayload,
+): boolean {
+  return (
+    isUuid(record.id) &&
+    isUuid(record.connectorAccountId) &&
+    isUuid(payload.threadId) &&
+    isBoundedText(payload.externalThreadId, 2_000) &&
+    isBoundedText(payload.inReplyTo, 2_000) &&
+    payload.to.length === 1 &&
+    isBoundedText(payload.to[0], 2_000) &&
+    isBoundedText(payload.subject, 2_000) &&
+    isBoundedText(payload.body, 20_000) &&
+    isOutboxStatus(record.status) &&
+    typeof record.requiresApproval === "boolean" &&
+    typeof record.safeRetry === "boolean" &&
+    Number.isInteger(record.attempts) &&
+    record.attempts >= 0 &&
+    (record.approvedAt === null || isIsoDateTime(record.approvedAt)) &&
+    (record.lastError === null || isBoundedText(record.lastError, Infinity)) &&
+    isIsoDateTime(record.createdAt) &&
+    isIsoDateTime(record.updatedAt)
+  );
+}
+
+function isBoundedText(value: unknown, maximum: number): value is string {
+  return (
+    typeof value === "string" &&
+    value.trim().length > 0 &&
+    value.length <= maximum
+  );
+}
+
+function isUuid(value: string): boolean {
+  return /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/iu.test(
+    value,
+  );
+}
+
+function isIsoDateTime(value: string): boolean {
+  return (
+    /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d+)?(?:Z|[+-]\d{2}:\d{2})$/u.test(
+      value,
+    ) && !Number.isNaN(Date.parse(value))
+  );
+}
+
+function isOutboxStatus(value: unknown): value is ExternalOutboxStatus {
+  return [
+    "draft",
+    "approval_pending",
+    "dispatching",
+    "confirmed",
+    "uncertain",
+    "failed_retryable",
+    "failed_terminal",
+  ].includes(value as ExternalOutboxStatus);
 }

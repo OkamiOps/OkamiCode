@@ -28,6 +28,7 @@ import type { IpcRequest, IpcResponse } from "../../../shared/contracts/ipc";
 import { workbenchClient } from "../../lib/ipc/client";
 import { InboxAccountModal } from "./InboxAccountModal";
 import { InboxOutgoingSettingsModal } from "./InboxOutgoingSettingsModal";
+import { InboxReplyApprovalCard } from "./InboxReplyApprovalCard";
 import { InboxReplyModal } from "./InboxReplyModal";
 import { InboxTaskModal } from "./InboxTaskModal";
 
@@ -70,6 +71,12 @@ export interface InboxApi {
   createReplyDraft(
     request: IpcRequest<"inbox:thread:createReplyDraft">,
   ): Promise<IpcResponse<"inbox:thread:createReplyDraft">>;
+  listReplyActions(
+    request: IpcRequest<"inbox:thread:replyActions:list">,
+  ): Promise<IpcResponse<"inbox:thread:replyActions:list">>;
+  approveReply(
+    request: IpcRequest<"inbox:reply:approveAndSend">,
+  ): Promise<IpcResponse<"inbox:reply:approveAndSend">>;
 }
 
 const defaultApi: InboxApi = {
@@ -85,6 +92,8 @@ const defaultApi: InboxApi = {
   listLanes: workbenchClient.laneList,
   createTask: workbenchClient.inboxThreadCreateTask,
   createReplyDraft: workbenchClient.inboxThreadCreateReplyDraft,
+  listReplyActions: workbenchClient.inboxThreadReplyActionsList,
+  approveReply: workbenchClient.inboxReplyApproveAndSend,
 };
 
 type AccountFilter = "all" | "unread" | string;
@@ -94,9 +103,6 @@ export function InboxPage({ api = defaultApi }: { api?: InboxApi }) {
   const [filter, setFilter] = useState<AccountFilter>("all");
   const [selectedThreadId, setSelectedThreadId] = useState<string | null>(null);
   const [taskCreatedForThreadId, setTaskCreatedForThreadId] = useState<
-    string | null
-  >(null);
-  const [replySavedForThreadId, setReplySavedForThreadId] = useState<
     string | null
   >(null);
   const markedRead = useRef(new Set<string>());
@@ -117,6 +123,11 @@ export function InboxPage({ api = defaultApi }: { api?: InboxApi }) {
   const detail = useQuery({
     queryKey: ["inbox", "thread", selectedThreadId],
     queryFn: () => api.getThread({ threadId: selectedThreadId! }),
+    enabled: selectedThreadId !== null,
+  });
+  const replyActions = useQuery({
+    queryKey: ["inbox", "reply-actions", selectedThreadId],
+    queryFn: () => api.listReplyActions({ threadId: selectedThreadId! }),
     enabled: selectedThreadId !== null,
   });
   const refresh = () => {
@@ -188,7 +199,35 @@ export function InboxPage({ api = defaultApi }: { api?: InboxApi }) {
   const createReplyDraft = useMutation({
     mutationFn: api.createReplyDraft,
     onSuccess: (result) => {
-      setReplySavedForThreadId(result.sourceThreadId);
+      const queryKey = ["inbox", "reply-actions", result.sourceThreadId];
+      queryClient.setQueryData<IpcResponse<"inbox:thread:replyActions:list">>(
+        queryKey,
+        (current = []) => [replyActionFromDraft(result), ...current],
+      );
+      void queryClient.invalidateQueries({ queryKey });
+    },
+  });
+  const approveReply = useMutation({
+    mutationFn: ({ outboxId }: { outboxId: string; threadId: string }) =>
+      api.approveReply({ outboxId, confirmation: "approve_and_send" }),
+    onSuccess: (result, variables) => {
+      const queryKey = ["inbox", "reply-actions", variables.threadId];
+      queryClient.setQueryData<IpcResponse<"inbox:thread:replyActions:list">>(
+        queryKey,
+        (current = []) =>
+          current.map((action) =>
+            action.id === result.id
+              ? {
+                  ...action,
+                  status: result.status,
+                  attempts: result.attempts,
+                  approvedAt: result.approvedAt,
+                  lastError: result.lastError,
+                }
+              : action,
+          ),
+      );
+      void queryClient.invalidateQueries({ queryKey });
     },
   });
 
@@ -251,10 +290,16 @@ export function InboxPage({ api = defaultApi }: { api?: InboxApi }) {
         isSavingReply={createReplyDraft.isPending}
         isLoading={detail.isLoading}
         isCreatingTask={createTask.isPending}
+        replyActions={replyActions.data ?? []}
+        replyActionsError={
+          replyActions.isError ? errorMessage(replyActions.error) : null
+        }
+        onApproveReply={(outboxId, actionThreadId) =>
+          approveReply.mutateAsync({ outboxId, threadId: actionThreadId })
+        }
         onCreateReplyDraft={(request) => createReplyDraft.mutateAsync(request)}
         onOpenDetails={detailsDrawer.open}
         onCreateTask={(request) => createTask.mutateAsync(request)}
-        replySaved={replySavedForThreadId === detail.data?.thread.id}
         taskCreated={taskCreatedForThreadId === detail.data?.thread.id}
         listLanes={api.listLanes}
       />
@@ -416,6 +461,16 @@ function InboxSidebar({
       </div>
     </aside>
   );
+}
+
+function replyActionFromDraft(
+  draft: IpcResponse<"inbox:thread:createReplyDraft">,
+): IpcResponse<"inbox:thread:replyActions:list">[number] {
+  return {
+    ...draft,
+    approvedAt: null,
+    lastError: null,
+  };
 }
 
 function FilterButton({
@@ -619,10 +674,12 @@ function Conversation({
   isSavingReply,
   isCreatingTask,
   listLanes,
+  onApproveReply,
   onCreateReplyDraft,
   onCreateTask,
   onOpenDetails,
-  replySaved,
+  replyActions,
+  replyActionsError,
   taskCreated,
 }: {
   detail: InboxThreadDetail | undefined;
@@ -631,10 +688,15 @@ function Conversation({
   isSavingReply: boolean;
   isCreatingTask: boolean;
   listLanes: InboxApi["listLanes"];
+  onApproveReply: (
+    outboxId: string,
+    threadId: string,
+  ) => Promise<IpcResponse<"inbox:reply:approveAndSend">>;
   onCreateReplyDraft: InboxApi["createReplyDraft"];
   onCreateTask: InboxApi["createTask"];
   onOpenDetails: () => void;
-  replySaved: boolean;
+  replyActions: IpcResponse<"inbox:thread:replyActions:list">;
+  replyActionsError: string | null;
   taskCreated: boolean;
 }) {
   if (!detail && !isLoading && !error)
@@ -720,17 +782,29 @@ function Conversation({
                 )}
               </article>
             ))}
+            {replyActions
+              .filter((action) => action.sourceThreadId === detail.thread.id)
+              .slice(0, 1)
+              .map((action) => (
+                <InboxReplyApprovalCard
+                  action={action}
+                  key={action.id}
+                  onApprove={(outboxId) =>
+                    onApproveReply(outboxId, action.sourceThreadId)
+                  }
+                />
+              ))}
+            {replyActionsError && (
+              <p className="inbox-reply-actions-error" role="alert">
+                {replyActionsError}
+              </p>
+            )}
           </div>
         )}
       </div>
       {taskCreated && (
         <p className="inbox-task-created" role="status">
           Tarefa criada no Kanban. Nenhum agente foi iniciado.
-        </p>
-      )}
-      {replySaved && (
-        <p className="inbox-reply-saved" role="status">
-          Resposta salva para aprovação. Nenhum email foi enviado.
         </p>
       )}
       <FutureActions

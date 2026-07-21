@@ -92,6 +92,12 @@ const replyDraftResult = {
   updatedAt: now,
 } as IpcResponse<"inbox:thread:createReplyDraft">;
 
+const replyAction = {
+  ...replyDraftResult,
+  approvedAt: null,
+  lastError: null,
+} as IpcResponse<"inbox:thread:replyActions:list">[number];
+
 function makeApi(overrides: Partial<InboxApi> = {}): InboxApi {
   return {
     listAccounts: vi.fn().mockResolvedValue([account]),
@@ -138,6 +144,14 @@ function makeApi(overrides: Partial<InboxApi> = {}): InboxApi {
     listLanes: vi.fn().mockResolvedValue([]),
     createTask: vi.fn().mockResolvedValue(taskResult),
     createReplyDraft: vi.fn().mockResolvedValue(replyDraftResult),
+    listReplyActions: vi.fn().mockResolvedValue([]),
+    approveReply: vi.fn().mockResolvedValue({
+      id: replyAction.id,
+      status: "confirmed",
+      attempts: 1,
+      approvedAt: now,
+      lastError: null,
+    }),
     ...overrides,
   };
 }
@@ -181,7 +195,9 @@ describe("InboxPage", () => {
   });
 
   it("only synchronizes after an explicit account action", async () => {
-    const { api } = renderInbox();
+    const { api } = renderInbox(
+      makeApi({ listReplyActions: vi.fn().mockResolvedValue([replyAction]) }),
+    );
     expect(await screen.findByText("Projetos")).toBeVisible();
     expect(api.syncAccount).not.toHaveBeenCalled();
     await userEvent.click(
@@ -268,7 +284,9 @@ describe("InboxPage", () => {
   });
 
   it("saves a trimmed reply as approval pending without sending an email", async () => {
-    const { api } = renderInbox();
+    const { api } = renderInbox(
+      makeApi({ listReplyActions: vi.fn().mockResolvedValue([replyAction]) }),
+    );
     expect(screen.queryByRole("button", { name: "Responder" })).toBeNull();
 
     await userEvent.click(
@@ -311,11 +329,7 @@ describe("InboxPage", () => {
         /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i,
       ),
     });
-    expect(
-      await screen.findByText(
-        "Resposta salva para aprovação. Nenhum email foi enviado.",
-      ),
-    ).toBeVisible();
+    expect(await screen.findByText("Aguardando sua aprovação")).toBeVisible();
     expect(api).not.toHaveProperty("laneSendTurn");
   });
 
@@ -330,7 +344,12 @@ describe("InboxPage", () => {
             resolveCreation = () => resolve(replyDraftResult);
           }),
       );
-    const { api } = renderInbox(makeApi({ createReplyDraft }));
+    const { api } = renderInbox(
+      makeApi({
+        createReplyDraft,
+        listReplyActions: vi.fn().mockResolvedValue([replyAction]),
+      }),
+    );
     await userEvent.click(
       await screen.findByRole("button", { name: /Proposta para landing page/ }),
     );
@@ -373,11 +392,7 @@ describe("InboxPage", () => {
     );
     expect(textarea).toHaveValue("Resposta revisada");
     resolveCreation?.();
-    expect(
-      await screen.findByText(
-        "Resposta salva para aprovação. Nenhum email foi enviado.",
-      ),
-    ).toBeVisible();
+    expect(await screen.findByText("Aguardando sua aprovação")).toBeVisible();
     expect(api.createReplyDraft).toHaveBeenCalledTimes(2);
   });
 
@@ -718,6 +733,191 @@ describe("InboxPage", () => {
     expect(within(reopened).getByLabelText("Servidor SMTP")).toHaveValue(
       "smtp.reloaded.example",
     );
+  });
+
+  it("approves the selected persistent reply once and renders the confirmed state", async () => {
+    let persistedAction: IpcResponse<"inbox:thread:replyActions:list">[number] =
+      replyAction;
+    const listReplyActions = vi.fn(() => Promise.resolve([persistedAction]));
+    const approveReply = vi.fn(async () => {
+      persistedAction = {
+        ...replyAction,
+        status: "confirmed",
+        attempts: 1,
+        approvedAt: now,
+      };
+      return {
+        id: replyAction.id,
+        status: "confirmed" as const,
+        attempts: 1,
+        approvedAt: now,
+        lastError: null,
+      };
+    });
+    const { api } = renderInbox(makeApi({ listReplyActions, approveReply }));
+
+    await userEvent.click(
+      await screen.findByRole("button", { name: /Proposta para landing page/ }),
+    );
+    await userEvent.click(
+      await screen.findByRole("button", { name: "Aprovar e enviar" }),
+    );
+
+    await vi.waitFor(() => expect(approveReply).toHaveBeenCalledOnce());
+    expect(approveReply).toHaveBeenCalledWith({
+      outboxId: replyAction.id,
+      confirmation: "approve_and_send",
+    });
+    expect(await screen.findByText("Email enviado")).toBeVisible();
+    expect(api.listReplyActions).toHaveBeenCalledWith({ threadId });
+  });
+
+  it("prevents duplicate approval while dispatch is pending", async () => {
+    let resolveApproval: (() => void) | undefined;
+    const approveReply = vi
+      .fn()
+      .mockImplementationOnce(
+        () =>
+          new Promise((resolve) => {
+            resolveApproval = () =>
+              resolve({
+                id: replyAction.id,
+                status: "dispatching",
+                attempts: 1,
+                approvedAt: now,
+                lastError: null,
+              });
+          }),
+      )
+      .mockRejectedValueOnce(new Error("Envio indisponível"));
+    renderInbox(
+      makeApi({
+        approveReply,
+        listReplyActions: vi.fn().mockResolvedValue([replyAction]),
+      }),
+    );
+
+    await userEvent.click(
+      await screen.findByRole("button", { name: /Proposta para landing page/ }),
+    );
+    const approve = await screen.findByRole("button", {
+      name: "Aprovar e enviar",
+    });
+    await userEvent.click(approve);
+    await userEvent.click(approve);
+    expect(approveReply).toHaveBeenCalledOnce();
+    resolveApproval?.();
+    await vi.waitFor(() => expect(approveReply).toHaveBeenCalledOnce());
+  });
+
+  it("keeps a reply action visible with an accessible error when approval fails", async () => {
+    const approveReply = vi
+      .fn()
+      .mockRejectedValue(new Error("Reply dispatch is unavailable"));
+    renderInbox(
+      makeApi({
+        approveReply,
+        listReplyActions: vi.fn().mockResolvedValue([replyAction]),
+      }),
+    );
+    await userEvent.click(
+      await screen.findByRole("button", { name: /Proposta para landing page/ }),
+    );
+    await userEvent.click(
+      await screen.findByRole("button", { name: "Aprovar e enviar" }),
+    );
+    expect(await screen.findByRole("alert")).toHaveTextContent(
+      "O envio não está disponível agora. A resposta continua aguardando aprovação.",
+    );
+    expect(screen.getByText("Aguardando sua aprovação")).toBeVisible();
+  });
+
+  it("renders an inert sending control for a persistent dispatching action", async () => {
+    const approveReply = vi.fn();
+    renderInbox(
+      makeApi({
+        approveReply,
+        listReplyActions: vi.fn().mockResolvedValue([
+          {
+            ...replyAction,
+            status: "dispatching",
+            attempts: 1,
+            approvedAt: now,
+          },
+        ]),
+      }),
+    );
+    await userEvent.click(
+      await screen.findByRole("button", { name: /Proposta para landing page/ }),
+    );
+    const sending = await screen.findByRole("button", {
+      name: "Aprovar e enviar",
+    });
+    expect(sending).toBeDisabled();
+    expect(sending).toHaveTextContent("Enviando…");
+    await userEvent.click(sending);
+    expect(approveReply).not.toHaveBeenCalled();
+  });
+
+  it("shows uncertain replies without an approve or retry action", async () => {
+    renderInbox(
+      makeApi({
+        listReplyActions: vi
+          .fn()
+          .mockResolvedValue([
+            { ...replyAction, status: "uncertain", attempts: 1 },
+          ]),
+      }),
+    );
+    await userEvent.click(
+      await screen.findByRole("button", { name: /Proposta para landing page/ }),
+    );
+    expect(await screen.findByText("Resultado do envio incerto")).toBeVisible();
+    expect(screen.getByRole("alert")).toHaveTextContent(
+      "Não envie novamente antes de confirmar o resultado com o provedor.",
+    );
+    expect(
+      screen.queryByRole("button", { name: /Aprovar|Tentar novamente/i }),
+    ).toBeNull();
+  });
+
+  it("never displays another thread's reply action after switching conversations", async () => {
+    const otherThread = {
+      ...thread,
+      id: "88888888-8888-4888-8888-888888888888",
+      externalThreadId: "message-13",
+      subject: "Outra conversa",
+      unreadCount: 0,
+    };
+    renderInbox(
+      makeApi({
+        listThreads: vi.fn().mockResolvedValue({
+          threads: [thread, otherThread],
+          nextCursor: null,
+        }),
+        getThread: vi
+          .fn()
+          .mockImplementation(({ threadId: requestedThreadId }) =>
+            Promise.resolve({
+              thread: requestedThreadId === threadId ? thread : otherThread,
+              messages: [],
+            }),
+          ),
+        listReplyActions: vi.fn().mockResolvedValue([replyAction]),
+      }),
+    );
+    await userEvent.click(
+      await screen.findByRole("button", { name: /Proposta para landing page/ }),
+    );
+    expect(await screen.findByText("Aguardando sua aprovação")).toBeVisible();
+    await userEvent.click(
+      screen.getByRole("button", { name: /Outra conversa/ }),
+    );
+    await screen.findByRole("heading", { name: "Outra conversa" });
+    expect(screen.queryByText("Aguardando sua aprovação")).toBeNull();
+    expect(
+      screen.queryByRole("button", { name: "Aprovar e enviar" }),
+    ).toBeNull();
   });
 
   it("states loading, empty and error without inventing inbox content", async () => {

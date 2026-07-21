@@ -215,6 +215,7 @@ it("exposes exactly the enumerated command surface", () => {
     "inbox:thread:markRead",
     "inbox:thread:createTask",
     "inbox:thread:createReplyDraft",
+    "inbox:thread:replyActions:list",
     "inbox:reply:approveAndSend",
   ]);
   expect(Object.keys(window.okami.invoke)).toEqual(ipcChannels);
@@ -320,6 +321,24 @@ it("provides typed Inbox account and thread commands through the bridge", async 
       createdAt: now,
       updatedAt: now,
     },
+    "inbox:thread:replyActions:list": [
+      {
+        id: "0f7c4f9c-33dd-4dbd-98cb-8e768646b386",
+        sourceThreadId: threadId,
+        connectorAccountId: accountId,
+        to: ["client@example.com"],
+        subject: "Re: Subject",
+        body: "Thanks",
+        status: "approval_pending",
+        requiresApproval: true,
+        safeRetry: false,
+        attempts: 0,
+        approvedAt: null,
+        lastError: null,
+        createdAt: now,
+        updatedAt: now,
+      },
+    ],
     "inbox:reply:approveAndSend": {
       id: "0f7c4f9c-33dd-4dbd-98cb-8e768646b386",
       status: "confirmed",
@@ -380,6 +399,11 @@ it("provides typed Inbox account and thread commands through the bridge", async 
     sourceThreadId: threadId,
     status: "approval_pending",
   });
+  await expect(
+    workbenchClient.inboxThreadReplyActionsList({ threadId }),
+  ).resolves.toMatchObject([
+    { sourceThreadId: threadId, status: "approval_pending" },
+  ]);
   const approveAndSend = vi.fn(async () => ({
     id: "0f7c4f9c-33dd-4dbd-98cb-8e768646b386",
     status: "confirmed",

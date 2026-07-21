@@ -139,6 +139,24 @@ function harness() {
       createdAt: now,
       updatedAt: now,
     })),
+    listReplyActions: vi.fn(() => [
+      {
+        id: "0f7c4f9c-33dd-4dbd-98cb-8e768646b386",
+        sourceThreadId: threadId,
+        connectorAccountId: accountId,
+        to: ["client@example.com"],
+        subject: "Re: Subject",
+        body: "Thanks",
+        status: "approval_pending" as const,
+        requiresApproval: true,
+        safeRetry: false,
+        attempts: 0,
+        approvedAt: null,
+        lastError: null,
+        createdAt: now,
+        updatedAt: now,
+      },
+    ]),
   };
   const inboxOutgoingSettingsService = {
     get: vi.fn(() => ({
@@ -326,6 +344,33 @@ it("creates an approval-pending reply draft through the strict trusted Inbox cha
     }),
   ).rejects.toThrow("Untrusted renderer origin");
   expect(inboxReplyDraftService.createReplyDraft).toHaveBeenCalledOnce();
+});
+
+it("lists only the strict public reply-action surface for a trusted thread", async () => {
+  const { handlers, inboxReplyDraftService, event } = harness();
+
+  await expect(
+    handlers.get("inbox:thread:replyActions:list")?.(event, { threadId }),
+  ).resolves.toEqual([
+    expect.objectContaining({
+      sourceThreadId: threadId,
+      approvedAt: null,
+      lastError: null,
+    }),
+  ]);
+  expect(inboxReplyDraftService.listReplyActions).toHaveBeenCalledWith(
+    threadId,
+  );
+
+  inboxReplyDraftService.listReplyActions.mockReturnValueOnce([
+    {
+      ...inboxReplyDraftService.listReplyActions.mock.results[0]?.value[0],
+      idempotencyKey: "secret",
+    },
+  ]);
+  await expect(
+    handlers.get("inbox:thread:replyActions:list")?.(event, { threadId }),
+  ).rejects.toThrow();
 });
 
 it("routes strict trusted outgoing settings requests without exposing credentials", async () => {

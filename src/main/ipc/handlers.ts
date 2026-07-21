@@ -86,7 +86,7 @@ export type InboxTaskActionIpcService = Pick<
 
 export type InboxReplyDraftIpcService = Pick<
   InboxReplyDraftService,
-  "createReplyDraft"
+  "createReplyDraft" | "listReplyActions"
 >;
 
 export type InboxOutgoingSettingsIpcService = Pick<
@@ -483,6 +483,10 @@ async function dispatch(
     case "inbox:thread:createReplyDraft":
       return inboxReplyDraftService().createReplyDraft(
         request as IpcRequest<"inbox:thread:createReplyDraft">,
+      );
+    case "inbox:thread:replyActions:list":
+      return inboxReplyDraftService().listReplyActions(
+        (request as IpcRequest<"inbox:thread:replyActions:list">).threadId,
       );
     case "inbox:reply:approveAndSend":
       return inboxReplyDispatchService().approveAndSend(

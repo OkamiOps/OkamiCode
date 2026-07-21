@@ -87,6 +87,112 @@ function harness() {
 }
 
 describe("InboxReplyDraftService", () => {
+  it("lists only well-formed reply actions for the requested thread, newest first", () => {
+    const { fixture, service, threadId } = harness();
+    const first = service.createReplyDraft({
+      threadId,
+      body: "First reply",
+      idempotencyKey: randomUUID(),
+    });
+    const second = service.createReplyDraft({
+      threadId,
+      body: "Second reply",
+      idempotencyKey: randomUUID(),
+    });
+    fixture.db
+      .prepare("UPDATE external_outbox SET created_at = ? WHERE id = ?")
+      .run("2026-07-22T11:00:00.000Z", second.id);
+    const otherThreadId = randomUUID();
+    fixture.db
+      .prepare("UPDATE external_outbox SET payload_json = ? WHERE id = ?")
+      .run(
+        JSON.stringify({
+          threadId: otherThreadId,
+          externalThreadId: "other",
+          inReplyTo: "other-message",
+          to: ["other@example.com"],
+          subject: "Re: Other",
+          body: "Other reply",
+        }),
+        first.id,
+      );
+    fixture.db
+      .prepare(
+        "INSERT INTO external_outbox (id, connector_account_id, kind, payload_json, idempotency_key, status, requires_approval, approved_at, safe_retry, attempts, provider_receipt_json, last_error, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+      )
+      .run(
+        randomUUID(),
+        second.connectorAccountId,
+        "email.reply",
+        JSON.stringify({ malformed: true }),
+        randomUUID(),
+        "approval_pending",
+        1,
+        null,
+        0,
+        0,
+        null,
+        null,
+        "2026-07-22T12:00:00.000Z",
+        "2026-07-22T12:00:00.000Z",
+      );
+    for (const payload of [
+      {
+        threadId,
+        externalThreadId: "proposal-1",
+        inReplyTo: "incoming-newest",
+        to: [""],
+        subject: "",
+        body: "",
+      },
+      {
+        threadId,
+        externalThreadId: "proposal-1",
+        inReplyTo: "incoming-newest",
+        to: ["client@example.com"],
+        subject: "s".repeat(2_001),
+        body: "b".repeat(20_001),
+      },
+    ]) {
+      fixture.db
+        .prepare(
+          "INSERT INTO external_outbox (id, connector_account_id, kind, payload_json, idempotency_key, status, requires_approval, approved_at, safe_retry, attempts, provider_receipt_json, last_error, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+        )
+        .run(
+          randomUUID(),
+          second.connectorAccountId,
+          "email.reply",
+          JSON.stringify(payload),
+          randomUUID(),
+          "approval_pending",
+          1,
+          null,
+          0,
+          0,
+          null,
+          null,
+          "2026-07-22T12:00:00.000Z",
+          "2026-07-22T12:00:00.000Z",
+        );
+    }
+
+    const replyActions = (
+      service as InboxReplyDraftService & {
+        listReplyActions(threadId: string): unknown[];
+      }
+    ).listReplyActions(threadId);
+
+    expect(replyActions).toEqual([
+      expect.objectContaining({
+        id: second.id,
+        sourceThreadId: threadId,
+        body: "Second reply",
+        approvedAt: null,
+        lastError: null,
+      }),
+    ]);
+  });
+
   it("derives an approval-pending reply from the latest persisted incoming message", () => {
     const { fixture, service, threadId } = harness();
 

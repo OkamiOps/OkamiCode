@@ -1,0 +1,160 @@
+import { Button, Spinner } from "@heroui/react";
+import { BadgeCheck, CircleAlert, Clock3, MailCheck, Send } from "lucide-react";
+import { useRef, useState } from "react";
+import type { IpcResponse } from "../../../shared/contracts/ipc";
+
+type ReplyAction = IpcResponse<"inbox:thread:replyActions:list">[number];
+type ReplyDispatch = IpcResponse<"inbox:reply:approveAndSend">;
+
+interface InboxReplyApprovalCardProps {
+  action: ReplyAction;
+  onApprove: (outboxId: string) => Promise<ReplyDispatch>;
+}
+
+export function InboxReplyApprovalCard({
+  action,
+  onApprove,
+}: InboxReplyApprovalCardProps) {
+  const [error, setError] = useState<string | null>(null);
+  const [isApproving, setIsApproving] = useState(false);
+  const inFlight = useRef(false);
+
+  async function approve() {
+    if (inFlight.current || action.status !== "approval_pending") return;
+
+    inFlight.current = true;
+    setError(null);
+    setIsApproving(true);
+    try {
+      await onApprove(action.id);
+    } catch (cause) {
+      setError(messageFor(cause));
+    } finally {
+      inFlight.current = false;
+      setIsApproving(false);
+    }
+  }
+
+  const state = cardState(action.status, isApproving);
+
+  return (
+    <article
+      aria-label="Aprovação de resposta por email"
+      className="inbox-reply-approval"
+      data-status={action.status}
+    >
+      <header className="inbox-reply-approval__header">
+        <span className="inbox-reply-approval__icon">{state.icon}</span>
+        <div>
+          <p className="inbox-eyebrow">Resposta por email</p>
+          <h3>{state.label}</h3>
+        </div>
+        <span className="inbox-reply-approval__state" role="status">
+          {state.detail}
+        </span>
+      </header>
+      <dl className="inbox-reply-approval__meta">
+        <div>
+          <dt>Para</dt>
+          <dd>{action.to.join(", ")}</dd>
+        </div>
+        <div>
+          <dt>Assunto</dt>
+          <dd>{action.subject}</dd>
+        </div>
+      </dl>
+      <p className="inbox-reply-approval__body">{action.body}</p>
+      {action.status === "uncertain" && (
+        <p className="inbox-reply-approval__warning" role="alert">
+          Não envie novamente antes de confirmar o resultado com o provedor.
+        </p>
+      )}
+      {action.lastError && action.status !== "uncertain" && (
+        <p className="inbox-reply-approval__error" role="alert">
+          {action.lastError}
+        </p>
+      )}
+      {error && (
+        <p className="inbox-reply-approval__error" role="alert">
+          {error}
+        </p>
+      )}
+      {(action.status === "approval_pending" ||
+        action.status === "dispatching") && (
+        <div className="inbox-reply-approval__actions">
+          <Button
+            aria-label="Aprovar e enviar"
+            className="inbox-reply-approval__approve"
+            isDisabled={isApproving || action.status === "dispatching"}
+            onPress={action.status === "approval_pending" ? approve : undefined}
+            size="sm"
+          >
+            {isApproving || action.status === "dispatching" ? (
+              <Spinner size="sm" />
+            ) : (
+              <Send aria-hidden="true" size={14} />
+            )}
+            {isApproving || action.status === "dispatching"
+              ? "Enviando…"
+              : "Aprovar e enviar"}
+          </Button>
+        </div>
+      )}
+    </article>
+  );
+}
+
+function cardState(status: ReplyAction["status"], isApproving: boolean) {
+  if (isApproving || status === "dispatching") {
+    return {
+      icon: <Spinner aria-label="Enviando" size="sm" />,
+      label: "Enviando…",
+      detail: "Envio em andamento",
+    };
+  }
+  switch (status) {
+    case "approval_pending":
+      return {
+        icon: <Clock3 aria-hidden="true" size={16} />,
+        label: "Aguardando sua aprovação",
+        detail: "Revisão necessária",
+      };
+    case "confirmed":
+      return {
+        icon: <BadgeCheck aria-hidden="true" size={16} />,
+        label: "Email enviado",
+        detail: "Confirmado",
+      };
+    case "uncertain":
+      return {
+        icon: <CircleAlert aria-hidden="true" size={16} />,
+        label: "Resultado do envio incerto",
+        detail: "Verifique o provedor",
+      };
+    case "draft":
+      return {
+        icon: <MailCheck aria-hidden="true" size={16} />,
+        label: "Rascunho de email",
+        detail: "Ainda não está pronto para envio",
+      };
+    case "failed_retryable":
+    case "failed_terminal":
+      return {
+        icon: <CircleAlert aria-hidden="true" size={16} />,
+        label: "Não foi possível enviar o email",
+        detail: "Ação necessária",
+      };
+  }
+}
+
+function messageFor(cause: unknown) {
+  if (
+    cause instanceof Error &&
+    cause.message === "Reply dispatch is unavailable"
+  ) {
+    return "O envio não está disponível agora. A resposta continua aguardando aprovação.";
+  }
+  return cause instanceof Error && cause.message
+    ? cause.message
+    : "Não foi possível iniciar o envio. A resposta continua aguardando aprovação.";
+}
