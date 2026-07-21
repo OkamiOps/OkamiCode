@@ -1219,12 +1219,69 @@ const inboxThreadReplyActionSchema = z
   })
   .strict();
 
-const calendarDateSchema = z.string().regex(/^\d{4}-\d{2}-\d{2}$/u);
+const calendarDateSchema = z.iso.date();
 const calendarTextSchema = (maximum: number) =>
   z.string().trim().min(1).max(maximum);
 const calendarOptionalTextSchema = (maximum: number) =>
   calendarTextSchema(maximum).nullable().optional();
 const calendarTimestampSchema = z.iso.datetime({ offset: true });
+const calendarCredentialQueryKeys = new Set([
+  "token",
+  "access_token",
+  "refresh_token",
+  "auth",
+  "authorization",
+  "password",
+  "passwd",
+  "credential",
+  "api_key",
+  "key",
+  "signature",
+  "sig",
+]);
+const calendarSafeHttpUrlSchema = z
+  .string()
+  .trim()
+  .min(1)
+  .max(4_096)
+  .superRefine((value, context) => {
+    let url: URL;
+    try {
+      url = new URL(value);
+    } catch {
+      context.addIssue({ code: "custom", message: "Calendar URL is invalid" });
+      return;
+    }
+    if (url.protocol !== "http:" && url.protocol !== "https:") {
+      context.addIssue({
+        code: "custom",
+        message: "Calendar URL must use HTTP(S)",
+      });
+    }
+    if (url.username || url.password) {
+      context.addIssue({
+        code: "custom",
+        message: "Calendar URL must not include credentials",
+      });
+    }
+    if (url.hash) {
+      context.addIssue({
+        code: "custom",
+        message: "Calendar URL must not include a fragment",
+      });
+    }
+    for (const key of url.searchParams.keys()) {
+      if (calendarCredentialQueryKeys.has(key.toLowerCase())) {
+        context.addIssue({
+          code: "custom",
+          message: "Calendar URL must not include credential query fields",
+        });
+      }
+    }
+  });
+const calendarOptionalSafeHttpUrlSchema = calendarSafeHttpUrlSchema
+  .nullable()
+  .optional();
 const calendarEventStatusSchema = z.enum([
   "confirmed",
   "tentative",
@@ -1235,7 +1292,7 @@ export const calendarSourceSchema = z
   .object({
     id: entityIdSchema,
     kind: z.enum(["local", "google", "outlook", "caldav", "ics"]),
-    displayName: calendarTextSchema(240),
+    displayName: calendarTextSchema(255),
     color: z.string().regex(/^#[0-9A-F]{6}$/u),
     timezone: calendarTextSchema(255),
     status: z.enum(["active", "not_configured", "paused", "degraded"]),
@@ -1251,12 +1308,12 @@ const calendarEventFieldsSchema = {
   id: entityIdSchema,
   sourceId: entityIdSchema,
   externalId: calendarTextSchema(4_096),
-  title: calendarTextSchema(2_000),
+  title: calendarTextSchema(1_000),
   description: calendarTextSchema(20_000).nullable(),
   location: calendarTextSchema(2_000).nullable(),
   organizer: calendarTextSchema(512).nullable(),
-  joinUrl: calendarTextSchema(4_096).nullable(),
-  sourceUrl: calendarTextSchema(4_096).nullable(),
+  joinUrl: calendarSafeHttpUrlSchema.nullable(),
+  sourceUrl: calendarSafeHttpUrlSchema.nullable(),
   etag: calendarTextSchema(4_096).nullable(),
   providerUpdatedAt: calendarTimestampSchema.nullable(),
   attendees: z.array(calendarTextSchema(512)).max(100),
@@ -1292,20 +1349,20 @@ export const calendarEventSchema = z.discriminatedUnion("allDay", [
 
 const calendarEventInputFields = {
   sourceId: entityIdSchema,
-  title: calendarTextSchema(2_000),
+  title: calendarTextSchema(1_000),
   timezone: calendarTextSchema(255),
   description: calendarOptionalTextSchema(20_000),
   location: calendarOptionalTextSchema(2_000),
   organizer: calendarOptionalTextSchema(512),
-  joinUrl: calendarOptionalTextSchema(4_096),
-  sourceUrl: calendarOptionalTextSchema(4_096),
+  joinUrl: calendarOptionalSafeHttpUrlSchema,
+  sourceUrl: calendarOptionalSafeHttpUrlSchema,
   attendees: z.array(calendarTextSchema(512)).max(100).optional(),
   status: calendarEventStatusSchema.optional(),
 };
 
 export const calendarCreateLocalSourceRequestSchema = z
   .object({
-    displayName: calendarTextSchema(240),
+    displayName: calendarTextSchema(255),
     color: z.string().regex(/^#[0-9A-Fa-f]{6}$/u),
     timezone: calendarTextSchema(255),
   })
@@ -1337,13 +1394,13 @@ export const calendarUpdateLocalEventRequestSchema = z
   .object({
     eventId: entityIdSchema,
     sourceId: entityIdSchema,
-    title: calendarTextSchema(2_000).optional(),
+    title: calendarTextSchema(1_000).optional(),
     timezone: calendarTextSchema(255).optional(),
     description: calendarOptionalTextSchema(20_000),
     location: calendarOptionalTextSchema(2_000),
     organizer: calendarOptionalTextSchema(512),
-    joinUrl: calendarOptionalTextSchema(4_096),
-    sourceUrl: calendarOptionalTextSchema(4_096),
+    joinUrl: calendarOptionalSafeHttpUrlSchema,
+    sourceUrl: calendarOptionalSafeHttpUrlSchema,
     attendees: z.array(calendarTextSchema(512)).max(100).optional(),
     status: calendarEventStatusSchema.optional(),
     allDay: z.boolean().optional(),

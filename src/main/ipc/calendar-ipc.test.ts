@@ -218,3 +218,104 @@ it("rejects an untrusted Calendar request before it touches the service", async 
   ).rejects.toThrow("Untrusted renderer origin");
   expect(calendarService.listSources).not.toHaveBeenCalled();
 });
+
+it("rejects unsafe Calendar URLs before dispatch and after service output", async () => {
+  const { calendarService, handlers, event } = harness();
+  const create = handlers.get("calendar:event:createLocal" as IpcChannel);
+
+  await expect(
+    create?.(event, {
+      sourceId,
+      title: "Planejamento",
+      timezone: "America/Sao_Paulo",
+      allDay: false,
+      startsAt: "2026-07-21T12:00:00-03:00",
+      endsAt: "2026-07-21T13:00:00-03:00",
+      joinUrl: "https://user:password@calendar.example/event",
+    }),
+  ).rejects.toThrow();
+  await expect(
+    create?.(event, {
+      sourceId,
+      title: "Planejamento",
+      timezone: "America/Sao_Paulo",
+      allDay: false,
+      startsAt: "2026-07-21T12:00:00-03:00",
+      endsAt: "2026-07-21T13:00:00-03:00",
+      sourceUrl: "https://calendar.example/event?TOKEN=never-send-this",
+    }),
+  ).rejects.toThrow();
+  expect(calendarService.createLocalEvent).not.toHaveBeenCalled();
+
+  calendarService.createLocalEvent.mockReturnValueOnce({
+    ...timedEvent,
+    sourceUrl: "https://calendar.example/event?signature=never-send-this",
+  } as unknown as typeof timedEvent);
+  await expect(
+    create?.(event, {
+      sourceId,
+      title: "Planejamento",
+      timezone: "America/Sao_Paulo",
+      allDay: false,
+      startsAt: "2026-07-21T12:00:00-03:00",
+      endsAt: "2026-07-21T13:00:00-03:00",
+    }),
+  ).rejects.toThrow();
+  expect(calendarService.createLocalEvent).toHaveBeenCalledOnce();
+});
+
+it("enforces Calendar public text boundaries and real all-day dates before dispatch", async () => {
+  const { calendarService, handlers, event } = harness();
+  const createSource = handlers.get(
+    "calendar:source:createLocal" as IpcChannel,
+  );
+  const createEvent = handlers.get("calendar:event:createLocal" as IpcChannel);
+
+  await expect(
+    createSource?.(event, {
+      displayName: "s".repeat(255),
+      color: "#0EA5E9",
+      timezone: "America/Sao_Paulo",
+    }),
+  ).resolves.toEqual(source);
+  await expect(
+    createSource?.(event, {
+      displayName: "s".repeat(256),
+      color: "#0EA5E9",
+      timezone: "America/Sao_Paulo",
+    }),
+  ).rejects.toThrow();
+  await expect(
+    createEvent?.(event, {
+      sourceId,
+      title: "t".repeat(1000),
+      timezone: "America/Sao_Paulo",
+      allDay: false,
+      startsAt: "2026-07-21T12:00:00-03:00",
+      endsAt: "2026-07-21T13:00:00-03:00",
+    }),
+  ).resolves.toEqual(timedEvent);
+  await expect(
+    createEvent?.(event, {
+      sourceId,
+      title: "t".repeat(1001),
+      timezone: "America/Sao_Paulo",
+      allDay: false,
+      startsAt: "2026-07-21T12:00:00-03:00",
+      endsAt: "2026-07-21T13:00:00-03:00",
+    }),
+  ).rejects.toThrow();
+  await expect(
+    createEvent?.(event, {
+      sourceId,
+      title: "Dia inteiro",
+      timezone: "America/Sao_Paulo",
+      allDay: true,
+      startDate: "2026-02-30",
+      endDate: "2026-03-01",
+    }),
+  ).rejects.toThrow();
+
+  expect(calendarService.createLocalSource).toHaveBeenCalledOnce();
+  expect(calendarService.createLocalEvent).toHaveBeenCalledOnce();
+});
