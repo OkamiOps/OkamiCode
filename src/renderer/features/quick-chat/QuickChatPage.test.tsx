@@ -25,7 +25,10 @@ const memoryChip: ContextChipItem = {
   ref: "memory:note-7",
 };
 
-afterEach(cleanup);
+afterEach(() => {
+  cleanup();
+  localStorage.clear();
+});
 
 function renderQuickChat({
   chips,
@@ -51,8 +54,27 @@ function renderQuickChat({
       selectedMessageIds: string[];
       contextRefs: string[];
     }>,
+    quickChatRename: [] as Array<{ taskId: string; title: string }>,
+    quickChatDelete: [] as Array<{ taskId: string }>,
   };
   const api: QuickChatApi = {
+    rename: async (request) => {
+      calls.quickChatRename.push(request);
+      return {
+        id: request.taskId,
+        kind: "quick_chat",
+        title: request.title,
+        objective: "Conversa independente sem workspace",
+        status: "active",
+        workspacePath: null,
+        createdAt: "2026-07-21T10:00:00.000Z",
+        updatedAt: "2026-07-21T10:00:00.000Z",
+      };
+    },
+    delete: async (request) => {
+      calls.quickChatDelete.push(request);
+      return { taskId: request.taskId, deleted: true };
+    },
     create: vi.fn(async (request) => {
       calls.quickChatCreate.push(request);
       return {
@@ -65,7 +87,24 @@ function renderQuickChat({
         createdAt: "2026-07-18T12:00:00.000Z",
       };
     }),
-    list: vi.fn(async () => []),
+    list: vi.fn(async () =>
+      messages.length === 0
+        ? []
+        : [
+            {
+              id: chatId,
+              taskId,
+              laneId,
+              runtime: "codex" as const,
+              model: "gpt-5.6-luna",
+              workspaceId: null,
+              title: "Chat rápido",
+              preview: messages.at(-1)?.body ?? null,
+              createdAt: "2026-07-18T12:00:00.000Z",
+              updatedAt: "2026-07-18T12:00:00.000Z",
+            },
+          ],
+    ),
     get: vi.fn(async () => ({
       id: chatId,
       taskId,
@@ -173,7 +212,10 @@ describe("QuickChatPage", () => {
     });
     expect(
       screen.getByRole("combobox", { name: "Modelo do chat" }),
-    ).toHaveValue("codex:gpt-5.6-luna");
+    ).toHaveValue("gpt-5.6-luna");
+    expect(
+      screen.getByRole("combobox", { name: "Provider do chat" }),
+    ).toHaveValue("codex");
     expect(
       screen.getByRole("combobox", { name: "Nível de esforço" }),
     ).toHaveValue("high");
@@ -232,6 +274,39 @@ describe("QuickChatPage", () => {
         selectedMessageIds: ["message-1"],
         contextRefs: [memoryChip.ref],
       }),
+    );
+  });
+
+  it("renames, colors and deletes a saved conversation from its history", async () => {
+    const runtime = renderQuickChat({
+      chips: [],
+      messages: [{ id: "message-1", role: "user", body: "Organize isto" }],
+    });
+    const user = userEvent.setup();
+
+    await user.click(
+      await screen.findByRole("button", { name: "Opções de Chat rápido" }),
+    );
+    const title = screen.getByRole("textbox", { name: /Nome/u });
+    await user.clear(title);
+    await user.type(title, "Pesquisa de mercado");
+    await user.click(screen.getByRole("button", { name: "Cor cyan" }));
+    await user.click(screen.getByRole("button", { name: "Salvar" }));
+
+    await waitFor(() =>
+      expect(runtime.calls.quickChatRename).toEqual([
+        { taskId, title: "Pesquisa de mercado" },
+      ]),
+    );
+    expect(localStorage.getItem("okami.quick-chat.colors")).toContain("cyan");
+
+    await user.click(
+      await screen.findByRole("button", { name: "Opções de Chat rápido" }),
+    );
+    await user.click(screen.getByRole("button", { name: "Excluir" }));
+    await user.click(screen.getByRole("button", { name: "Excluir conversa" }));
+    await waitFor(() =>
+      expect(runtime.calls.quickChatDelete).toEqual([{ taskId }]),
     );
   });
 });

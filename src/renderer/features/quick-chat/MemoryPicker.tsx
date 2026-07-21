@@ -1,5 +1,5 @@
 import { Button, Input } from "@heroui/react";
-import { BookOpenText, Search } from "lucide-react";
+import { Paperclip, Search } from "lucide-react";
 import { useEffect, useState } from "react";
 import type { IpcResponse } from "../../../shared/contracts/ipc";
 import { workbenchClient } from "../../lib/ipc/client";
@@ -52,8 +52,8 @@ export function MemoryPicker({
         variant="ghost"
         onPress={() => setOpen((value) => !value)}
       >
-        <BookOpenText aria-hidden="true" size={13} />
-        Adicionar memória
+        <Paperclip aria-hidden="true" size={13} />
+        Contexto
       </Button>
       {open && (
         <div className="absolute bottom-full right-0 z-20 mb-2 w-[min(28rem,calc(100vw-2rem))] rounded-[var(--ok-radius-md)] border border-[var(--ok-border)] bg-[var(--ok-surface-1)] p-2 shadow-xl">

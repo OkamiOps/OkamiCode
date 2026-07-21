@@ -21,7 +21,7 @@ describe("MemoryPicker", () => {
     render(<MemoryPicker search={search} onSelect={onSelect} />);
     const user = userEvent.setup();
 
-    await user.click(screen.getByRole("button", { name: "Adicionar memória" }));
+    await user.click(screen.getByRole("button", { name: "Contexto" }));
     await user.type(screen.getByRole("searchbox"), "gateway");
     expect(onSelect).not.toHaveBeenCalled();
     await user.click(

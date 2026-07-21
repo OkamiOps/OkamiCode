@@ -10,11 +10,16 @@ import {
   ArrowUpRight,
   Bot,
   ChevronDown,
+  MoreHorizontal,
   MessageSquareText,
+  Palette,
+  Pencil,
   Plus,
   Search,
   Send,
   ShieldCheck,
+  Trash2,
+  X,
 } from "lucide-react";
 import { useEffect, useMemo, useState, type FormEvent } from "react";
 import { useSearchParams } from "react-router-dom";
@@ -65,6 +70,12 @@ export interface QuickChatApi {
   updateModel(
     request: IpcRequest<"quickChat:updateModel">,
   ): Promise<IpcResponse<"quickChat:updateModel">>;
+  rename(
+    request: IpcRequest<"task:rename">,
+  ): Promise<IpcResponse<"task:rename">>;
+  delete(
+    request: IpcRequest<"task:delete">,
+  ): Promise<IpcResponse<"task:delete">>;
   send(request: {
     chatId: string;
     input: string;
@@ -107,6 +118,8 @@ const defaultQuickChatApi: QuickChatApi = {
   get: (request) => workbenchClient.quickChatGet(request),
   models: () => workbenchClient.modelsList(),
   updateModel: (request) => workbenchClient.quickChatUpdateModel(request),
+  rename: (request) => workbenchClient.taskRename(request),
+  delete: (request) => workbenchClient.taskDelete(request),
   subscribe: subscribeToWorkbenchEvents,
   send: async (request) => {
     const response = await workbenchClient.quickChatSend(request);
@@ -174,6 +187,10 @@ function QuickChatContent({
     (state) => state.selectedMessageIds,
   );
   const [filter, setFilter] = useState("");
+  const [conversationColors, setConversationColors] = useState(
+    readConversationColors,
+  );
+  const [editingChat, setEditingChat] = useState<QuickChatSummary | null>(null);
   const [runtime, setRuntime] =
     useState<Exclude<RuntimeKind, "cursor">>(DEFAULT_RUNTIME);
   const [model, setModel] = useState(DEFAULT_MODEL);
@@ -202,6 +219,28 @@ function QuickChatContent({
       void queryClient.invalidateQueries({
         queryKey: ["quick-chat", "history", updated.id],
       });
+      void queryClient.invalidateQueries({ queryKey: ["quick-chat", "list"] });
+    },
+  });
+  const renameChat = useMutation({
+    mutationFn: api.rename,
+    onSuccess: () =>
+      void queryClient.invalidateQueries({ queryKey: ["quick-chat", "list"] }),
+  });
+  const deleteChat = useMutation({
+    mutationFn: api.delete,
+    onSuccess: (_result, request) => {
+      if (editingChat) {
+        const next = { ...conversationColors };
+        delete next[editingChat.id];
+        setConversationColors(next);
+        localStorage.setItem(conversationColorStorageKey, JSON.stringify(next));
+      }
+      if (editingChat?.taskId === request.taskId) setEditingChat(null);
+      if (historyQuery.data?.taskId === request.taskId) {
+        store.getState().hydrate([]);
+        setSearchParams({ new: crypto.randomUUID() }, { replace: true });
+      }
       void queryClient.invalidateQueries({ queryKey: ["quick-chat", "list"] });
     },
   });
@@ -279,6 +318,25 @@ function QuickChatContent({
   const efforts =
     selectedDefinition?.efforts ??
     (activeRuntime === "codex" ? ["low", "medium", "high", "xhigh"] : []);
+  const providerOptions = providersFor(modelOptions);
+  const providerModels = modelOptions.filter(
+    (option) => option.runtime === activeRuntime,
+  );
+
+  function chooseModel(option: ModelOption) {
+    setRuntime(option.runtime);
+    setModel(option.id);
+    setEffort(
+      option.defaultEffort ??
+        (option.runtime === "codex" ? DEFAULT_EFFORT : null),
+    );
+    if (chat)
+      updateModel.mutate({
+        chatId: chat.id,
+        runtime: option.runtime,
+        model: option.id,
+      });
+  }
 
   async function handleSubmit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
@@ -321,6 +379,8 @@ function QuickChatContent({
     createChat.error,
     historyQuery.error,
     updateModel.error,
+    renameChat.error,
+    deleteChat.error,
     send.error,
     promote.error,
   );
@@ -336,9 +396,11 @@ function QuickChatContent({
         chats={chats}
         currentChatId={chatId}
         filter={filter}
+        colors={conversationColors}
         onFilter={setFilter}
         onNew={() => setSearchParams({ new: crypto.randomUUID() })}
         onSelect={(id) => setSearchParams({ chat: id })}
+        onManage={setEditingChat}
       />
 
       <div className="quick-chat-main">
@@ -440,30 +502,43 @@ function QuickChatContent({
               <span className="quick-chat-model-select">
                 <Bot aria-hidden="true" size={13} />
                 <select
+                  aria-label="Provider do chat"
+                  disabled={updateModel.isPending}
+                  onChange={(event) => {
+                    const provider = providerOptions.find(
+                      (candidate) => candidate.runtime === event.target.value,
+                    );
+                    const option =
+                      provider &&
+                      modelOptions.find(
+                        (candidate) => candidate.runtime === provider.runtime,
+                      );
+                    if (option) chooseModel(option);
+                  }}
+                  value={activeRuntime}
+                >
+                  {providerOptions.map((provider) => (
+                    <option key={provider.runtime} value={provider.runtime}>
+                      {provider.label}
+                    </option>
+                  ))}
+                </select>
+                <ChevronDown aria-hidden="true" size={12} />
+              </span>
+              <span className="quick-chat-model-select quick-chat-model-select--model">
+                <select
                   aria-label="Modelo do chat"
                   disabled={updateModel.isPending}
                   onChange={(event) => {
-                    const option = modelOptions.find(
-                      (candidate) => candidate.key === event.target.value,
+                    const option = providerModels.find(
+                      (candidate) => candidate.id === event.target.value,
                     );
-                    if (!option) return;
-                    setRuntime(option.runtime);
-                    setModel(option.id);
-                    setEffort(
-                      option.runtime === "codex" ? DEFAULT_EFFORT : null,
-                    );
-                    if (chat) {
-                      updateModel.mutate({
-                        chatId: chat.id,
-                        runtime: option.runtime,
-                        model: option.id,
-                      });
-                    }
+                    if (option) chooseModel(option);
                   }}
-                  value={`${activeRuntime}:${activeModel}`}
+                  value={activeModel}
                 >
-                  {modelOptions.map((option) => (
-                    <option key={option.key} value={option.key}>
+                  {providerModels.map((option) => (
+                    <option key={option.key} value={option.id}>
                       {option.label}
                     </option>
                   ))}
@@ -513,6 +588,31 @@ function QuickChatContent({
           )}
         </form>
       </div>
+      {editingChat && (
+        <ConversationDialog
+          chat={editingChat}
+          color={conversationColors[editingChat.id] ?? "orange"}
+          deleting={deleteChat.isPending}
+          renaming={renameChat.isPending}
+          onClose={() => setEditingChat(null)}
+          onDelete={() => deleteChat.mutate({ taskId: editingChat.taskId })}
+          onSave={async (title, color) => {
+            if (title.trim() !== editingChat.title) {
+              await renameChat.mutateAsync({
+                taskId: editingChat.taskId,
+                title: title.trim(),
+              });
+            }
+            const next = { ...conversationColors, [editingChat.id]: color };
+            setConversationColors(next);
+            localStorage.setItem(
+              conversationColorStorageKey,
+              JSON.stringify(next),
+            );
+            setEditingChat(null);
+          }}
+        />
+      )}
     </section>
   );
 }
@@ -521,16 +621,20 @@ function QuickChatHistory({
   chats,
   currentChatId,
   filter,
+  colors,
   onFilter,
   onNew,
   onSelect,
+  onManage,
 }: {
   chats: QuickChatSummary[];
   currentChatId: string | null;
   filter: string;
+  colors: Record<string, ConversationColor>;
   onFilter: (value: string) => void;
   onNew: () => void;
   onSelect: (id: string) => void;
+  onManage: (chat: QuickChatSummary) => void;
 }) {
   return (
     <aside aria-label="Histórico de chats" className="quick-chat-history">
@@ -556,15 +660,29 @@ function QuickChatHistory({
           <p>Nenhuma conversa salva.</p>
         ) : (
           chats.map((chat) => (
-            <button
+            <div
+              className="quick-chat-history__item"
               data-active={chat.id === currentChatId || undefined}
+              data-color={colors[chat.id] ?? "orange"}
               key={chat.id}
-              onClick={() => onSelect(chat.id)}
-              type="button"
             >
-              <strong>{chat.title}</strong>
-              <span>{chat.preview ?? modelDisplay(chat.model)}</span>
-            </button>
+              <button
+                className="quick-chat-history__open"
+                onClick={() => onSelect(chat.id)}
+                type="button"
+              >
+                <strong>{chat.title}</strong>
+                <span>{chat.preview ?? modelDisplay(chat.model)}</span>
+              </button>
+              <button
+                aria-label={`Opções de ${chat.title}`}
+                className="quick-chat-history__more"
+                onClick={() => onManage(chat)}
+                type="button"
+              >
+                <MoreHorizontal aria-hidden="true" size={15} />
+              </button>
+            </div>
           ))
         )}
       </nav>
@@ -577,7 +695,9 @@ interface ModelOption {
   runtime: "claude" | "codex" | "agy";
   id: string;
   label: string;
+  providerLabel: string;
   efforts?: string[];
+  defaultEffort?: string;
 }
 
 function availableModels(catalog: IpcResponse<"models:list">): ModelOption[] {
@@ -589,7 +709,9 @@ function availableModels(catalog: IpcResponse<"models:list">): ModelOption[] {
           runtime: provider.runtimeKind,
           id: item.id,
           label: item.label,
+          providerLabel: provider.providerLabel,
           efforts: item.efforts,
+          defaultEffort: item.defaultEffort,
         })),
   ) as ModelOption[];
   for (const fallback of [
@@ -598,18 +720,172 @@ function availableModels(catalog: IpcResponse<"models:list">): ModelOption[] {
       runtime: "codex" as const,
       id: "gpt-5.6-luna",
       label: "GPT-5.6 Luna",
+      providerLabel: "Codex",
     },
     {
       key: "agy:gemini-3.5-flash",
       runtime: "agy" as const,
       id: "gemini-3.5-flash",
       label: "Gemini 3.5 Flash",
+      providerLabel: "Antigravity",
     },
   ]) {
     if (!options.some((option) => option.key === fallback.key))
       options.unshift(fallback);
   }
   return options;
+}
+
+function providersFor(options: ModelOption[]) {
+  return [
+    ...new Map(
+      options.map((option) => [
+        option.runtime,
+        { runtime: option.runtime, label: option.providerLabel },
+      ]),
+    ).values(),
+  ];
+}
+
+const conversationColorStorageKey = "okami.quick-chat.colors";
+const conversationColors = [
+  "orange",
+  "cyan",
+  "violet",
+  "green",
+  "rose",
+  "amber",
+] as const;
+type ConversationColor = (typeof conversationColors)[number];
+
+function readConversationColors(): Record<string, ConversationColor> {
+  try {
+    const value = JSON.parse(
+      localStorage.getItem(conversationColorStorageKey) ?? "{}",
+    ) as Record<string, string>;
+    return Object.fromEntries(
+      Object.entries(value).filter(
+        (entry): entry is [string, ConversationColor] =>
+          conversationColors.includes(entry[1] as ConversationColor),
+      ),
+    );
+  } catch {
+    return {};
+  }
+}
+
+function ConversationDialog({
+  chat,
+  color,
+  deleting,
+  onClose,
+  onDelete,
+  onSave,
+  renaming,
+}: {
+  chat: QuickChatSummary;
+  color: ConversationColor;
+  deleting: boolean;
+  onClose: () => void;
+  onDelete: () => void;
+  onSave: (title: string, color: ConversationColor) => Promise<void>;
+  renaming: boolean;
+}) {
+  const [title, setTitle] = useState(chat.title);
+  const [selectedColor, setSelectedColor] = useState(color);
+  const [confirmDelete, setConfirmDelete] = useState(false);
+  return (
+    <div className="ok-modal-backdrop" role="presentation">
+      <section
+        aria-labelledby="conversation-dialog-heading"
+        aria-modal="true"
+        className="quick-chat-dialog"
+        role="dialog"
+      >
+        <header>
+          <span>
+            <Palette aria-hidden="true" size={17} />
+          </span>
+          <div>
+            <p className="pane-kicker">Organizar conversa</p>
+            <h2 id="conversation-dialog-heading">Detalhes do chat</h2>
+          </div>
+          <button aria-label="Fechar" onClick={onClose} type="button">
+            <X aria-hidden="true" size={16} />
+          </button>
+        </header>
+        {confirmDelete ? (
+          <div className="quick-chat-dialog__danger">
+            <Trash2 aria-hidden="true" size={20} />
+            <h3>Excluir esta conversa?</h3>
+            <p>
+              Ela sairá do histórico. Esta ação não apaga projetos ou arquivos.
+            </p>
+            <footer>
+              <Button variant="ghost" onPress={() => setConfirmDelete(false)}>
+                Voltar
+              </Button>
+              <Button
+                className="quick-chat-dialog__delete"
+                isDisabled={deleting}
+                onPress={onDelete}
+              >
+                {deleting ? "Excluindo…" : "Excluir conversa"}
+              </Button>
+            </footer>
+          </div>
+        ) : (
+          <>
+            <label className="quick-chat-dialog__title">
+              <span>
+                <Pencil aria-hidden="true" size={12} /> Nome
+              </span>
+              <input
+                maxLength={240}
+                onChange={(event) => setTitle(event.target.value)}
+                value={title}
+              />
+            </label>
+            <fieldset>
+              <legend>Cor no histórico</legend>
+              <div className="quick-chat-dialog__colors">
+                {conversationColors.map((item) => (
+                  <button
+                    aria-label={`Cor ${item}`}
+                    aria-pressed={selectedColor === item}
+                    data-color={item}
+                    key={item}
+                    onClick={() => setSelectedColor(item)}
+                    type="button"
+                  />
+                ))}
+              </div>
+            </fieldset>
+            <footer>
+              <Button
+                className="quick-chat-dialog__trash"
+                variant="ghost"
+                onPress={() => setConfirmDelete(true)}
+              >
+                <Trash2 aria-hidden="true" size={13} /> Excluir
+              </Button>
+              <span />
+              <Button variant="ghost" onPress={onClose}>
+                Cancelar
+              </Button>
+              <Button
+                className="quick-chat-dialog__save"
+                isDisabled={!title.trim() || renaming}
+                onPress={() => void onSave(title, selectedColor)}
+              >
+                Salvar
+              </Button>
+            </footer>
+          </>
+        )}
+      </section>
+    </div>
+  );
 }
 
 function modelDisplay(model: string): string {

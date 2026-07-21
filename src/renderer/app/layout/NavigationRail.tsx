@@ -37,7 +37,7 @@ const navigationGroups: NavigationGroup[] = [
   {
     label: "Trabalho",
     items: [
-      { icon: Home, label: "Início", path: "/quick-chat" },
+      { icon: Home, label: "Início", path: "/home" },
       { icon: PanelsTopLeft, label: "Code", path: "/workbench" },
       { icon: Inbox, label: "Inbox", path: "/inbox" },
       { icon: CalendarDays, label: "Agenda", path: "/calendar" },

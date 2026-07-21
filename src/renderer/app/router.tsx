@@ -11,12 +11,14 @@ import { WorkbenchPage } from "../features/workbench/WorkbenchPage";
 import { KanbanPage } from "../features/kanban/KanbanPage";
 import { InboxPage } from "../features/inbox/InboxPage";
 import { CalendarPage } from "../features/calendar/CalendarPage";
+import { HomePage } from "../features/home/HomePage";
 import { AppShell } from "./layout/AppShell";
 
 export function AppRouter() {
   return (
     <Routes>
       <Route element={<AppShell />}>
+        <Route path="/home" element={<HomePage />} />
         <Route path="/workbench" element={<WorkbenchPage />} />
         <Route path="/inbox" element={<InboxPage />} />
         <Route path="/calendar" element={<CalendarPage />} />
@@ -30,7 +32,7 @@ export function AppRouter() {
         <Route path="/models" element={<ModelsPage />} />
         <Route path="/management" element={<ManagementPage />} />
       </Route>
-      <Route path="*" element={<Navigate to="/workbench" replace />} />
+      <Route path="*" element={<Navigate to="/home" replace />} />
     </Routes>
   );
 }
