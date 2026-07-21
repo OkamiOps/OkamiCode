@@ -124,6 +124,22 @@ function harness() {
         }) as const,
     ),
   };
+  const inboxReplyDraftService = {
+    createReplyDraft: vi.fn(() => ({
+      id: "0f7c4f9c-33dd-4dbd-98cb-8e768646b386",
+      sourceThreadId: threadId,
+      connectorAccountId: accountId,
+      to: ["client@example.com"] as string[],
+      subject: "Re: Subject",
+      body: "Thanks",
+      status: "approval_pending" as const,
+      requiresApproval: true as const,
+      safeRetry: false as const,
+      attempts: 0 as const,
+      createdAt: now,
+      updatedAt: now,
+    })),
+  };
   const handlers = new Map<IpcChannel, Parameters<IpcMain["handle"]>[1]>();
   registerIpcHandlers({
     ipcMain: {
@@ -136,13 +152,21 @@ function harness() {
     clientCapabilities: async () => [],
     inboxService,
     inboxTaskActionService,
+    inboxReplyDraftService,
   });
   const senderFrame = { url: "http://127.0.0.1:5173/inbox" };
   const event = {
     senderFrame,
     sender: { mainFrame: senderFrame, send: vi.fn() },
   } as unknown as IpcMainInvokeEvent;
-  return { handlers, inboxService, inboxTaskActionService, event, sendTurn };
+  return {
+    handlers,
+    inboxService,
+    inboxTaskActionService,
+    inboxReplyDraftService,
+    event,
+    sendTurn,
+  };
 }
 
 it("routes all Inbox commands once and rejects invalid payloads before dispatch", async () => {
@@ -228,6 +252,51 @@ it("creates a task through the strict trusted Inbox channel without starting a l
     }),
   ).rejects.toThrow("Untrusted renderer origin");
   expect(inboxTaskActionService.createKanbanTask).toHaveBeenCalledOnce();
+});
+
+it("creates an approval-pending reply draft through the strict trusted Inbox channel", async () => {
+  const { handlers, inboxReplyDraftService, event, sendTurn } = harness();
+  const idempotencyKey = "f1db4f0c-a4ff-4fd2-9966-7fa6315d160d";
+
+  await expect(
+    handlers.get("inbox:thread:createReplyDraft")?.(event, {
+      threadId,
+      body: "  Thanks  ",
+      idempotencyKey,
+    }),
+  ).resolves.toMatchObject({
+    sourceThreadId: threadId,
+    status: "approval_pending",
+    requiresApproval: true,
+    safeRetry: false,
+    attempts: 0,
+  });
+  expect(inboxReplyDraftService.createReplyDraft).toHaveBeenCalledOnce();
+  expect(inboxReplyDraftService.createReplyDraft).toHaveBeenCalledWith({
+    threadId,
+    body: "Thanks",
+    idempotencyKey,
+  });
+  expect(sendTurn).not.toHaveBeenCalled();
+  await expect(
+    handlers.get("inbox:thread:createReplyDraft")?.(event, {
+      threadId,
+      body: "   ",
+      idempotencyKey,
+    }),
+  ).rejects.toThrow();
+  expect(inboxReplyDraftService.createReplyDraft).toHaveBeenCalledOnce();
+
+  const untrustedEvent = {
+    senderFrame: { url: "https://evil.example/inbox" },
+    sender: { mainFrame: { url: "https://evil.example/inbox" }, send: vi.fn() },
+  } as unknown as IpcMainInvokeEvent;
+  await expect(
+    handlers.get("inbox:thread:createReplyDraft")?.(untrustedEvent, {
+      unexpected: true,
+    }),
+  ).rejects.toThrow("Untrusted renderer origin");
+  expect(inboxReplyDraftService.createReplyDraft).toHaveBeenCalledOnce();
 });
 
 it("rejects a response that leaks credential fields", async () => {

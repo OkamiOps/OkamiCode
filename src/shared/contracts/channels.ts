@@ -58,6 +58,7 @@ export const ipcChannels = [
   "inbox:thread:get",
   "inbox:thread:markRead",
   "inbox:thread:createTask",
+  "inbox:thread:createReplyDraft",
 ] as const;
 
 export type IpcChannel = (typeof ipcChannels)[number];

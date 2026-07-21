@@ -323,7 +323,7 @@ export class ExternalOutboxService {
     return record;
   }
 
-  private findByIdempotencyKey(
+  findByIdempotencyKey(
     idempotencyKey: string,
   ): ExternalOutboxRecord | undefined {
     const row = this.db

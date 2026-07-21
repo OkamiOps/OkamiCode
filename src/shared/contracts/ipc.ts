@@ -1122,6 +1122,31 @@ const inboxThreadCreateTaskResultSchema = z
   })
   .strict();
 
+const inboxThreadCreateReplyDraftRequestSchema = z
+  .object({
+    threadId: entityIdSchema,
+    body: z.string().trim().min(1).max(20_000),
+    idempotencyKey: entityIdSchema,
+  })
+  .strict();
+
+const inboxThreadCreateReplyDraftResultSchema = z
+  .object({
+    id: entityIdSchema,
+    sourceThreadId: entityIdSchema,
+    connectorAccountId: entityIdSchema,
+    to: z.array(z.string().min(1).max(2_000)).min(1).max(100),
+    subject: z.string().min(1).max(2_000),
+    body: z.string().min(1).max(20_000),
+    status: z.literal("approval_pending"),
+    requiresApproval: z.literal(true),
+    safeRetry: z.literal(false),
+    attempts: z.literal(0),
+    createdAt: z.iso.datetime({ offset: true }),
+    updatedAt: z.iso.datetime({ offset: true }),
+  })
+  .strict();
+
 export const ipcRequestSchemas = {
   "system:doctor": emptyRequestSchema,
   "models:list": emptyRequestSchema,
@@ -1180,6 +1205,7 @@ export const ipcRequestSchemas = {
   "inbox:thread:get": inboxThreadIdRequestSchema,
   "inbox:thread:markRead": inboxThreadIdRequestSchema,
   "inbox:thread:createTask": inboxThreadCreateTaskRequestSchema,
+  "inbox:thread:createReplyDraft": inboxThreadCreateReplyDraftRequestSchema,
 } satisfies Record<IpcChannel, z.ZodType>;
 
 export const ipcResponseSchemas = {
@@ -1245,6 +1271,7 @@ export const ipcResponseSchemas = {
   "inbox:thread:get": inboxThreadDetailSchema,
   "inbox:thread:markRead": inboxThreadSchema,
   "inbox:thread:createTask": inboxThreadCreateTaskResultSchema,
+  "inbox:thread:createReplyDraft": inboxThreadCreateReplyDraftResultSchema,
 } satisfies Record<IpcChannel, z.ZodType>;
 
 export type IpcRequest<C extends IpcChannel> = z.input<

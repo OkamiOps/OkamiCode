@@ -148,4 +148,7 @@ export const workbenchClient = {
     invokeCommand("inbox:thread:markRead", request),
   inboxThreadCreateTask: (request: IpcRequest<"inbox:thread:createTask">) =>
     invokeCommand("inbox:thread:createTask", request),
+  inboxThreadCreateReplyDraft: (
+    request: IpcRequest<"inbox:thread:createReplyDraft">,
+  ) => invokeCommand("inbox:thread:createReplyDraft", request),
 } as const;

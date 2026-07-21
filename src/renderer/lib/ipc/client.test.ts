@@ -184,6 +184,7 @@ it("exposes exactly the enumerated command surface", () => {
     "inbox:thread:get",
     "inbox:thread:markRead",
     "inbox:thread:createTask",
+    "inbox:thread:createReplyDraft",
   ]);
   expect(Object.keys(window.okami.invoke)).toEqual(ipcChannels);
 });
@@ -260,6 +261,20 @@ it("provides typed Inbox account and thread commands through the bridge", async 
       },
       executionStarted: false,
     },
+    "inbox:thread:createReplyDraft": {
+      id: "0f7c4f9c-33dd-4dbd-98cb-8e768646b386",
+      sourceThreadId: threadId,
+      connectorAccountId: accountId,
+      to: ["client@example.com"],
+      subject: "Re: Subject",
+      body: "Thanks",
+      status: "approval_pending",
+      requiresApproval: true,
+      safeRetry: false,
+      attempts: 0,
+      createdAt: now,
+      updatedAt: now,
+    },
   });
 
   await expect(workbenchClient.inboxAccountsList()).resolves.toEqual([summary]);
@@ -293,6 +308,16 @@ it("provides typed Inbox account and thread commands through the bridge", async 
   ).resolves.toMatchObject({
     executionStarted: false,
     sourceThreadId: threadId,
+  });
+  await expect(
+    workbenchClient.inboxThreadCreateReplyDraft({
+      threadId,
+      body: "Thanks",
+      idempotencyKey: "f1db4f0c-a4ff-4fd2-9966-7fa6315d160d",
+    }),
+  ).resolves.toMatchObject({
+    sourceThreadId: threadId,
+    status: "approval_pending",
   });
 });
 
