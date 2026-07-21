@@ -101,6 +101,14 @@ function makeApi(overrides: Partial<InboxApi> = {}): InboxApi {
       account: account.account,
       counts: { inserted: 1, updated: 0, unchanged: 0 },
     }),
+    getOutgoingSettings: vi.fn().mockResolvedValue(null),
+    setOutgoingSettings: vi.fn().mockResolvedValue({
+      host: "smtp.okamiops.com",
+      port: 465,
+      secure: true,
+      createdAt: now,
+      updatedAt: now,
+    }),
     listThreads: vi
       .fn()
       .mockResolvedValue({ threads: [thread], nextCursor: null }),
@@ -563,6 +571,153 @@ describe("InboxPage", () => {
       screen.getByRole("button", { name: /Proposta para landing page/ }),
     );
     expect(markThreadRead).toHaveBeenCalledTimes(2);
+  });
+
+  it("loads outgoing settings only on open and starts an absent configuration safely", async () => {
+    const getOutgoingSettings = vi
+      .fn()
+      .mockRejectedValueOnce(new Error("Configuração indisponível"))
+      .mockResolvedValueOnce(null);
+    const setOutgoingSettings = vi.fn();
+    const api = Object.assign(makeApi(), {
+      getOutgoingSettings,
+      setOutgoingSettings,
+    });
+    renderInbox(api);
+
+    await screen.findByText("Projetos");
+    expect(getOutgoingSettings).not.toHaveBeenCalled();
+    await userEvent.click(
+      screen.getByRole("button", { name: "Configurar envio de Projetos" }),
+    );
+
+    const dialog = await screen.findByRole("dialog");
+    expect(getOutgoingSettings).toHaveBeenCalledWith({ accountId });
+    expect(await within(dialog).findByRole("alert")).toHaveTextContent(
+      "Configuração indisponível",
+    );
+    expect(
+      within(dialog).getByRole("button", { name: "Salvar configuração" }),
+    ).toBeDisabled();
+    await userEvent.click(
+      within(dialog).getByRole("button", { name: "Tentar novamente" }),
+    );
+    await vi.waitFor(() =>
+      expect(getOutgoingSettings).toHaveBeenCalledTimes(2),
+    );
+    expect(within(dialog).getByLabelText("Servidor SMTP")).toHaveValue("");
+    expect(within(dialog).getByLabelText("Porta SMTP")).toHaveValue(465);
+    expect(within(dialog).getByLabelText("Usar TLS direto")).toBeChecked();
+    expect(
+      within(dialog).getByText(
+        "Configurar não envia email nem testa a conexão.",
+      ),
+    ).toBeVisible();
+
+    await userEvent.click(
+      within(dialog).getByRole("button", { name: "Salvar configuração" }),
+    );
+    expect(await within(dialog).findByRole("alert")).toHaveTextContent(
+      "Informe o servidor SMTP.",
+    );
+    expect(setOutgoingSettings).not.toHaveBeenCalled();
+  });
+
+  it("preserves outgoing settings on failure, blocks double save and reloads when reopened", async () => {
+    let resolveSave: (() => void) | undefined;
+    const getOutgoingSettings = vi
+      .fn()
+      .mockResolvedValueOnce({
+        host: "smtp.okamiops.com",
+        port: 587,
+        secure: false,
+        createdAt: now,
+        updatedAt: now,
+      })
+      .mockResolvedValueOnce({
+        host: "smtp.reloaded.example",
+        port: 465,
+        secure: true,
+        createdAt: now,
+        updatedAt: now,
+      });
+    const setOutgoingSettings = vi
+      .fn()
+      .mockRejectedValueOnce(new Error("SMTP indisponível"))
+      .mockImplementationOnce(
+        () =>
+          new Promise((resolve) => {
+            resolveSave = () => resolve(undefined);
+          }),
+      );
+    const api = Object.assign(makeApi(), {
+      getOutgoingSettings,
+      setOutgoingSettings,
+    });
+    renderInbox(api);
+
+    await userEvent.click(
+      await screen.findByRole("button", {
+        name: "Configurar envio de Projetos",
+      }),
+    );
+    const dialog = await screen.findByRole("dialog");
+    const host = within(dialog).getByLabelText("Servidor SMTP");
+    const port = within(dialog).getByLabelText("Porta SMTP");
+    expect(host).toHaveValue("smtp.okamiops.com");
+    expect(port).toHaveValue(587);
+    expect(within(dialog).getByLabelText("Usar TLS direto")).not.toBeChecked();
+
+    await userEvent.clear(port);
+    await userEvent.type(port, "70000");
+    await userEvent.click(
+      within(dialog).getByRole("button", { name: "Salvar configuração" }),
+    );
+    expect(await within(dialog).findByRole("alert")).toHaveTextContent(
+      "Informe uma porta entre 1 e 65535.",
+    );
+    expect(setOutgoingSettings).not.toHaveBeenCalled();
+
+    await userEvent.clear(port);
+    await userEvent.type(port, "465");
+    await userEvent.click(
+      within(dialog).getByRole("button", { name: "Salvar configuração" }),
+    );
+    expect(await within(dialog).findByRole("alert")).toHaveTextContent(
+      "SMTP indisponível",
+    );
+    expect(host).toHaveValue("smtp.okamiops.com");
+    expect(port).toHaveValue(465);
+
+    await userEvent.click(
+      within(dialog).getByRole("button", { name: "Salvar configuração" }),
+    );
+    expect(
+      within(dialog).getByRole("button", { name: "Salvando…" }),
+    ).toBeDisabled();
+    await userEvent.click(
+      within(dialog).getByRole("button", { name: "Salvando…" }),
+    );
+    expect(setOutgoingSettings).toHaveBeenCalledTimes(2);
+    expect(setOutgoingSettings).toHaveBeenLastCalledWith({
+      accountId,
+      configuration: {
+        host: "smtp.okamiops.com",
+        port: 465,
+        secure: false,
+      },
+    });
+    resolveSave?.();
+    await vi.waitFor(() => expect(screen.queryByRole("dialog")).toBeNull());
+
+    await userEvent.click(
+      screen.getByRole("button", { name: "Configurar envio de Projetos" }),
+    );
+    const reopened = await screen.findByRole("dialog");
+    expect(getOutgoingSettings).toHaveBeenCalledTimes(2);
+    expect(within(reopened).getByLabelText("Servidor SMTP")).toHaveValue(
+      "smtp.reloaded.example",
+    );
   });
 
   it("states loading, empty and error without inventing inbox content", async () => {

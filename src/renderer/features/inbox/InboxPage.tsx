@@ -27,6 +27,7 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import type { IpcRequest, IpcResponse } from "../../../shared/contracts/ipc";
 import { workbenchClient } from "../../lib/ipc/client";
 import { InboxAccountModal } from "./InboxAccountModal";
+import { InboxOutgoingSettingsModal } from "./InboxOutgoingSettingsModal";
 import { InboxReplyModal } from "./InboxReplyModal";
 import { InboxTaskModal } from "./InboxTaskModal";
 
@@ -45,6 +46,12 @@ export interface InboxApi {
   syncAccount(
     request: IpcRequest<"inbox:account:sync">,
   ): Promise<IpcResponse<"inbox:account:sync">>;
+  getOutgoingSettings(
+    request: IpcRequest<"inbox:account:outgoing:get">,
+  ): Promise<IpcResponse<"inbox:account:outgoing:get">>;
+  setOutgoingSettings(
+    request: IpcRequest<"inbox:account:outgoing:set">,
+  ): Promise<IpcResponse<"inbox:account:outgoing:set">>;
   listThreads(
     request: IpcRequest<"inbox:threads:list">,
   ): Promise<IpcResponse<"inbox:threads:list">>;
@@ -70,6 +77,8 @@ const defaultApi: InboxApi = {
   addAccount: workbenchClient.inboxAccountAdd,
   removeAccount: workbenchClient.inboxAccountRemove,
   syncAccount: workbenchClient.inboxAccountSync,
+  getOutgoingSettings: workbenchClient.inboxAccountOutgoingGet,
+  setOutgoingSettings: workbenchClient.inboxAccountOutgoingSet,
   listThreads: workbenchClient.inboxThreadsList,
   getThread: workbenchClient.inboxThreadGet,
   markThreadRead: workbenchClient.inboxThreadMarkRead,
@@ -218,6 +227,8 @@ export function InboxPage({ api = defaultApi }: { api?: InboxApi }) {
         onFilterChange={setFilter}
         onRemove={(accountId) => removeAccount.mutate({ accountId })}
         onSync={(accountId) => syncAccount.mutate({ accountId })}
+        getOutgoingSettings={api.getOutgoingSettings}
+        setOutgoingSettings={api.setOutgoingSettings}
         pendingAccountId={
           syncAccount.isPending ? syncAccount.variables?.accountId : null
         }
@@ -268,10 +279,12 @@ function InboxSidebar({
   activeFilter,
   isAdding,
   isLoading,
+  getOutgoingSettings,
   onAdd,
   onFilterChange,
   onRemove,
   onSync,
+  setOutgoingSettings,
   pendingAccountId,
   removingAccountId,
   unreadCount,
@@ -281,10 +294,12 @@ function InboxSidebar({
   activeFilter: AccountFilter;
   isAdding: boolean;
   isLoading: boolean;
+  getOutgoingSettings: InboxApi["getOutgoingSettings"];
   onAdd: (request: IpcRequest<"inbox:account:add">) => Promise<unknown>;
   onFilterChange: (filter: AccountFilter) => void;
   onRemove: (accountId: string) => void;
   onSync: (accountId: string) => void;
+  setOutgoingSettings: InboxApi["setOutgoingSettings"];
   pendingAccountId: string | null | undefined;
   removingAccountId: string | null | undefined;
   unreadCount: number | undefined;
@@ -348,6 +363,11 @@ function InboxSidebar({
                   </span>
                 </button>
                 <div className="inbox-account-row__actions">
+                  <InboxOutgoingSettingsModal
+                    account={account}
+                    getOutgoingSettings={getOutgoingSettings}
+                    setOutgoingSettings={setOutgoingSettings}
+                  />
                   <Button
                     aria-label={`Sincronizar ${account.displayName}`}
                     className="inbox-account-action"
