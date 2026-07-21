@@ -462,14 +462,14 @@ describe("CalendarService", () => {
     const reverse = createService();
     const forwardSource = createRemoteSource(forward);
     const reverseSource = createRemoteSource(reverse);
-    const a = timedUpsert("provider-a");
-    const b = timedUpsert("provider-b");
+    const composed = timedUpsert("\u00e9");
+    const decomposed = timedUpsert("e\u0301");
 
     forward.service.applySyncBatch(
-      syncInput(forwardSource.id, { upserts: [a, b] }),
+      syncInput(forwardSource.id, { upserts: [composed, decomposed] }),
     );
     reverse.service.applySyncBatch(
-      syncInput(reverseSource.id, { upserts: [b, a] }),
+      syncInput(reverseSource.id, { upserts: [decomposed, composed] }),
     );
 
     const mapping = (fx: ReturnType<typeof createService>) =>
@@ -479,6 +479,49 @@ describe("CalendarService", () => {
         )
         .all();
     expect(mapping(reverse)).toEqual(mapping(forward));
+  });
+
+  it("revalidates remote source eligibility inside the transaction before event writes", () => {
+    const fx = createService();
+    const source = createRemoteSource(fx);
+    let pauseBeforeTransaction = true;
+    const service = new CalendarService({
+      db: fx.db,
+      createId: fx.createId,
+      clock: () => {
+        if (pauseBeforeTransaction) {
+          pauseBeforeTransaction = false;
+          fx.db
+            .prepare(
+              "UPDATE calendar_sources SET status = 'paused' WHERE id = ?",
+            )
+            .run(source.id);
+        }
+        return "2026-07-21T12:00:00.000Z";
+      },
+    });
+
+    expect(() =>
+      service.applySyncBatch(
+        syncInput(source.id, { upserts: [timedUpsert("must-not-write")] }),
+      ),
+    ).toThrow("Calendar source is not available for synchronization");
+    expect(fx.createId).not.toHaveBeenCalled();
+    expect(
+      fx.db.prepare("SELECT count(*) AS count FROM calendar_events").get(),
+    ).toEqual({ count: 0 });
+    expect(
+      fx.db
+        .prepare(
+          "SELECT status, sync_cursor, last_synced_at, last_error FROM calendar_sources WHERE id = ?",
+        )
+        .get(source.id),
+    ).toEqual({
+      status: "paused",
+      sync_cursor: null,
+      last_synced_at: null,
+      last_error: "previous error",
+    });
   });
 
   it("upserts only newer provider versions and preserves the local event identity", () => {

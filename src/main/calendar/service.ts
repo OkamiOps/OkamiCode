@@ -366,7 +366,15 @@ export class CalendarService {
 
     return this.dependencies.db.transaction(() => {
       const persistedSource = this.findSource(sourceId);
-      if (!persistedSource || persistedSource.syncCursor !== previousCursor) {
+      if (
+        !persistedSource ||
+        persistedSource.kind === "local" ||
+        (persistedSource.status !== "active" &&
+          persistedSource.status !== "degraded")
+      ) {
+        throw new Error("Calendar source is not available for synchronization");
+      }
+      if (persistedSource.syncCursor !== previousCursor) {
         throw new CalendarSyncCursorConflictError();
       }
       const counts: CalendarSyncBatchCounts = {
@@ -843,7 +851,13 @@ function compareExternalId(
   left: { externalId: string },
   right: { externalId: string },
 ): number {
-  return left.externalId.localeCompare(right.externalId);
+  if (left.externalId < right.externalId) {
+    return -1;
+  }
+  if (left.externalId > right.externalId) {
+    return 1;
+  }
+  return 0;
 }
 
 function requireTimezone(value: string): string {
