@@ -54,6 +54,8 @@ export const ipcChannels = [
   "inbox:account:add",
   "inbox:account:remove",
   "inbox:account:sync",
+  "inbox:account:outgoing:get",
+  "inbox:account:outgoing:set",
   "inbox:threads:list",
   "inbox:thread:get",
   "inbox:thread:markRead",

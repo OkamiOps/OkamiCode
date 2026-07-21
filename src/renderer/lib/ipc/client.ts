@@ -140,6 +140,12 @@ export const workbenchClient = {
     invokeCommand("inbox:account:remove", request),
   inboxAccountSync: (request: IpcRequest<"inbox:account:sync">) =>
     invokeCommand("inbox:account:sync", request),
+  inboxAccountOutgoingGet: (
+    request: IpcRequest<"inbox:account:outgoing:get">,
+  ) => invokeCommand("inbox:account:outgoing:get", request),
+  inboxAccountOutgoingSet: (
+    request: IpcRequest<"inbox:account:outgoing:set">,
+  ) => invokeCommand("inbox:account:outgoing:set", request),
   inboxThreadsList: (request: IpcRequest<"inbox:threads:list"> = {}) =>
     invokeCommand("inbox:threads:list", request),
   inboxThreadGet: (request: IpcRequest<"inbox:thread:get">) =>

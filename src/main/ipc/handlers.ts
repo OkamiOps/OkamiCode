@@ -63,6 +63,7 @@ import {
 import type { InboxApplicationService } from "../inbox/application-service";
 import { InboxReplyDraftService } from "../inbox/reply-draft-service";
 import { InboxTaskActionService } from "../inbox/task-action-service";
+import { InboxOutgoingSettingsService } from "../inbox/outgoing-settings-service";
 
 export type { ModelCatalogEntry };
 
@@ -87,6 +88,11 @@ export type InboxReplyDraftIpcService = Pick<
   "createReplyDraft"
 >;
 
+export type InboxOutgoingSettingsIpcService = Pick<
+  InboxOutgoingSettingsService,
+  "get" | "save"
+>;
+
 interface RegisterIpcHandlersOptions {
   ipcMain: Pick<IpcMain, "handle">;
   rendererUrl: string;
@@ -98,6 +104,7 @@ interface RegisterIpcHandlersOptions {
   inboxService?: InboxIpcService;
   inboxTaskActionService?: InboxTaskActionIpcService;
   inboxReplyDraftService?: InboxReplyDraftIpcService;
+  inboxOutgoingSettingsService?: InboxOutgoingSettingsIpcService;
 }
 
 interface TaskRow {
@@ -124,6 +131,7 @@ export function registerIpcHandlers({
   inboxService,
   inboxTaskActionService,
   inboxReplyDraftService,
+  inboxOutgoingSettingsService,
 }: RegisterIpcHandlersOptions): void {
   const openedLanes = new Map<string, OpenedLane>();
   let memory = memoryService;
@@ -168,6 +176,12 @@ export function registerIpcHandlers({
   let inboxReplyDrafts = inboxReplyDraftService;
   const getInboxReplyDraftService = () =>
     (inboxReplyDrafts ??= new InboxReplyDraftService({ db: state.database }));
+  let inboxOutgoingSettings = inboxOutgoingSettingsService;
+  const getInboxOutgoingSettingsService = () =>
+    (inboxOutgoingSettings ??= new InboxOutgoingSettingsService({
+      db: state.database,
+      clock: () => state.clock().toISOString(),
+    }));
 
   for (const channel of ipcChannels) {
     ipcMain.handle(channel, async (event, payload) => {
@@ -189,6 +203,7 @@ export function registerIpcHandlers({
         getInboxService,
         getInboxTaskActionService,
         getInboxReplyDraftService,
+        getInboxOutgoingSettingsService,
       );
       return ipcResponseSchemas[channel].parse(response);
     });
@@ -211,6 +226,7 @@ async function dispatch(
   inboxService: () => InboxIpcService,
   inboxTaskActionService: () => InboxTaskActionIpcService,
   inboxReplyDraftService: () => InboxReplyDraftIpcService,
+  inboxOutgoingSettingsService: () => InboxOutgoingSettingsIpcService,
 ): Promise<unknown> {
   switch (channel) {
     case "system:doctor":
@@ -421,6 +437,17 @@ async function dispatch(
       return inboxService().syncAccount(
         (request as IpcRequest<"inbox:account:sync">).accountId,
       );
+    case "inbox:account:outgoing:get":
+      return inboxOutgoingSettingsService().get(
+        (request as IpcRequest<"inbox:account:outgoing:get">).accountId,
+      );
+    case "inbox:account:outgoing:set": {
+      const outgoing = request as IpcRequest<"inbox:account:outgoing:set">;
+      return inboxOutgoingSettingsService().save({
+        accountId: outgoing.accountId,
+        ...outgoing.configuration,
+      });
+    }
     case "inbox:threads:list":
       return inboxService().listThreads(
         request as IpcRequest<"inbox:threads:list">,

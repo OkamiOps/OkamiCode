@@ -140,6 +140,22 @@ function harness() {
       updatedAt: now,
     })),
   };
+  const inboxOutgoingSettingsService = {
+    get: vi.fn(() => ({
+      host: "smtp.example.com",
+      port: 587,
+      secure: false,
+      createdAt: now,
+      updatedAt: now,
+    })),
+    save: vi.fn(() => ({
+      host: "smtp.example.com",
+      port: 465,
+      secure: true,
+      createdAt: now,
+      updatedAt: now,
+    })),
+  };
   const handlers = new Map<IpcChannel, Parameters<IpcMain["handle"]>[1]>();
   registerIpcHandlers({
     ipcMain: {
@@ -153,6 +169,7 @@ function harness() {
     inboxService,
     inboxTaskActionService,
     inboxReplyDraftService,
+    inboxOutgoingSettingsService,
   });
   const senderFrame = { url: "http://127.0.0.1:5173/inbox" };
   const event = {
@@ -164,6 +181,7 @@ function harness() {
     inboxService,
     inboxTaskActionService,
     inboxReplyDraftService,
+    inboxOutgoingSettingsService,
     event,
     sendTurn,
   };
@@ -297,6 +315,60 @@ it("creates an approval-pending reply draft through the strict trusted Inbox cha
     }),
   ).rejects.toThrow("Untrusted renderer origin");
   expect(inboxReplyDraftService.createReplyDraft).toHaveBeenCalledOnce();
+});
+
+it("routes strict trusted outgoing settings requests without exposing credentials", async () => {
+  const { handlers, inboxOutgoingSettingsService, event } = harness();
+
+  await expect(
+    handlers.get("inbox:account:outgoing:get")?.(event, { accountId }),
+  ).resolves.toEqual({
+    host: "smtp.example.com",
+    port: 587,
+    secure: false,
+    createdAt: now,
+    updatedAt: now,
+  });
+  await expect(
+    handlers.get("inbox:account:outgoing:set")?.(event, {
+      accountId,
+      configuration: {
+        host: "smtp.example.com",
+        port: 465,
+        secure: true,
+      },
+    }),
+  ).resolves.toMatchObject({ host: "smtp.example.com", secure: true });
+  expect(inboxOutgoingSettingsService.get).toHaveBeenCalledWith(accountId);
+  expect(inboxOutgoingSettingsService.save).toHaveBeenCalledWith({
+    accountId,
+    host: "smtp.example.com",
+    port: 465,
+    secure: true,
+  });
+  await expect(
+    handlers.get("inbox:account:outgoing:set")?.(event, {
+      accountId,
+      configuration: {
+        host: "smtp.example.com",
+        port: 465,
+        secure: true,
+        password: "secret",
+      },
+    }),
+  ).rejects.toThrow();
+  expect(inboxOutgoingSettingsService.save).toHaveBeenCalledOnce();
+
+  const untrustedEvent = {
+    senderFrame: { url: "https://evil.example/inbox" },
+    sender: { mainFrame: { url: "https://evil.example/inbox" }, send: vi.fn() },
+  } as unknown as IpcMainInvokeEvent;
+  await expect(
+    handlers.get("inbox:account:outgoing:get")?.(untrustedEvent, {
+      accountId,
+    }),
+  ).rejects.toThrow("Untrusted renderer origin");
+  expect(inboxOutgoingSettingsService.get).toHaveBeenCalledOnce();
 });
 
 it("rejects a response that leaks credential fields", async () => {

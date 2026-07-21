@@ -180,6 +180,8 @@ it("exposes exactly the enumerated command surface", () => {
     "inbox:account:add",
     "inbox:account:remove",
     "inbox:account:sync",
+    "inbox:account:outgoing:get",
+    "inbox:account:outgoing:set",
     "inbox:threads:list",
     "inbox:thread:get",
     "inbox:thread:markRead",
@@ -223,6 +225,20 @@ it("provides typed Inbox account and thread commands through the bridge", async 
     "inbox:account:sync": {
       account,
       counts: { inserted: 1, updated: 0, unchanged: 0 },
+    },
+    "inbox:account:outgoing:get": {
+      host: "smtp.example.com",
+      port: 587,
+      secure: false,
+      createdAt: now,
+      updatedAt: now,
+    },
+    "inbox:account:outgoing:set": {
+      host: "smtp.example.com",
+      port: 465,
+      secure: true,
+      createdAt: now,
+      updatedAt: now,
     },
     "inbox:thread:get": {
       thread: {
@@ -295,6 +311,15 @@ it("provides typed Inbox account and thread commands through the bridge", async 
   await expect(
     workbenchClient.inboxAccountSync({ accountId }),
   ).resolves.toMatchObject({ counts: { inserted: 1 } });
+  await expect(
+    workbenchClient.inboxAccountOutgoingGet({ accountId }),
+  ).resolves.toMatchObject({ host: "smtp.example.com", port: 587 });
+  await expect(
+    workbenchClient.inboxAccountOutgoingSet({
+      accountId,
+      configuration: { host: "smtp.example.com", port: 465, secure: true },
+    }),
+  ).resolves.toMatchObject({ secure: true });
   await expect(
     workbenchClient.inboxThreadGet({ threadId }),
   ).resolves.toMatchObject({ thread: { id: threadId } });

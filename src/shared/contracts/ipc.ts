@@ -1001,6 +1001,28 @@ const inboxAddAccountRequestSchema = z
 const inboxAccountIdRequestSchema = z
   .object({ accountId: entityIdSchema })
   .strict();
+const inboxOutgoingSettingsConfigurationSchema = z
+  .object({
+    host: z.string().trim().min(1).max(255),
+    port: z.number().int().min(1).max(65_535),
+    secure: z.boolean(),
+  })
+  .strict();
+const inboxOutgoingSettingsRequestSchema = z
+  .object({
+    accountId: entityIdSchema,
+    configuration: inboxOutgoingSettingsConfigurationSchema,
+  })
+  .strict();
+const inboxOutgoingSettingsSchema = z
+  .object({
+    host: z.string().min(1).max(255),
+    port: z.number().int().min(1).max(65_535),
+    secure: z.boolean(),
+    createdAt: z.iso.datetime({ offset: true }),
+    updatedAt: z.iso.datetime({ offset: true }),
+  })
+  .strict();
 const inboxThreadIdRequestSchema = z
   .object({ threadId: entityIdSchema })
   .strict();
@@ -1201,6 +1223,8 @@ export const ipcRequestSchemas = {
   "inbox:account:add": inboxAddAccountRequestSchema,
   "inbox:account:remove": inboxAccountIdRequestSchema,
   "inbox:account:sync": inboxAccountIdRequestSchema,
+  "inbox:account:outgoing:get": inboxAccountIdRequestSchema,
+  "inbox:account:outgoing:set": inboxOutgoingSettingsRequestSchema,
   "inbox:threads:list": inboxThreadsListRequestSchema,
   "inbox:thread:get": inboxThreadIdRequestSchema,
   "inbox:thread:markRead": inboxThreadIdRequestSchema,
@@ -1267,6 +1291,8 @@ export const ipcResponseSchemas = {
   "inbox:account:add": inboxAccountSummarySchema,
   "inbox:account:remove": inboxRemoveAccountResultSchema,
   "inbox:account:sync": inboxSyncResultSchema,
+  "inbox:account:outgoing:get": inboxOutgoingSettingsSchema.nullable(),
+  "inbox:account:outgoing:set": inboxOutgoingSettingsSchema,
   "inbox:threads:list": inboxThreadPageSchema,
   "inbox:thread:get": inboxThreadDetailSchema,
   "inbox:thread:markRead": inboxThreadSchema,
