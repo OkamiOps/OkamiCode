@@ -360,7 +360,7 @@ async function dispatch(
     case "workspace:pick":
       return pickWorkspace(request as IpcRequest<"workspace:pick">);
     case "task:list":
-      return listTasks(state);
+      return listWorkbenchTasks(state);
     case "kanban:list":
       return kanbanService().list();
     case "kanban:create":
@@ -1345,6 +1345,10 @@ function listTasks(state: AppState): TaskRecord[] {
     createdAt: row.created_at,
     updatedAt: row.updated_at,
   }));
+}
+
+function listWorkbenchTasks(state: AppState): TaskRecord[] {
+  return listTasks(state).filter((task) => task.kind === "workbench");
 }
 
 async function openLane(

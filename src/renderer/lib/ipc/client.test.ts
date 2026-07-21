@@ -626,6 +626,49 @@ it("runs doctor and task handlers through real state dependencies", async () => 
   ]);
 });
 
+it("keeps internal quick-chat tasks out of the task-list IPC response", async () => {
+  const rows = [
+    {
+      id: "b672d2e8-688b-48ac-a618-3294bfc96a99",
+      kind: "workbench",
+      title: "Landing page",
+      objective: "Build the approved layout",
+      status: "active",
+      workspace_path: "/Users/marcos/Documents/Git/landing-page",
+      created_at: "2026-07-18T12:00:00.000Z",
+      updated_at: "2026-07-18T12:00:00.000Z",
+    },
+    {
+      id: "c672d2e8-688b-48ac-a618-3294bfc96a99",
+      kind: "quick_chat",
+      title: "Inbox reply draft",
+      objective: "Prepare a reply without a workspace",
+      status: "active",
+      workspace_path: null,
+      created_at: "2026-07-18T12:01:00.000Z",
+      updated_at: "2026-07-18T12:01:00.000Z",
+    },
+  ];
+  const state = stateFixture({
+    database: {
+      prepare: vi.fn(() => ({
+        get: vi.fn(() => ({ healthy: 1 })),
+        all: vi.fn(() => rows),
+      })),
+    },
+  });
+
+  await expect(
+    ipcHarness(state).get("task:list")?.(trustedEvent(), {}),
+  ).resolves.toEqual([
+    expect.objectContaining({
+      id: "b672d2e8-688b-48ac-a618-3294bfc96a99",
+      kind: "workbench",
+      title: "Landing page",
+    }),
+  ]);
+});
+
 it("opens lanes, sends turns, and forwards only sanitized canonical events", async () => {
   const canonicalEvent = {
     schemaVersion: 1 as const,
