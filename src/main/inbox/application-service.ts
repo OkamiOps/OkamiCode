@@ -6,6 +6,7 @@ import {
   type ImapSyncInput,
 } from "./imap-adapter";
 import {
+  InboxInvalidInputError,
   InboxService,
   type ApplyInboxSyncBatch,
   type ConnectorAccount,
@@ -24,6 +25,7 @@ const DEFAULT_MESSAGE_BYTES = 2 * 1024 * 1024;
 const AUTH_REQUIRED_ERROR =
   "Credentials are required to synchronize this account.";
 const SYNC_FAILED_ERROR = "Synchronization failed. Please try again.";
+const SYNC_INTERRUPTED_ERROR = "Sincronização interrompida. Tente novamente.";
 
 export interface CredentialVault {
   set(accountId: string, credential: ConnectorCredential): Promise<void>;
@@ -119,6 +121,7 @@ export class InboxApplicationService {
 
   constructor(private readonly options: InboxApplicationServiceOptions) {
     this.inbox = new InboxService(options.db);
+    this.recoverInterruptedSyncs();
   }
 
   async addImapAccount(
@@ -293,6 +296,12 @@ export class InboxApplicationService {
     account: ConnectorAccount,
     configuration: StoredImapAccountConfiguration,
   ): Promise<InboxSyncResult> {
+    let stage:
+      | "credential"
+      | "imap"
+      | "persist_messages"
+      | "import_calendar"
+      | "complete" = "credential";
     let hasCredential: boolean;
     try {
       hasCredential = await this.options.vault.has(account.id);
@@ -307,12 +316,15 @@ export class InboxApplicationService {
 
     try {
       this.setPublicStatus(account.id, "syncing", null);
+      stage = "imap";
       const batch = await this.options.createAdapter(this.options.vault).sync({
         account,
         configuration,
       });
+      stage = "persist_messages";
       const counts = this.inbox.applySyncBatch(batch);
       if (this.options.calendarInvitations) {
+        stage = "import_calendar";
         await this.options.calendarInvitations.import({
           accountId: account.id,
           accountDisplayName: account.displayName,
@@ -321,9 +333,19 @@ export class InboxApplicationService {
           syncedAt: batch.syncedAt,
         });
       }
+      stage = "complete";
       const connected = this.setPublicStatus(account.id, "connected", null);
       return { account: connected, counts };
     } catch (cause) {
+      console.warn("[okami] Inbox synchronization boundary failed", {
+        accountId: account.id,
+        provider: account.provider,
+        stage,
+        errorName: cause instanceof Error ? cause.name : "UnknownError",
+        errorCode: inboxErrorCode(cause),
+        validation:
+          cause instanceof InboxInvalidInputError ? cause.message : null,
+      });
       if (cause instanceof ImapSyncError && cause.code === "auth_required") {
         this.setPublicStatus(account.id, "auth_required", cause.message);
         throw new InboxApplicationError(cause.message);
@@ -341,6 +363,20 @@ export class InboxApplicationService {
     const configuration = this.findConfiguration(accountId);
     if (!account || !configuration) throw new InboxApplicationError();
     return { account, configuration, hasCredential };
+  }
+
+  private recoverInterruptedSyncs(): void {
+    this.options.db
+      .prepare(
+        `UPDATE connector_accounts
+            SET status = 'degraded', last_error = @lastError,
+                updated_at = @updatedAt
+          WHERE status = 'syncing'`,
+      )
+      .run({
+        lastError: SYNC_INTERRUPTED_ERROR,
+        updatedAt: this.options.clock().toISOString(),
+      });
   }
 
   private findAccount(id: string): ConnectorAccount | undefined {
@@ -385,6 +421,11 @@ export class InboxApplicationService {
       throw new InboxApplicationError();
     }
   }
+}
+
+function inboxErrorCode(cause: unknown): string | null {
+  if (!cause || typeof cause !== "object" || !("code" in cause)) return null;
+  return typeof cause.code === "string" ? cause.code : null;
 }
 
 function inferredOutgoingConfiguration(incomingHost: string) {

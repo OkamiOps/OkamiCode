@@ -121,6 +121,37 @@ function addInput(overrides: Record<string, unknown> = {}) {
 }
 
 describe("InboxApplicationService", () => {
+  it("recovers an orphaned syncing status when the desktop service restarts", async () => {
+    const { fx, service, vault } = fixture();
+    const added = await service.addImapAccount(addInput());
+    fx.db
+      .prepare(
+        `UPDATE connector_accounts
+            SET status = 'syncing', last_error = NULL
+          WHERE id = ?`,
+      )
+      .run(added.account.id);
+
+    const restarted = new InboxApplicationService({
+      db: fx.db,
+      vault,
+      createAdapter: () => ({
+        sync: async (input) => batch(input.account.id),
+      }),
+      createId: () => "unused-account-id",
+      clock: () => new Date("2026-07-21T11:05:00.000Z"),
+    });
+
+    await expect(restarted.listAccounts()).resolves.toEqual([
+      expect.objectContaining({
+        account: expect.objectContaining({
+          status: "degraded",
+          lastError: "Sincronização interrompida. Tente novamente.",
+        }),
+      }),
+    ]);
+  });
+
   it("adds a sanitized account with normalized default configuration and never writes its secret to SQLite", async () => {
     const { fx, service, vault } = fixture();
 

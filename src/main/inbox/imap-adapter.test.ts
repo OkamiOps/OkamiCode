@@ -462,6 +462,24 @@ describe("ImapSyncAdapter", () => {
     expect(result.threads[0]?.snippet).toContain("Plain fallback");
   });
 
+  it("provides a stable preview when a valid email has an empty body", async () => {
+    const { client } = fakeClient({
+      mailbox: { uidValidity: 99n, uidNext: 2, exists: 1 },
+      fetchAll: vi.fn().mockResolvedValue([message(1)]),
+      download: vi.fn().mockResolvedValue({
+        content: Readable.from([rfc822({ body: "" })]),
+      }),
+    });
+
+    const result = await adapter(client).adapter.sync({
+      account,
+      configuration: { host: "mail.example.com", port: 993, secure: true },
+    });
+
+    expect(result.messages[0]?.body).toBe("");
+    expect(result.threads[0]?.snippet).toBe("Sem prévia disponível");
+  });
+
   it("handles incremental no-op, UID validity reset, empty mailbox and invalid cursor", async () => {
     const cursor = JSON.stringify({
       version: 3,

@@ -523,9 +523,10 @@ function normalizeMessage(
     thread: {
       externalThreadId,
       subject,
-      snippet: snippet(
-        parsed.text || (typeof parsed.html === "string" ? parsed.html : ""),
-      ),
+      snippet:
+        snippet(
+          parsed.text || (typeof parsed.html === "string" ? parsed.html : ""),
+        ) || "Sem prévia disponível",
       participants,
       labels,
       unread: !item.flags?.has("\\Seen"),
