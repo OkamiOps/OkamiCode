@@ -64,6 +64,7 @@ import type { InboxApplicationService } from "../inbox/application-service";
 import { InboxReplyDraftService } from "../inbox/reply-draft-service";
 import { InboxTaskActionService } from "../inbox/task-action-service";
 import { InboxOutgoingSettingsService } from "../inbox/outgoing-settings-service";
+import { ReplyDispatchService } from "../inbox/reply-dispatch-service";
 
 export type { ModelCatalogEntry };
 
@@ -93,6 +94,11 @@ export type InboxOutgoingSettingsIpcService = Pick<
   "get" | "save"
 >;
 
+export type InboxReplyDispatchIpcService = Pick<
+  ReplyDispatchService,
+  "approveAndSend"
+>;
+
 interface RegisterIpcHandlersOptions {
   ipcMain: Pick<IpcMain, "handle">;
   rendererUrl: string;
@@ -105,6 +111,7 @@ interface RegisterIpcHandlersOptions {
   inboxTaskActionService?: InboxTaskActionIpcService;
   inboxReplyDraftService?: InboxReplyDraftIpcService;
   inboxOutgoingSettingsService?: InboxOutgoingSettingsIpcService;
+  inboxReplyDispatchService?: InboxReplyDispatchIpcService;
 }
 
 interface TaskRow {
@@ -132,6 +139,7 @@ export function registerIpcHandlers({
   inboxTaskActionService,
   inboxReplyDraftService,
   inboxOutgoingSettingsService,
+  inboxReplyDispatchService,
 }: RegisterIpcHandlersOptions): void {
   const openedLanes = new Map<string, OpenedLane>();
   let memory = memoryService;
@@ -182,6 +190,12 @@ export function registerIpcHandlers({
       db: state.database,
       clock: () => state.clock().toISOString(),
     }));
+  const getInboxReplyDispatchService = () => {
+    if (!inboxReplyDispatchService) {
+      throw new Error("Inbox reply dispatch is unavailable.");
+    }
+    return inboxReplyDispatchService;
+  };
 
   for (const channel of ipcChannels) {
     ipcMain.handle(channel, async (event, payload) => {
@@ -204,6 +218,7 @@ export function registerIpcHandlers({
         getInboxTaskActionService,
         getInboxReplyDraftService,
         getInboxOutgoingSettingsService,
+        getInboxReplyDispatchService,
       );
       return ipcResponseSchemas[channel].parse(response);
     });
@@ -227,6 +242,7 @@ async function dispatch(
   inboxTaskActionService: () => InboxTaskActionIpcService,
   inboxReplyDraftService: () => InboxReplyDraftIpcService,
   inboxOutgoingSettingsService: () => InboxOutgoingSettingsIpcService,
+  inboxReplyDispatchService: () => InboxReplyDispatchIpcService,
 ): Promise<unknown> {
   switch (channel) {
     case "system:doctor":
@@ -467,6 +483,10 @@ async function dispatch(
     case "inbox:thread:createReplyDraft":
       return inboxReplyDraftService().createReplyDraft(
         request as IpcRequest<"inbox:thread:createReplyDraft">,
+      );
+    case "inbox:reply:approveAndSend":
+      return inboxReplyDispatchService().approveAndSend(
+        (request as IpcRequest<"inbox:reply:approveAndSend">).outboxId,
       );
   }
 }

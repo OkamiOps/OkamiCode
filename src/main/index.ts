@@ -23,6 +23,7 @@ import { AuditRepository } from "./db/repositories/audit";
 import { secureWebPreferences } from "./window";
 import { InboxApplicationService } from "./inbox/application-service";
 import { ImapSyncAdapter } from "./inbox/imap-adapter";
+import { ReplyDispatchService } from "./inbox/reply-dispatch-service";
 import type { Capability } from "./policy/action";
 import type { TaskId } from "../shared/ids";
 
@@ -254,16 +255,28 @@ async function bootstrap(): Promise<void> {
   for (const failure of memoryStart.failed) {
     console.warn("[okami] memory source unavailable", failure);
   }
+  const inboxCredentialVault = new ConnectorCredentialVault(
+    path.join(app.getPath("userData"), "inbox-credentials"),
+    safeStorage,
+  );
   const inboxService = new InboxApplicationService({
     db: database,
-    vault: new ConnectorCredentialVault(
-      path.join(app.getPath("userData"), "inbox-credentials"),
-      safeStorage,
-    ),
+    vault: inboxCredentialVault,
     createAdapter: (vault) => new ImapSyncAdapter(vault),
     createId: randomUUID,
     clock: () => new Date(),
   });
+  const inboxReplyDispatchService = new ReplyDispatchService({
+    db: database,
+    vault: inboxCredentialVault,
+  });
+  const recoveredReplyDispatches =
+    inboxReplyDispatchService.recoverInterruptedDispatches();
+  if (recoveredReplyDispatches > 0) {
+    console.warn("[okami] recovered interrupted email dispatches", {
+      recoveredReplyDispatches,
+    });
+  }
   registerIpcHandlers({
     ipcMain,
     laneEffort,
@@ -274,6 +287,7 @@ async function bootstrap(): Promise<void> {
     state,
     memoryService,
     inboxService,
+    inboxReplyDispatchService,
   });
 }
 

@@ -1,5 +1,6 @@
 import type { z } from "zod";
 import {
+  ipcRequestSchemas,
   ipcResponseSchemas,
   systemDoctorSchema,
   type IpcChannel,
@@ -36,14 +37,17 @@ export async function invokeParsed<C extends IpcChannel, T>(
   return schema.parse(raw);
 }
 
-function invokeCommand<C extends IpcChannel>(
+async function invokeCommand<C extends IpcChannel>(
   channel: C,
   args: IpcRequest<C>,
 ): Promise<IpcResponse<C>> {
+  const requestSchema = ipcRequestSchemas[channel] as unknown as z.ZodType<
+    IpcRequest<C>
+  >;
   const schema = ipcResponseSchemas[channel] as unknown as z.ZodType<
     IpcResponse<C>
   >;
-  return invokeParsed(channel, args, schema);
+  return invokeParsed(channel, requestSchema.parse(args), schema);
 }
 
 export const workbenchClient = {
@@ -157,4 +161,7 @@ export const workbenchClient = {
   inboxThreadCreateReplyDraft: (
     request: IpcRequest<"inbox:thread:createReplyDraft">,
   ) => invokeCommand("inbox:thread:createReplyDraft", request),
+  inboxReplyApproveAndSend: (
+    request: IpcRequest<"inbox:reply:approveAndSend">,
+  ) => invokeCommand("inbox:reply:approveAndSend", request),
 } as const;

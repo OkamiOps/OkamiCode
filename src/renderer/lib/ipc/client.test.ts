@@ -124,6 +124,34 @@ it("validates responses before returning them", async () => {
   await expect(workbenchClient.systemDoctor()).rejects.toThrow(/database/);
 });
 
+it("validates command requests before invoking the bridge", async () => {
+  const approveAndSend = vi.fn(async () => ({
+    id: "0f7c4f9c-33dd-4dbd-98cb-8e768646b386",
+    status: "confirmed",
+    attempts: 1,
+    approvedAt: "2026-07-21T12:00:00.000Z",
+    lastError: null,
+  }));
+  Object.defineProperty(window, "okami", {
+    configurable: true,
+    value: {
+      ...window.okami,
+      invoke: {
+        ...window.okami.invoke,
+        "inbox:reply:approveAndSend": approveAndSend,
+      },
+    },
+  });
+
+  await expect(
+    workbenchClient.inboxReplyApproveAndSend({
+      outboxId: "not-a-uuid",
+      confirmation: "approve_and_send",
+    } as never),
+  ).rejects.toThrow();
+  expect(approveAndSend).not.toHaveBeenCalled();
+});
+
 it("exposes exactly the enumerated command surface", () => {
   expect(ipcChannels).toEqual(ipcChannels);
   expect(ipcChannels).toEqual([
@@ -187,6 +215,7 @@ it("exposes exactly the enumerated command surface", () => {
     "inbox:thread:markRead",
     "inbox:thread:createTask",
     "inbox:thread:createReplyDraft",
+    "inbox:reply:approveAndSend",
   ]);
   expect(Object.keys(window.okami.invoke)).toEqual(ipcChannels);
 });
@@ -291,6 +320,13 @@ it("provides typed Inbox account and thread commands through the bridge", async 
       createdAt: now,
       updatedAt: now,
     },
+    "inbox:reply:approveAndSend": {
+      id: "0f7c4f9c-33dd-4dbd-98cb-8e768646b386",
+      status: "confirmed",
+      attempts: 1,
+      approvedAt: now,
+      lastError: null,
+    },
   });
 
   await expect(workbenchClient.inboxAccountsList()).resolves.toEqual([summary]);
@@ -343,6 +379,34 @@ it("provides typed Inbox account and thread commands through the bridge", async 
   ).resolves.toMatchObject({
     sourceThreadId: threadId,
     status: "approval_pending",
+  });
+  const approveAndSend = vi.fn(async () => ({
+    id: "0f7c4f9c-33dd-4dbd-98cb-8e768646b386",
+    status: "confirmed",
+    attempts: 1,
+    approvedAt: now,
+    lastError: null,
+  }));
+  Object.defineProperty(window, "okami", {
+    configurable: true,
+    value: {
+      ...window.okami,
+      invoke: {
+        ...window.okami.invoke,
+        "inbox:reply:approveAndSend": approveAndSend,
+      },
+    },
+  });
+  await expect(
+    workbenchClient.inboxReplyApproveAndSend({
+      outboxId: "0f7c4f9c-33dd-4dbd-98cb-8e768646b386",
+      confirmation: "approve_and_send",
+    }),
+  ).resolves.toMatchObject({ status: "confirmed", attempts: 1 });
+  expect(approveAndSend).toHaveBeenCalledOnce();
+  expect(approveAndSend).toHaveBeenCalledWith({
+    outboxId: "0f7c4f9c-33dd-4dbd-98cb-8e768646b386",
+    confirmation: "approve_and_send",
   });
 });
 

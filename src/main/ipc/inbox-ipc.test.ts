@@ -156,6 +156,15 @@ function harness() {
       updatedAt: now,
     })),
   };
+  const inboxReplyDispatchService = {
+    approveAndSend: vi.fn(async () => ({
+      id: "0f7c4f9c-33dd-4dbd-98cb-8e768646b386",
+      status: "confirmed" as const,
+      attempts: 1,
+      approvedAt: now,
+      lastError: null,
+    })),
+  };
   const handlers = new Map<IpcChannel, Parameters<IpcMain["handle"]>[1]>();
   registerIpcHandlers({
     ipcMain: {
@@ -170,6 +179,7 @@ function harness() {
     inboxTaskActionService,
     inboxReplyDraftService,
     inboxOutgoingSettingsService,
+    inboxReplyDispatchService,
   });
   const senderFrame = { url: "http://127.0.0.1:5173/inbox" };
   const event = {
@@ -182,6 +192,7 @@ function harness() {
     inboxTaskActionService,
     inboxReplyDraftService,
     inboxOutgoingSettingsService,
+    inboxReplyDispatchService,
     event,
     sendTurn,
   };
@@ -390,5 +401,52 @@ it("rejects a response that leaks credential fields", async () => {
   ] as never);
   await expect(
     handlers.get("inbox:accounts:list")?.(event, {}),
+  ).rejects.toThrow();
+});
+
+it("requires explicit reply-send confirmation before dispatch and rejects credential leaks", async () => {
+  const { handlers, inboxReplyDispatchService, event } = harness();
+  const outboxId = "0f7c4f9c-33dd-4dbd-98cb-8e768646b386";
+
+  await expect(
+    handlers.get("inbox:reply:approveAndSend")?.(event, { outboxId }),
+  ).rejects.toThrow();
+  await expect(
+    handlers.get("inbox:reply:approveAndSend")?.(event, {
+      outboxId,
+      confirmation: "send_now",
+    }),
+  ).rejects.toThrow();
+  expect(inboxReplyDispatchService.approveAndSend).not.toHaveBeenCalled();
+
+  await expect(
+    handlers.get("inbox:reply:approveAndSend")?.(event, {
+      outboxId,
+      confirmation: "approve_and_send",
+    }),
+  ).resolves.toEqual({
+    id: outboxId,
+    status: "confirmed",
+    attempts: 1,
+    approvedAt: now,
+    lastError: null,
+  });
+  expect(inboxReplyDispatchService.approveAndSend).toHaveBeenCalledWith(
+    outboxId,
+  );
+
+  inboxReplyDispatchService.approveAndSend.mockResolvedValueOnce({
+    id: outboxId,
+    status: "confirmed",
+    attempts: 1,
+    approvedAt: now,
+    lastError: null,
+    credential: { password: "secret" },
+  } as never);
+  await expect(
+    handlers.get("inbox:reply:approveAndSend")?.(event, {
+      outboxId,
+      confirmation: "approve_and_send",
+    }),
   ).rejects.toThrow();
 });

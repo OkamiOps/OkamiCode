@@ -1023,6 +1023,21 @@ const inboxOutgoingSettingsSchema = z
     updatedAt: z.iso.datetime({ offset: true }),
   })
   .strict();
+const inboxReplyApproveAndSendRequestSchema = z
+  .object({
+    outboxId: entityIdSchema,
+    confirmation: z.literal("approve_and_send"),
+  })
+  .strict();
+const inboxReplyDispatchSchema = z
+  .object({
+    id: entityIdSchema,
+    status: z.enum(["dispatching", "confirmed", "uncertain"]),
+    attempts: z.number().int().nonnegative(),
+    approvedAt: z.iso.datetime({ offset: true }).nullable(),
+    lastError: z.string().min(1).nullable(),
+  })
+  .strict();
 const inboxThreadIdRequestSchema = z
   .object({ threadId: entityIdSchema })
   .strict();
@@ -1230,6 +1245,7 @@ export const ipcRequestSchemas = {
   "inbox:thread:markRead": inboxThreadIdRequestSchema,
   "inbox:thread:createTask": inboxThreadCreateTaskRequestSchema,
   "inbox:thread:createReplyDraft": inboxThreadCreateReplyDraftRequestSchema,
+  "inbox:reply:approveAndSend": inboxReplyApproveAndSendRequestSchema,
 } satisfies Record<IpcChannel, z.ZodType>;
 
 export const ipcResponseSchemas = {
@@ -1298,6 +1314,7 @@ export const ipcResponseSchemas = {
   "inbox:thread:markRead": inboxThreadSchema,
   "inbox:thread:createTask": inboxThreadCreateTaskResultSchema,
   "inbox:thread:createReplyDraft": inboxThreadCreateReplyDraftResultSchema,
+  "inbox:reply:approveAndSend": inboxReplyDispatchSchema,
 } satisfies Record<IpcChannel, z.ZodType>;
 
 export type IpcRequest<C extends IpcChannel> = z.input<
