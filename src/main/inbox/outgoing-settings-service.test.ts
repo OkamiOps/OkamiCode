@@ -80,11 +80,17 @@ describe("InboxOutgoingSettingsService", () => {
         host: "  SMTP.Example.COM  ",
         port: 465,
         secure: true,
+        fromAddresses: [
+          " Contato@Example.com ",
+          "me@example.com",
+          "contato@example.com",
+        ],
       }),
     ).toEqual({
       host: "smtp.example.com",
       port: 465,
       secure: true,
+      fromAddresses: ["contato@example.com"],
       createdAt,
       updatedAt: createdAt,
     });
@@ -101,6 +107,7 @@ describe("InboxOutgoingSettingsService", () => {
       host: "relay.example.com",
       port: 587,
       secure: false,
+      fromAddresses: [],
       createdAt,
       updatedAt,
     });
@@ -108,6 +115,7 @@ describe("InboxOutgoingSettingsService", () => {
       host: "relay.example.com",
       port: 587,
       secure: false,
+      fromAddresses: [],
       createdAt,
       updatedAt,
     });
@@ -142,12 +150,14 @@ describe("InboxOutgoingSettingsService", () => {
         host: "relay.example.com",
         port: 465,
         secure: true,
+        fromAddresses: [],
       });
 
       expect(latest).toEqual({
         host: "relay.example.com",
         port: 465,
         secure: true,
+        fromAddresses: [],
         createdAt,
         updatedAt,
       });

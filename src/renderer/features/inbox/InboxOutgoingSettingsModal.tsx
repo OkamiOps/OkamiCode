@@ -22,9 +22,15 @@ interface OutgoingForm {
   host: string;
   port: string;
   secure: boolean;
+  fromAddresses: string;
 }
 
-const absentForm: OutgoingForm = { host: "", port: "465", secure: true };
+const absentForm: OutgoingForm = {
+  host: "",
+  port: "465",
+  secure: true,
+  fromAddresses: "",
+};
 
 export function InboxOutgoingSettingsModal({
   account,
@@ -60,6 +66,7 @@ export function InboxOutgoingSettingsModal({
               host: settings.host,
               port: String(settings.port),
               secure: settings.secure,
+              fromAddresses: settings.fromAddresses.join("\n"),
             }
           : absentForm,
       );
@@ -92,13 +99,29 @@ export function InboxOutgoingSettingsModal({
       setSaveError("Informe uma porta entre 1 e 65535.");
       return;
     }
+    const fromAddresses = form.fromAddresses
+      .split(/[\n,;]/u)
+      .map((address) => address.trim().toLowerCase())
+      .filter(Boolean);
+    const invalidAddress = fromAddresses.find(
+      (address) => !/^[^\s@<>]+@[^\s@<>]+\.[^\s@<>]+$/u.test(address),
+    );
+    if (invalidAddress) {
+      setSaveError(`O alias ${invalidAddress} não é um endereço válido.`);
+      return;
+    }
 
     setSaveError(null);
     setIsSaving(true);
     try {
       await setOutgoingSettings({
         accountId: account.id,
-        configuration: { host, port, secure: form.secure },
+        configuration: {
+          host,
+          port,
+          secure: form.secure,
+          fromAddresses,
+        },
       });
       state.close();
     } catch (cause) {
@@ -219,6 +242,34 @@ export function InboxOutgoingSettingsModal({
                   <LockKeyhole aria-hidden="true" size={13} />
                   Usar TLS direto
                 </label>
+                <section className="inbox-aliases-field">
+                  <div className="inbox-aliases-field__primary">
+                    <span>Endereço principal</span>
+                    <strong>{account.address}</strong>
+                  </div>
+                  <label className="inbox-form-field">
+                    <span>Aliases de envio</span>
+                    <textarea
+                      aria-label="Aliases de envio"
+                      disabled={unavailable}
+                      onChange={(event) => {
+                        setForm((current) => ({
+                          ...current,
+                          fromAddresses: event.target.value,
+                        }));
+                        if (saveError) setSaveError(null);
+                      }}
+                      placeholder={
+                        "contato@dominio.com\nfinanceiro@dominio.com"
+                      }
+                      value={form.fromAddresses}
+                    />
+                    <small>
+                      Um endereço por linha. O servidor SMTP precisa permitir
+                      cada alias.
+                    </small>
+                  </label>
+                </section>
                 <p className="inbox-outgoing-settings-modal__safety">
                   Configurar não envia email nem testa a conexão.
                 </p>

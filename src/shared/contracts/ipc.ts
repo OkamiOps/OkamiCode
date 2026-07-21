@@ -1017,6 +1017,7 @@ const inboxOutgoingSettingsConfigurationSchema = z
     host: z.string().trim().min(1).max(255),
     port: z.number().int().min(1).max(65_535),
     secure: z.boolean(),
+    fromAddresses: z.array(z.email().trim().max(320)).max(50).optional(),
   })
   .strict();
 const inboxOutgoingSettingsRequestSchema = z
@@ -1030,6 +1031,7 @@ const inboxOutgoingSettingsSchema = z
     host: z.string().min(1).max(255),
     port: z.number().int().min(1).max(65_535),
     secure: z.boolean(),
+    fromAddresses: z.array(z.email().max(320)).max(50),
     createdAt: z.iso.datetime({ offset: true }),
     updatedAt: z.iso.datetime({ offset: true }),
   })
@@ -1188,6 +1190,7 @@ const inboxThreadCreateReplyDraftRequestSchema = z
   .object({
     threadId: entityIdSchema,
     body: z.string().trim().min(1).max(20_000),
+    fromAddress: z.email().trim().max(320).optional(),
     idempotencyKey: entityIdSchema,
   })
   .strict();
@@ -1198,6 +1201,7 @@ const inboxThreadGenerateReplyDraftRequestSchema = z
     runtimeKind: delegatedRuntimeKindSchema,
     model: z.string().trim().min(1).max(120),
     effort: z.string().trim().min(1).max(20).optional(),
+    fromAddress: z.email().trim().max(320).optional(),
   })
   .strict();
 
@@ -1206,6 +1210,7 @@ const inboxThreadCreateReplyDraftResultSchema = z
     id: entityIdSchema,
     sourceThreadId: entityIdSchema,
     connectorAccountId: entityIdSchema,
+    fromAddress: z.email().max(320).nullable(),
     to: z.array(z.string().min(1).max(2_000)).min(1).max(100),
     subject: z.string().min(1).max(2_000),
     body: z.string().min(1).max(20_000),
@@ -1222,6 +1227,7 @@ const inboxThreadReplyActionSchema = z
     id: entityIdSchema,
     sourceThreadId: entityIdSchema,
     connectorAccountId: entityIdSchema,
+    fromAddress: z.email().max(320).nullable(),
     to: z.array(z.string().min(1).max(2_000)).min(1).max(100),
     subject: z.string().min(1).max(2_000),
     body: z.string().min(1).max(20_000),

@@ -18,6 +18,7 @@ const MIGRATIONS = [
   "schema/013-calendar-core.sql",
   "schema/014-calendar-linked-sources.sql",
   "schema/015-inbox-reply-dismissals.sql",
+  "schema/016-inbox-sender-aliases.sql",
 ];
 
 export function runMigrations(db: InstanceType<typeof SqliteDatabase>): void {

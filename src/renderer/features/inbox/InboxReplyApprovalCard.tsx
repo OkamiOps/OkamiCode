@@ -84,6 +84,10 @@ export function InboxReplyApprovalCard({
       </header>
       <dl className="inbox-reply-approval__meta">
         <div>
+          <dt>De</dt>
+          <dd>{action.fromAddress ?? "Endereço principal da conta"}</dd>
+        </div>
+        <div>
           <dt>Para</dt>
           <dd>{action.to.join(", ")}</dd>
         </div>

@@ -2,6 +2,7 @@ import { Button, Modal, useOverlayState } from "@heroui/react";
 import { MailCheck, Send, X } from "lucide-react";
 import { useRef, useState, type FormEvent } from "react";
 import type { IpcRequest, IpcResponse } from "../../../shared/contracts/ipc";
+import { InboxSenderIdentityField } from "./InboxSenderIdentityField";
 
 type InboxThread = IpcResponse<"inbox:threads:list">["threads"][number];
 type InboxThreadDetail = IpcResponse<"inbox:thread:get">;
@@ -10,6 +11,10 @@ type CreateReplyDraftRequest = IpcRequest<"inbox:thread:createReplyDraft">;
 interface InboxReplyModalProps {
   detail: InboxThreadDetail | undefined;
   isSaving: boolean;
+  fromAddresses: string[];
+  defaultFromAddress: string;
+  fromAddressesError: string | null;
+  isLoadingFromAddresses: boolean;
   onCreateReplyDraft: (request: CreateReplyDraftRequest) => Promise<unknown>;
 }
 
@@ -17,10 +22,15 @@ const maxReplyLength = 20_000;
 
 export function InboxReplyModal({
   detail,
+  defaultFromAddress,
+  fromAddresses,
+  fromAddressesError,
+  isLoadingFromAddresses,
   isSaving,
   onCreateReplyDraft,
 }: InboxReplyModalProps) {
   const [body, setBody] = useState("");
+  const [fromAddress, setFromAddress] = useState("");
   const [error, setError] = useState<string | null>(null);
   const idempotencyKey = useRef<string | null>(null);
   const state = useOverlayState({
@@ -28,11 +38,13 @@ export function InboxReplyModal({
       if (isOpen && detail?.thread) {
         idempotencyKey.current = createUuid();
         setBody("");
+        setFromAddress(defaultFromAddress || fromAddresses[0] || "");
         setError(null);
       }
       if (!isOpen) {
         idempotencyKey.current = null;
         setBody("");
+        setFromAddress("");
         setError(null);
       }
     },
@@ -54,6 +66,10 @@ export function InboxReplyModal({
   async function submit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
     if (!thread || isSaving) return;
+    if (!fromAddress) {
+      setError("Escolha o endereço que enviará a resposta.");
+      return;
+    }
 
     const trimmedBody = body.trim();
     if (!trimmedBody) {
@@ -70,6 +86,7 @@ export function InboxReplyModal({
       await onCreateReplyDraft({
         threadId: thread.id,
         body: trimmedBody,
+        fromAddress,
         idempotencyKey: idempotencyKey.current ?? createUuid(),
       });
       state.close();
@@ -120,6 +137,15 @@ export function InboxReplyModal({
                 </Modal.CloseTrigger>
               </Modal.Header>
               <Modal.Body className="inbox-reply-modal__body">
+                <InboxSenderIdentityField
+                  addresses={fromAddresses}
+                  disabled={
+                    isLoadingFromAddresses || fromAddresses.length === 0
+                  }
+                  error={fromAddressesError}
+                  onChange={setFromAddress}
+                  value={fromAddress}
+                />
                 <div className="inbox-reply-summary">
                   <label className="inbox-form-field">
                     <span>Destinatário</span>

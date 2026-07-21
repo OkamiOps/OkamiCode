@@ -129,6 +129,7 @@ function harness() {
       id: "0f7c4f9c-33dd-4dbd-98cb-8e768646b386",
       sourceThreadId: threadId,
       connectorAccountId: accountId,
+      fromAddress: "me@example.com",
       to: ["client@example.com"] as string[],
       subject: "Re: Subject",
       body: "Thanks",
@@ -144,6 +145,7 @@ function harness() {
         id: "0f7c4f9c-33dd-4dbd-98cb-8e768646b386",
         sourceThreadId: threadId,
         connectorAccountId: accountId,
+        fromAddress: "me@example.com",
         to: ["client@example.com"],
         subject: "Re: Subject",
         body: "Thanks",
@@ -168,6 +170,7 @@ function harness() {
       id: "0f7c4f9c-33dd-4dbd-98cb-8e768646b386",
       sourceThreadId: threadId,
       connectorAccountId: accountId,
+      fromAddress: "me@example.com",
       to: ["client@example.com"] as string[],
       subject: "Re: Subject",
       body: "Generated reply",
@@ -184,6 +187,7 @@ function harness() {
       host: "smtp.example.com",
       port: 587,
       secure: false,
+      fromAddresses: ["contato@example.com"],
       createdAt: now,
       updatedAt: now,
     })),
@@ -191,6 +195,7 @@ function harness() {
       host: "smtp.example.com",
       port: 465,
       secure: true,
+      fromAddresses: ["contato@example.com"],
       createdAt: now,
       updatedAt: now,
     })),
@@ -474,6 +479,7 @@ it("routes strict trusted outgoing settings requests without exposing credential
     host: "smtp.example.com",
     port: 587,
     secure: false,
+    fromAddresses: ["contato@example.com"],
     createdAt: now,
     updatedAt: now,
   });
@@ -484,6 +490,7 @@ it("routes strict trusted outgoing settings requests without exposing credential
         host: "smtp.example.com",
         port: 465,
         secure: true,
+        fromAddresses: ["financeiro@example.com"],
       },
     }),
   ).resolves.toMatchObject({ host: "smtp.example.com", secure: true });
@@ -493,6 +500,7 @@ it("routes strict trusted outgoing settings requests without exposing credential
     host: "smtp.example.com",
     port: 465,
     secure: true,
+    fromAddresses: ["financeiro@example.com"],
   });
   await expect(
     handlers.get("inbox:account:outgoing:set")?.(event, {

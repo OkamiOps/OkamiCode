@@ -81,6 +81,7 @@ const replyDraftResult = {
   id: "77777777-7777-4777-8777-777777777777",
   sourceThreadId: threadId,
   connectorAccountId: accountId,
+  fromAddress: "contato@okamiops.com",
   to: ["Ana Silva <ana@cliente.com>"],
   subject: "Re: Proposta para landing page",
   body: "Obrigado pela mensagem.",
@@ -138,6 +139,7 @@ function makeApi(overrides: Partial<InboxApi> = {}): InboxApi {
       host: "smtp.okamiops.com",
       port: 465,
       secure: true,
+      fromAddresses: [],
       createdAt: now,
       updatedAt: now,
     }),
@@ -414,6 +416,7 @@ describe("InboxPage", () => {
       runtimeKind: "codex",
       model: "gpt-5.6",
       effort: "medium",
+      fromAddress: "contato@okamiops.com",
     });
     expect(api.approveReply).not.toHaveBeenCalled();
     expect(await screen.findByText("Aguardando sua aprovação")).toBeVisible();
@@ -456,6 +459,7 @@ describe("InboxPage", () => {
       threadId,
       runtimeKind: "codex",
       model: "gpt-5.6-mini",
+      fromAddress: "contato@okamiops.com",
     });
     await userEvent.keyboard("{Escape}");
     expect(screen.getByRole("dialog")).toBeVisible();
@@ -573,7 +577,17 @@ describe("InboxPage", () => {
 
   it("saves a trimmed reply as approval pending without sending an email", async () => {
     const { api } = renderInbox(
-      makeApi({ listReplyActions: vi.fn().mockResolvedValue([replyAction]) }),
+      makeApi({
+        getOutgoingSettings: vi.fn().mockResolvedValue({
+          host: "smtp.okamiops.com",
+          port: 465,
+          secure: true,
+          fromAddresses: ["propostas@okamiops.com"],
+          createdAt: now,
+          updatedAt: now,
+        }),
+        listReplyActions: vi.fn().mockResolvedValue([replyAction]),
+      }),
     );
     expect(screen.queryByRole("button", { name: "Responder" })).toBeNull();
 
@@ -583,6 +597,15 @@ describe("InboxPage", () => {
     await userEvent.click(screen.getByRole("button", { name: "Responder" }));
 
     const dialog = screen.getByRole("dialog");
+    await vi.waitFor(() =>
+      expect(within(dialog).getByLabelText("Enviar como")).toHaveValue(
+        "contato@okamiops.com",
+      ),
+    );
+    await userEvent.selectOptions(
+      within(dialog).getByLabelText("Enviar como"),
+      "propostas@okamiops.com",
+    );
     expect(within(dialog).getByLabelText("Destinatário")).toHaveValue(
       "Ana Silva <ana@cliente.com>",
     );
@@ -613,6 +636,7 @@ describe("InboxPage", () => {
     expect(vi.mocked(api.createReplyDraft).mock.calls[0]?.[0]).toEqual({
       threadId,
       body: "Obrigado pela mensagem.",
+      fromAddress: "propostas@okamiops.com",
       idempotencyKey: expect.stringMatching(
         /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i,
       ),
@@ -929,6 +953,7 @@ describe("InboxPage", () => {
         host: "smtp.okamiops.com",
         port: 587,
         secure: false,
+        fromAddresses: ["propostas@okamiops.com"],
         createdAt: now,
         updatedAt: now,
       })
@@ -936,6 +961,7 @@ describe("InboxPage", () => {
         host: "smtp.reloaded.example",
         port: 465,
         secure: true,
+        fromAddresses: ["financeiro@okamiops.com"],
         createdAt: now,
         updatedAt: now,
       });
@@ -1003,6 +1029,7 @@ describe("InboxPage", () => {
         host: "smtp.okamiops.com",
         port: 465,
         secure: false,
+        fromAddresses: ["propostas@okamiops.com"],
       },
     });
     resolveSave?.();

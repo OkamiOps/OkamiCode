@@ -11,10 +11,12 @@ import {
   type InboxMessage,
   type InboxThreadDetail,
 } from "./service";
+import { InboxOutgoingSettingsService } from "./outgoing-settings-service";
 
 export interface CreateInboxThreadReplyDraftInput {
   threadId: string;
   body: string;
+  fromAddress?: string;
   idempotencyKey: string;
 }
 
@@ -22,6 +24,7 @@ export interface InboxThreadReplyAction {
   id: string;
   sourceThreadId: string;
   connectorAccountId: string;
+  fromAddress: string | null;
   to: string[];
   subject: string;
   body: string;
@@ -39,6 +42,7 @@ export interface InboxThreadReplyDraftResult {
   id: string;
   sourceThreadId: string;
   connectorAccountId: string;
+  fromAddress: string | null;
   to: string[];
   subject: string;
   body: string;
@@ -63,6 +67,7 @@ interface EmailReplyPayload {
   to: [string];
   subject: string;
   body: string;
+  fromAddress?: string;
 }
 
 export class InboxReplyDraftThreadNotFoundError extends Error {
@@ -114,6 +119,10 @@ export class InboxReplyDraftService {
       to: [incoming.sender.trim()],
       subject: replySubject(detail),
       body,
+      fromAddress: this.resolveFromAddress(
+        detail.thread.accountId,
+        input.fromAddress,
+      ),
     };
     const draft = this.outbox.createDraft({
       connectorAccountId: detail.thread.accountId,
@@ -125,6 +134,22 @@ export class InboxReplyDraftService {
     });
     const pending = this.outbox.requestApproval(draft.id);
     return responseFromRecord(pending, payload);
+  }
+
+  private resolveFromAddress(accountId: string, requested?: string): string {
+    const account = this.db
+      .prepare("SELECT address FROM connector_accounts WHERE id = ?")
+      .get(accountId) as { address: string } | undefined;
+    if (!account) throw new InboxReplyDraftThreadNotFoundError(accountId);
+    const primary = account.address.trim().toLowerCase();
+    const aliases =
+      new InboxOutgoingSettingsService({ db: this.db }).get(accountId)
+        ?.fromAddresses ?? [];
+    const selected = requested?.trim().toLowerCase() || primary;
+    if (![primary, ...aliases].includes(selected)) {
+      throw new Error("Selected sender address is not configured");
+    }
+    return selected;
   }
 
   private readThread(threadId: string): InboxThreadDetail {
@@ -255,7 +280,7 @@ function emailReplyPayload(value: unknown): EmailReplyPayload | undefined {
     return undefined;
   }
   const payload = value as Record<string, unknown>;
-  const expectedKeys = [
+  const requiredKeys = [
     "threadId",
     "externalThreadId",
     "inReplyTo",
@@ -263,12 +288,15 @@ function emailReplyPayload(value: unknown): EmailReplyPayload | undefined {
     "subject",
     "body",
   ];
+  const allowedKeys = [...requiredKeys, "fromAddress"];
   if (
-    Object.keys(payload).length !== expectedKeys.length ||
-    !expectedKeys.every((key) => key in payload) ||
-    !expectedKeys
+    !Object.keys(payload).every((key) => allowedKeys.includes(key)) ||
+    !requiredKeys.every((key) => key in payload) ||
+    !requiredKeys
       .filter((key) => key !== "to")
       .every((key) => typeof payload[key] === "string") ||
+    (payload.fromAddress !== undefined &&
+      typeof payload.fromAddress !== "string") ||
     !Array.isArray(payload.to) ||
     payload.to.length !== 1 ||
     typeof payload.to[0] !== "string"
@@ -282,6 +310,9 @@ function emailReplyPayload(value: unknown): EmailReplyPayload | undefined {
     to: [payload.to[0]],
     subject: payload.subject as string,
     body: payload.body as string,
+    ...(typeof payload.fromAddress === "string"
+      ? { fromAddress: payload.fromAddress }
+      : {}),
   };
 }
 
@@ -303,6 +334,7 @@ function responseFromRecord(
     id: action.id,
     sourceThreadId: action.sourceThreadId,
     connectorAccountId: action.connectorAccountId,
+    fromAddress: action.fromAddress,
     to: action.to,
     subject: action.subject,
     body: action.body,
@@ -323,6 +355,7 @@ function responseFromAction(
     id: record.id,
     sourceThreadId: payload.threadId,
     connectorAccountId: record.connectorAccountId,
+    fromAddress: payload.fromAddress ?? null,
     to: payload.to,
     subject: payload.subject,
     body: payload.body,
@@ -347,6 +380,8 @@ function isPublicReplyAction(
     isUuid(payload.threadId) &&
     isBoundedText(payload.externalThreadId, 2_000) &&
     isBoundedText(payload.inReplyTo, 2_000) &&
+    (payload.fromAddress === undefined ||
+      isBoundedText(payload.fromAddress, 320)) &&
     payload.to.length === 1 &&
     isBoundedText(payload.to[0], 2_000) &&
     isBoundedText(payload.subject, 2_000) &&

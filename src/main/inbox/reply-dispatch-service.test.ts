@@ -16,6 +16,8 @@ function fixture(
     settings?: boolean;
     transport?: SmtpReplyTransport;
     settingsValue?: unknown;
+    fromAddress?: string;
+    fromAddresses?: string[];
     transportFactory?: { create: (input: unknown) => SmtpReplyTransport };
   } = {},
 ) {
@@ -35,6 +37,7 @@ function fixture(
       host: "smtp.example.com",
       port: 587,
       secure: false,
+      fromAddresses: options.fromAddresses,
     });
   }
   const outbox = new ExternalOutboxService(database.db);
@@ -48,6 +51,7 @@ function fixture(
       to: ["client@example.com"],
       subject: "Re: Proposal",
       body: "Thanks, I will send it tomorrow.",
+      ...(options.fromAddress ? { fromAddress: options.fromAddress } : {}),
     },
     idempotencyKey: randomUUID(),
     requiresApproval: true,
@@ -131,6 +135,30 @@ describe("ReplyDispatchService", () => {
         rejectedCount: 0,
       },
     });
+  });
+
+  it("sends with a configured alias and rejects a forged sender before claiming", async () => {
+    const allowed = fixture({
+      fromAddress: "propostas@example.com",
+      fromAddresses: ["propostas@example.com"],
+    });
+    await allowed.service.approveAndSend(allowed.pending.id);
+    expect(allowed.transport.send).toHaveBeenCalledWith(
+      expect.objectContaining({ from: "propostas@example.com" }),
+    );
+
+    const forged = fixture({
+      fromAddress: "forged@example.com",
+      fromAddresses: ["propostas@example.com"],
+    });
+    await expect(
+      forged.service.approveAndSend(forged.pending.id),
+    ).rejects.toThrow("Reply dispatch is unavailable");
+    expect(forged.outbox.findById(forged.pending.id)).toMatchObject({
+      status: "approval_pending",
+      attempts: 0,
+    });
+    expect(forged.transport.send).not.toHaveBeenCalled();
   });
 
   it.each([

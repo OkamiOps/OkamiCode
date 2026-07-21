@@ -11,6 +11,7 @@ import {
   InboxReplyDraftService,
   InboxReplyDraftThreadNotFoundError,
 } from "./reply-draft-service";
+import { InboxOutgoingSettingsService } from "./outgoing-settings-service";
 
 const now = "2026-07-21T12:00:00.000Z";
 
@@ -207,6 +208,7 @@ describe("InboxReplyDraftService", () => {
       to: ["client@example.com"],
       subject: "Re: Landing page proposal",
       body: "Obrigado, envio a proposta amanhã.",
+      fromAddress: "me@example.com",
       status: "approval_pending",
       requiresApproval: true,
       safeRetry: false,
@@ -225,12 +227,45 @@ describe("InboxReplyDraftService", () => {
       payload_json: JSON.stringify({
         body: "Obrigado, envio a proposta amanhã.",
         externalThreadId: "proposal-1",
+        fromAddress: "me@example.com",
         inReplyTo: "incoming-newest",
         subject: "Re: Landing page proposal",
         threadId,
         to: ["client@example.com"],
       }),
     });
+  });
+
+  it("persists a configured sender alias and rejects an unconfigured address", () => {
+    const { fixture, service, threadId } = harness();
+    const accountId = fixture.db
+      .prepare("SELECT id FROM connector_accounts LIMIT 1")
+      .pluck()
+      .get() as string;
+    new InboxOutgoingSettingsService({ db: fixture.db }).save({
+      accountId,
+      host: "smtp.example.com",
+      port: 587,
+      secure: false,
+      fromAddresses: ["propostas@example.com"],
+    });
+
+    expect(
+      service.createReplyDraft({
+        threadId,
+        body: "Alias reply",
+        fromAddress: "propostas@example.com",
+        idempotencyKey: randomUUID(),
+      }),
+    ).toMatchObject({ fromAddress: "propostas@example.com" });
+    expect(() =>
+      service.createReplyDraft({
+        threadId,
+        body: "Forged sender",
+        fromAddress: "forged@example.com",
+        idempotencyKey: randomUUID(),
+      }),
+    ).toThrow("Selected sender address is not configured");
   });
 
   it("discards only an unsent draft while preserving the audited outbox record", () => {

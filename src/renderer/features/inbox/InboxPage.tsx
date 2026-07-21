@@ -40,6 +40,12 @@ import { InboxReplyApprovalCard } from "./InboxReplyApprovalCard";
 import { InboxAgentReplyModal } from "./InboxAgentReplyModal";
 import { InboxReplyModal } from "./InboxReplyModal";
 import { InboxTaskModal } from "./InboxTaskModal";
+import {
+  senderAddress,
+  senderDomain,
+  senderIdentityStyle,
+  senderLabel,
+} from "./sender-identity";
 
 type InboxAccount = IpcResponse<"inbox:accounts:list">[number];
 type InboxThread = IpcResponse<"inbox:threads:list">["threads"][number];
@@ -306,6 +312,25 @@ export function InboxPage({ api = defaultApi }: { api?: InboxApi }) {
 
   const selectedThread =
     detail.data?.thread ?? threadById(threads.data?.threads, selectedThreadId);
+  const selectedAccount = accountForThread(accounts.data ?? [], selectedThread);
+  const selectedAccountId = selectedAccount?.account.id ?? null;
+  const outgoingForSelectedAccount = useQuery({
+    queryKey: ["inbox", "outgoing", selectedAccountId],
+    queryFn: () => api.getOutgoingSettings({ accountId: selectedAccountId! }),
+    enabled: selectedAccountId !== null,
+  });
+  const replyFromAddresses = selectedAccount
+    ? [
+        ...new Set([
+          selectedAccount.account.address.toLowerCase(),
+          ...(outgoingForSelectedAccount.data?.fromAddresses ?? []),
+        ]),
+      ]
+    : [];
+  const preferredFromAddress = preferredReplyAddress(
+    detail.data,
+    replyFromAddresses,
+  );
   const visibleUnreadCount = threads.data?.threads.filter(
     (thread) => thread.unreadCount > 0,
   ).length;
@@ -365,7 +390,14 @@ export function InboxPage({ api = defaultApi }: { api?: InboxApi }) {
         onRemove={(accountId) => removeAccount.mutate({ accountId })}
         onSync={(accountId) => syncAccount.mutate({ accountId })}
         getOutgoingSettings={api.getOutgoingSettings}
-        setOutgoingSettings={api.setOutgoingSettings}
+        setOutgoingSettings={async (request) => {
+          const result = await api.setOutgoingSettings(request);
+          queryClient.setQueryData(
+            ["inbox", "outgoing", request.accountId],
+            result,
+          );
+          return result;
+        }}
         pendingAccountId={
           syncAccount.isPending ? syncAccount.variables?.accountId : null
         }
@@ -396,10 +428,18 @@ export function InboxPage({ api = defaultApi }: { api?: InboxApi }) {
       />
       <Conversation
         detail={detail.data}
+        defaultFromAddress={preferredFromAddress}
         error={detail.isError ? errorMessage(detail.error) : null}
         isSavingReply={createReplyDraft.isPending}
         isGeneratingReply={generateReplyDraft.isPending}
         isLoading={detail.isLoading}
+        fromAddresses={replyFromAddresses}
+        fromAddressesError={
+          outgoingForSelectedAccount.isError
+            ? "Não foi possível carregar os aliases. O endereço principal continua disponível."
+            : null
+        }
+        isLoadingFromAddresses={outgoingForSelectedAccount.isLoading}
         isCreatingTask={createTask.isPending}
         replyActions={replyActions.data ?? []}
         replyActionsError={
@@ -743,17 +783,22 @@ function ThreadList({
             data-unread={thread.unreadCount > 0 || undefined}
             key={thread.id}
             onClick={() => onSelect(thread)}
+            style={senderIdentityStyle(primaryParticipantIdentity(thread))}
             type="button"
           >
-            <span
-              className="inbox-thread-avatar"
-              data-tone={participantTone(primaryParticipant(thread))}
-            >
-              {initials(primaryParticipant(thread))}
+            <span className="inbox-thread-avatar">
+              {initials(senderLabel(primaryParticipantIdentity(thread)))}
             </span>
             <span className="inbox-thread-row__body">
               <span className="inbox-thread-row__heading">
-                <strong>{primaryParticipant(thread)}</strong>
+                <strong>
+                  {senderLabel(primaryParticipantIdentity(thread))}
+                </strong>
+                {senderDomain(primaryParticipantIdentity(thread)) && (
+                  <span className="inbox-thread-row__origin">
+                    {senderDomain(primaryParticipantIdentity(thread))}
+                  </span>
+                )}
                 <time>{shortDate(thread.lastMessageAt)}</time>
               </span>
               <span className="inbox-thread-row__subject">
@@ -797,8 +842,12 @@ function ListState({
 
 function Conversation({
   detail,
+  defaultFromAddress,
   error,
   isLoading,
+  fromAddresses,
+  fromAddressesError,
+  isLoadingFromAddresses,
   isSavingReply,
   isGeneratingReply,
   isCreatingTask,
@@ -815,8 +864,12 @@ function Conversation({
   taskCreated,
 }: {
   detail: InboxThreadDetail | undefined;
+  defaultFromAddress: string;
   error: string | null;
   isLoading: boolean;
+  fromAddresses: string[];
+  fromAddressesError: string | null;
+  isLoadingFromAddresses: boolean;
   isSavingReply: boolean;
   isGeneratingReply: boolean;
   isCreatingTask: boolean;
@@ -891,13 +944,16 @@ function Conversation({
                 <header className="inbox-message__meta">
                   <span
                     className="inbox-message__avatar"
-                    data-tone={participantTone(displayName(message.sender))}
+                    style={senderIdentityStyle(message.sender)}
                   >
-                    {initials(displayName(message.sender))}
+                    {initials(senderLabel(message.sender))}
                   </span>
                   <span className="inbox-message__sender">
-                    <strong>{displayName(message.sender)}</strong>
-                    <small>{directionLabel(message.direction)}</small>
+                    <strong>{senderLabel(message.sender)}</strong>
+                    <small>
+                      {senderAddress(message.sender)} ·{" "}
+                      {directionLabel(message.direction)}
+                    </small>
                   </span>
                   <time>
                     {shortDate(
@@ -954,10 +1010,14 @@ function Conversation({
         </p>
       )}
       <FutureActions
+        defaultFromAddress={defaultFromAddress}
         detail={detail}
+        fromAddresses={fromAddresses}
+        fromAddressesError={fromAddressesError}
         isCreatingTask={isCreatingTask}
         isGeneratingReply={isGeneratingReply}
         isSavingReply={isSavingReply}
+        isLoadingFromAddresses={isLoadingFromAddresses}
         listLanes={listLanes}
         listModels={listModels}
         onCreateReplyDraft={onCreateReplyDraft}
@@ -970,10 +1030,14 @@ function Conversation({
 }
 
 function FutureActions({
+  defaultFromAddress,
   detail,
+  fromAddresses,
+  fromAddressesError,
   isCreatingTask,
   isGeneratingReply,
   isSavingReply,
+  isLoadingFromAddresses,
   listLanes,
   listModels,
   onCreateReplyDraft,
@@ -981,10 +1045,14 @@ function FutureActions({
   onCreateTask,
   thread,
 }: {
+  defaultFromAddress: string;
   detail: InboxThreadDetail | undefined;
+  fromAddresses: string[];
+  fromAddressesError: string | null;
   isCreatingTask: boolean;
   isGeneratingReply: boolean;
   isSavingReply: boolean;
+  isLoadingFromAddresses: boolean;
   listLanes: InboxApi["listLanes"];
   listModels: InboxApi["listModels"];
   onCreateReplyDraft: InboxApi["createReplyDraft"];
@@ -1011,14 +1079,22 @@ function FutureActions({
           thread={thread}
         />
         <InboxAgentReplyModal
+          defaultFromAddress={defaultFromAddress}
+          fromAddresses={fromAddresses}
+          fromAddressesError={fromAddressesError}
           isGenerating={isGeneratingReply}
+          isLoadingFromAddresses={isLoadingFromAddresses}
           listModels={listModels}
           onGenerate={onGenerateReplyDraft}
           thread={thread}
         />
         <InboxReplyModal
+          defaultFromAddress={defaultFromAddress}
           detail={detail}
+          fromAddresses={fromAddresses}
+          fromAddressesError={fromAddressesError}
           isSaving={isSavingReply}
+          isLoadingFromAddresses={isLoadingFromAddresses}
           onCreateReplyDraft={onCreateReplyDraft}
         />
       </div>
@@ -1158,8 +1234,21 @@ function accountForThread(
 function threadById(threads: InboxThread[] | undefined, id: string | null) {
   return threads?.find((thread) => thread.id === id);
 }
-function primaryParticipant(thread: InboxThread) {
-  return displayName(thread.participants[0] ?? "Remetente externo");
+function primaryParticipantIdentity(thread: InboxThread) {
+  return thread.participants[0] ?? "Remetente externo";
+}
+function preferredReplyAddress(
+  detail: InboxThreadDetail | undefined,
+  allowed: string[],
+) {
+  const allowedSet = new Set(allowed.map((address) => address.toLowerCase()));
+  const recipient = [...(detail?.messages ?? [])]
+    .reverse()
+    .filter((message) => message.direction === "incoming")
+    .flatMap((message) => message.recipients)
+    .map(senderAddress)
+    .find((address) => allowedSet.has(address));
+  return recipient ?? allowed[0] ?? "";
 }
 function displayName(value: string) {
   return value.replace(/\s*<[^>]+>/, "") || value;
@@ -1174,11 +1263,6 @@ function initials(value: string) {
       .join("")
       .toUpperCase() || "?"
   );
-}
-function participantTone(value: string) {
-  const tones = ["cyan", "orange", "violet", "green", "pink"] as const;
-  const hash = [...value].reduce((sum, char) => sum + char.charCodeAt(0), 0);
-  return tones[hash % tones.length];
 }
 function directionLabel(direction: string) {
   if (direction === "outgoing") return "Enviado por você";

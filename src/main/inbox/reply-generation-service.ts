@@ -22,6 +22,7 @@ export interface GenerateInboxReplyDraftInput {
   runtimeKind: "claude" | "codex";
   model: string;
   effort?: string;
+  fromAddress?: string;
 }
 
 export interface ReplyGenerationEventSink {
@@ -126,6 +127,7 @@ export class InboxReplyGenerationService {
     return this.drafts.createReplyDraft({
       threadId: input.threadId,
       body: lastCompletedText,
+      fromAddress: input.fromAddress,
       idempotencyKey: run.runId,
     });
   }

@@ -2,6 +2,7 @@ import { Button, Modal, Spinner, useOverlayState } from "@heroui/react";
 import { Bot, Gauge, Sparkles, X } from "lucide-react";
 import { useMemo, useRef, useState, type FormEvent } from "react";
 import type { IpcRequest, IpcResponse } from "../../../shared/contracts/ipc";
+import { InboxSenderIdentityField } from "./InboxSenderIdentityField";
 
 type InboxThread = IpcResponse<"inbox:threads:list">["threads"][number];
 type ModelCatalog = IpcResponse<"models:list">;
@@ -17,13 +18,21 @@ function supportsReplyGeneration(
 }
 
 interface InboxAgentReplyModalProps {
+  defaultFromAddress: string;
   isGenerating: boolean;
+  fromAddresses: string[];
+  fromAddressesError: string | null;
+  isLoadingFromAddresses: boolean;
   listModels: () => Promise<ModelCatalog>;
   onGenerate: (request: GenerateRequest) => Promise<unknown>;
   thread: InboxThread | undefined;
 }
 
 export function InboxAgentReplyModal({
+  defaultFromAddress,
+  fromAddresses,
+  fromAddressesError,
+  isLoadingFromAddresses,
   isGenerating,
   listModels,
   onGenerate,
@@ -33,12 +42,14 @@ export function InboxAgentReplyModal({
   const [selectedProvider, setSelectedProvider] = useState<number | null>(null);
   const [selectedModelId, setSelectedModelId] = useState<string | null>(null);
   const [effort, setEffort] = useState<string | null>(null);
+  const [fromAddress, setFromAddress] = useState("");
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const inFlight = useRef(false);
   const state = useOverlayState({
     onOpenChange: (isOpen) => {
       if (!isOpen) return;
+      setFromAddress(defaultFromAddress || fromAddresses[0] || "");
       void loadCatalog();
     },
   });
@@ -102,6 +113,7 @@ export function InboxAgentReplyModal({
         threadId: thread.id,
         runtimeKind: provider.runtimeKind,
         model: model.id,
+        fromAddress,
         ...(efforts.length > 0 && effort ? { effort } : {}),
       });
       state.close();
@@ -121,6 +133,7 @@ export function InboxAgentReplyModal({
     !thread ||
     !provider ||
     !model ||
+    !fromAddress ||
     (efforts.length > 0 && !effort) ||
     isLoading;
 
@@ -175,6 +188,15 @@ export function InboxAgentReplyModal({
                 </Button>
               </Modal.Header>
               <Modal.Body className="inbox-agent-reply-modal__body">
+                <InboxSenderIdentityField
+                  addresses={fromAddresses}
+                  disabled={
+                    isLoadingFromAddresses || fromAddresses.length === 0
+                  }
+                  error={fromAddressesError}
+                  onChange={setFromAddress}
+                  value={fromAddress}
+                />
                 <p className="inbox-agent-reply-modal__quota">
                   <Gauge aria-hidden="true" size={14} />
                   Esta ação usa uma turn da sua assinatura. O resultado será

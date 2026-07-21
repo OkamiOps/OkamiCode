@@ -33,6 +33,7 @@ interface EmailReplyPayload {
   to: [string];
   subject: string;
   body: string;
+  fromAddress?: string;
 }
 
 interface ReplyDispatchDependencies {
@@ -121,7 +122,12 @@ export class ReplyDispatchService {
       settings,
       credential,
       message: {
-        from: credential.username,
+        from: this.resolveFromAddress(
+          record.connectorAccountId,
+          settings,
+          credential,
+          payload.fromAddress,
+        ),
         to: payload.to,
         subject: payload.subject,
         text: payload.body,
@@ -130,6 +136,25 @@ export class ReplyDispatchService {
       },
       transport,
     };
+  }
+
+  private resolveFromAddress(
+    accountId: string,
+    settings: OutgoingSettings,
+    credential: ConnectorCredential,
+    requested?: string,
+  ): string {
+    const account = this.dependencies.db
+      .prepare("SELECT address FROM connector_accounts WHERE id = ?")
+      .get(accountId) as { address: string } | undefined;
+    if (!account) throw new Error(PUBLIC_UNAVAILABLE_ERROR);
+    const primary = account.address.trim().toLowerCase();
+    const selected =
+      requested?.trim().toLowerCase() || credential.username.toLowerCase();
+    if (![primary, ...settings.fromAddresses].includes(selected)) {
+      throw new Error(PUBLIC_UNAVAILABLE_ERROR);
+    }
+    return selected;
   }
 
   private requireReply(
@@ -183,7 +208,7 @@ function requireEmailReplyPayload(value: unknown): EmailReplyPayload {
     throw new Error(PUBLIC_UNAVAILABLE_ERROR);
   }
   const payload = value as Record<string, unknown>;
-  const expectedKeys = [
+  const requiredKeys = [
     "threadId",
     "externalThreadId",
     "inReplyTo",
@@ -191,12 +216,15 @@ function requireEmailReplyPayload(value: unknown): EmailReplyPayload {
     "subject",
     "body",
   ];
+  const allowedKeys = [...requiredKeys, "fromAddress"];
   if (
-    Object.keys(payload).length !== expectedKeys.length ||
-    !expectedKeys.every((key) => Object.hasOwn(payload, key)) ||
-    !expectedKeys
+    !Object.keys(payload).every((key) => allowedKeys.includes(key)) ||
+    !requiredKeys.every((key) => Object.hasOwn(payload, key)) ||
+    !requiredKeys
       .filter((key) => key !== "to")
       .every((key) => isNonEmptyText(payload[key])) ||
+    (payload.fromAddress !== undefined &&
+      !isNonEmptyText(payload.fromAddress)) ||
     !Array.isArray(payload.to) ||
     payload.to.length !== 1 ||
     !isNonEmptyText(payload.to[0])
@@ -210,6 +238,9 @@ function requireEmailReplyPayload(value: unknown): EmailReplyPayload {
     to: [payload.to[0] as string],
     subject: payload.subject as string,
     body: payload.body as string,
+    ...(typeof payload.fromAddress === "string"
+      ? { fromAddress: payload.fromAddress }
+      : {}),
   };
 }
 
@@ -227,6 +258,9 @@ function isValidSettings(value: unknown): value is OutgoingSettings {
     value.port >= 1 &&
     value.port <= 65_535 &&
     typeof value.secure === "boolean" &&
+    Array.isArray(value.fromAddresses) &&
+    value.fromAddresses.length <= 50 &&
+    value.fromAddresses.every(isNonEmptyText) &&
     isNonEmptyText(value.createdAt) &&
     isNonEmptyText(value.updatedAt)
   );
