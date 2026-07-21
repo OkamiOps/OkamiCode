@@ -643,8 +643,25 @@ export const approvalResultSchema = z
   })
   .strict();
 
+const quickChatRuntimeKindSchema = z.enum(["claude", "codex", "agy"]);
+
 export const quickChatCreateRequestSchema = z
-  .object({ runtime: delegatedRuntimeKindSchema })
+  .object({
+    runtime: quickChatRuntimeKindSchema,
+    model: z.string().trim().min(1).max(120),
+  })
+  .strict();
+
+export const quickChatGetRequestSchema = z
+  .object({ chatId: entityIdSchema })
+  .strict();
+
+export const quickChatUpdateModelRequestSchema = z
+  .object({
+    chatId: entityIdSchema,
+    runtime: quickChatRuntimeKindSchema,
+    model: z.string().trim().min(1).max(120),
+  })
   .strict();
 
 const quickChatTurnRequestSchema = z
@@ -652,6 +669,7 @@ const quickChatTurnRequestSchema = z
     chatId: entityIdSchema,
     input: userTextSchema,
     contextRefs: z.array(opaqueReferenceSchema).max(100),
+    effort: z.string().trim().min(1).max(20).optional(),
   })
   .strict();
 
@@ -680,10 +698,30 @@ export const quickChatConversationSchema = z
     taskId: entityIdSchema,
     laneId: entityIdSchema,
     runtime: runtimeKindSchema,
+    model: z.string().min(1),
     workspaceId: z.null(),
     createdAt: z.iso.datetime({ offset: true }),
   })
   .strict();
+
+export const quickChatSummarySchema = quickChatConversationSchema.extend({
+  title: z.string().min(1).max(240),
+  preview: z.string().nullable(),
+  updatedAt: z.iso.datetime({ offset: true }),
+});
+
+export const quickChatMessageSchema = z
+  .object({
+    id: z.string().min(1),
+    role: z.enum(["user", "assistant"]),
+    body: z.string(),
+    createdAt: z.iso.datetime({ offset: true }),
+  })
+  .strict();
+
+export const quickChatHistorySchema = quickChatSummarySchema.extend({
+  messages: z.array(quickChatMessageSchema),
+});
 
 export const quickChatPromotionResultSchema = z
   .object({
@@ -1569,6 +1607,9 @@ export const ipcRequestSchemas = {
   "run:cancel": runCancelRequestSchema,
   "approval:resolve": approvalResolveRequestSchema,
   "quickChat:create": quickChatCreateRequestSchema,
+  "quickChat:list": emptyRequestSchema,
+  "quickChat:get": quickChatGetRequestSchema,
+  "quickChat:updateModel": quickChatUpdateModelRequestSchema,
   "quickChat:send": quickChatSendRequestSchema,
   "usage:overview": emptyRequestSchema,
   "usage:refresh": emptyRequestSchema,
@@ -1652,6 +1693,9 @@ export const ipcResponseSchemas = {
   "run:cancel": runCancelResultSchema,
   "approval:resolve": approvalResultSchema,
   "quickChat:create": quickChatConversationSchema,
+  "quickChat:list": z.array(quickChatSummarySchema),
+  "quickChat:get": quickChatHistorySchema,
+  "quickChat:updateModel": quickChatConversationSchema,
   "quickChat:send": quickChatSendResultSchema,
   "usage:overview": usageOverviewSchema,
   "usage:refresh": usageOverviewSchema,

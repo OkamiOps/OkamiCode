@@ -35,7 +35,10 @@ function renderQuickChat({
   messages?: QuickChatMessage[];
 }) {
   const calls = {
-    quickChatCreate: [] as Array<{ runtime: "claude" | "codex" }>,
+    quickChatCreate: [] as Array<{
+      runtime: "claude" | "codex" | "agy";
+      model: string;
+    }>,
     quickChatSend: [] as Array<{
       chatId: string;
       input: string;
@@ -57,10 +60,38 @@ function renderQuickChat({
         taskId,
         laneId,
         runtime: request.runtime,
+        model: request.model,
         workspaceId: null,
         createdAt: "2026-07-18T12:00:00.000Z",
       };
     }),
+    list: vi.fn(async () => []),
+    get: vi.fn(async () => ({
+      id: chatId,
+      taskId,
+      laneId,
+      runtime: "codex" as const,
+      model: "gpt-5.6-luna",
+      workspaceId: null,
+      title: "Chat rápido",
+      preview: null,
+      createdAt: "2026-07-18T12:00:00.000Z",
+      updatedAt: "2026-07-18T12:00:00.000Z",
+      messages: messages.map((message, index) => ({
+        ...message,
+        createdAt: `2026-07-18T12:00:0${index}.000Z`,
+      })),
+    })),
+    models: vi.fn(async () => []),
+    updateModel: vi.fn(async (request) => ({
+      id: request.chatId,
+      taskId,
+      laneId,
+      runtime: request.runtime,
+      model: request.model,
+      workspaceId: null,
+      createdAt: "2026-07-18T12:00:00.000Z",
+    })),
     send: vi.fn(async (request) => {
       calls.quickChatSend.push(request);
       return {
@@ -93,7 +124,11 @@ function renderQuickChat({
 
   render(
     <QueryClientProvider client={new QueryClient()}>
-      <MemoryRouter initialEntries={["/quick-chat"]}>
+      <MemoryRouter
+        initialEntries={[
+          messages.length > 0 ? `/quick-chat?chat=${chatId}` : "/quick-chat",
+        ]}
+      >
         <Routes>
           <Route element={<AppShell />}>
             <Route
@@ -116,6 +151,34 @@ function renderQuickChat({
 }
 
 describe("QuickChatPage", () => {
+  it("starts as an editable free chat with Luna High and no required context", async () => {
+    const runtime = renderQuickChat({ chips: [] });
+    const composer = screen.getByRole("textbox", { name: "Mensagem rápida" });
+    const user = userEvent.setup();
+
+    expect(composer).toBeEnabled();
+    expect(runtime.calls.quickChatCreate).toHaveLength(0);
+    await user.type(composer, "Olá");
+    await user.click(screen.getByRole("button", { name: "Enviar" }));
+    await waitFor(() => {
+      expect(runtime.calls.quickChatCreate[0]).toEqual({
+        runtime: "codex",
+        model: "gpt-5.6-luna",
+      });
+      expect(runtime.calls.quickChatSend[0]).toMatchObject({
+        chatId,
+        input: "Olá",
+        effort: "high",
+      });
+    });
+    expect(
+      screen.getByRole("combobox", { name: "Modelo do chat" }),
+    ).toHaveValue("codex:gpt-5.6-luna");
+    expect(
+      screen.getByRole("combobox", { name: "Nível de esforço" }),
+    ).toHaveValue("high");
+  });
+
   it("removes a context chip before sending", async () => {
     const runtime = renderQuickChat({ chips: [emailChip, memoryChip] });
     const user = userEvent.setup();

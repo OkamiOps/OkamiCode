@@ -126,6 +126,11 @@ export const workbenchClient = {
     invokeCommand("approval:resolve", request),
   quickChatCreate: (request: IpcRequest<"quickChat:create">) =>
     invokeCommand("quickChat:create", request),
+  quickChatList: () => invokeCommand("quickChat:list", {}),
+  quickChatGet: (request: IpcRequest<"quickChat:get">) =>
+    invokeCommand("quickChat:get", request),
+  quickChatUpdateModel: (request: IpcRequest<"quickChat:updateModel">) =>
+    invokeCommand("quickChat:updateModel", request),
   quickChatSend: (request: IpcRequest<"quickChat:send">) =>
     invokeCommand("quickChat:send", request),
   usageOverview: () => invokeCommand("usage:overview", {}),

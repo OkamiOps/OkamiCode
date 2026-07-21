@@ -9,6 +9,11 @@ import type { LaneService } from "./lane-service";
 
 type QuickChatRuntime = Exclude<RuntimeKind, "cursor">;
 
+interface QuickChatCreateRequest {
+  runtime: QuickChatRuntime;
+  model: string;
+}
+
 interface QuickChatDependencies {
   db: Database;
   tasks: Pick<TaskRepository, "findById" | "insert">;
@@ -29,8 +34,19 @@ export interface QuickChatConversation {
   taskId: string;
   laneId: string;
   runtime: QuickChatRuntime;
+  model: string;
   workspaceId: null;
   createdAt: string;
+}
+
+export interface QuickChatSummary extends QuickChatConversation {
+  title: string;
+  preview: string | null;
+  updatedAt: string;
+}
+
+export interface QuickChatHistory extends QuickChatSummary {
+  messages: QuickChatMessageRecord[];
 }
 
 export interface QuickChatMessageRecord {
@@ -62,7 +78,7 @@ export class QuickChatService {
     this.clock = dependencies.clock ?? (() => new Date());
   }
 
-  create(runtime: QuickChatRuntime): QuickChatConversation {
+  create(request: QuickChatCreateRequest): QuickChatConversation {
     const now = this.clock().toISOString();
     const taskId = this.dependencies.createId();
     const chatId = this.dependencies.createId();
@@ -88,9 +104,9 @@ export class QuickChatService {
       this.dependencies.lanes.insert({
         id: laneId,
         taskId,
-        runtimeKind: runtime,
-        providerKind: runtime === "codex" ? "chatgpt" : "claude_max",
-        model: runtime === "codex" ? "gpt-5.6" : "claude-sonnet-4-6",
+        runtimeKind: request.runtime,
+        providerKind: providerForRuntime(request.runtime),
+        model: request.model,
         status: "ready",
         workspacePath: null,
         lastEventCursor: 0,
@@ -103,9 +119,110 @@ export class QuickChatService {
       id: chatId,
       taskId,
       laneId,
-      runtime,
+      runtime: request.runtime,
+      model: request.model,
       workspaceId: null,
       createdAt: now,
+    };
+  }
+
+  list(): QuickChatSummary[] {
+    const rows = this.dependencies.db
+      .prepare(
+        `SELECT c.id, c.task_id AS taskId, t.title, c.created_at AS createdAt,
+                c.updated_at AS updatedAt
+         FROM conversations c
+         JOIN tasks t ON t.id = c.task_id AND t.kind = 'quick_chat'
+         WHERE c.kind = 'quick_chat' AND t.status != 'deleted'
+           AND EXISTS (
+             SELECT 1 FROM messages m
+             WHERE m.conversation_id = c.id AND m.role = 'user'
+           )
+         ORDER BY c.updated_at DESC, c.id DESC`,
+      )
+      .all() as QuickChatListRow[];
+    return rows.map((row) => this.summary(row));
+  }
+
+  history(chatId: string): QuickChatHistory {
+    const row = this.chatListRow(chatId);
+    const summary = this.summary(row);
+    const stored = this.dependencies.db
+      .prepare(
+        `SELECT id, role, content_json, created_at AS createdAt
+         FROM messages
+         WHERE conversation_id = ? AND role IN ('user', 'assistant')
+         ORDER BY sequence`,
+      )
+      .all(chatId) as HistoryMessageRow[];
+    const completed = this.dependencies.db
+      .prepare(
+        `SELECT e.id, e.payload_json AS payloadJson,
+                e.occurred_at AS createdAt
+         FROM events e
+         WHERE e.task_id = ? AND e.kind = 'message_completed'
+         ORDER BY e.occurred_at, e.run_id, e.sequence`,
+      )
+      .all(row.taskId) as CompletedMessageRow[];
+    const messages = [
+      ...stored.map((message) => ({
+        id: message.id,
+        chatId,
+        role: message.role,
+        body: bodyFromContent(message.content_json),
+        createdAt: message.createdAt,
+      })),
+      ...completed.flatMap((event) => {
+        const payload = JSON.parse(event.payloadJson) as { text?: unknown };
+        return typeof payload.text === "string" && payload.text.trim()
+          ? [
+              {
+                id: event.id,
+                chatId,
+                role: "assistant" as const,
+                body: payload.text,
+                createdAt: event.createdAt,
+              },
+            ]
+          : [];
+      }),
+    ].sort((left, right) =>
+      left.createdAt === right.createdAt
+        ? left.id.localeCompare(right.id)
+        : left.createdAt.localeCompare(right.createdAt),
+    );
+    return { ...summary, messages };
+  }
+
+  updateModel(request: {
+    chatId: string;
+    runtime: QuickChatRuntime;
+    model: string;
+  }): QuickChatConversation {
+    const current = this.requireQuickChat(request.chatId);
+    const now = this.clock().toISOString();
+    const laneId = this.dependencies.createId();
+    this.dependencies.lanes.insert({
+      id: laneId,
+      taskId: current.taskId,
+      runtimeKind: request.runtime,
+      providerKind: providerForRuntime(request.runtime),
+      model: request.model,
+      status: "ready",
+      workspacePath: null,
+      lastEventCursor: 0,
+      createdAt: now,
+      updatedAt: now,
+    });
+    this.touchConversation(request.chatId, current.taskId, now);
+    return {
+      id: request.chatId,
+      taskId: current.taskId,
+      laneId,
+      runtime: request.runtime,
+      model: request.model,
+      workspaceId: null,
+      createdAt: this.chatListRow(request.chatId).createdAt,
     };
   }
 
@@ -142,6 +259,7 @@ export class QuickChatService {
     chatId: string,
     input: string,
     contextRefs: string[],
+    effort?: string,
   ): Promise<{ laneId: string; messageId: string; run: RunHandle }> {
     const laneService = this.dependencies.laneService;
     if (!laneService)
@@ -159,6 +277,7 @@ export class QuickChatService {
     const turn = this.buildTurn(chatId, input);
     const chat = this.requireQuickChat(chatId);
     const message = this.appendMessage(chatId, "user", input);
+    this.updateTitleAndActivity(chatId, chat.taskId, input);
     const opened = await laneService.open(chat.laneId, {
       inheritTask: false,
       workspaceFallbackPath: tmpdir(),
@@ -166,7 +285,7 @@ export class QuickChatService {
     const runtimeInput = memoryContext
       ? `${memoryContext}\n\n--- OKAMI QUICK CHAT ---\n${JSON.stringify(turn)}`
       : JSON.stringify(turn);
-    const run = await laneService.sendTurn(opened, runtimeInput);
+    const run = await laneService.sendTurn(opened, runtimeInput, effort);
     return { laneId: chat.laneId, messageId: message.id, run };
   }
 
@@ -270,11 +389,73 @@ export class QuickChatService {
          JOIN tasks t ON t.id = c.task_id AND t.kind = 'quick_chat'
          JOIN runtime_lanes l ON l.task_id = t.id
          WHERE c.id = ? AND c.kind = 'quick_chat'
-         ORDER BY l.created_at, l.id LIMIT 1`,
+         ORDER BY l.created_at DESC, l.rowid DESC LIMIT 1`,
       )
       .get(chatId) as QuickChatRow | undefined;
     if (!row) throw new Error(`Quick chat ${chatId} não encontrado`);
     return row;
+  }
+
+  private chatListRow(chatId: string): QuickChatListRow {
+    const row = this.dependencies.db
+      .prepare(
+        `SELECT c.id, c.task_id AS taskId, t.title,
+                c.created_at AS createdAt, c.updated_at AS updatedAt
+         FROM conversations c
+         JOIN tasks t ON t.id = c.task_id AND t.kind = 'quick_chat'
+         WHERE c.id = ? AND c.kind = 'quick_chat'`,
+      )
+      .get(chatId) as QuickChatListRow | undefined;
+    if (!row) throw new Error(`Quick chat ${chatId} não encontrado`);
+    return row;
+  }
+
+  private summary(row: QuickChatListRow): QuickChatSummary {
+    const chat = this.requireQuickChat(row.id);
+    const history = this.dependencies.db
+      .prepare(
+        `SELECT content_json FROM messages
+         WHERE conversation_id = ? AND role IN ('user', 'assistant')
+         ORDER BY sequence DESC LIMIT 1`,
+      )
+      .get(row.id) as { content_json: string } | undefined;
+    return {
+      id: row.id,
+      taskId: row.taskId,
+      laneId: chat.laneId,
+      runtime: chat.runtimeKind,
+      model: chat.model,
+      workspaceId: null,
+      title: row.title,
+      preview: history ? bodyFromContent(history.content_json) : null,
+      createdAt: row.createdAt,
+      updatedAt: row.updatedAt,
+    };
+  }
+
+  private updateTitleAndActivity(
+    chatId: string,
+    taskId: string,
+    input: string,
+  ): void {
+    const now = this.clock().toISOString();
+    const task = this.dependencies.tasks.findById(taskId);
+    if (task?.title === "Chat rápido") {
+      const title = input.replace(/\s+/gu, " ").trim().slice(0, 72);
+      this.dependencies.db
+        .prepare("UPDATE tasks SET title = ?, updated_at = ? WHERE id = ?")
+        .run(title || "Chat rápido", now, taskId);
+    }
+    this.touchConversation(chatId, taskId, now);
+  }
+
+  private touchConversation(chatId: string, taskId: string, now: string): void {
+    this.dependencies.db
+      .prepare("UPDATE conversations SET updated_at = ? WHERE id = ?")
+      .run(now, chatId);
+    this.dependencies.db
+      .prepare("UPDATE tasks SET updated_at = ? WHERE id = ?")
+      .run(now, taskId);
   }
 
   private selectedContext(chatId: string): string[] {
@@ -359,6 +540,38 @@ interface StoredMessage {
   id: string;
   role: "user" | "assistant";
   content: Record<string, unknown>;
+}
+
+interface QuickChatListRow {
+  id: string;
+  taskId: string;
+  title: string;
+  createdAt: string;
+  updatedAt: string;
+}
+
+interface HistoryMessageRow {
+  id: string;
+  role: "user" | "assistant";
+  content_json: string;
+  createdAt: string;
+}
+
+interface CompletedMessageRow {
+  id: string;
+  payloadJson: string;
+  createdAt: string;
+}
+
+function bodyFromContent(contentJson: string): string {
+  const parsed = JSON.parse(contentJson) as { body?: unknown };
+  return typeof parsed.body === "string" ? parsed.body : "";
+}
+
+function providerForRuntime(runtime: QuickChatRuntime) {
+  if (runtime === "codex") return "chatgpt" as const;
+  if (runtime === "agy") return "antigravity" as const;
+  return "claude_max" as const;
 }
 
 function unique(values: string[]): string[] {

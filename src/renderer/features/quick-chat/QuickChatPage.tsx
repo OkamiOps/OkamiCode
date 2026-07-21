@@ -1,39 +1,46 @@
-import {
-  Button,
-  Checkbox,
-  Chip,
-  Label,
-  Surface,
-  TextArea,
-  TextField,
-} from "@heroui/react";
+import { Button, Checkbox, Surface } from "@heroui/react";
 import {
   QueryClient,
   QueryClientProvider,
   useMutation,
+  useQuery,
+  useQueryClient,
 } from "@tanstack/react-query";
 import {
   ArrowUpRight,
   Bot,
+  ChevronDown,
   MessageSquareText,
+  Plus,
+  Search,
   Send,
   ShieldCheck,
 } from "lucide-react";
-import { useEffect, useRef, useState, type FormEvent } from "react";
+import { useEffect, useMemo, useState, type FormEvent } from "react";
+import { useSearchParams } from "react-router-dom";
 import { useStore } from "zustand";
 import { createStore, type StoreApi } from "zustand/vanilla";
+import type { CanonicalEvent } from "../../../shared/contracts/event";
+import type { RuntimeKind } from "../../../shared/contracts/lane";
 import type { IpcRequest, IpcResponse } from "../../../shared/contracts/ipc";
 import { workbenchClient } from "../../lib/ipc/client";
+import { subscribeToWorkbenchEvents } from "../../lib/ipc/events";
 import { ContextChips, type ContextChipItem } from "./ContextChips";
 import { MemoryPicker } from "./MemoryPicker";
+
+const DEFAULT_RUNTIME = "codex" as const;
+const DEFAULT_MODEL = "gpt-5.6-luna";
+const DEFAULT_EFFORT = "high";
 
 export interface QuickChatMessage {
   id: string;
   role: "user" | "assistant";
   body: string;
+  createdAt?: string;
 }
 
 type QuickChatCreateResult = IpcResponse<"quickChat:create">;
+type QuickChatSummary = IpcResponse<"quickChat:list">[number];
 type QuickChatSendResult = Extract<
   IpcResponse<"quickChat:send">,
   { runId: string }
@@ -50,10 +57,19 @@ export interface QuickChatApi {
   create(
     request: IpcRequest<"quickChat:create">,
   ): Promise<QuickChatCreateResult>;
+  list(): Promise<IpcResponse<"quickChat:list">>;
+  get(
+    request: IpcRequest<"quickChat:get">,
+  ): Promise<IpcResponse<"quickChat:get">>;
+  models(): Promise<IpcResponse<"models:list">>;
+  updateModel(
+    request: IpcRequest<"quickChat:updateModel">,
+  ): Promise<IpcResponse<"quickChat:updateModel">>;
   send(request: {
     chatId: string;
     input: string;
     contextRefs: string[];
+    effort?: string;
   }): Promise<QuickChatSendResult>;
   promote(request: {
     chatId: string;
@@ -62,6 +78,7 @@ export interface QuickChatApi {
     selectedMessageIds: string[];
     contextRefs: string[];
   }): Promise<QuickChatPromotionResult>;
+  subscribe?(listener: (event: CanonicalEvent) => void): () => void;
 }
 
 interface QuickChatPageProps {
@@ -77,13 +94,20 @@ interface QuickChatUiState {
   selectedMessageIds: Record<string, true>;
   addMessage: (message: QuickChatMessage) => void;
   addChip: (chip: ContextChipItem) => void;
+  hydrate: (messages: QuickChatMessage[]) => void;
   removeChip: (ref: string) => void;
   setInput: (input: string) => void;
   toggleMessage: (id: string) => void;
+  upsertAssistant: (id: string, text: string, replace?: boolean) => void;
 }
 
 const defaultQuickChatApi: QuickChatApi = {
   create: (request) => workbenchClient.quickChatCreate(request),
+  list: () => workbenchClient.quickChatList(),
+  get: (request) => workbenchClient.quickChatGet(request),
+  models: () => workbenchClient.modelsList(),
+  updateModel: (request) => workbenchClient.quickChatUpdateModel(request),
+  subscribe: subscribeToWorkbenchEvents,
   send: async (request) => {
     const response = await workbenchClient.quickChatSend(request);
     if (!("runId" in response)) {
@@ -104,10 +128,7 @@ const defaultQuickChatApi: QuickChatApi = {
     if (!("task" in response) || response.task.kind !== "workbench") {
       throw new Error("Resposta de promoção do chat rápido inválida");
     }
-    return {
-      ...response,
-      task: { ...response.task, kind: "workbench" as const },
-    };
+    return { ...response, task: { ...response.task, kind: "workbench" } };
   },
 };
 
@@ -128,7 +149,6 @@ export function QuickChatPage({
   const [store] = useState(() =>
     createQuickChatStore(initialChips, initialMessages),
   );
-
   return (
     <QueryClientProvider client={queryClient}>
       <QuickChatContent api={api} store={store} />
@@ -143,6 +163,9 @@ function QuickChatContent({
   api: QuickChatApi;
   store: StoreApi<QuickChatUiState>;
 }) {
+  const queryClient = useQueryClient();
+  const [searchParams, setSearchParams] = useSearchParams();
+  const chatId = searchParams.get("chat");
   const chips = useStore(store, (state) => state.chips);
   const input = useStore(store, (state) => state.input);
   const messages = useStore(store, (state) => state.messages);
@@ -150,8 +173,38 @@ function QuickChatContent({
     store,
     (state) => state.selectedMessageIds,
   );
-  const createStarted = useRef(false);
-  const createChat = useMutation({ mutationFn: api.create });
+  const [filter, setFilter] = useState("");
+  const [runtime, setRuntime] =
+    useState<Exclude<RuntimeKind, "cursor">>(DEFAULT_RUNTIME);
+  const [model, setModel] = useState(DEFAULT_MODEL);
+  const [effort, setEffort] = useState<string | null>(DEFAULT_EFFORT);
+  const chatsQuery = useQuery({
+    queryKey: ["quick-chat", "list"],
+    queryFn: api.list,
+  });
+  const historyQuery = useQuery({
+    queryKey: ["quick-chat", "history", chatId],
+    queryFn: () => api.get({ chatId: chatId! }),
+    enabled: Boolean(chatId),
+  });
+  const modelsQuery = useQuery({
+    queryKey: ["quick-chat", "models"],
+    queryFn: api.models,
+  });
+  const createChat = useMutation({
+    mutationFn: api.create,
+  });
+  const updateModel = useMutation({
+    mutationFn: api.updateModel,
+    onSuccess: (updated) => {
+      setRuntime(updated.runtime as Exclude<RuntimeKind, "cursor">);
+      setModel(updated.model);
+      void queryClient.invalidateQueries({
+        queryKey: ["quick-chat", "history", updated.id],
+      });
+      void queryClient.invalidateQueries({ queryKey: ["quick-chat", "list"] });
+    },
+  });
   const send = useMutation({
     mutationFn: api.send,
     onSuccess: (result, request) => {
@@ -161,26 +214,92 @@ function QuickChatContent({
         body: request.input,
       });
       store.getState().setInput("");
+      void queryClient.invalidateQueries({ queryKey: ["quick-chat", "list"] });
     },
   });
   const promote = useMutation({ mutationFn: api.promote });
-  const chat = createChat.data;
 
   useEffect(() => {
-    if (createStarted.current) return;
-    createStarted.current = true;
-    createChat.mutate({ runtime: "codex" });
-  }, [createChat]);
+    const history = historyQuery.data;
+    if (!history) return;
+    store.getState().hydrate(history.messages);
+  }, [historyQuery.data, store]);
+
+  useEffect(() => {
+    if (!api.subscribe || !chatId) return;
+    return api.subscribe((event) => {
+      const activeLane = historyQuery.data?.laneId ?? createChat.data?.laneId;
+      if (!activeLane || event.laneId !== activeLane) return;
+      if (event.kind === "message_delta") {
+        const delta = event.payload.delta;
+        if (typeof delta === "string") {
+          store.getState().upsertAssistant(`assistant:${event.runId}`, delta);
+        }
+      }
+      if (event.kind === "message_completed") {
+        const text = event.payload.text;
+        if (typeof text === "string" && text.trim()) {
+          store
+            .getState()
+            .upsertAssistant(`assistant:${event.runId}`, text, true);
+        }
+        void queryClient.invalidateQueries({
+          queryKey: ["quick-chat", "history", chatId],
+        });
+        void queryClient.invalidateQueries({
+          queryKey: ["quick-chat", "list"],
+        });
+      }
+    });
+  }, [
+    api,
+    chatId,
+    createChat.data?.laneId,
+    historyQuery.data?.laneId,
+    queryClient,
+    store,
+  ]);
+
+  const chat = historyQuery.data ?? createChat.data;
+  const modelOptions = useMemo(
+    () => availableModels(modelsQuery.data ?? []),
+    [modelsQuery.data],
+  );
+  const localModelSelection = updateModel.isPending || updateModel.data;
+  const activeRuntime = localModelSelection
+    ? runtime
+    : ((historyQuery.data?.runtime as Exclude<RuntimeKind, "cursor">) ??
+      runtime);
+  const activeModel = localModelSelection
+    ? model
+    : (historyQuery.data?.model ?? model);
+  const selectedDefinition = modelOptions.find(
+    (option) => option.runtime === activeRuntime && option.id === activeModel,
+  );
+  const efforts =
+    selectedDefinition?.efforts ??
+    (activeRuntime === "codex" ? ["low", "medium", "high", "xhigh"] : []);
 
   async function handleSubmit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
     const trimmed = input.trim();
-    if (!chat || !trimmed || send.isPending) return;
+    if (!trimmed || createChat.isPending || send.isPending) return;
+    const targetChat =
+      chat ??
+      (await createChat.mutateAsync({
+        runtime: activeRuntime,
+        model: activeModel,
+      }));
     await send.mutateAsync({
-      chatId: chat.id,
+      chatId: targetChat.id,
       input: trimmed,
       contextRefs: chips.map((chip) => chip.ref),
+      ...(activeRuntime === "codex" && effort ? { effort } : {}),
     });
+    if (!chat) {
+      setSearchParams({ chat: targetChat.id }, { replace: true });
+      void queryClient.invalidateQueries({ queryKey: ["quick-chat", "list"] });
+    }
   }
 
   async function handlePromote() {
@@ -198,162 +317,317 @@ function QuickChatContent({
     });
   }
 
-  const error = firstError(createChat.error, send.error, promote.error);
+  const error = firstError(
+    createChat.error,
+    historyQuery.error,
+    updateModel.error,
+    send.error,
+    promote.error,
+  );
   const selectedCount = Object.keys(selectedMessageIds).length;
+  const term = filter.trim().toLowerCase();
+  const chats = (chatsQuery.data ?? []).filter((item) =>
+    `${item.title} ${item.preview ?? ""}`.toLowerCase().includes(term),
+  );
 
   return (
-    <section
-      aria-labelledby="quick-chat-heading"
-      className="grid h-full min-h-0 grid-rows-[auto_minmax(0,1fr)_auto] overflow-hidden"
-    >
-      <header className="flex min-h-20 items-center justify-between gap-4 border-b border-[var(--ok-border)] bg-[var(--ok-surface-1)] px-4 sm:px-6">
-        <div className="min-w-0">
-          <p className="pane-kicker m-0">Conversa independente</p>
-          <h1
-            className="mt-1 truncate text-lg font-semibold tracking-[-0.025em]"
-            id="quick-chat-heading"
-          >
-            Chat rápido
-          </h1>
-        </div>
-        <div className="flex flex-wrap justify-end gap-1.5">
-          <Chip
-            className="border border-[var(--ok-border)] bg-[var(--ok-bg)] text-[var(--ok-text)]"
-            size="sm"
-            variant="secondary"
-          >
-            <Bot aria-hidden="true" className="mr-1 inline" size={11} />
-            Codex
-          </Chip>
-          <Chip
-            className="border border-[color-mix(in_srgb,var(--ok-green)_34%,var(--ok-border))] bg-[var(--ok-bg)] text-[var(--ok-green)]"
-            size="sm"
-            variant="secondary"
-          >
-            <ShieldCheck aria-hidden="true" className="mr-1 inline" size={11} />
-            Sem workspace
-          </Chip>
-        </div>
-      </header>
+    <section aria-labelledby="quick-chat-heading" className="quick-chat-shell">
+      <QuickChatHistory
+        chats={chats}
+        currentChatId={chatId}
+        filter={filter}
+        onFilter={setFilter}
+        onNew={() => setSearchParams({ new: crypto.randomUUID() })}
+        onSelect={(id) => setSearchParams({ chat: id })}
+      />
 
-      <div className="min-h-0 overflow-y-auto px-4 py-5 sm:px-6">
-        {messages.length === 0 ? (
-          <div className="grid min-h-full place-content-center justify-items-center text-center">
-            <span className="grid size-11 place-items-center rounded-[var(--ok-radius-md)] border border-[var(--ok-border)] bg-[var(--ok-surface-1)] text-[var(--ok-orange)]">
-              <MessageSquareText aria-hidden="true" size={19} />
-            </span>
-            <h2 className="mt-3 text-sm font-semibold">Conversa limpa</h2>
-            <p className="mt-1 max-w-md text-xs leading-5 text-[var(--ok-text-muted)]">
-              Nenhum histórico ou arquivo de projeto entra aqui. Adicione apenas
-              o contexto necessário e remova qualquer chip antes de enviar.
-            </p>
+      <div className="quick-chat-main">
+        <header className="quick-chat-header">
+          <div>
+            <p className="pane-kicker">Conversa independente</p>
+            <h1 id="quick-chat-heading">
+              {historyQuery.data?.title ?? "Chat rápido"}
+            </h1>
           </div>
-        ) : (
-          <div
-            aria-label="Mensagens do chat rápido"
-            aria-live="polite"
-            className="mx-auto grid w-full max-w-3xl gap-3"
-          >
-            {messages.map((message) => (
-              <Surface
-                className={`flex max-w-[88%] items-start gap-2 rounded-[var(--ok-radius-md)] border px-3 py-2.5 text-sm leading-6 ${
-                  message.role === "user"
-                    ? "ml-auto border-[color-mix(in_srgb,var(--ok-orange)_36%,var(--ok-border))] bg-[color-mix(in_srgb,var(--ok-orange)_12%,var(--ok-surface-2))]"
-                    : "mr-auto border-[var(--ok-border)] bg-[var(--ok-surface-1)]"
-                }`}
-                key={message.id}
-                variant="secondary"
-              >
-                <Checkbox
-                  aria-label={`Incluir na promoção: ${message.body}`}
-                  className="mt-1 shrink-0"
-                  isSelected={Boolean(selectedMessageIds[message.id])}
-                  onChange={() => store.getState().toggleMessage(message.id)}
-                >
-                  <Checkbox.Content
-                    aria-label={`Incluir na promoção: ${message.body}`}
-                  >
-                    <Checkbox.Control>
-                      <Checkbox.Indicator />
-                    </Checkbox.Control>
-                  </Checkbox.Content>
-                </Checkbox>
-                <p className="m-0 min-w-0">{message.body}</p>
-              </Surface>
-            ))}
-          </div>
-        )}
-      </div>
+          <span className="quick-chat-workspace-badge">
+            <ShieldCheck aria-hidden="true" size={12} /> Sem workspace
+          </span>
+        </header>
 
-      <form
-        className="border-t border-[var(--ok-border)] bg-[var(--ok-surface-1)] p-3 sm:px-5"
-        onSubmit={(event) => void handleSubmit(event)}
-      >
-        <div className="mx-auto w-full max-w-4xl">
-          <div className="mb-2 flex min-h-7 items-center justify-between gap-3">
-            <div className="min-w-0">
-              <ContextChips
-                chips={chips}
-                onRemove={(ref) => store.getState().removeChip(ref)}
-              />
+        <div className="quick-chat-messages">
+          {messages.length === 0 ? (
+            <div className="quick-chat-empty">
+              <span>
+                <MessageSquareText aria-hidden="true" size={20} />
+              </span>
+              <h2>Pode perguntar direto</h2>
+              <p>
+                Este chat não carrega pasta, projeto ou memória automaticamente.
+                Contexto é opcional — digite normalmente para começar.
+              </p>
             </div>
-            <div className="flex shrink-0 items-center gap-1.5">
+          ) : (
+            <div
+              aria-label="Mensagens do chat rápido"
+              aria-live="polite"
+              className="quick-chat-thread"
+            >
+              {messages.map((message) => (
+                <Surface
+                  className={`quick-chat-message quick-chat-message--${message.role}`}
+                  key={message.id}
+                  variant="secondary"
+                >
+                  <Checkbox
+                    aria-label={`Incluir na promoção: ${message.body}`}
+                    className="quick-chat-message__select"
+                    isSelected={Boolean(selectedMessageIds[message.id])}
+                    onChange={() => store.getState().toggleMessage(message.id)}
+                  >
+                    <Checkbox.Content
+                      aria-label={`Incluir na promoção: ${message.body}`}
+                    >
+                      <Checkbox.Control>
+                        <Checkbox.Indicator />
+                      </Checkbox.Control>
+                    </Checkbox.Content>
+                  </Checkbox>
+                  <p>{message.body}</p>
+                </Surface>
+              ))}
+            </div>
+          )}
+        </div>
+
+        <form
+          className="quick-chat-composer"
+          onSubmit={(event) => void handleSubmit(event)}
+        >
+          <div className="quick-chat-composer__context">
+            <ContextChips
+              chips={chips}
+              onRemove={(ref) => store.getState().removeChip(ref)}
+            />
+            <div>
               <MemoryPicker
                 onSelect={(chip) => store.getState().addChip(chip)}
               />
               <Button
-                className="border border-[var(--ok-border)] text-[var(--ok-text-muted)]"
+                aria-label="Promover para tarefa"
+                className="quick-chat-promote"
                 isDisabled={!chat || selectedCount === 0 || promote.isPending}
                 size="sm"
                 type="button"
                 variant="ghost"
                 onPress={() => void handlePromote()}
               >
-                <ArrowUpRight aria-hidden="true" size={13} />
-                Promover para tarefa
+                <ArrowUpRight aria-hidden="true" size={13} /> Promover
               </Button>
             </div>
           </div>
-          <div className="flex items-end gap-2">
-            <TextField className="min-w-0 flex-1" fullWidth>
-              <Label className="sr-only">Mensagem rápida</Label>
-              <TextArea
-                className="max-h-40 min-h-11 w-full resize-none rounded-[var(--ok-radius-md)] border border-[var(--ok-border)] bg-[var(--ok-bg)] px-3 py-2.5 text-sm text-[var(--ok-text)] outline-none placeholder:text-[var(--ok-text-muted)] focus:border-[var(--ok-cyan)]"
-                disabled={!chat || send.isPending}
-                placeholder="Pergunte sem carregar um projeto…"
-                rows={2}
-                value={input}
-                onChange={(event) =>
-                  store.getState().setInput(event.target.value)
+          <div className="quick-chat-composer__box">
+            <textarea
+              aria-label="Mensagem rápida"
+              disabled={send.isPending}
+              onChange={(event) =>
+                store.getState().setInput(event.target.value)
+              }
+              placeholder="Pergunte qualquer coisa…"
+              rows={2}
+              value={input}
+            />
+            <div className="quick-chat-composer__toolbar">
+              <span className="quick-chat-model-select">
+                <Bot aria-hidden="true" size={13} />
+                <select
+                  aria-label="Modelo do chat"
+                  disabled={updateModel.isPending}
+                  onChange={(event) => {
+                    const option = modelOptions.find(
+                      (candidate) => candidate.key === event.target.value,
+                    );
+                    if (!option) return;
+                    setRuntime(option.runtime);
+                    setModel(option.id);
+                    setEffort(
+                      option.runtime === "codex" ? DEFAULT_EFFORT : null,
+                    );
+                    if (chat) {
+                      updateModel.mutate({
+                        chatId: chat.id,
+                        runtime: option.runtime,
+                        model: option.id,
+                      });
+                    }
+                  }}
+                  value={`${activeRuntime}:${activeModel}`}
+                >
+                  {modelOptions.map((option) => (
+                    <option key={option.key} value={option.key}>
+                      {option.label}
+                    </option>
+                  ))}
+                </select>
+                <ChevronDown aria-hidden="true" size={12} />
+              </span>
+              {efforts.length > 0 && (
+                <span className="quick-chat-effort-select">
+                  <select
+                    aria-label="Nível de esforço"
+                    onChange={(event) => setEffort(event.target.value)}
+                    value={effort ?? ""}
+                  >
+                    {efforts.map((item) => (
+                      <option key={item} value={item}>
+                        {effortLabel(item)}
+                      </option>
+                    ))}
+                  </select>
+                  <ChevronDown aria-hidden="true" size={12} />
+                </span>
+              )}
+              <span className="quick-chat-composer__spacer" />
+              <button
+                aria-label="Enviar"
+                className="quick-chat-send"
+                disabled={
+                  !input.trim() || createChat.isPending || send.isPending
                 }
-              />
-            </TextField>
-            <Button
-              className="h-11 bg-[var(--ok-orange)] font-semibold text-[var(--ok-bg)]"
-              isDisabled={!chat || !input.trim() || send.isPending}
-              type="submit"
-              variant="primary"
-            >
-              <Send aria-hidden="true" size={14} />
-              Enviar
-            </Button>
+                type="submit"
+              >
+                <Send aria-hidden="true" size={15} />
+              </button>
+            </div>
           </div>
+          {(createChat.isPending || send.isPending) && (
+            <p className="quick-chat-status">
+              {createChat.isPending
+                ? "Criando a conversa…"
+                : "Enviando sua mensagem…"}
+            </p>
+          )}
           {error && (
-            <p className="mt-2 text-[11px] text-[var(--ok-red)]" role="alert">
-              {error.message}
-            </p>
+            <div className="quick-chat-error" role="alert">
+              <span>{error.message}</span>
+            </div>
           )}
-          {promote.data && (
-            <p
-              className="mt-2 text-[11px] text-[var(--ok-green)]"
-              role="status"
-            >
-              Tarefa criada apenas com a seleção atual.
-            </p>
-          )}
-        </div>
-      </form>
+        </form>
+      </div>
     </section>
+  );
+}
+
+function QuickChatHistory({
+  chats,
+  currentChatId,
+  filter,
+  onFilter,
+  onNew,
+  onSelect,
+}: {
+  chats: QuickChatSummary[];
+  currentChatId: string | null;
+  filter: string;
+  onFilter: (value: string) => void;
+  onNew: () => void;
+  onSelect: (id: string) => void;
+}) {
+  return (
+    <aside aria-label="Histórico de chats" className="quick-chat-history">
+      <header>
+        <span className="pane-kicker">Chat</span>
+        <h2>Conversas</h2>
+      </header>
+      <button className="quick-chat-history__new" onClick={onNew} type="button">
+        <Plus aria-hidden="true" size={15} /> Nova conversa
+      </button>
+      <label className="quick-chat-history__search">
+        <Search aria-hidden="true" size={13} />
+        <input
+          aria-label="Buscar chats"
+          onChange={(event) => onFilter(event.target.value)}
+          placeholder="Buscar chats"
+          type="search"
+          value={filter}
+        />
+      </label>
+      <nav aria-label="Conversas recentes">
+        {chats.length === 0 ? (
+          <p>Nenhuma conversa salva.</p>
+        ) : (
+          chats.map((chat) => (
+            <button
+              data-active={chat.id === currentChatId || undefined}
+              key={chat.id}
+              onClick={() => onSelect(chat.id)}
+              type="button"
+            >
+              <strong>{chat.title}</strong>
+              <span>{chat.preview ?? modelDisplay(chat.model)}</span>
+            </button>
+          ))
+        )}
+      </nav>
+    </aside>
+  );
+}
+
+interface ModelOption {
+  key: string;
+  runtime: "claude" | "codex" | "agy";
+  id: string;
+  label: string;
+  efforts?: string[];
+}
+
+function availableModels(catalog: IpcResponse<"models:list">): ModelOption[] {
+  const options = catalog.flatMap((provider) =>
+    provider.runtimeKind === "cursor"
+      ? []
+      : provider.models.map((item) => ({
+          key: `${provider.runtimeKind}:${item.id}`,
+          runtime: provider.runtimeKind,
+          id: item.id,
+          label: item.label,
+          efforts: item.efforts,
+        })),
+  ) as ModelOption[];
+  for (const fallback of [
+    {
+      key: "codex:gpt-5.6-luna",
+      runtime: "codex" as const,
+      id: "gpt-5.6-luna",
+      label: "GPT-5.6 Luna",
+    },
+    {
+      key: "agy:gemini-3.5-flash",
+      runtime: "agy" as const,
+      id: "gemini-3.5-flash",
+      label: "Gemini 3.5 Flash",
+    },
+  ]) {
+    if (!options.some((option) => option.key === fallback.key))
+      options.unshift(fallback);
+  }
+  return options;
+}
+
+function modelDisplay(model: string): string {
+  return model
+    .replaceAll("-", " ")
+    .replace(/\b\w/gu, (letter) => letter.toUpperCase());
+}
+
+function effortLabel(effort: string): string {
+  return (
+    (
+      {
+        low: "Baixo",
+        medium: "Médio",
+        high: "Alto",
+        xhigh: "Extra alto",
+      } as Record<string, string>
+    )[effort] ?? effort
   );
 }
 
@@ -370,11 +644,11 @@ function createQuickChatStore(
     ),
     addMessage: (message) =>
       set((state) => ({
-        messages: [...state.messages, message],
-        selectedMessageIds: {
-          ...state.selectedMessageIds,
-          [message.id]: true,
-        },
+        messages: [
+          ...state.messages.filter((current) => current.id !== message.id),
+          message,
+        ],
+        selectedMessageIds: { ...state.selectedMessageIds, [message.id]: true },
       })),
     addChip: (chip) =>
       set((state) => ({
@@ -382,6 +656,13 @@ function createQuickChatStore(
           ? state.chips
           : [...state.chips, chip],
       })),
+    hydrate: (next) =>
+      set({
+        messages: next,
+        selectedMessageIds: Object.fromEntries(
+          next.map((message) => [message.id, true as const]),
+        ),
+      }),
     removeChip: (ref) =>
       set((state) => ({
         chips: state.chips.filter((chip) => chip.ref !== ref),
@@ -393,6 +674,22 @@ function createQuickChatStore(
         if (selectedMessageIds[id]) delete selectedMessageIds[id];
         else selectedMessageIds[id] = true;
         return { selectedMessageIds };
+      }),
+    upsertAssistant: (id, text, replace = false) =>
+      set((state) => {
+        const current = state.messages.find((message) => message.id === id);
+        const next = {
+          id,
+          role: "assistant" as const,
+          body: replace ? text : `${current?.body ?? ""}${text}`,
+        };
+        return {
+          messages: current
+            ? state.messages.map((message) =>
+                message.id === id ? next : message,
+              )
+            : [...state.messages, next],
+        };
       }),
   }));
 }

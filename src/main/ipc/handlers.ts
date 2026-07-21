@@ -487,7 +487,17 @@ async function dispatch(
       );
     case "quickChat:create":
       return quickChatService().create(
-        (request as IpcRequest<"quickChat:create">).runtime,
+        request as IpcRequest<"quickChat:create">,
+      );
+    case "quickChat:list":
+      return quickChatService().list();
+    case "quickChat:get":
+      return quickChatService().history(
+        (request as IpcRequest<"quickChat:get">).chatId,
+      );
+    case "quickChat:updateModel":
+      return quickChatService().updateModel(
+        request as IpcRequest<"quickChat:updateModel">,
       );
     case "quickChat:send":
       return sendQuickChat(
@@ -670,6 +680,7 @@ async function sendQuickChat(
     request.chatId,
     request.input,
     request.contextRefs,
+    request.effort,
   );
   void forwardEvents(state, sender, result.run).catch(
     state.reportBackgroundError,

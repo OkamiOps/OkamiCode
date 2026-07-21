@@ -26,7 +26,16 @@ function createQuickChatHarness(
   return {
     fx,
     service,
-    create: (runtime: "claude" | "codex") => service.create(runtime),
+    create: (runtime: "claude" | "codex" | "agy") =>
+      service.create({
+        runtime,
+        model:
+          runtime === "codex"
+            ? "gpt-5.6-luna"
+            : runtime === "agy"
+              ? "gemini-3.5-flash"
+              : "sonnet",
+      }),
     selectContext: (chatId: string, contextRefs: string[]) =>
       service.selectContext(chatId, contextRefs),
     buildTurn: (chatId: string, input: string) =>
@@ -43,6 +52,7 @@ describe("QuickChatService", () => {
     expect(h.fx.tasks.findById(chat.taskId)?.kind).toBe("quick_chat");
     expect(h.fx.lanes.findById(chat.laneId)).toMatchObject({
       runtimeKind: "codex",
+      model: "gpt-5.6-luna",
       taskId: chat.taskId,
       workspacePath: null,
     });
@@ -52,6 +62,53 @@ describe("QuickChatService", () => {
 
     expect(turn.contextRefs).toEqual(["memory:note-7"]);
     expect(JSON.stringify(turn)).not.toContain("memory:note-8");
+  });
+
+  it("lists, reopens and retitles persisted chats from their first message", async () => {
+    const h = createQuickChatHarness({
+      async open(laneId: string) {
+        return openedLane(laneId);
+      },
+      async sendTurn(): Promise<RunHandle> {
+        return { runId: randomUUID() as RunId, events: emptyEvents() };
+      },
+    });
+    const chat = h.create("codex");
+
+    await h.service.send(chat.id, "Explique esta arquitetura", [], "high");
+
+    expect(h.service.list()).toEqual([
+      expect.objectContaining({
+        id: chat.id,
+        title: "Explique esta arquitetura",
+        preview: "Explique esta arquitetura",
+        model: "gpt-5.6-luna",
+      }),
+    ]);
+    expect(h.service.history(chat.id).messages).toEqual([
+      expect.objectContaining({
+        role: "user",
+        body: "Explique esta arquitetura",
+      }),
+    ]);
+  });
+
+  it("switches a quick chat to Gemini without attaching a workspace", () => {
+    const h = createQuickChatHarness();
+    const chat = h.create("codex");
+
+    const updated = h.service.updateModel({
+      chatId: chat.id,
+      runtime: "agy",
+      model: "gemini-3.5-flash",
+    });
+
+    expect(updated).toMatchObject({
+      runtime: "agy",
+      model: "gemini-3.5-flash",
+      workspaceId: null,
+    });
+    expect(h.fx.lanes.findById(updated.laneId)?.workspacePath).toBeNull();
   });
 
   it("rejects a quick chat whose lane unexpectedly has a workspace", async () => {
