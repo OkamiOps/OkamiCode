@@ -1,0 +1,2 @@
+{"type":"system","subtype":"init","session_id":"<redacted-resumed-cursor-session-id>","cwd":"<redacted-workspace>","model":"auto","permissionMode":"default"}
+{"type":"assistant","message":{"role":"assistant","content":[{"type":"text","text":"Work stopped before a terminal result."}]},"session_id":"<redacted-resumed-cursor-session-id>"}

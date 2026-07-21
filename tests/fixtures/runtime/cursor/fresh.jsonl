@@ -1,0 +1,6 @@
+{"type":"system","subtype":"init","session_id":"<redacted-cursor-session-id>","cwd":"<redacted-workspace>","model":"auto","permissionMode":"default","future_init_field":{"accepted":true}}
+{"type":"assistant","message":{"role":"assistant","content":[{"type":"text","text":"Inspecting the workspace."}]},"session_id":"<redacted-cursor-session-id>","future_assistant_field":"accepted"}
+{"type":"tool_call","subtype":"started","call_id":"<redacted-call-id>","tool_call":{"shellToolCall":{"args":{"command":"git status --short"},"future_tool_field":{"accepted":true}}},"session_id":"<redacted-cursor-session-id>"}
+{"type":"tool_call","subtype":"completed","call_id":"<redacted-call-id>","tool_call":{"shellToolCall":{"args":{"command":"git status --short"},"result":{"success":{"exitCode":0,"stdout":"clean","stderr":""}},"future_tool_field":{"accepted":true}}},"session_id":"<redacted-cursor-session-id>"}
+{"type":"future_cursor_event","future_payload":{"ignored":true}}
+{"type":"result","subtype":"success","duration_ms":1200,"duration_api_ms":900,"is_error":false,"result":"Workspace inspected.","session_id":"<redacted-cursor-session-id>","future_result_field":"accepted"}
