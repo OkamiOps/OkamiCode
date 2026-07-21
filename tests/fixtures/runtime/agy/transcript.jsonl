@@ -1,0 +1,2 @@
+{"step_index":0,"source":"USER_EXPLICIT","type":"USER_INPUT","status":"DONE","created_at":"2026-07-21T12:00:00.000Z","content":"Inspect the workspace","future_transcript_field":{"accepted":true}}
+{"step_index":1,"source":"MODEL","type":"PLANNER_RESPONSE","status":"DONE","created_at":"2026-07-21T12:00:01.000Z","content":"Sanitized planner response","future_transcript_field":{"accepted":true}}

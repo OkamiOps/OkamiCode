@@ -1,0 +1,9 @@
+{
+  "conversationId": "<redacted-agy-conversation-id>",
+  "workspacePaths": ["/redacted/workspace"],
+  "transcriptPath": "/redacted/agy/transcript.jsonl",
+  "artifactDirectoryPath": "/redacted/agy/artifacts",
+  "stepIdx": 1,
+  "error": "",
+  "futureToolField": { "accepted": true }
+}

@@ -1,0 +1,10 @@
+{
+  "conversationId": "<redacted-agy-conversation-id>",
+  "workspacePaths": ["/redacted/workspace"],
+  "transcriptPath": "/redacted/agy/transcript.jsonl",
+  "artifactDirectoryPath": "/redacted/agy/artifacts",
+  "invocationNum": 0,
+  "initialNumSteps": 0,
+  "futureCount": "opaque-future-value",
+  "futureCommonField": { "accepted": true }
+}

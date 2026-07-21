@@ -1,0 +1,16 @@
+{
+  "conversationId": "<redacted-agy-conversation-id>",
+  "workspacePaths": ["/redacted/workspace"],
+  "transcriptPath": "/redacted/agy/transcript.jsonl",
+  "artifactDirectoryPath": "/redacted/agy/artifacts",
+  "stepIdx": 1,
+  "toolCall": {
+    "name": "run_command",
+    "args": {
+      "CommandLine": "git status --short",
+      "Cwd": "/redacted/workspace",
+      "WaitMsBeforeAsync": 1000
+    }
+  },
+  "futureToolField": { "accepted": true }
+}

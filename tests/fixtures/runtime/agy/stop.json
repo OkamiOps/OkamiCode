@@ -1,0 +1,11 @@
+{
+  "conversationId": "<redacted-agy-conversation-id>",
+  "workspacePaths": ["/redacted/workspace"],
+  "transcriptPath": "/redacted/agy/transcript.jsonl",
+  "artifactDirectoryPath": "/redacted/agy/artifacts",
+  "executionNum": 0,
+  "fullyIdle": true,
+  "terminationReason": "completed",
+  "error": "",
+  "futureStopField": { "accepted": true }
+}
