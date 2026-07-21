@@ -30,6 +30,33 @@ it("accepts the verified Cursor runtime capability record", () => {
   expect(cliCapabilitySchema.safeParse(cursor).success).toBe(true);
 });
 
+it("accepts only the AGY launcher capabilities proven by the local help", () => {
+  const agy = {
+    client: "agy",
+    label: "AGY",
+    binaryPath: "/bin/agy",
+    version: "1.1.1",
+    role: "launcher",
+    integrationStatus: "needs_adapter",
+    detail: "CLI encontrado; aguarda companion local de hooks JSON.",
+    capabilities: ["sessions", "models", "sandbox", "plugins"],
+  };
+
+  expect(cliCapabilitySchema.safeParse(agy).success).toBe(true);
+  expect(
+    cliCapabilitySchema.safeParse({
+      ...agy,
+      capabilities: [...agy.capabilities, "approvals"],
+    }).success,
+  ).toBe(false);
+  expect(
+    cliCapabilitySchema.safeParse({
+      ...agy,
+      capabilities: [...agy.capabilities, "subagents"],
+    }).success,
+  ).toBe(false);
+});
+
 it("rejects invalid roles, statuses, capability sets, and unavailable invariants per client", () => {
   const invalid = [
     {

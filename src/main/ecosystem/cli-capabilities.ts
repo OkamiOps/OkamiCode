@@ -7,6 +7,28 @@ import { promisify } from "node:util";
 const execFileAsync = promisify(execFile);
 
 const CLIENTS = ["codex", "claude", "cursor", "agy"] as const;
+type Capability =
+  | "sessions"
+  | "models"
+  | "effort"
+  | "approvals"
+  | "sandbox"
+  | "mcp"
+  | "hooks"
+  | "subagents"
+  | "background"
+  | "git"
+  | "worktrees"
+  | "usage"
+  | "automations"
+  | "structured_output"
+  | "app_server"
+  | "checkpoints"
+  | "browser"
+  | "skills"
+  | "launcher"
+  | "plugins";
+
 const CAPABILITIES = {
   codex: [
     "sessions",
@@ -45,11 +67,10 @@ const CAPABILITIES = {
     "structured_output",
   ],
   cursor: [],
-  agy: ["sessions", "models", "approvals", "sandbox", "subagents", "plugins"],
-} as const;
+  agy: [],
+} as const satisfies Record<(typeof CLIENTS)[number], readonly Capability[]>;
 
 type CliClient = (typeof CLIENTS)[number];
-type Capability = (typeof CAPABILITIES)[CliClient][number];
 
 export interface CliCapability {
   client: CliClient;
@@ -250,6 +271,31 @@ function cursorCapabilities(help: string): Capability[] {
   return capabilities;
 }
 
+function agyCapabilities(help: string): Capability[] {
+  const capabilities: Capability[] = [];
+  const add = (capability: Capability, present: boolean) => {
+    if (present) capabilities.push(capability);
+  };
+
+  add(
+    "sessions",
+    helpHasOption(help, "--conversation") || helpHasOption(help, "--continue"),
+  );
+  add(
+    "models",
+    helpHasOption(help, "--model") || helpHasCommand(help, "models"),
+  );
+  add("sandbox", helpHasOption(help, "--sandbox"));
+  add(
+    "plugins",
+    helpHasCommand(help, "plugin") || helpHasCommand(help, "plugins"),
+  );
+
+  // Listing selectable CLI agents does not establish nested subagent execution,
+  // and a force-skip switch is not a human approval workflow.
+  return capabilities;
+}
+
 async function detectClient(
   client: CliClient,
   dependencies: CliCapabilityDetectorDependencies,
@@ -312,6 +358,13 @@ async function detectClient(
     };
   }
 
+  let agyHelp = "";
+  try {
+    agyHelp = await dependencies.execute(binaryPath, ["--help"]);
+  } catch {
+    // A failed help probe cannot establish AGY launcher capabilities.
+  }
+
   return {
     client,
     label: labels.agy,
@@ -319,8 +372,8 @@ async function detectClient(
     version,
     role: "launcher",
     integrationStatus: "needs_adapter",
-    detail: "CLI encontrado; aguarda adaptador com saída estruturada.",
-    capabilities: [...CAPABILITIES.agy],
+    detail: "CLI encontrado; aguarda companion local de hooks JSON.",
+    capabilities: agyCapabilities(agyHelp),
   };
 }
 

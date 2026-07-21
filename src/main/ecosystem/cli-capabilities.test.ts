@@ -146,14 +146,7 @@ it("derives only the verified local capabilities and statuses from harmless prob
         client: "agy",
         role: "launcher",
         integrationStatus: "needs_adapter",
-        capabilities: [
-          "sessions",
-          "models",
-          "approvals",
-          "sandbox",
-          "subagents",
-          "plugins",
-        ],
+        capabilities: ["models", "sandbox", "plugins"],
       }),
     ]),
   );
@@ -163,6 +156,41 @@ it("derives only the verified local capabilities and statuses from harmless prob
   expect(injected.execute).toHaveBeenCalledWith("/bin/cursor-agent", [
     "--help",
   ]);
+  expect(injected.execute).toHaveBeenCalledWith("/bin/agy", ["--help"]);
+});
+
+it("keeps AGY a launcher while exposing only options proven by its own help", async () => {
+  const injected = dependencies(
+    { agy: "/bin/agy" },
+    {
+      "--version": "AGY 1.1.1\n",
+      "--help": [
+        "Usage of agy:",
+        "  --conversation Resume a previous conversation by ID",
+        "  --model Model for the current CLI session",
+        "  --sandbox Run in a sandbox with terminal restrictions enabled",
+        "Available subcommands:",
+        "  agent List available agents",
+        "  agents List available agents",
+        "  models List available models",
+        "  plugins Alias for plugin",
+      ].join("\n"),
+    },
+  );
+
+  const agy = (await createCliCapabilityDetector(injected)()).find(
+    (client) => client.client === "agy",
+  );
+
+  expect(agy).toMatchObject({
+    role: "launcher",
+    integrationStatus: "needs_adapter",
+    detail: expect.stringMatching(/companion.*hooks.*json/iu),
+    capabilities: ["sessions", "models", "sandbox", "plugins"],
+  });
+  expect(agy?.capabilities).not.toEqual(
+    expect.arrayContaining(["approvals", "subagents"]),
+  );
 });
 
 it("keeps a partial Cursor protocol honest while reporting only proven capabilities", async () => {

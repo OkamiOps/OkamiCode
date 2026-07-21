@@ -94,14 +94,7 @@ const clientCapabilityRules = {
   agy: {
     role: "launcher",
     statuses: ["needs_adapter", "unavailable"],
-    capabilities: [
-      "sessions",
-      "models",
-      "approvals",
-      "sandbox",
-      "subagents",
-      "plugins",
-    ],
+    capabilities: ["sessions", "models", "sandbox", "plugins"],
   },
 } as const;
 
@@ -201,7 +194,7 @@ export const cliCapabilitySchema = z
       });
     }
     const capabilitiesValid =
-      client.client === "cursor"
+      client.client === "cursor" || client.client === "agy"
         ? client.capabilities.every((capability) =>
             (rule.capabilities as readonly string[]).includes(capability),
           ) && new Set(client.capabilities).size === client.capabilities.length
