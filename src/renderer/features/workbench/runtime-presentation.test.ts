@@ -12,6 +12,12 @@ const cursorLane = {
   model: "default",
 } as WorkbenchLane;
 
+const agyLane = {
+  runtimeKind: "agy",
+  providerAccountLabel: "Antigravity",
+  model: "default",
+} as WorkbenchLane;
+
 describe("runtime presentation", () => {
   it("never presents Cursor as Claude, ChatGPT or Grok", () => {
     expect(runtimeGlyph("cursor")).toBe("CU");
@@ -20,5 +26,14 @@ describe("runtime presentation", () => {
       tone: "cursor",
     });
     expect(laneDisplayName(cursorLane)).toBe("Cursor");
+  });
+
+  it("uses the Antigravity label without presenting it as another provider", () => {
+    expect(runtimeGlyph("agy")).toBe("AG");
+    expect(runtimePresentation(agyLane)).toEqual({
+      glyph: "AG",
+      tone: "cursor",
+    });
+    expect(laneDisplayName(agyLane)).toBe("Antigravity");
   });
 });

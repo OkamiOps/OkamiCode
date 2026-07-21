@@ -92,7 +92,7 @@ const clientCapabilityRules = {
     ],
   },
   agy: {
-    role: "launcher",
+    role: "runtime",
     statuses: ["needs_adapter", "unavailable"],
     capabilities: ["sessions", "models", "sandbox", "plugins"],
   },

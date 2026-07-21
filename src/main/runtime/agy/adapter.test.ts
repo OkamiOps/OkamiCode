@@ -11,6 +11,7 @@ import {
   EventQueue,
   type AgyCompanion,
   type AgyProcess,
+  type AgyTurnAuthorizer,
 } from "./adapter";
 
 const laneId = "22222222-2222-4222-8222-222222222222" as LaneId;
@@ -96,11 +97,19 @@ function dependencies() {
   const authorizer = vi.fn<() => Promise<"allow" | "deny">>(
     async () => "allow",
   );
+  let authorizerImplementation: AgyTurnAuthorizer = {
+    authorize: authorizer,
+  };
+  const authorizerProxy: AgyTurnAuthorizer = {
+    authorize: (context) => authorizerImplementation.authorize(context),
+    completeRun: (activeRunId) =>
+      authorizerImplementation.completeRun?.(activeRunId),
+  };
   const adapter = new AgyAdapter({
     execute,
     spawn,
     pluginStatus,
-    authorizer,
+    authorizer: authorizerProxy,
     companionFactory: (callback) => {
       onHook = callback;
       return companion;
@@ -111,6 +120,9 @@ function dependencies() {
   return {
     adapter,
     authorizer,
+    setAuthorizer: (next: AgyTurnAuthorizer) => {
+      authorizerImplementation = next;
+    },
     companion,
     execute,
     emitHook: async (hookName: string, payload: unknown) => {
@@ -274,6 +286,62 @@ describe("AgyAdapter", () => {
     ]);
     expect(events.map((event) => event.sequence)).toEqual([0, 1, 2]);
     expect(deps.companion.close).toHaveBeenCalledOnce();
+  });
+
+  it("enqueues an approval card before the hook waits for a broker decision", async () => {
+    const deps = dependencies();
+    let resolveAuthorization:
+      ((decision: "allow" | "deny") => void) | undefined;
+    const authorization = new Promise<"allow" | "deny">((resolve) => {
+      resolveAuthorization = resolve;
+    });
+    const completeRun = vi.fn();
+    deps.setAuthorizer({
+      async authorize(context) {
+        expect(
+          context.onApprovalRequested?.({
+            approvalId: "approval-1",
+            capability: "workspace.write",
+            resource: `${workspace}/file.ts`,
+            risk: "critical",
+          }),
+        ).toBe(true);
+        return authorization;
+      },
+      completeRun,
+    });
+    await deps.adapter.start({ laneId, cwd: workspace });
+    const handle = await deps.adapter.sendTurn({
+      runId,
+      laneId,
+      nativeSessionId: null,
+      input: "Inspect",
+    });
+    const hookDecision = deps.emitHook("PreToolUse", hook("pre-tool-use"));
+    const iterator = handle.events[Symbol.asyncIterator]();
+
+    await expect(iterator.next()).resolves.toMatchObject({
+      value: { kind: "session_started" },
+    });
+    await expect(iterator.next()).resolves.toMatchObject({
+      value: { kind: "tool_call_started" },
+    });
+    await expect(iterator.next()).resolves.toMatchObject({
+      value: {
+        kind: "approval_requested",
+        payload: expect.objectContaining({
+          approvalId: "approval-1",
+          resource: `${workspace}/file.ts`,
+          risk: "critical",
+        }),
+      },
+    });
+
+    resolveAuthorization?.("allow");
+    await expect(hookDecision).resolves.toEqual({ decision: "allow" });
+    await deps.emitHook("Stop", hook("stop"));
+    deps.process.finish();
+    await vi.waitFor(() => expect(completeRun).toHaveBeenCalledWith(runId));
   });
 
   it("uses the authoritative conversation for a later turn and fails closed on denied tools", async () => {

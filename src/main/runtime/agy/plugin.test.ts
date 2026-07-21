@@ -16,6 +16,7 @@ import { AgyPluginManager, type AgyPluginExecutor } from "./plugin";
 interface Execution {
   command: string;
   args: string[];
+  env: NodeJS.ProcessEnv;
 }
 
 const temporaryDirectories: string[] = [];
@@ -45,8 +46,8 @@ function fakeExecutor(
   executions: Execution[],
   result: { stdout?: string } = {},
 ): AgyPluginExecutor {
-  return async (command, args) => {
-    executions.push({ command, args });
+  return async (command, args, options) => {
+    executions.push({ command, args, env: options.env });
     return result;
   };
 }
@@ -154,6 +155,32 @@ describe("AgyPluginManager", () => {
       });
     },
   );
+
+  it("scrubs provider API credentials before the read-only plugin status probe", async () => {
+    const directory = await temporaryDirectory();
+    const executions: Execution[] = [];
+    const manager = new AgyPluginManager({
+      command: "agy",
+      sourceDirectory: path.join(directory, "source"),
+      hookScriptPath: path.join(directory, "missing-helper.mjs"),
+      env: {
+        OPENAI_API_KEY: "openai-secret",
+        ANTHROPIC_API_KEY: "anthropic-secret",
+        GOOGLE_API_KEY: "google-secret",
+        GEMINI_API_KEY: "gemini-secret",
+        KEEP_ME: "safe",
+      },
+      execute: fakeExecutor(executions),
+    });
+
+    await manager.status();
+
+    expect(executions[0]?.env).toMatchObject({ KEEP_ME: "safe" });
+    expect(executions[0]?.env).not.toHaveProperty("OPENAI_API_KEY");
+    expect(executions[0]?.env).not.toHaveProperty("ANTHROPIC_API_KEY");
+    expect(executions[0]?.env).not.toHaveProperty("GOOGLE_API_KEY");
+    expect(executions[0]?.env).not.toHaveProperty("GEMINI_API_KEY");
+  });
 
   it("runs the install lifecycle in order and only its documented subcommands", async () => {
     const directory = await temporaryDirectory();

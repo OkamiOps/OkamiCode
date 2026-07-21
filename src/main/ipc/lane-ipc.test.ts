@@ -88,6 +88,31 @@ function configureDeferredRun(
 }
 
 describe("lane IPC safety", () => {
+  it("includes Antigravity in the runtime health projection", async () => {
+    const { event, handlers, state } = harness();
+    state.runtimes.register({
+      kind: "agy",
+      detect: async () => ({
+        available: true,
+        protocolSupported: true,
+        version: "1.1.5",
+      }),
+    } as never);
+
+    const result = await handlers.get("system:doctor")?.(event, {});
+
+    expect(result).toMatchObject({
+      runtimes: expect.arrayContaining([
+        {
+          runtime: "agy",
+          status: "ready",
+          version: "1.1.5",
+          detail: null,
+        },
+      ]),
+    });
+  });
+
   it("removes a newly created lane when its runtime cannot be opened", async () => {
     const { event, fixture, handlers, state } = harness();
     state.laneService.open = vi.fn(async () => {
@@ -132,6 +157,25 @@ describe("lane IPC safety", () => {
       "Permission mode bypassPermissions is not supported by cursor",
     );
     expect(fixture.lanes.findById(fixture.laneId)?.permissionMode).toBeNull();
+  });
+
+  it("persists Antigravity lanes with the dedicated subscription provider", async () => {
+    const { event, fixture, handlers, state } = harness();
+    state.laneService.open = vi.fn(async () =>
+      deferredOpened(fixture),
+    ) as AppState["laneService"]["open"];
+
+    await handlers.get("lane:ensure")?.(event, {
+      taskId: fixture.taskId,
+      runtimeKind: "agy",
+      model: "default",
+    });
+
+    expect(
+      fixture.lanes
+        .list(fixture.taskId)
+        .find((lane) => lane.runtimeKind === "agy"),
+    ).toMatchObject({ providerKind: "antigravity", model: "default" });
   });
 
   it.each([

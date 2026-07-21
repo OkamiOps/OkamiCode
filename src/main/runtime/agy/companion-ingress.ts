@@ -54,6 +54,18 @@ export class AgyCompanionIngress {
     return this.projector.completeStdout(stdout, includeTerminal);
   }
 
+  projectApprovalRequested(
+    hook: Extract<ParsedAgyHook, { hookName: "PreToolUse" }>,
+    approval: {
+      approvalId: string;
+      capability: string;
+      resource: string;
+      risk: string;
+    },
+  ): CanonicalEvent {
+    return this.projector.projectApprovalRequested(hook, approval);
+  }
+
   projectFailure(reason: string): CanonicalEvent {
     return this.projector.projectFailure(reason);
   }

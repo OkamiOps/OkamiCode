@@ -79,7 +79,7 @@ beforeEach(() => {
           label: "AGY",
           binaryPath: "/bin/agy",
           version: "AGY 1.0.0",
-          role: "launcher",
+          role: "runtime",
           integrationStatus: "needs_adapter",
           detail: "CLI encontrado; aguarda companion local de hooks JSON.",
           capabilities: ["sessions", "models", "sandbox", "plugins"],

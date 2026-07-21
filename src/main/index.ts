@@ -1,7 +1,9 @@
+import { execFile } from "node:child_process";
 import { randomUUID } from "node:crypto";
 import { mkdirSync } from "node:fs";
 import { homedir } from "node:os";
 import path from "node:path";
+import { promisify } from "node:util";
 import { app, BrowserWindow, ipcMain, safeStorage } from "electron";
 import { ConnectorCredentialVault } from "./connectors/credential-vault";
 import { openDatabase } from "./db/connection";
@@ -27,6 +29,11 @@ import { ReplyDispatchService } from "./inbox/reply-dispatch-service";
 import type { Capability } from "./policy/action";
 import type { TaskId } from "../shared/ids";
 import { locateLocalBinary } from "./ecosystem/cli-capabilities";
+import { AgyCompanionServer } from "./runtime/agy/companion-server";
+import { AgyPluginManager } from "./runtime/agy/plugin";
+import { createAgyPolicyAuthorizer } from "./runtime/agy/policy-authorizer";
+
+const execFileAsync = promisify(execFile);
 
 const GPT_BACKEND_MODEL = "gpt-5.6-sol";
 const LEASED_CAPABILITIES: Capability[] = [
@@ -168,6 +175,20 @@ async function bootstrap(): Promise<void> {
     stateRef,
     () => leaseRepository,
   );
+  const agyCommand = locateLocalBinary("agy") ?? "agy";
+  const agyPluginManager = new AgyPluginManager({
+    command: agyCommand,
+    sourceDirectory: path.join(app.getPath("userData"), "agy-companion-plugin"),
+    hookScriptPath: path.resolve(app.getAppPath(), "bin/okami-agy-hook.mjs"),
+    execute: async (command, args, options) => {
+      const { stdout } = await execFileAsync(command, args, {
+        env: options.env,
+        timeout: 5_000,
+        windowsHide: true,
+      });
+      return { stdout: String(stdout) };
+    },
+  });
   const runtimes = createRuntimeRegistry({
     claude: {
       policyEngine: {
@@ -185,6 +206,24 @@ async function bootstrap(): Promise<void> {
     cursor: {
       taskIdForRun,
       command: locateLocalBinary("cursor") ?? "cursor-agent",
+    },
+    agy: {
+      taskIdForRun,
+      command: agyCommand,
+      pluginStatus: () => agyPluginManager.status(),
+      companionFactory: (onHook) => new AgyCompanionServer({ onHook }),
+      authorizer: createAgyPolicyAuthorizer({
+        policyEngine: {
+          authorize: (request) => stateRef().policyEngine.authorize(request),
+        },
+        approvalBroker,
+        taskIdForRun,
+        leaseIdsForRun,
+        workspacePathForLane: (laneId) =>
+          stateRef().lanes.findById(laneId)?.workspacePath ?? null,
+        permissionModeForLane: (laneId) =>
+          stateRef().lanes.findById(laneId)?.permissionMode ?? undefined,
+      }),
     },
   });
 

@@ -50,13 +50,22 @@ export interface AgyTurnAuthorizer {
     runId: NativeTurnRequest["runId"];
     laneId: NativeTurnRequest["laneId"];
     hook: ParsedAgyHook;
+    onApprovalRequested?: (approval: AgyApprovalRequest) => boolean;
   }): Promise<"allow" | "deny">;
+  completeRun?(runId: NativeTurnRequest["runId"]): void;
+}
+
+export interface AgyApprovalRequest {
+  approvalId: string;
+  capability: string;
+  resource: string;
+  risk: string;
 }
 
 export interface AgyAdapterDependencies {
   taskIdForRun: (runId: NativeTurnRequest["runId"]) => TaskId | Promise<TaskId>;
   authorizer:
-    | Pick<AgyTurnAuthorizer, "authorize">
+    | AgyTurnAuthorizer
     | ((
         context: Parameters<AgyTurnAuthorizer["authorize"]>[0],
       ) => Promise<"allow" | "deny">);
@@ -323,8 +332,9 @@ export class AgyAdapter implements RuntimeAdapter {
   }
 
   async respondToApproval(response: ApprovalResponse): Promise<void> {
+    // The authenticated hook blocks while the repository broker observes this
+    // persisted decision. There is no second AGY control channel to answer.
     void response;
-    throw new Error("AGY approvals are not supported");
   }
 
   async cancel(runId: NativeTurnRequest["runId"]): Promise<void> {
@@ -411,6 +421,8 @@ export class AgyAdapter implements RuntimeAdapter {
         runId: request.runId,
         laneId: request.laneId,
         hook,
+        onApprovalRequested: (approval) =>
+          queue.push(run.ingress.projectApprovalRequested(hook, approval)),
       });
       return { decision };
     } catch {
@@ -459,6 +471,7 @@ export class AgyAdapter implements RuntimeAdapter {
       this.activeRuns.delete(request.runId);
       this.reservedRuns.delete(request.runId);
       this.activeLanes.delete(run.laneId);
+      completeAuthorizerRun(this.dependencies.authorizer, request.runId);
       await run.companion.close().catch(() => undefined);
       queue.close();
     }
@@ -486,6 +499,13 @@ async function authorize(
       ? await authorizer(context)
       : await authorizer.authorize(context);
   return decision === "allow" ? "allow" : "deny";
+}
+
+function completeAuthorizerRun(
+  authorizer: AgyAdapterDependencies["authorizer"],
+  runId: NativeTurnRequest["runId"],
+): void {
+  if (typeof authorizer !== "function") authorizer.completeRun?.(runId);
 }
 
 async function executeAgy(
@@ -579,7 +599,7 @@ function safeError(error: unknown): string {
   return "AGY CLI probe failed";
 }
 
-function subscriptionEnvironment(
+export function subscriptionEnvironment(
   defaults: NodeJS.ProcessEnv | undefined,
   explicit: NodeJS.ProcessEnv | undefined,
 ): NodeJS.ProcessEnv {

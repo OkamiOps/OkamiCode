@@ -30,13 +30,13 @@ it("accepts the verified Cursor runtime capability record", () => {
   expect(cliCapabilitySchema.safeParse(cursor).success).toBe(true);
 });
 
-it("accepts only the AGY launcher capabilities proven by the local help", () => {
+it("accepts only the AGY runtime capabilities proven by the local help", () => {
   const agy = {
     client: "agy",
     label: "AGY",
     binaryPath: "/bin/agy",
     version: "1.1.1",
-    role: "launcher",
+    role: "runtime",
     integrationStatus: "needs_adapter",
     detail: "CLI encontrado; aguarda companion local de hooks JSON.",
     capabilities: ["sessions", "models", "sandbox", "plugins"],

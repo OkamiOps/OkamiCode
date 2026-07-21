@@ -93,11 +93,12 @@ const labels: Record<CliClient, string> = {
   codex: "Codex",
   claude: "Claude Code",
   cursor: "Cursor",
-  agy: "AGY",
+  agy: "Antigravity",
 };
 
 function roleFor(client: CliClient): "runtime" | "launcher" {
-  return client === "agy" ? "launcher" : "runtime";
+  void client;
+  return "runtime";
 }
 
 export function localBinaryCandidates(client: CliClient): string[] {
@@ -370,9 +371,10 @@ async function detectClient(
     label: labels.agy,
     binaryPath,
     version,
-    role: "launcher",
+    role: "runtime",
     integrationStatus: "needs_adapter",
-    detail: "CLI encontrado; aguarda companion local de hooks JSON.",
+    detail:
+      "CLI encontrado; companion local de hooks JSON ainda precisa estar habilitado.",
     capabilities: agyCapabilities(agyHelp),
   };
 }

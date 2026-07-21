@@ -342,13 +342,16 @@ export class LaneService {
   private resolveLaneRoute(lane: LaneRecord): ResolvedRoute {
     // Cursor owns its model routing and subscription. A Claude/GPT model name
     // selected inside Cursor must never be mistaken for a gateway request.
-    if (lane.runtimeKind === "cursor") {
+    if (lane.runtimeKind === "cursor" || lane.runtimeKind === "agy") {
       return {
         harness: "native",
         kind: "native",
-        runtime: "cursor",
+        runtime: lane.runtimeKind,
         reason: "native_requested",
-        displayQuotaAccount: "Cursor subscription",
+        displayQuotaAccount:
+          lane.runtimeKind === "agy"
+            ? "Antigravity subscription"
+            : "Cursor subscription",
       };
     }
     const gateway = this.dependencies.gateway;
@@ -382,6 +385,7 @@ export class LaneService {
 function providerAccountLabel(lane: LaneRecord): string {
   if (lane.providerKind === "claude_max") return "Claude Max";
   if (lane.providerKind === "chatgpt") return "ChatGPT";
+  if (lane.providerKind === "antigravity") return "Antigravity";
   return "Cursor";
 }
 

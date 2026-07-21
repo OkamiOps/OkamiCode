@@ -32,7 +32,7 @@ interface SidebarItem {
 }
 
 interface LaneItem {
-  glyph: "CL" | "GP" | "GK" | "CU";
+  glyph: "CL" | "GP" | "GK" | "CU" | "AG";
   label: string;
   model: string;
   provider: string;

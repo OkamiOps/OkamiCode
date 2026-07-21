@@ -17,6 +17,31 @@ function cachePaths() {
 }
 
 describe("Cursor model catalog", () => {
+  it("exposes Antigravity as one honest subscription-selected model", () => {
+    const paths = cachePaths();
+    const service = createModelCatalogService({
+      cachePath: paths.claude,
+      cursorCachePath: paths.cursor,
+      cursorBinary: null,
+    });
+
+    expect(service.list().find((entry) => entry.runtimeKind === "agy")).toEqual(
+      {
+        runtimeKind: "agy",
+        providerLabel: "Antigravity",
+        routeKind: "native",
+        source: "modelo escolhido pela assinatura Antigravity",
+        models: [
+          {
+            id: "default",
+            label: "Automático",
+            description: "Modelo escolhido pela sua assinatura Antigravity",
+          },
+        ],
+      },
+    );
+  });
+
   it("formats Cursor model labels without exposing parameter blocks", () => {
     expect(formatCursorModelLabel("gpt-5.3-codex")).toBe("GPT 5.3 Codex");
     expect(formatCursorModelLabel("claude-opus-4-8")).toBe("Claude Opus 4.8");

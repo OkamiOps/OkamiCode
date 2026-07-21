@@ -9,6 +9,7 @@ import {
 } from "node:fs/promises";
 import path from "node:path";
 import { randomUUID } from "node:crypto";
+import { subscriptionEnvironment } from "./adapter";
 
 export const AGY_COMPANION_PLUGIN_NAME = "okami-agy-companion";
 
@@ -22,6 +23,7 @@ export interface AgyPluginExecutorResult {
 export type AgyPluginExecutor = (
   command: string,
   args: string[],
+  options: { env: NodeJS.ProcessEnv },
 ) => Promise<AgyPluginExecutorResult>;
 
 export interface AgyPluginManagerOptions {
@@ -29,6 +31,7 @@ export interface AgyPluginManagerOptions {
   sourceDirectory: string;
   hookScriptPath: string;
   execute: AgyPluginExecutor;
+  env?: NodeJS.ProcessEnv;
 }
 
 export type AgyPluginStatus = "absent" | "enabled" | "disabled";
@@ -66,12 +69,14 @@ export class AgyPluginManager {
   private readonly sourceDirectory: string;
   private readonly hookScriptPath: string;
   private readonly execute: AgyPluginExecutor;
+  private readonly env: NodeJS.ProcessEnv | undefined;
 
   constructor(options: AgyPluginManagerOptions) {
     this.command = options.command;
     this.sourceDirectory = options.sourceDirectory;
     this.hookScriptPath = options.hookScriptPath;
     this.execute = options.execute;
+    this.env = options.env;
   }
 
   async prepare(): Promise<void> {
@@ -161,7 +166,9 @@ export class AgyPluginManager {
       throw new Error("AGY plugin command is unavailable");
     }
     try {
-      return await this.execute(this.command, args);
+      return await this.execute(this.command, args, {
+        env: subscriptionEnvironment(this.env, undefined),
+      });
     } catch {
       throw new Error(`AGY plugin ${operation} failed`);
     }

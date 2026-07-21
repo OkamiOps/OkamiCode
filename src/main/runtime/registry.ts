@@ -9,6 +9,7 @@ import {
   CursorAdapter,
   type CursorAdapterDependencies,
 } from "./cursor/adapter";
+import { AgyAdapter, type AgyAdapterDependencies } from "./agy/adapter";
 
 export class RuntimeRegistry {
   private readonly adapters = new Map<RuntimeKind, RuntimeAdapter>();
@@ -26,6 +27,7 @@ export interface RuntimeRegistryDependencies {
   claude: ClaudeAdapterDependencies;
   codex: CodexAdapterDependencies;
   cursor: CursorAdapterDependencies;
+  agy: AgyAdapterDependencies;
 }
 
 export function createRuntimeRegistry(
@@ -35,5 +37,6 @@ export function createRuntimeRegistry(
   registry.register(new ClaudeAdapter(dependencies.claude));
   registry.register(new CodexAdapter(dependencies.codex));
   registry.register(new CursorAdapter(dependencies.cursor));
+  registry.register(new AgyAdapter(dependencies.agy));
   return registry;
 }

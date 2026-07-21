@@ -538,6 +538,19 @@ export function createModelCatalogService(
             },
           ],
         },
+        {
+          runtimeKind: "agy",
+          providerLabel: "Antigravity",
+          routeKind: "native",
+          source: "modelo escolhido pela assinatura Antigravity",
+          models: [
+            {
+              id: "default",
+              label: "Automático",
+              description: "Modelo escolhido pela sua assinatura Antigravity",
+            },
+          ],
+        },
       ];
     },
   };

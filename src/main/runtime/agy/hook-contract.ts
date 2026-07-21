@@ -263,6 +263,21 @@ export class AgyHookProjector {
     return events;
   }
 
+  projectApprovalRequested(
+    hook: AgyPreToolHook,
+    approval: {
+      approvalId: string;
+      capability: string;
+      resource: string;
+      risk: string;
+    },
+  ): CanonicalEvent {
+    return this.event("approval_requested", hook, approval.approvalId, {
+      ...approval,
+      native: hook.native,
+    });
+  }
+
   discardPendingTerminal(): void {
     this.pendingTerminal = undefined;
   }

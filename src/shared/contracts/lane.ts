@@ -1,7 +1,12 @@
 import { z } from "zod";
 
 export const runtimeKindSchema = z.enum(["claude", "codex", "cursor", "agy"]);
-export const providerKindSchema = z.enum(["claude_max", "chatgpt", "cursor"]);
+export const providerKindSchema = z.enum([
+  "claude_max",
+  "chatgpt",
+  "cursor",
+  "antigravity",
+]);
 export const laneStatusSchema = z.enum([
   "ready",
   "running",

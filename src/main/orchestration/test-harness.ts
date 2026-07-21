@@ -251,6 +251,7 @@ export function createLaneHarness(
 function providerForRuntime(runtime: RuntimeKind) {
   if (runtime === "claude") return "claude_max" as const;
   if (runtime === "codex") return "chatgpt" as const;
+  if (runtime === "agy") return "antigravity" as const;
   return "cursor" as const;
 }
 

@@ -52,10 +52,10 @@ it("reports unavailable clients without probing a missing binary", async () => {
     },
     {
       client: "agy",
-      label: "AGY",
+      label: "Antigravity",
       binaryPath: null,
       version: null,
-      role: "launcher",
+      role: "runtime",
       integrationStatus: "unavailable",
       detail: "CLI não encontrado neste computador.",
       capabilities: [],
@@ -144,7 +144,7 @@ it("derives only the verified local capabilities and statuses from harmless prob
       }),
       expect.objectContaining({
         client: "agy",
-        role: "launcher",
+        role: "runtime",
         integrationStatus: "needs_adapter",
         capabilities: ["models", "sandbox", "plugins"],
       }),
@@ -159,7 +159,7 @@ it("derives only the verified local capabilities and statuses from harmless prob
   expect(injected.execute).toHaveBeenCalledWith("/bin/agy", ["--help"]);
 });
 
-it("keeps AGY a launcher while exposing only options proven by its own help", async () => {
+it("reports AGY as a runtime while exposing only options proven by its own help", async () => {
   const injected = dependencies(
     { agy: "/bin/agy" },
     {
@@ -183,7 +183,7 @@ it("keeps AGY a launcher while exposing only options proven by its own help", as
   );
 
   expect(agy).toMatchObject({
-    role: "launcher",
+    role: "runtime",
     integrationStatus: "needs_adapter",
     detail: expect.stringMatching(/companion.*hooks.*json/iu),
     capabilities: ["sessions", "models", "sandbox", "plugins"],
