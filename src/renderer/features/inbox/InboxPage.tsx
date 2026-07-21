@@ -19,7 +19,6 @@ import {
   MoreHorizontal,
   Paperclip,
   RefreshCw,
-  Send,
   Sparkles,
   Tag,
   Trash2,
@@ -28,6 +27,7 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import type { IpcRequest, IpcResponse } from "../../../shared/contracts/ipc";
 import { workbenchClient } from "../../lib/ipc/client";
 import { InboxAccountModal } from "./InboxAccountModal";
+import { InboxReplyModal } from "./InboxReplyModal";
 import { InboxTaskModal } from "./InboxTaskModal";
 
 type InboxAccount = IpcResponse<"inbox:accounts:list">[number];
@@ -60,6 +60,9 @@ export interface InboxApi {
   createTask(
     request: IpcRequest<"inbox:thread:createTask">,
   ): Promise<IpcResponse<"inbox:thread:createTask">>;
+  createReplyDraft(
+    request: IpcRequest<"inbox:thread:createReplyDraft">,
+  ): Promise<IpcResponse<"inbox:thread:createReplyDraft">>;
 }
 
 const defaultApi: InboxApi = {
@@ -72,6 +75,7 @@ const defaultApi: InboxApi = {
   markThreadRead: workbenchClient.inboxThreadMarkRead,
   listLanes: workbenchClient.laneList,
   createTask: workbenchClient.inboxThreadCreateTask,
+  createReplyDraft: workbenchClient.inboxThreadCreateReplyDraft,
 };
 
 type AccountFilter = "all" | "unread" | string;
@@ -81,6 +85,9 @@ export function InboxPage({ api = defaultApi }: { api?: InboxApi }) {
   const [filter, setFilter] = useState<AccountFilter>("all");
   const [selectedThreadId, setSelectedThreadId] = useState<string | null>(null);
   const [taskCreatedForThreadId, setTaskCreatedForThreadId] = useState<
+    string | null
+  >(null);
+  const [replySavedForThreadId, setReplySavedForThreadId] = useState<
     string | null
   >(null);
   const markedRead = useRef(new Set<string>());
@@ -169,6 +176,12 @@ export function InboxPage({ api = defaultApi }: { api?: InboxApi }) {
       void queryClient.invalidateQueries({ queryKey: ["kanban"] });
     },
   });
+  const createReplyDraft = useMutation({
+    mutationFn: api.createReplyDraft,
+    onSuccess: (result) => {
+      setReplySavedForThreadId(result.sourceThreadId);
+    },
+  });
 
   const selectedThread =
     detail.data?.thread ?? threadById(threads.data?.threads, selectedThreadId);
@@ -224,10 +237,13 @@ export function InboxPage({ api = defaultApi }: { api?: InboxApi }) {
       <Conversation
         detail={detail.data}
         error={detail.isError ? errorMessage(detail.error) : null}
+        isSavingReply={createReplyDraft.isPending}
         isLoading={detail.isLoading}
         isCreatingTask={createTask.isPending}
+        onCreateReplyDraft={(request) => createReplyDraft.mutateAsync(request)}
         onOpenDetails={detailsDrawer.open}
         onCreateTask={(request) => createTask.mutateAsync(request)}
+        replySaved={replySavedForThreadId === detail.data?.thread.id}
         taskCreated={taskCreatedForThreadId === detail.data?.thread.id}
         listLanes={api.listLanes}
       />
@@ -580,19 +596,25 @@ function Conversation({
   detail,
   error,
   isLoading,
+  isSavingReply,
   isCreatingTask,
   listLanes,
+  onCreateReplyDraft,
   onCreateTask,
   onOpenDetails,
+  replySaved,
   taskCreated,
 }: {
   detail: InboxThreadDetail | undefined;
   error: string | null;
   isLoading: boolean;
+  isSavingReply: boolean;
   isCreatingTask: boolean;
   listLanes: InboxApi["listLanes"];
+  onCreateReplyDraft: InboxApi["createReplyDraft"];
   onCreateTask: InboxApi["createTask"];
   onOpenDetails: () => void;
+  replySaved: boolean;
   taskCreated: boolean;
 }) {
   if (!detail && !isLoading && !error)
@@ -686,9 +708,17 @@ function Conversation({
           Tarefa criada no Kanban. Nenhum agente foi iniciado.
         </p>
       )}
+      {replySaved && (
+        <p className="inbox-reply-saved" role="status">
+          Resposta salva para aprovação. Nenhum email foi enviado.
+        </p>
+      )}
       <FutureActions
+        detail={detail}
         isCreatingTask={isCreatingTask}
+        isSavingReply={isSavingReply}
         listLanes={listLanes}
+        onCreateReplyDraft={onCreateReplyDraft}
         onCreateTask={onCreateTask}
         thread={detail?.thread}
       />
@@ -697,20 +727,23 @@ function Conversation({
 }
 
 function FutureActions({
+  detail,
   isCreatingTask,
+  isSavingReply,
   listLanes,
+  onCreateReplyDraft,
   onCreateTask,
   thread,
 }: {
+  detail: InboxThreadDetail | undefined;
   isCreatingTask: boolean;
+  isSavingReply: boolean;
   listLanes: InboxApi["listLanes"];
+  onCreateReplyDraft: InboxApi["createReplyDraft"];
   onCreateTask: InboxApi["createTask"];
   thread: InboxThread | undefined;
 }) {
-  const actions = [
-    { label: "Pedir rascunho", icon: <Sparkles size={14} /> },
-    { label: "Responder", icon: <Send size={14} /> },
-  ];
+  const actions = [{ label: "Pedir rascunho", icon: <Sparkles size={14} /> }];
   return (
     <footer className="inbox-future-actions">
       <InboxTaskModal
@@ -718,6 +751,11 @@ function FutureActions({
         listLanes={listLanes}
         onCreateTask={onCreateTask}
         thread={thread}
+      />
+      <InboxReplyModal
+        detail={detail}
+        isSaving={isSavingReply}
+        onCreateReplyDraft={onCreateReplyDraft}
       />
       {actions.map((action) => (
         <Tooltip.Root closeDelay={0} delay={250} key={action.label}>

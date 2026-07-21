@@ -1,5 +1,11 @@
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
-import { cleanup, render, screen, within } from "@testing-library/react";
+import {
+  cleanup,
+  fireEvent,
+  render,
+  screen,
+  within,
+} from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import type { IpcRequest, IpcResponse } from "../../../shared/contracts/ipc";
@@ -71,6 +77,21 @@ const taskResult = {
   executionStarted: false,
 } as IpcResponse<"inbox:thread:createTask">;
 
+const replyDraftResult = {
+  id: "77777777-7777-4777-8777-777777777777",
+  sourceThreadId: threadId,
+  connectorAccountId: accountId,
+  to: ["Ana Silva <ana@cliente.com>"],
+  subject: "Re: Proposta para landing page",
+  body: "Obrigado pela mensagem.",
+  status: "approval_pending",
+  requiresApproval: true,
+  safeRetry: false,
+  attempts: 0,
+  createdAt: now,
+  updatedAt: now,
+} as IpcResponse<"inbox:thread:createReplyDraft">;
+
 function makeApi(overrides: Partial<InboxApi> = {}): InboxApi {
   return {
     listAccounts: vi.fn().mockResolvedValue([account]),
@@ -108,6 +129,7 @@ function makeApi(overrides: Partial<InboxApi> = {}): InboxApi {
     markThreadRead: vi.fn().mockResolvedValue({ ...thread, unreadCount: 0 }),
     listLanes: vi.fn().mockResolvedValue([]),
     createTask: vi.fn().mockResolvedValue(taskResult),
+    createReplyDraft: vi.fn().mockResolvedValue(replyDraftResult),
     ...overrides,
   };
 }
@@ -207,7 +229,7 @@ describe("InboxPage", () => {
     );
   });
 
-  it("filters unread threads and confirms removal while keeping future actions disabled", async () => {
+  it("filters unread threads and confirms removal while keeping the AI draft action disabled", async () => {
     const { api } = renderInbox();
     await screen.findByText("Projetos");
     await userEvent.click(screen.getByRole("button", { name: "Não lidos" }));
@@ -231,9 +253,124 @@ describe("InboxPage", () => {
     await screen.findByText("Ana Silva <ana@cliente.com>");
 
     expect(screen.getByRole("button", { name: "Virar tarefa" })).toBeEnabled();
-    for (const action of ["Pedir rascunho", "Responder"]) {
-      expect(screen.getByRole("button", { name: action })).toBeDisabled();
-    }
+    expect(
+      screen.getByRole("button", { name: "Pedir rascunho" }),
+    ).toBeDisabled();
+    expect(screen.getByRole("button", { name: "Responder" })).toBeEnabled();
+  });
+
+  it("saves a trimmed reply as approval pending without sending an email", async () => {
+    const { api } = renderInbox();
+    expect(screen.queryByRole("button", { name: "Responder" })).toBeNull();
+
+    await userEvent.click(
+      await screen.findByRole("button", { name: /Proposta para landing page/ }),
+    );
+    await userEvent.click(screen.getByRole("button", { name: "Responder" }));
+
+    const dialog = screen.getByRole("dialog");
+    expect(within(dialog).getByLabelText("Destinatário")).toHaveValue(
+      "Ana Silva <ana@cliente.com>",
+    );
+    expect(within(dialog).getByLabelText("Destinatário")).toHaveAttribute(
+      "readonly",
+    );
+    expect(within(dialog).getByLabelText("Assunto")).toHaveValue(
+      "Re: Proposta para landing page",
+    );
+    expect(within(dialog).getByLabelText("Assunto")).toHaveAttribute(
+      "readonly",
+    );
+    expect(within(dialog).getByText("0 / 20.000")).toBeVisible();
+    expect(
+      within(dialog).getByText(/Salvar não envia nenhum email/i),
+    ).toBeVisible();
+
+    await userEvent.type(
+      within(dialog).getByLabelText("Resposta"),
+      "  Obrigado pela mensagem.  ",
+    );
+    expect(within(dialog).getByText("27 / 20.000")).toBeVisible();
+    await userEvent.click(
+      within(dialog).getByRole("button", { name: "Salvar para aprovação" }),
+    );
+
+    await vi.waitFor(() => expect(api.createReplyDraft).toHaveBeenCalledOnce());
+    expect(vi.mocked(api.createReplyDraft).mock.calls[0]?.[0]).toEqual({
+      threadId,
+      body: "Obrigado pela mensagem.",
+      idempotencyKey: expect.stringMatching(
+        /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i,
+      ),
+    });
+    expect(
+      await screen.findByText(
+        "Resposta salva para aprovação. Nenhum email foi enviado.",
+      ),
+    ).toBeVisible();
+    expect(api).not.toHaveProperty("laneSendTurn");
+  });
+
+  it("validates reply body and preserves it with one key across a failed retry", async () => {
+    let resolveCreation: (() => void) | undefined;
+    const createReplyDraft = vi
+      .fn()
+      .mockRejectedValueOnce(new Error("Outbox indisponível"))
+      .mockImplementationOnce(
+        () =>
+          new Promise((resolve) => {
+            resolveCreation = () => resolve(replyDraftResult);
+          }),
+      );
+    const { api } = renderInbox(makeApi({ createReplyDraft }));
+    await userEvent.click(
+      await screen.findByRole("button", { name: /Proposta para landing page/ }),
+    );
+    await userEvent.click(screen.getByRole("button", { name: "Responder" }));
+    const dialog = screen.getByRole("dialog");
+    const textarea = within(dialog).getByLabelText("Resposta");
+    const submit = within(dialog).getByRole("button", {
+      name: "Salvar para aprovação",
+    });
+
+    await userEvent.click(submit);
+    expect(await within(dialog).findByRole("alert")).toHaveTextContent(
+      "Escreva uma resposta antes de salvar.",
+    );
+    expect(createReplyDraft).not.toHaveBeenCalled();
+
+    fireEvent.change(textarea, { target: { value: "x".repeat(20_001) } });
+    await userEvent.click(submit);
+    expect(await within(dialog).findByRole("alert")).toHaveTextContent(
+      "A resposta pode ter no máximo 20.000 caracteres.",
+    );
+    expect(createReplyDraft).not.toHaveBeenCalled();
+
+    await userEvent.clear(textarea);
+    await userEvent.type(textarea, "Resposta revisada");
+    await userEvent.click(submit);
+    expect(await within(dialog).findByRole("alert")).toHaveTextContent(
+      "Outbox indisponível",
+    );
+    await userEvent.click(submit);
+    expect(
+      within(dialog).getByRole("button", { name: "Salvando…" }),
+    ).toBeDisabled();
+    await userEvent.click(
+      within(dialog).getByRole("button", { name: "Salvando…" }),
+    );
+    expect(createReplyDraft).toHaveBeenCalledTimes(2);
+    expect(createReplyDraft.mock.calls[1]?.[0].idempotencyKey).toBe(
+      createReplyDraft.mock.calls[0]?.[0].idempotencyKey,
+    );
+    expect(textarea).toHaveValue("Resposta revisada");
+    resolveCreation?.();
+    expect(
+      await screen.findByText(
+        "Resposta salva para aprovação. Nenhum email foi enviado.",
+      ),
+    ).toBeVisible();
+    expect(api.createReplyDraft).toHaveBeenCalledTimes(2);
   });
 
   it("creates a manual Kanban task from the selected email without starting a lane", async () => {
