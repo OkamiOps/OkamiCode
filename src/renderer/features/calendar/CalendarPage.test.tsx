@@ -215,7 +215,7 @@ describe("CalendarPage", () => {
       "aria-current",
       "page",
     );
-    expect(screen.queryByRole("button", { name: "Nova conversa" })).toBeNull();
+    expect(screen.getByRole("button", { name: "Nova conversa" })).toBeVisible();
     expect(container.querySelector(".calendar-shell")).toBeTruthy();
   });
 

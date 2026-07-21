@@ -6,6 +6,8 @@ import {
   WorkbenchStoreContext,
 } from "../../features/workbench/store";
 import { NavigationRail } from "./NavigationRail";
+import { ChatSidebar } from "./ChatSidebar";
+import { ResizeHandle, useResizablePane } from "./ResizeHandle";
 
 // Kept for route components that still type their outlet context.
 export interface AppShellOutletContext {
@@ -66,10 +68,17 @@ function ShellContent({
   const location = useLocation();
   const isInbox = location.pathname === "/inbox";
   const isCalendar = location.pathname === "/calendar";
+  const isCode = location.pathname === "/workbench";
+  const projectsPane = useResizablePane({
+    storageKey: "okami.width.code-projects",
+    initial: 288,
+    min: 236,
+    max: 460,
+  });
   const shellClassName =
     isInbox || isCalendar
       ? `inbox-shell navigation-shell${isCalendar ? " calendar-shell" : ""}`
-      : "chat-shell navigation-shell";
+      : `chat-shell navigation-shell${isCode ? " code-shell" : ""}`;
 
   return (
     <div
@@ -79,8 +88,20 @@ function ShellContent({
       <NavigationRail
         collapsed={collapsed}
         onCollapsedChange={onCollapsedChange}
-        showWorkbench={location.pathname === "/workbench"}
       />
+      {isCode && (
+        <div className="code-projects" style={{ width: projectsPane.width }}>
+          <ChatSidebar />
+        </div>
+      )}
+      {isCode && (
+        <ResizeHandle
+          ariaLabel="Redimensionar projetos"
+          className="code-projects__resize"
+          edge="right"
+          pane={projectsPane}
+        />
+      )}
       <main
         className={isInbox || isCalendar ? "inbox-shell__main" : "chat-main"}
       >

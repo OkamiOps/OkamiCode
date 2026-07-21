@@ -28,17 +28,40 @@ describe("AppShell", () => {
     expect(usage).toHaveAttribute("aria-current", "page");
   });
 
-  it("keeps one expanded global navigation with workbench conversations", async () => {
+  it("separates global quick chat from the Code project history", async () => {
     renderApp("/workbench");
 
     expect(
       await screen.findByRole("navigation", { name: "Navegação principal" }),
     ).toBeVisible();
-    expect(screen.getByRole("link", { name: "Workbench" })).toBeVisible();
+    expect(screen.getByRole("link", { name: "Code" })).toBeVisible();
     expect(screen.getByRole("button", { name: "Nova conversa" })).toBeVisible();
     expect(
-      screen.getByRole("navigation", { name: "Histórico de conversas" }),
+      screen.getByRole("navigation", { name: "Histórico de projetos" }),
     ).toBeVisible();
+    expect(screen.getByRole("button", { name: "Novo projeto" })).toBeVisible();
+    expect(
+      screen.getByRole("searchbox", { name: "Buscar projetos" }),
+    ).toBeVisible();
+    expect(
+      screen.getByRole("slider", { name: "Redimensionar projetos" }),
+    ).toBeVisible();
+  });
+
+  it("opens a fresh workspace-free chat from the global action", async () => {
+    renderApp("/workbench");
+
+    await userEvent.click(
+      await screen.findByRole("button", { name: "Nova conversa" }),
+    );
+
+    expect(window.location.hash).toMatch(/^#\/quick-chat\?new=.+/u);
+    expect(
+      await screen.findByRole("heading", { name: "Chat rápido" }),
+    ).toBeVisible();
+    expect(
+      screen.queryByRole("complementary", { name: "Projetos do Code" }),
+    ).toBeNull();
   });
 
   it("groups expanded destinations in a predictable work, intelligence and system order", async () => {
@@ -58,7 +81,7 @@ describe("AppShell", () => {
         .map((link) => link.getAttribute("aria-label")),
     ).toEqual([
       "Início",
-      "Workbench",
+      "Code",
       "Inbox",
       "Agenda",
       "Kanban",
@@ -82,7 +105,6 @@ describe("AppShell", () => {
 
     expect(localStorage.getItem("okami.navigation.collapsed")).toBe("true");
     expect(screen.queryByText("Nova conversa")).toBeNull();
-    expect(screen.queryByText("Histórico de conversas")).toBeNull();
     expect(screen.getByRole("link", { name: "Uso e limites" })).toBeVisible();
     expect(
       screen.getByRole("button", { name: "Expandir navegação" }),
@@ -92,7 +114,7 @@ describe("AppShell", () => {
 
     expect(await screen.findByRole("heading", { name: "Inbox" })).toBeVisible();
     expect(screen.getByRole("link", { name: "Inbox" })).toBeVisible();
-    expect(screen.queryByRole("button", { name: "Nova conversa" })).toBeNull();
+    expect(screen.getByRole("button", { name: "Nova conversa" })).toBeVisible();
     expect(screen.queryByText("Uso e limites")).toBeNull();
   });
 
@@ -100,7 +122,7 @@ describe("AppShell", () => {
     const { container } = renderApp("/inbox");
 
     expect(await screen.findByRole("heading", { name: "Inbox" })).toBeVisible();
-    expect(screen.queryByRole("button", { name: "Nova conversa" })).toBeNull();
+    expect(screen.getByRole("button", { name: "Nova conversa" })).toBeVisible();
     expect(screen.getByRole("link", { name: "Inbox" })).toHaveAttribute(
       "aria-current",
       "page",

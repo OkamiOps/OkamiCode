@@ -12,14 +12,15 @@ import {
   PanelLeftClose,
   PanelLeftOpen,
   PanelsTopLeft,
+  Plus,
   PlugZap,
   SlidersHorizontal,
   Sparkles,
   type LucideIcon,
 } from "lucide-react";
-import { NavLink } from "react-router-dom";
+import { NavLink, useNavigate } from "react-router-dom";
+import type { ButtonHTMLAttributes } from "react";
 import { workbenchClient } from "../../lib/ipc/client";
-import { ChatSidebar } from "./ChatSidebar";
 
 interface NavigationItem {
   icon: LucideIcon;
@@ -37,7 +38,7 @@ const navigationGroups: NavigationGroup[] = [
     label: "Trabalho",
     items: [
       { icon: Home, label: "Início", path: "/quick-chat" },
-      { icon: PanelsTopLeft, label: "Workbench", path: "/workbench" },
+      { icon: PanelsTopLeft, label: "Code", path: "/workbench" },
       { icon: Inbox, label: "Inbox", path: "/inbox" },
       { icon: CalendarDays, label: "Agenda", path: "/calendar" },
       { icon: Columns3, label: "Kanban", path: "/kanban" },
@@ -65,14 +66,13 @@ const navigationGroups: NavigationGroup[] = [
 interface NavigationRailProps {
   collapsed: boolean;
   onCollapsedChange: (collapsed: boolean) => void;
-  showWorkbench: boolean;
 }
 
 export function NavigationRail({
   collapsed,
   onCollapsedChange,
-  showWorkbench,
 }: NavigationRailProps) {
+  const navigate = useNavigate();
   const toggleLabel = collapsed ? "Expandir navegação" : "Recolher navegação";
   const usage = useQuery({
     queryKey: ["usage", "overview"],
@@ -130,6 +130,33 @@ export function NavigationRail({
         </Tooltip.Root>
       </header>
       <div className="navigation-rail__items">
+        {collapsed ? (
+          <Tooltip.Root closeDelay={0} delay={300}>
+            <Tooltip.Trigger<"button">
+              render={(triggerProps) => (
+                <NewChatButton
+                  {...triggerProps}
+                  collapsed
+                  onCreate={() =>
+                    navigate(
+                      `/quick-chat?new=${globalThis.crypto.randomUUID()}`,
+                    )
+                  }
+                />
+              )}
+            />
+            <Tooltip.Content className="ok-tooltip" placement="right">
+              Nova conversa
+            </Tooltip.Content>
+          </Tooltip.Root>
+        ) : (
+          <NewChatButton
+            collapsed={false}
+            onCreate={() =>
+              navigate(`/quick-chat?new=${globalThis.crypto.randomUUID()}`)
+            }
+          />
+        )}
         <div className="navigation-rail__destinations">
           {navigationGroups.map((group) => (
             <div
@@ -183,14 +210,6 @@ export function NavigationRail({
             </div>
           ))}
         </div>
-        {!collapsed && showWorkbench && (
-          <section
-            className="navigation-rail__workbench"
-            aria-label="Workbench"
-          >
-            <ChatSidebar />
-          </section>
-        )}
       </div>
       <footer className="navigation-rail__footer">
         {collapsed ? (
@@ -223,5 +242,27 @@ export function NavigationRail({
         )}
       </footer>
     </nav>
+  );
+}
+
+function NewChatButton({
+  collapsed,
+  onCreate,
+  ...props
+}: ButtonHTMLAttributes<HTMLButtonElement> & {
+  collapsed: boolean;
+  onCreate: () => void;
+}) {
+  return (
+    <button
+      {...props}
+      aria-label="Nova conversa"
+      className="navigation-rail__new-chat"
+      onClick={onCreate}
+      type="button"
+    >
+      <Plus aria-hidden="true" size={17} strokeWidth={2} />
+      {!collapsed && <span>Nova conversa</span>}
+    </button>
   );
 }

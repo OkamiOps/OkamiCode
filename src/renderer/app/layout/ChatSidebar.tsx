@@ -1,5 +1,5 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { Pencil, Plus, Search, Trash2 } from "lucide-react";
+import { FolderCode, Pencil, Plus, Search, Trash2 } from "lucide-react";
 import { useState, type KeyboardEvent } from "react";
 import { useNavigate } from "react-router-dom";
 import { workbenchApi, type WorkbenchTask } from "../../features/workbench/api";
@@ -32,11 +32,11 @@ export function ChatSidebar() {
       const basename = picked.path.split("/").filter(Boolean).at(-1) ?? "pasta";
       // Repos get the choice of an isolated worktree, like Claude Code.
       const useWorktree = window.confirm(
-        `Criar um worktree isolado para esta conversa?\n\nOK: a conversa trabalha numa cópia (git worktree) e não mexe no checkout principal.\nCancelar: trabalha direto na pasta ${basename}.`,
+        `Criar um worktree isolado para este projeto?\n\nOK: o projeto trabalha numa cópia (git worktree) e não mexe no checkout principal.\nCancelar: trabalha direto na pasta ${basename}.`,
       );
       return workbenchApi.createTask({
         title: basename,
-        objective: `Conversa na pasta ${picked.path}`,
+        objective: `Projeto na pasta ${picked.path}`,
         workspacePath: picked.path,
         useWorktree,
       });
@@ -89,32 +89,49 @@ export function ChatSidebar() {
   );
 
   return (
-    <aside aria-label="Conversas do Workbench" className="chat-sidebar">
+    <aside
+      aria-label="Projetos do Code"
+      className="chat-sidebar code-projects-sidebar"
+    >
+      <header className="code-projects-sidebar__header">
+        <span className="pane-kicker">Desenvolvimento</span>
+        <div>
+          <span className="code-projects-sidebar__icon" aria-hidden="true">
+            <FolderCode size={16} strokeWidth={1.8} />
+          </span>
+          <h1>Code</h1>
+          <span>
+            {tasks.length} {tasks.length === 1 ? "projeto" : "projetos"}
+          </span>
+        </div>
+      </header>
       <button
+        aria-label="Novo projeto"
         className="chat-new-button"
         disabled={createTask.isPending}
         onClick={() => createTask.mutate()}
         type="button"
       >
         <Plus aria-hidden="true" size={15} />
-        Nova conversa
+        Novo projeto
       </button>
 
       <label className="chat-search">
         <Search aria-hidden="true" size={13} />
         <input
-          aria-label="Buscar conversas"
+          aria-label="Buscar projetos"
           onChange={(event) => setFilter(event.target.value)}
-          placeholder="Buscar conversas"
+          placeholder="Buscar projetos"
+          type="search"
           value={filter}
         />
       </label>
 
-      <nav aria-label="Histórico de conversas" className="chat-sessions">
-        <div className="chat-sessions__label">Conversas</div>
+      <nav aria-label="Histórico de projetos" className="chat-sessions">
+        <div className="chat-sessions__label">Projetos</div>
         {tasks.length === 0 && !tasksQuery.isLoading && (
           <p className="chat-sessions__empty">
-            Nenhuma conversa ainda. Comece uma nova.
+            Nenhum projeto ainda. Escolha uma pasta para começar.
           </p>
         )}
         {tasks.map((task) => (
@@ -125,7 +142,7 @@ export function ChatSidebar() {
           >
             {renamingId === task.id ? (
               <input
-                aria-label="Novo nome da conversa"
+                aria-label="Novo nome do projeto"
                 className="chat-session__rename"
                 ref={(node) => node?.focus()}
                 onBlur={() => commitRename(task)}
@@ -168,7 +185,7 @@ export function ChatSidebar() {
                 onClick={() => {
                   if (
                     window.confirm(
-                      `Apagar a conversa "${task.title}"? O histórico dela será removido.`,
+                      `Apagar o projeto "${task.title}"? O histórico dele será removido.`,
                     )
                   ) {
                     deleteTask.mutate({ taskId: task.id });

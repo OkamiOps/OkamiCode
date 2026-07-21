@@ -1,4 +1,4 @@
-import { Navigate, Route, Routes } from "react-router-dom";
+import { Navigate, Route, Routes, useLocation } from "react-router-dom";
 import { QuickChatPage } from "../features/quick-chat/QuickChatPage";
 import { AgentsPage } from "../features/ecosystem/AgentsPage";
 import { ConnectionsPage } from "../features/ecosystem/ConnectionsPage";
@@ -20,7 +20,7 @@ export function AppRouter() {
         <Route path="/workbench" element={<WorkbenchPage />} />
         <Route path="/inbox" element={<InboxPage />} />
         <Route path="/calendar" element={<CalendarPage />} />
-        <Route path="/quick-chat" element={<QuickChatPage />} />
+        <Route path="/quick-chat" element={<FreshQuickChat />} />
         <Route path="/kanban" element={<KanbanPage />} />
         <Route path="/usage" element={<UsagePage />} />
         <Route path="/memory" element={<MemoryPage />} />
@@ -33,4 +33,9 @@ export function AppRouter() {
       <Route path="*" element={<Navigate to="/workbench" replace />} />
     </Routes>
   );
+}
+
+function FreshQuickChat() {
+  const location = useLocation();
+  return <QuickChatPage key={location.search} />;
 }
