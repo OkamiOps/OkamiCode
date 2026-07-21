@@ -17,7 +17,7 @@ interface RunServiceDependencies {
 export interface SendLaneTurnRequest {
   effort?: string;
   laneId: string;
-  nativeSessionId: string;
+  nativeSessionId: string | null;
   input: string;
   delta: DeltaPackage | null;
   runtimeKind?: RuntimeKind;

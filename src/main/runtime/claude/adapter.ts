@@ -98,6 +98,9 @@ export class ClaudeAdapter implements RuntimeAdapter {
   }
 
   async sendTurn(request: NativeTurnRequest): Promise<RunHandle> {
+    if (request.nativeSessionId === null) {
+      throw new Error("Claude requires an authoritative native session id");
+    }
     const session = this.sessions.get(request.nativeSessionId);
     if (!session) {
       throw new Error(`Unknown Claude session ${request.nativeSessionId}`);
@@ -316,6 +319,7 @@ export class ClaudeAdapter implements RuntimeAdapter {
       this.sessions.set(candidateSessionId, state);
       return {
         laneId: request.laneId,
+        bindingState: "authoritative",
         nativeSessionId: candidateSessionId,
         runtimeVersion: capabilities.version,
       };

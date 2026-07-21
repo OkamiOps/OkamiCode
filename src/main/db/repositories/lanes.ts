@@ -121,6 +121,23 @@ export class LaneRepository {
       .run(binding);
   }
 
+  bindNativeSessionIfAbsentOrEqual(binding: NativeSessionBindingRecord): void {
+    const result = this.db
+      .prepare(
+        `INSERT INTO native_session_bindings
+         (lane_id, native_session_id, runtime_version, bound_at, updated_at)
+         VALUES (@laneId, @nativeSessionId, @runtimeVersion, @boundAt, @updatedAt)
+         ON CONFLICT(lane_id) DO UPDATE SET
+           runtime_version = excluded.runtime_version,
+           updated_at = excluded.updated_at
+         WHERE native_session_bindings.native_session_id = excluded.native_session_id`,
+      )
+      .run(binding);
+    if (result.changes === 0) {
+      throw new Error("Native session binding conflict");
+    }
+  }
+
   advanceCursor(
     id: string,
     fromSequenceExclusive: number,

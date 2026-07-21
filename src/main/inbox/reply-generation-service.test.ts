@@ -100,6 +100,7 @@ function harness(
     taskId: randomUUID(),
     nativeSessionId: "native-session",
     nativeSessionIdPrefix: "native-s…",
+    bindingState: "authoritative" as const,
     runtimeVersion: "test",
     temperature: "clean" as const,
     delta: null,

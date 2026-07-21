@@ -1,8 +1,11 @@
 import { randomUUID } from "node:crypto";
 import type { IpcMain, IpcMainInvokeEvent } from "electron";
 import { afterEach, describe, expect, it, vi } from "vitest";
+import type { CanonicalEvent } from "../../shared/contracts/event";
 import type { IpcChannel } from "../../shared/contracts/ipc";
+import type { RunId } from "../../shared/ids";
 import { createTestDatabase, type TestDatabase } from "../db/test-support";
+import type { OpenedLane } from "../orchestration/lane-service";
 import { RuntimeRegistry } from "../runtime/registry";
 import { createAppState, type AppState } from "./app-state";
 import { registerIpcHandlers } from "./handlers";
@@ -41,6 +44,47 @@ function harness() {
     sender: { mainFrame: senderFrame, send: vi.fn() },
   } as unknown as IpcMainInvokeEvent;
   return { event, fixture, handlers, state };
+}
+
+function deferredOpened(fixture: TestDatabase): OpenedLane {
+  return {
+    laneId: fixture.laneId,
+    taskId: fixture.taskId,
+    nativeSessionId: null,
+    nativeSessionIdPrefix: null,
+    bindingState: "deferred",
+    runtimeVersion: "deferred-runtime",
+    temperature: "cold",
+    delta: null,
+    pendingDeltaEvents: 0,
+    harness: "claude",
+    runtimeKind: "claude",
+    providerAccountLabel: "Claude Max",
+    model: "claude-test",
+    routeKind: "direct",
+    routeReason: "claude_model",
+    displayQuotaAccount: "Claude subscription",
+    permissionMode: "manual",
+    workspacePath: null,
+    status: "ready",
+  };
+}
+
+function configureDeferredRun(
+  state: AppState,
+  fixture: TestDatabase,
+  events: AsyncIterable<CanonicalEvent>,
+  opened = deferredOpened(fixture),
+): OpenedLane {
+  state.laneService.open = vi.fn(
+    async () => opened,
+  ) as AppState["laneService"]["open"];
+  state.laneService.sendTurn = vi.fn(async () => ({
+    runId: fixture.runId as RunId,
+    events,
+  })) as AppState["laneService"]["sendTurn"];
+  state.reportBackgroundError = vi.fn();
+  return opened;
 }
 
 describe("lane IPC safety", () => {
@@ -88,5 +132,183 @@ describe("lane IPC safety", () => {
       "Permission mode bypassPermissions is not supported by cursor",
     );
     expect(fixture.lanes.findById(fixture.laneId)?.permissionMode).toBeNull();
+  });
+
+  it.each([
+    ["task", () => randomUUID()],
+    ["lane", () => randomUUID()],
+    ["run", () => randomUUID()],
+  ])(
+    "rejects a mismatched %s before persisting the event",
+    async (field, id) => {
+      const { event, fixture, handlers, state } = harness();
+      const mismatch = id();
+      async function* events() {
+        yield fixture.event({
+          kind: "session_started",
+          ...(field === "task" ? { taskId: mismatch } : {}),
+          ...(field === "lane" ? { laneId: mismatch } : {}),
+          ...(field === "run"
+            ? { runId: mismatch }
+            : { runId: fixture.runId as RunId }),
+          payload: { nativeSessionId: "mismatched-session", runtime: "claude" },
+        });
+      }
+      configureDeferredRun(state, fixture, events());
+
+      await handlers.get("lane:sendTurn")?.(event, {
+        laneId: fixture.laneId,
+        input: "start deferred lane",
+      });
+
+      await vi.waitFor(() =>
+        expect(state.reportBackgroundError).toHaveBeenCalledWith(
+          expect.objectContaining({
+            message: "Native session event does not match the active lane run",
+          }),
+        ),
+      );
+      expect(
+        fixture.lanes.findNativeSessionBinding(fixture.laneId),
+      ).toBeUndefined();
+      expect(fixture.events.afterCursor(fixture.laneId, 0)).toEqual([]);
+    },
+  );
+
+  it("rejects a mismatched runtime before persisting the event", async () => {
+    const { event, fixture, handlers, state } = harness();
+    async function* events() {
+      yield fixture.event({
+        kind: "session_started",
+        runId: fixture.runId as RunId,
+        payload: { nativeSessionId: "wrong-runtime", runtime: "codex" },
+      });
+    }
+    configureDeferredRun(state, fixture, events());
+
+    await handlers.get("lane:sendTurn")?.(event, {
+      laneId: fixture.laneId,
+      input: "start deferred lane",
+    });
+
+    await vi.waitFor(() =>
+      expect(state.reportBackgroundError).toHaveBeenCalledWith(
+        expect.objectContaining({
+          message: "Native session event does not match the active runtime",
+        }),
+      ),
+    );
+    expect(
+      fixture.lanes.findNativeSessionBinding(fixture.laneId),
+    ).toBeUndefined();
+    expect(fixture.events.afterCursor(fixture.laneId, 0)).toEqual([]);
+  });
+
+  it("forwards an authoritative session event without attempting deferred promotion", async () => {
+    const { event, fixture, handlers, state } = harness();
+    async function* events() {
+      yield fixture.event({
+        kind: "session_resumed",
+        runId: fixture.runId as RunId,
+        payload: { nativeSessionId: "existing-authoritative-session" },
+      });
+    }
+    const opened: OpenedLane = {
+      ...deferredOpened(fixture),
+      bindingState: "authoritative",
+      nativeSessionId: "existing-authoritative-session",
+      nativeSessionIdPrefix: "existing…",
+    };
+    const promote = vi.spyOn(state.laneService, "promoteNativeSession");
+    configureDeferredRun(state, fixture, events(), opened);
+
+    await handlers.get("lane:sendTurn")?.(event, {
+      laneId: fixture.laneId,
+      input: "continue authoritative lane",
+    });
+
+    await vi.waitFor(() =>
+      expect(fixture.events.afterCursor(fixture.laneId, 0)).toHaveLength(1),
+    );
+    expect(promote).not.toHaveBeenCalled();
+    expect(state.reportBackgroundError).not.toHaveBeenCalled();
+  });
+
+  it("promotes a matching event and refreshes an equal idempotent binding", async () => {
+    const { event, fixture, handlers, state } = harness();
+    async function* events() {
+      yield fixture.event({
+        kind: "session_started",
+        runId: fixture.runId as RunId,
+        payload: {
+          nativeSessionId: "authoritative-session",
+          runtime: "claude",
+          runtimeVersion: "v1",
+        },
+      });
+      yield fixture.event({
+        kind: "session_resumed",
+        sequence: 2,
+        runId: fixture.runId as RunId,
+        payload: {
+          nativeSessionId: "authoritative-session",
+          runtime: "claude",
+          runtimeVersion: "v2",
+        },
+      });
+    }
+    const opened = configureDeferredRun(state, fixture, events());
+
+    await handlers.get("lane:sendTurn")?.(event, {
+      laneId: fixture.laneId,
+      input: "start deferred lane",
+    });
+
+    await vi.waitFor(() =>
+      expect(fixture.lanes.findNativeSessionBinding(fixture.laneId)).toEqual(
+        expect.objectContaining({
+          nativeSessionId: "authoritative-session",
+          runtimeVersion: "v2",
+        }),
+      ),
+    );
+    expect(fixture.events.afterCursor(fixture.laneId, 0)).toHaveLength(2);
+    expect(opened).toMatchObject({
+      bindingState: "authoritative",
+      nativeSessionId: "authoritative-session",
+    });
+  });
+
+  it("reports a conflicting second id without overwriting the first", async () => {
+    const { event, fixture, handlers, state } = harness();
+    async function* events() {
+      yield fixture.event({
+        kind: "session_started",
+        runId: fixture.runId as RunId,
+        payload: { nativeSessionId: "first-id", runtime: "claude" },
+      });
+      yield fixture.event({
+        kind: "session_resumed",
+        sequence: 2,
+        runId: fixture.runId as RunId,
+        payload: { nativeSessionId: "different-id", runtime: "claude" },
+      });
+    }
+    configureDeferredRun(state, fixture, events());
+
+    await handlers.get("lane:sendTurn")?.(event, {
+      laneId: fixture.laneId,
+      input: "start deferred lane",
+    });
+
+    await vi.waitFor(() =>
+      expect(state.reportBackgroundError).toHaveBeenCalledWith(
+        expect.objectContaining({ message: "Native session binding conflict" }),
+      ),
+    );
+    expect(fixture.lanes.findNativeSessionBinding(fixture.laneId)).toEqual(
+      expect.objectContaining({ nativeSessionId: "first-id" }),
+    );
+    expect(fixture.events.afterCursor(fixture.laneId, 0)).toHaveLength(1);
   });
 });

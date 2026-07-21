@@ -21,16 +21,27 @@ export interface ResumeSessionRequest extends StartSessionRequest {
   nativeSessionId: string;
 }
 
-export interface NativeSession {
+interface NativeSessionBase {
   laneId: LaneId;
-  nativeSessionId: string;
   runtimeVersion: string;
 }
+
+export interface AuthoritativeNativeSession extends NativeSessionBase {
+  bindingState: "authoritative";
+  nativeSessionId: string;
+}
+
+export interface DeferredNativeSession extends NativeSessionBase {
+  bindingState: "deferred";
+  nativeSessionId: null;
+}
+
+export type NativeSession = AuthoritativeNativeSession | DeferredNativeSession;
 
 export interface NativeTurnRequest {
   runId: RunId;
   laneId: LaneId;
-  nativeSessionId: string;
+  nativeSessionId: string | null;
   input: string;
   model?: string;
   effort?: string;

@@ -1507,6 +1507,10 @@ async function sendLaneTurn(
     openedLanes.get(request.laneId) ??
     (await state.laneService.open(request.laneId));
   openedLanes.set(opened.laneId, opened);
+  // This run owns the deferred-to-authoritative transition. Capture it before
+  // the first hook mutates the cached lane so later session events in the same
+  // run remain subject to idempotency/conflict checks.
+  const expectsNativeSessionPromotion = opened.bindingState === "deferred";
   if (request.effort) laneEffort.set(request.laneId, request.effort);
   const laneForTask = state.lanes.findById(request.laneId);
   if (laneForTask) {
@@ -1522,7 +1526,13 @@ async function sendLaneTurn(
     request.input,
     request.effort,
   );
-  void forwardEvents(state, sender, run).catch(state.reportBackgroundError);
+  void forwardEvents(
+    state,
+    sender,
+    run,
+    opened,
+    expectsNativeSessionPromotion,
+  ).catch(state.reportBackgroundError);
   return {
     runId: run.runId,
     laneId: opened.laneId,
@@ -1540,9 +1550,18 @@ async function forwardEvents(
   state: AppState,
   sender: Pick<WebContents, "send">,
   run: RunHandle,
+  opened?: OpenedLane,
+  expectsNativeSessionPromotion = false,
 ): Promise<void> {
   for await (const candidate of run.events) {
-    await persistAndForwardEvent(state, sender, candidate);
+    await persistAndForwardEvent(
+      state,
+      sender,
+      candidate,
+      run,
+      opened,
+      expectsNativeSessionPromotion,
+    );
   }
 }
 
@@ -1550,8 +1569,20 @@ async function persistAndForwardEvent(
   state: AppState,
   sender: Pick<WebContents, "send">,
   candidate: unknown,
+  run?: RunHandle,
+  opened?: OpenedLane,
+  expectsNativeSessionPromotion = false,
 ): Promise<void> {
   const event = canonicalEventSchema.parse(candidate);
+  const promotion = nativeSessionPromotion(
+    event,
+    run,
+    opened,
+    expectsNativeSessionPromotion,
+  );
+  if (promotion && opened) {
+    state.laneService.promoteNativeSession(opened, promotion);
+  }
   state.events.append(event);
   // Without this the run row stays "running" forever: the terminal event
   // was streamed to the UI but never written back to the run itself.
@@ -1568,6 +1599,39 @@ async function persistAndForwardEvent(
     ...event,
     payload: sanitizePayload(event.payload),
   });
+}
+
+function nativeSessionPromotion(
+  event: ReturnType<typeof canonicalEventSchema.parse>,
+  run: RunHandle | undefined,
+  opened: OpenedLane | undefined,
+  expectsNativeSessionPromotion: boolean,
+): { laneId: string; nativeSessionId: string; runtimeVersion?: string } | null {
+  if (event.kind !== "session_started" && event.kind !== "session_resumed") {
+    return null;
+  }
+  if (!opened || !run || !expectsNativeSessionPromotion) return null;
+  if (
+    event.taskId !== opened.taskId ||
+    event.laneId !== opened.laneId ||
+    event.runId !== run.runId
+  ) {
+    throw new Error("Native session event does not match the active lane run");
+  }
+  const nativeSessionId = event.payload.nativeSessionId;
+  if (
+    typeof nativeSessionId !== "string" ||
+    nativeSessionId.length === 0 ||
+    event.payload.runtime !== opened.runtimeKind
+  ) {
+    throw new Error("Native session event does not match the active runtime");
+  }
+  const runtimeVersion = event.payload.runtimeVersion;
+  return {
+    laneId: event.laneId,
+    nativeSessionId,
+    ...(typeof runtimeVersion === "string" ? { runtimeVersion } : {}),
+  };
 }
 
 async function cancelRun(state: AppState, request: IpcRequest<"run:cancel">) {

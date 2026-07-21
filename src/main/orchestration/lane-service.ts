@@ -31,7 +31,10 @@ export interface LaneGatewayRouting {
 interface LaneServiceDependencies {
   lanes: Pick<
     LaneRepository,
-    "bindNativeSession" | "findById" | "findNativeSessionBinding" | "list"
+    | "bindNativeSessionIfAbsentOrEqual"
+    | "findById"
+    | "findNativeSessionBinding"
+    | "list"
   >;
   audit: Pick<AuditRepository, "record">;
   runtimes: Pick<RuntimeRegistry, "lookup">;
@@ -50,8 +53,9 @@ export interface OpenLaneOptions {
 export interface OpenedLane {
   laneId: string;
   taskId: string;
-  nativeSessionId: string;
-  nativeSessionIdPrefix: string;
+  nativeSessionId: string | null;
+  nativeSessionIdPrefix: string | null;
+  bindingState: "authoritative" | "deferred";
   runtimeVersion: string;
   temperature: LaneTemperature;
   delta: DeltaPackage | null;
@@ -192,20 +196,27 @@ export class LaneService {
           nativeSessionId: binding.nativeSessionId,
         })
       : await runtime.start(request);
-    const now = this.clock().toISOString();
-    this.dependencies.lanes.bindNativeSession({
-      laneId: lane.id,
-      nativeSessionId: session.nativeSessionId,
-      runtimeVersion: session.runtimeVersion,
-      boundAt: binding?.boundAt ?? now,
-      updatedAt: now,
-    });
+    const nativeSessionId =
+      session.bindingState === "authoritative" ? session.nativeSessionId : null;
+    if (nativeSessionId) {
+      const now = this.clock().toISOString();
+      this.dependencies.lanes.bindNativeSessionIfAbsentOrEqual({
+        laneId: lane.id,
+        nativeSessionId,
+        runtimeVersion: session.runtimeVersion,
+        boundAt: binding?.boundAt ?? now,
+        updatedAt: now,
+      });
+    }
 
     return {
       laneId: lane.id,
       taskId: lane.taskId,
-      nativeSessionId: session.nativeSessionId,
-      nativeSessionIdPrefix: nativeSessionIdPrefix(session.nativeSessionId),
+      nativeSessionId,
+      nativeSessionIdPrefix: nativeSessionId
+        ? nativeSessionIdPrefix(nativeSessionId)
+        : null,
+      bindingState: session.bindingState,
       runtimeVersion: session.runtimeVersion,
       temperature,
       delta,
@@ -257,6 +268,45 @@ export class LaneService {
       occurredAt: this.clock().toISOString(),
     });
     return run;
+  }
+
+  promoteNativeSession(
+    opened: OpenedLane,
+    event: {
+      laneId: string;
+      nativeSessionId: string;
+      runtimeVersion?: string;
+    },
+  ): void {
+    if (event.laneId !== opened.laneId) {
+      throw new Error(
+        "Native session event does not belong to the opened lane",
+      );
+    }
+    const lane = this.dependencies.lanes.findById(opened.laneId);
+    if (!lane) throw new Error(`Unknown lane ${opened.laneId}`);
+    const route = this.resolveLaneRoute(lane);
+    const expectedRuntime =
+      route.kind === "unavailable"
+        ? lane.runtimeKind
+        : route.harness === "claude"
+          ? "claude"
+          : route.runtime;
+    if (opened.runtimeKind !== expectedRuntime) {
+      throw new Error("Native session event runtime does not match the lane");
+    }
+    const now = this.clock().toISOString();
+    this.dependencies.lanes.bindNativeSessionIfAbsentOrEqual({
+      laneId: lane.id,
+      nativeSessionId: event.nativeSessionId,
+      runtimeVersion: event.runtimeVersion ?? opened.runtimeVersion,
+      boundAt: now,
+      updatedAt: now,
+    });
+    opened.nativeSessionId = event.nativeSessionId;
+    opened.nativeSessionIdPrefix = nativeSessionIdPrefix(event.nativeSessionId);
+    opened.runtimeVersion = event.runtimeVersion ?? opened.runtimeVersion;
+    opened.bindingState = "authoritative";
   }
 
   async switch(

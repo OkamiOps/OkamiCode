@@ -140,6 +140,9 @@ export class CodexAdapter implements RuntimeAdapter {
   }
 
   async sendTurn(request: NativeTurnRequest): Promise<RunHandle> {
+    if (request.nativeSessionId === null) {
+      throw new Error("Codex requires an authoritative native session id");
+    }
     const session = this.sessions.get(request.nativeSessionId);
     if (!session)
       throw new Error(`Unknown Codex thread ${request.nativeSessionId}`);
@@ -253,6 +256,7 @@ export class CodexAdapter implements RuntimeAdapter {
       this.sessions.set(nativeSessionId, state);
       return {
         laneId: state.laneId,
+        bindingState: "authoritative",
         nativeSessionId,
         runtimeVersion: state.runtimeVersion,
       };

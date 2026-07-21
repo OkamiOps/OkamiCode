@@ -165,6 +165,9 @@ export class CursorAdapter implements RuntimeAdapter {
   }
 
   async sendTurn(request: NativeTurnRequest): Promise<RunHandle> {
+    if (request.nativeSessionId === null) {
+      throw new Error("Cursor requires an authoritative native session id");
+    }
     const session = this.sessions.get(request.nativeSessionId);
     if (!session) {
       throw new Error(`Unknown Cursor session ${request.nativeSessionId}`);
@@ -252,7 +255,12 @@ export class CursorAdapter implements RuntimeAdapter {
       permissionMode: request.permissionMode,
       runtimeVersion,
     });
-    return { laneId: request.laneId, nativeSessionId, runtimeVersion };
+    return {
+      laneId: request.laneId,
+      bindingState: "authoritative",
+      nativeSessionId,
+      runtimeVersion,
+    };
   }
 
   private async *projectRunEvents(

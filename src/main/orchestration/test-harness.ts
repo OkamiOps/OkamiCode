@@ -22,6 +22,7 @@ interface LaneHarnessOptions {
   runtime?: RuntimeKind;
   model?: string;
   nativeSession?: string;
+  deferredStart?: boolean;
   cursor?: number;
   events?: number[];
   gateway?: LaneGatewayRouting;
@@ -35,6 +36,7 @@ export class FakeRuntimeAdapter implements RuntimeAdapter {
   readonly startRequests: StartSessionRequest[] = [];
   readonly resumeRequests: ResumeSessionRequest[] = [];
   rejectNextTurn = false;
+  deferredStart = false;
 
   constructor(readonly kind: RuntimeKind) {}
 
@@ -49,11 +51,21 @@ export class FakeRuntimeAdapter implements RuntimeAdapter {
   start(request: StartSessionRequest): Promise<NativeSession> {
     this.startCalls += 1;
     this.startRequests.push(request);
-    return Promise.resolve({
-      laneId: request.laneId,
-      nativeSessionId: `new-${request.laneId}`,
-      runtimeVersion: "fake-1",
-    });
+    return Promise.resolve(
+      this.deferredStart
+        ? {
+            laneId: request.laneId,
+            bindingState: "deferred",
+            nativeSessionId: null,
+            runtimeVersion: "fake-1",
+          }
+        : {
+            laneId: request.laneId,
+            bindingState: "authoritative",
+            nativeSessionId: `new-${request.laneId}`,
+            runtimeVersion: "fake-1",
+          },
+    );
   }
 
   resume(request: ResumeSessionRequest): Promise<NativeSession> {
@@ -61,6 +73,7 @@ export class FakeRuntimeAdapter implements RuntimeAdapter {
     this.resumeRequests.push(request);
     return Promise.resolve({
       laneId: request.laneId,
+      bindingState: "authoritative",
       nativeSessionId: request.nativeSessionId,
       runtimeVersion: "fake-1",
     });
@@ -149,6 +162,7 @@ export function createLaneHarness(
     cursor: new FakeRuntimeAdapter("cursor"),
   };
   const fakeRuntime = runtimes[runtime];
+  fakeRuntime.deferredStart = options.deferredStart ?? false;
   const registry = new RuntimeRegistry();
   registry.register(runtimes.claude);
   registry.register(runtimes.codex);

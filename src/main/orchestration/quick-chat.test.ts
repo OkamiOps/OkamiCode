@@ -207,6 +207,7 @@ function openedLane(laneId: string): OpenedLane {
     taskId: randomUUID(),
     nativeSessionId: randomUUID(),
     nativeSessionIdPrefix: "session…",
+    bindingState: "authoritative",
     runtimeVersion: "fake-1",
     temperature: "clean",
     delta: null,

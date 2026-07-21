@@ -249,6 +249,32 @@ describe("LaneService", () => {
     expect(cleanOpened.delta).toBeNull();
   });
 
+  it("does not persist a deferred session before its authoritative event", async () => {
+    const h = createLaneHarness({ deferredStart: true });
+
+    const opened = await h.openExisting();
+
+    expect(opened.nativeSessionId).toBeNull();
+    expect(h.fx.lanes.findNativeSessionBinding(h.fx.laneId)).toBeUndefined();
+  });
+
+  it("does not overwrite an existing authoritative binding while opening", async () => {
+    const h = createLaneHarness({ nativeSession: "first-authoritative-id" });
+    h.fakeRuntime.resume = async (request) => ({
+      laneId: request.laneId,
+      bindingState: "authoritative",
+      nativeSessionId: "different-authoritative-id",
+      runtimeVersion: "fake-2",
+    });
+
+    await expect(h.openExisting()).rejects.toThrow(
+      "Native session binding conflict",
+    );
+    expect(h.fx.lanes.findNativeSessionBinding(h.fx.laneId)).toEqual(
+      expect.objectContaining({ nativeSessionId: "first-authoritative-id" }),
+    );
+  });
+
   it("adds zero bootstrap bytes to a hot lane turn", async () => {
     const h = createLaneHarness({ nativeSession: "session-hot" });
     const opened = await h.openExisting();
