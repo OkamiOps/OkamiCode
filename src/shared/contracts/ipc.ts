@@ -1012,6 +1012,12 @@ const inboxAddAccountRequestSchema = z
 const inboxAccountIdRequestSchema = z
   .object({ accountId: entityIdSchema })
   .strict();
+const inboxUpdateCredentialRequestSchema = z
+  .object({
+    accountId: entityIdSchema,
+    credential: inboxCredentialSchema,
+  })
+  .strict();
 const inboxOutgoingSettingsConfigurationSchema = z
   .object({
     host: z.string().trim().min(1).max(255),
@@ -1522,6 +1528,7 @@ export const ipcRequestSchemas = {
   "inbox:account:add": inboxAddAccountRequestSchema,
   "inbox:account:remove": inboxAccountIdRequestSchema,
   "inbox:account:sync": inboxAccountIdRequestSchema,
+  "inbox:account:updateCredential": inboxUpdateCredentialRequestSchema,
   "inbox:account:outgoing:get": inboxAccountIdRequestSchema,
   "inbox:account:outgoing:set": inboxOutgoingSettingsRequestSchema,
   "inbox:threads:list": inboxThreadsListRequestSchema,
@@ -1602,6 +1609,7 @@ export const ipcResponseSchemas = {
   "inbox:account:add": inboxAccountSummarySchema,
   "inbox:account:remove": inboxRemoveAccountResultSchema,
   "inbox:account:sync": inboxSyncResultSchema,
+  "inbox:account:updateCredential": inboxSyncResultSchema,
   "inbox:account:outgoing:get": inboxOutgoingSettingsSchema.nullable(),
   "inbox:account:outgoing:set": inboxOutgoingSettingsSchema,
   "inbox:threads:list": inboxThreadPageSchema,

@@ -80,6 +80,7 @@ export type InboxIpcService = Pick<
   | "addImapAccount"
   | "removeAccount"
   | "syncAccount"
+  | "updateCredentialAndSync"
   | "listThreads"
   | "getThread"
   | "markThreadRead"
@@ -528,6 +529,13 @@ async function dispatch(
       return inboxService().syncAccount(
         (request as IpcRequest<"inbox:account:sync">).accountId,
       );
+    case "inbox:account:updateCredential": {
+      const update = request as IpcRequest<"inbox:account:updateCredential">;
+      return inboxService().updateCredentialAndSync(
+        update.accountId,
+        update.credential,
+      );
+    }
     case "inbox:account:outgoing:get":
       return inboxOutgoingSettingsService().get(
         (request as IpcRequest<"inbox:account:outgoing:get">).accountId,

@@ -215,6 +215,7 @@ it("exposes exactly the enumerated command surface", () => {
     "inbox:account:add",
     "inbox:account:remove",
     "inbox:account:sync",
+    "inbox:account:updateCredential",
     "inbox:account:outgoing:get",
     "inbox:account:outgoing:set",
     "inbox:threads:list",
@@ -350,6 +351,10 @@ it("provides typed Inbox account and thread commands through the bridge", async 
     "inbox:accounts:list": [summary],
     "inbox:account:add": summary,
     "inbox:account:sync": {
+      account,
+      counts: { inserted: 1, updated: 0, unchanged: 0 },
+    },
+    "inbox:account:updateCredential": {
       account,
       counts: { inserted: 1, updated: 0, unchanged: 0 },
     },
@@ -505,6 +510,17 @@ it("provides typed Inbox account and thread commands through the bridge", async 
   ).resolves.toEqual(summary);
   await expect(
     workbenchClient.inboxAccountSync({ accountId }),
+  ).resolves.toMatchObject({ counts: { inserted: 1 } });
+  await expect(
+    workbenchClient.inboxAccountUpdateCredential({
+      accountId,
+      credential: {
+        version: 1,
+        kind: "imap_password",
+        username: "me@example.com",
+        password: "new-secret",
+      },
+    }),
   ).resolves.toMatchObject({ counts: { inserted: 1 } });
   await expect(
     workbenchClient.inboxAccountOutgoingGet({ accountId }),

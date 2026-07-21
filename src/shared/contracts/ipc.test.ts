@@ -107,6 +107,7 @@ it("exposes strict Inbox contracts in both IPC maps", () => {
     "inbox:account:add",
     "inbox:account:remove",
     "inbox:account:sync",
+    "inbox:account:updateCredential",
     "inbox:threads:list",
     "inbox:thread:get",
     "inbox:thread:markRead",
@@ -120,6 +121,12 @@ it("exposes strict Inbox contracts in both IPC maps", () => {
   expect(ipcRequestSchemas["inbox:account:add"].safeParse(base).success).toBe(
     true,
   );
+  expect(
+    ipcRequestSchemas["inbox:account:updateCredential"].safeParse({
+      accountId,
+      credential: base.credential,
+    }).success,
+  ).toBe(true);
   expect(
     ipcRequestSchemas["inbox:account:add"].safeParse({
       ...base,

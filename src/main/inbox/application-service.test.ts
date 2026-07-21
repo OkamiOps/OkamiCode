@@ -8,6 +8,7 @@ import {
   type CredentialVault,
   type ImapSyncer,
 } from "./application-service";
+import { ImapSyncError } from "./imap-adapter";
 
 const credential: ConnectorCredential = {
   version: 1,
@@ -180,7 +181,7 @@ describe("InboxApplicationService", () => {
   });
 
   it("accepts a Gmail app password and provisions the official Gmail SMTP endpoint", async () => {
-    const { fx, service } = fixture();
+    const { fx, service, vault } = fixture();
 
     const added = await service.addImapAccount(
       addInput({
@@ -196,7 +197,7 @@ describe("InboxApplicationService", () => {
           version: 1,
           kind: "imap_password",
           username: "marcos@gmail.com",
-          password: "app-password",
+          password: "abcd efgh ijkl mnop",
         },
       }) as never,
     );
@@ -204,6 +205,12 @@ describe("InboxApplicationService", () => {
     expect(added.account).toMatchObject({
       provider: "gmail",
       address: "marcos@gmail.com",
+    });
+    expect(vault.credentials.get("account-1")).toEqual({
+      version: 1,
+      kind: "imap_password",
+      username: "marcos@gmail.com",
+      password: "abcdefghijklmnop",
     });
     expect(
       fx.db
@@ -214,6 +221,36 @@ describe("InboxApplicationService", () => {
         )
         .get(),
     ).toEqual({ host: "smtp.gmail.com", port: 465, secure: 1 });
+  });
+
+  it("updates an existing Gmail app password and synchronizes without recreating the account", async () => {
+    const { service, vault } = fixture();
+    const added = await service.addImapAccount(
+      addInput({
+        provider: "gmail",
+        address: "marcos@gmail.com",
+        configuration: {
+          host: "imap.gmail.com",
+          port: 993,
+          secure: true,
+        },
+      }) as never,
+    );
+
+    await expect(
+      service.updateCredentialAndSync(added.account.id, {
+        version: 1,
+        kind: "imap_password",
+        username: "marcos@gmail.com",
+        password: "abcd efgh ijkl mnop",
+      }),
+    ).resolves.toMatchObject({ account: { status: "connected" } });
+    expect(vault.credentials.get(added.account.id)).toEqual({
+      version: 1,
+      kind: "imap_password",
+      username: "marcos@gmail.com",
+      password: "abcdefghijklmnop",
+    });
   });
 
   it("passes calendar invitations from synchronized email to the calendar importer", async () => {
@@ -343,6 +380,39 @@ describe("InboxApplicationService", () => {
     await expect(service.listAccounts()).resolves.toEqual([
       expect.objectContaining({
         account: expect.objectContaining({ status: "auth_required" }),
+      }),
+    ]);
+  });
+
+  it("preserves an actionable Gmail authentication error and marks the account auth_required", async () => {
+    const message =
+      "O Gmail exige uma senha de app. Atualize o acesso usando o código de 16 caracteres da Conta Google.";
+    const { service } = fixture({
+      sync: vi
+        .fn()
+        .mockRejectedValue(new ImapSyncError(message, "auth_required")),
+    });
+    const added = await service.addImapAccount(
+      addInput({
+        provider: "gmail",
+        address: "marcos@gmail.com",
+        configuration: {
+          host: "imap.gmail.com",
+          port: 993,
+          secure: true,
+        },
+      }) as never,
+    );
+
+    await expect(service.syncAccount(added.account.id)).rejects.toMatchObject({
+      message,
+    });
+    await expect(service.listAccounts()).resolves.toEqual([
+      expect.objectContaining({
+        account: expect.objectContaining({
+          status: "auth_required",
+          lastError: message,
+        }),
       }),
     ]);
   });

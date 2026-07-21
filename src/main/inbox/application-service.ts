@@ -1,6 +1,10 @@
 import type { ConnectorCredential } from "../connectors/credential-vault";
 import type { Database } from "../db/connection";
-import type { ImapAccountConfiguration, ImapSyncInput } from "./imap-adapter";
+import {
+  ImapSyncError,
+  type ImapAccountConfiguration,
+  type ImapSyncInput,
+} from "./imap-adapter";
 import {
   InboxService,
   type ApplyInboxSyncBatch,
@@ -124,7 +128,10 @@ export class InboxApplicationService {
     const accountId = this.options.createId();
     const now = this.options.clock().toISOString();
     try {
-      await this.options.vault.set(accountId, input.credential);
+      await this.options.vault.set(
+        accountId,
+        normalizeCredential(normalized.provider, input.credential),
+      );
     } catch {
       throw new InboxApplicationError();
     }
@@ -250,6 +257,26 @@ export class InboxApplicationService {
     return operation;
   }
 
+  async updateCredentialAndSync(
+    accountId: string,
+    credential: ConnectorCredential,
+  ): Promise<InboxSyncResult> {
+    const account = this.findAccount(accountId);
+    if (!account || !this.findConfiguration(accountId)) {
+      throw new InboxApplicationError();
+    }
+    try {
+      await this.options.vault.set(
+        accountId,
+        normalizeCredential(account.provider, credential),
+      );
+      this.setPublicStatus(accountId, "connected", null);
+    } catch {
+      throw new InboxApplicationError();
+    }
+    return this.syncAccount(accountId);
+  }
+
   listThreads(options?: ListInboxThreadsOptions): InboxThreadPage {
     return this.inbox.listThreads(options);
   }
@@ -296,7 +323,11 @@ export class InboxApplicationService {
       }
       const connected = this.setPublicStatus(account.id, "connected", null);
       return { account: connected, counts };
-    } catch {
+    } catch (cause) {
+      if (cause instanceof ImapSyncError && cause.code === "auth_required") {
+        this.setPublicStatus(account.id, "auth_required", cause.message);
+        throw new InboxApplicationError(cause.message);
+      }
       this.setPublicStatus(account.id, "degraded", SYNC_FAILED_ERROR);
       throw new InboxApplicationError(SYNC_FAILED_ERROR);
     }
@@ -420,6 +451,20 @@ function validateConfiguration(
 
 function text(value: unknown): string {
   return typeof value === "string" ? value.trim() : "";
+}
+
+function normalizeCredential(
+  provider: InboxAccountProvider,
+  credential: ConnectorCredential,
+): ConnectorCredential {
+  if (provider !== "gmail" || credential.kind !== "imap_password") {
+    return credential;
+  }
+  return {
+    ...credential,
+    username: credential.username.trim(),
+    password: credential.password.replace(/\s+/gu, ""),
+  };
 }
 
 function accountFromRow(row: AccountRow): ConnectorAccount {

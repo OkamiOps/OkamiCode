@@ -67,6 +67,10 @@ function harness() {
       account,
       counts: { inserted: 1, updated: 0, unchanged: 0 },
     })),
+    updateCredentialAndSync: vi.fn(async () => ({
+      account,
+      counts: { inserted: 1, updated: 0, unchanged: 0 },
+    })),
     listThreads: vi.fn(() => ({ threads: [], nextCursor: null })),
     getThread: vi.fn(() => ({
       thread: {
@@ -281,6 +285,10 @@ it("routes all Inbox commands once and rejects invalid payloads before dispatch"
   await handlers.get("inbox:account:add")?.(event, add);
   await handlers.get("inbox:account:remove")?.(event, { accountId });
   await handlers.get("inbox:account:sync")?.(event, { accountId });
+  await handlers.get("inbox:account:updateCredential")?.(event, {
+    accountId,
+    credential: add.credential,
+  });
   await handlers.get("inbox:threads:list")?.(event, {
     unreadOnly: true,
     limit: 10,
@@ -291,6 +299,10 @@ it("routes all Inbox commands once and rejects invalid payloads before dispatch"
   expect(inboxService.addImapAccount).toHaveBeenCalledWith(add);
   expect(inboxService.removeAccount).toHaveBeenCalledWith(accountId);
   expect(inboxService.syncAccount).toHaveBeenCalledWith(accountId);
+  expect(inboxService.updateCredentialAndSync).toHaveBeenCalledWith(
+    accountId,
+    add.credential,
+  );
   expect(inboxService.listThreads).toHaveBeenCalledWith({
     unreadOnly: true,
     limit: 10,

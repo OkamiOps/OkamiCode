@@ -145,6 +145,10 @@ function makeApi(overrides: Partial<InboxApi> = {}): InboxApi {
       account: account.account,
       counts: { inserted: 1, updated: 0, unchanged: 0 },
     }),
+    updateAccountCredential: vi.fn().mockResolvedValue({
+      account: account.account,
+      counts: { inserted: 1, updated: 0, unchanged: 0 },
+    }),
     getOutgoingSettings: vi.fn().mockResolvedValue(null),
     setOutgoingSettings: vi.fn().mockResolvedValue({
       host: "smtp.okamiops.com",
@@ -357,6 +361,56 @@ describe("InboxPage", () => {
     expect(await screen.findByText("Projetos")).toBeVisible();
     await Promise.resolve();
     expect(api.syncAccount).not.toHaveBeenCalled();
+  });
+
+  it("updates a Gmail app password from the existing account row and strips visual spaces", async () => {
+    const gmail = {
+      ...account,
+      account: {
+        ...account.account,
+        provider: "gmail" as const,
+        displayName: "Pessoal",
+        address: "msant262@gmail.com",
+        status: "auth_required" as const,
+        lastError:
+          "O Gmail exige uma senha de app. Atualize o acesso usando o código de 16 caracteres da Conta Google.",
+      },
+      configuration: {
+        ...account.configuration,
+        host: "imap.gmail.com",
+      },
+    };
+    const api = makeApi({
+      listAccounts: vi.fn().mockResolvedValue([gmail]),
+    });
+    renderInbox(api);
+
+    expect(
+      await screen.findByText(/O Gmail exige uma senha de app/),
+    ).toBeVisible();
+    await userEvent.click(
+      screen.getByRole("button", { name: "Atualizar acesso de Pessoal" }),
+    );
+    const dialog = screen.getByRole("dialog");
+    await userEvent.type(
+      within(dialog).getByLabelText("Senha de app do Google"),
+      "abcd efgh ijkl mnop",
+    );
+    await userEvent.click(
+      within(dialog).getByRole("button", {
+        name: "Atualizar e sincronizar",
+      }),
+    );
+
+    expect(vi.mocked(api.updateAccountCredential).mock.calls[0]?.[0]).toEqual({
+      accountId,
+      credential: {
+        version: 1,
+        kind: "imap_password",
+        username: "msant262@gmail.com",
+        password: "abcdefghijklmnop",
+      },
+    });
   });
 
   it("clears the password when the add-account modal closes or succeeds", async () => {

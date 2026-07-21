@@ -162,6 +162,9 @@ export const workbenchClient = {
     invokeCommand("inbox:account:remove", request),
   inboxAccountSync: (request: IpcRequest<"inbox:account:sync">) =>
     invokeCommand("inbox:account:sync", request),
+  inboxAccountUpdateCredential: (
+    request: IpcRequest<"inbox:account:updateCredential">,
+  ) => invokeCommand("inbox:account:updateCredential", request),
   inboxAccountOutgoingGet: (
     request: IpcRequest<"inbox:account:outgoing:get">,
   ) => invokeCommand("inbox:account:outgoing:get", request),

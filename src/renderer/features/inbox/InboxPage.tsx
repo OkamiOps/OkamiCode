@@ -35,6 +35,7 @@ import { ResizeHandle, useResizablePane } from "../../app/layout/ResizeHandle";
 import { workbenchClient } from "../../lib/ipc/client";
 import { EmailMessageBody } from "./EmailMessageBody";
 import { InboxAccountModal } from "./InboxAccountModal";
+import { InboxCredentialModal } from "./InboxCredentialModal";
 import { InboxOutgoingSettingsModal } from "./InboxOutgoingSettingsModal";
 import { InboxReplyApprovalCard } from "./InboxReplyApprovalCard";
 import { InboxAgentReplyModal } from "./InboxAgentReplyModal";
@@ -63,6 +64,9 @@ export interface InboxApi {
   syncAccount(
     request: IpcRequest<"inbox:account:sync">,
   ): Promise<IpcResponse<"inbox:account:sync">>;
+  updateAccountCredential(
+    request: IpcRequest<"inbox:account:updateCredential">,
+  ): Promise<IpcResponse<"inbox:account:updateCredential">>;
   getOutgoingSettings(
     request: IpcRequest<"inbox:account:outgoing:get">,
   ): Promise<IpcResponse<"inbox:account:outgoing:get">>;
@@ -110,6 +114,7 @@ const defaultApi: InboxApi = {
   addAccount: workbenchClient.inboxAccountAdd,
   removeAccount: workbenchClient.inboxAccountRemove,
   syncAccount: workbenchClient.inboxAccountSync,
+  updateAccountCredential: workbenchClient.inboxAccountUpdateCredential,
   getOutgoingSettings: workbenchClient.inboxAccountOutgoingGet,
   setOutgoingSettings: workbenchClient.inboxAccountOutgoingSet,
   listThreads: workbenchClient.inboxThreadsList,
@@ -189,6 +194,10 @@ export function InboxPage({ api = defaultApi }: { api?: InboxApi }) {
   });
   const syncAccount = useMutation({
     mutationFn: api.syncAccount,
+    onSettled: refresh,
+  });
+  const updateAccountCredential = useMutation({
+    mutationFn: api.updateAccountCredential,
     onSettled: refresh,
   });
   const removeAccount = useMutation({
@@ -425,6 +434,9 @@ export function InboxPage({ api = defaultApi }: { api?: InboxApi }) {
         onFilterChange={setFilter}
         onRemove={(accountId) => removeAccount.mutate({ accountId })}
         onSync={(accountId) => syncAccount.mutate({ accountId })}
+        onUpdateCredential={(request) =>
+          updateAccountCredential.mutateAsync(request)
+        }
         getOutgoingSettings={api.getOutgoingSettings}
         setOutgoingSettings={async (request) => {
           const result = await api.setOutgoingSettings(request);
@@ -436,6 +448,11 @@ export function InboxPage({ api = defaultApi }: { api?: InboxApi }) {
         }}
         pendingAccountId={
           syncAccount.isPending ? syncAccount.variables?.accountId : null
+        }
+        pendingCredentialAccountId={
+          updateAccountCredential.isPending
+            ? updateAccountCredential.variables?.accountId
+            : null
         }
         removingAccountId={
           removeAccount.isPending ? removeAccount.variables?.accountId : null
@@ -531,8 +548,10 @@ function InboxSidebar({
   onFilterChange,
   onRemove,
   onSync,
+  onUpdateCredential,
   setOutgoingSettings,
   pendingAccountId,
+  pendingCredentialAccountId,
   removingAccountId,
   unreadCount,
 }: {
@@ -546,8 +565,12 @@ function InboxSidebar({
   onFilterChange: (filter: AccountFilter) => void;
   onRemove: (accountId: string) => void;
   onSync: (accountId: string) => void;
+  onUpdateCredential: (
+    request: IpcRequest<"inbox:account:updateCredential">,
+  ) => Promise<unknown>;
   setOutgoingSettings: InboxApi["setOutgoingSettings"];
   pendingAccountId: string | null | undefined;
+  pendingCredentialAccountId: string | null | undefined;
   removingAccountId: string | null | undefined;
   unreadCount: number | undefined;
 }) {
@@ -610,6 +633,11 @@ function InboxSidebar({
                   </span>
                 </button>
                 <div className="inbox-account-row__actions">
+                  <InboxCredentialModal
+                    account={account}
+                    isPending={pendingCredentialAccountId === account.id}
+                    onSubmit={onUpdateCredential}
+                  />
                   <InboxOutgoingSettingsModal
                     account={account}
                     getOutgoingSettings={getOutgoingSettings}
@@ -636,6 +664,11 @@ function InboxSidebar({
                     onRemove={onRemove}
                   />
                 </div>
+                {account.lastError && (
+                  <p className="inbox-account-row__error" role="status">
+                    {account.lastError}
+                  </p>
+                )}
               </div>
             );
           })}

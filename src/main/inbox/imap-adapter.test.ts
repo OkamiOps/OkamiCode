@@ -164,6 +164,38 @@ function adapter(
 }
 
 describe("ImapSyncAdapter", () => {
+  it("classifies Gmail's app-password requirement without exposing the raw server response", async () => {
+    const gmailAccount: ConnectorAccount = {
+      ...account,
+      provider: "gmail",
+      address: "marcos@gmail.com",
+    };
+    const gmailFailure = Object.assign(new Error("Command failed"), {
+      code: "ALERT",
+      response:
+        "3 NO [ALERT] Application-specific password required: https://support.google.com/accounts/answer/185833 (Failure)",
+    });
+    const { client } = fakeClient({
+      connect: vi.fn().mockRejectedValue(gmailFailure),
+    });
+
+    await expect(
+      adapter(client).adapter.sync({
+        account: gmailAccount,
+        configuration: {
+          host: "imap.gmail.com",
+          port: 993,
+          secure: true,
+        },
+      }),
+    ).rejects.toMatchObject({
+      name: "ImapSyncError",
+      code: "auth_required",
+      message:
+        "O Gmail exige uma senha de app. Atualize o acesso usando o código de 16 caracteres da Conta Google.",
+    });
+  });
+
   it("creates the production client with logging disabled", () => {
     const constructed = vi.fn();
     class FakeImapFlow {
@@ -232,6 +264,7 @@ describe("ImapSyncAdapter", () => {
   });
 
   it("maps password and OAuth credentials without exposing secrets", async () => {
+    const warning = vi.spyOn(console, "warn").mockImplementation(() => {});
     const { client } = fakeClient({
       mailbox: { uidValidity: 1, uidNext: 1, exists: 0 },
     });
@@ -299,6 +332,10 @@ describe("ImapSyncAdapter", () => {
         configuration: { host: "mail.example.com", port: 993, secure: true },
       }),
     ).rejects.not.toThrow(/leaked-access-token/);
+    expect(JSON.stringify(warning.mock.calls)).not.toMatch(
+      /leaked-secret|leaked-access-token/,
+    );
+    warning.mockRestore();
   });
 
   it("syncs an initial limited window, fetches metadata before downloads, and normalizes output", async () => {

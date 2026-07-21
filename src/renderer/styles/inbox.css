@@ -283,6 +283,13 @@
   padding-right: 4px;
 }
 
+.inbox-account-row__error {
+  grid-column: 1 / -1;
+  margin: -2px 8px 7px 25px;
+  color: var(--ok-red);
+  font: 9.5px/1.4 var(--ok-font-ui);
+}
+
 .inbox-account-action {
   display: inline-flex;
   align-items: center;
@@ -2181,6 +2188,44 @@
   border-left: 2px solid color-mix(in srgb, var(--ok-cyan) 72%, transparent);
   color: var(--ok-text-muted);
   font: 11.5px/1.5 var(--ok-font-ui);
+}
+.inbox-account-modal__credential-help a {
+  color: var(--ok-cyan);
+  text-decoration: none;
+}
+.inbox-account-modal__credential-help a:hover {
+  text-decoration: underline;
+}
+.inbox-credential-modal-container {
+  max-width: 580px !important;
+}
+.inbox-credential-modal form {
+  height: auto;
+  max-height: calc(100vh - 64px);
+}
+.inbox-credential-account {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin-bottom: 18px;
+  padding: 12px;
+  border: 1px solid var(--ok-border);
+  border-radius: 8px;
+  background: var(--ok-surface-2);
+  color: var(--ok-cyan);
+}
+.inbox-credential-account span {
+  display: grid;
+  min-width: 0;
+  gap: 2px;
+}
+.inbox-credential-account strong {
+  color: var(--ok-text);
+  font: 650 12.5px/1.3 var(--ok-font-ui);
+}
+.inbox-credential-account small {
+  color: var(--ok-text-muted);
+  font: 10px/1.3 var(--ok-font-mono);
 }
 .inbox-account-modal__type label {
   display: grid;

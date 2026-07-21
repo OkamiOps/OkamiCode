@@ -88,7 +88,10 @@ export interface CredentialReader {
 }
 
 export class ImapSyncError extends Error {
-  constructor(message = "IMAP synchronization failed") {
+  constructor(
+    message = "IMAP synchronization failed",
+    readonly code: "auth_required" | "sync_failed" = "sync_failed",
+  ) {
     super(message);
     this.name = "ImapSyncError";
   }
@@ -156,16 +159,28 @@ export class ImapSyncAdapter {
     }
 
     let lock: { release(): void } | undefined;
-    let primaryFailed = false;
+    let primaryError: ImapSyncError | null = null;
+    let stage: "connect" | "mailbox" | "messages" = "connect";
     let result: ApplyInboxSyncBatch | undefined;
     try {
       await client.connect();
+      stage = "mailbox";
       lock = await client.getMailboxLock(configuration.mailbox, {
         readOnly: true,
       });
+      stage = "messages";
       result = await this.readBatch(input, configuration, cursor, client);
-    } catch {
-      primaryFailed = true;
+    } catch (cause) {
+      primaryError = classifyImapFailure(cause, input.account.provider);
+      const error = safeImapError(cause);
+      console.warn("[okami] IMAP synchronization failed", {
+        accountId: input.account.id,
+        provider: input.account.provider,
+        host: configuration.host,
+        stage,
+        errorName: error.errorName,
+        errorCode: error.errorCode,
+      });
     }
 
     let cleanupFailed = false;
@@ -179,7 +194,8 @@ export class ImapSyncAdapter {
     } catch {
       cleanupFailed = true;
     }
-    if (primaryFailed || cleanupFailed || !result) throw new ImapSyncError();
+    if (primaryError) throw primaryError;
+    if (cleanupFailed || !result) throw new ImapSyncError();
     return result;
   }
 
@@ -263,6 +279,69 @@ export class ImapSyncAdapter {
       syncedAt: this.clock().toISOString(),
     };
   }
+}
+
+const GMAIL_APP_PASSWORD_ERROR =
+  "O Gmail exige uma senha de app. Atualize o acesso usando o código de 16 caracteres da Conta Google.";
+const GMAIL_CREDENTIAL_REJECTED_ERROR =
+  "O Gmail recusou a credencial. Gere uma nova senha de app e atualize o acesso.";
+
+function classifyImapFailure(
+  cause: unknown,
+  provider: ConnectorAccount["provider"],
+): ImapSyncError {
+  if (provider !== "gmail") return new ImapSyncError();
+  const details = safeImapError(cause);
+  const signal =
+    `${details.errorCode ?? ""} ${details.message} ${details.serverResponse ?? ""}`.toLowerCase();
+  if (
+    signal.includes("application-specific password required") ||
+    signal.includes("app password required")
+  ) {
+    return new ImapSyncError(GMAIL_APP_PASSWORD_ERROR, "auth_required");
+  }
+  if (
+    signal.includes("authenticationfailed") ||
+    signal.includes("invalid credentials") ||
+    signal.includes("authentication failed")
+  ) {
+    return new ImapSyncError(GMAIL_CREDENTIAL_REJECTED_ERROR, "auth_required");
+  }
+  return new ImapSyncError();
+}
+
+function safeImapError(cause: unknown): {
+  errorName: string;
+  errorCode: string | null;
+  message: string;
+  serverResponse: string | null;
+} {
+  if (!(cause instanceof Error)) {
+    return {
+      errorName: "UnknownError",
+      errorCode: null,
+      message: "Unknown IMAP failure",
+      serverResponse: null,
+    };
+  }
+  const value = cause as Error & {
+    serverResponseCode?: unknown;
+    code?: unknown;
+    response?: unknown;
+  };
+  const errorCode =
+    typeof value.serverResponseCode === "string"
+      ? value.serverResponseCode
+      : typeof value.code === "string"
+        ? value.code
+        : null;
+  return {
+    errorName: cause.name,
+    errorCode,
+    message: cause.message.slice(0, 500),
+    serverResponse:
+      typeof value.response === "string" ? value.response.slice(0, 500) : null,
+  };
 }
 
 type ValidatedConfiguration = Required<ImapAccountConfiguration>;

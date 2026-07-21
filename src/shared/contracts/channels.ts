@@ -61,6 +61,7 @@ export const ipcChannels = [
   "inbox:account:add",
   "inbox:account:remove",
   "inbox:account:sync",
+  "inbox:account:updateCredential",
   "inbox:account:outgoing:get",
   "inbox:account:outgoing:set",
   "inbox:threads:list",
