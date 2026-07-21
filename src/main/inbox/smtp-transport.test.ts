@@ -29,6 +29,7 @@ describe("createSmtpReplyTransport", () => {
         to: ["client@example.com"],
         subject: "Re: Proposal",
         text: "Thanks",
+        html: "<p><strong>Thanks</strong></p>",
         inReplyTo: "<incoming@example.com>",
         references: "<incoming@example.com>",
       }),
@@ -51,6 +52,7 @@ describe("createSmtpReplyTransport", () => {
       to: ["client@example.com"],
       subject: "Re: Proposal",
       text: "Thanks",
+      html: "<p><strong>Thanks</strong></p>",
       inReplyTo: "<incoming@example.com>",
       references: "<incoming@example.com>",
     });

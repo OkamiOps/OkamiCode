@@ -244,7 +244,7 @@ describe("InboxReplyDraftService", () => {
         "UPDATE inbox_messages SET body = ?, body_format = ?, attachments_json = ? WHERE thread_id = ? AND external_message_id = ?",
       )
       .run(
-        "<section><h1>Newest message</h1><p>With <strong>HTML</strong>.</p></section>",
+        '<html><head><style>.hero{color:#f97316}</style></head><body><section class="hero"><h1>Newest message</h1><p>With <strong>HTML</strong>.</p><img src="https://cdn.example.com/hero.png" alt="Hero"></section></body></html>',
         "html",
         JSON.stringify([{ filename: "brief.pdf", size: 2048 }]),
         threadId,
@@ -274,6 +274,23 @@ describe("InboxReplyDraftService", () => {
     expect(result.body).toContain(
       "Anexos no email original: brief.pdf (não incluídos)",
     );
+    const storedPayload = JSON.parse(
+      fixture.db
+        .prepare("SELECT payload_json FROM external_outbox WHERE id = ?")
+        .pluck()
+        .get(result.id) as string,
+    ) as { htmlBody?: string };
+    expect(storedPayload.htmlBody).toContain(
+      "<style>.hero{color:#f97316}</style>",
+    );
+    expect(storedPayload.htmlBody).toContain(
+      '<img src="https://cdn.example.com/hero.png" alt="Hero">',
+    );
+    expect(storedPayload.htmlBody).toContain("Segue para análise.");
+    expect(storedPayload.htmlBody).toContain("Mensagem encaminhada");
+    expect(
+      storedPayload.htmlBody?.indexOf("Mensagem encaminhada"),
+    ).toBeLessThan(storedPayload.htmlBody?.indexOf("Newest message") ?? -1);
     expect(
       fixture.db
         .prepare("SELECT kind FROM external_outbox WHERE id = ?")

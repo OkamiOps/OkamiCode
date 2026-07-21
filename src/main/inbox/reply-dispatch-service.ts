@@ -43,6 +43,7 @@ interface EmailForwardPayload {
   to: string[];
   subject: string;
   body: string;
+  htmlBody?: string;
   note: string;
   fromAddress?: string;
 }
@@ -135,6 +136,10 @@ export class ReplyDispatchService {
       throw new Error(PUBLIC_UNAVAILABLE_ERROR);
     }
     if (!isTransport(transport)) throw new Error(PUBLIC_UNAVAILABLE_ERROR);
+    const htmlBody =
+      record.kind === "email.forward" && "htmlBody" in payload
+        ? payload.htmlBody
+        : undefined;
     return {
       settings,
       credential,
@@ -148,6 +153,7 @@ export class ReplyDispatchService {
         to: payload.to,
         subject: payload.subject,
         text: payload.body,
+        ...(typeof htmlBody === "string" ? { html: htmlBody } : {}),
         ...(record.kind === "email.reply" && "inReplyTo" in payload
           ? {
               inReplyTo: payload.inReplyTo,
@@ -279,7 +285,7 @@ function requireEmailForwardPayload(value: unknown): EmailForwardPayload {
     "body",
     "note",
   ];
-  const allowedKeys = [...requiredKeys, "fromAddress"];
+  const allowedKeys = [...requiredKeys, "fromAddress", "htmlBody"];
   if (
     !Object.keys(payload).every((key) => allowedKeys.includes(key)) ||
     !requiredKeys.every((key) => Object.hasOwn(payload, key)) ||
@@ -291,6 +297,7 @@ function requireEmailForwardPayload(value: unknown): EmailForwardPayload {
     !isNonEmptyText(payload.sourceMessageId) ||
     !isNonEmptyText(payload.subject) ||
     !isNonEmptyText(payload.body) ||
+    (payload.htmlBody !== undefined && !isNonEmptyText(payload.htmlBody)) ||
     (payload.fromAddress !== undefined &&
       !isNonEmptyText(payload.fromAddress)) ||
     !Array.isArray(payload.to) ||
@@ -307,6 +314,9 @@ function requireEmailForwardPayload(value: unknown): EmailForwardPayload {
     to: payload.to,
     subject: payload.subject,
     body: payload.body,
+    ...(typeof payload.htmlBody === "string"
+      ? { htmlBody: payload.htmlBody }
+      : {}),
     note: payload.note as string,
     ...(typeof payload.fromAddress === "string"
       ? { fromAddress: payload.fromAddress }

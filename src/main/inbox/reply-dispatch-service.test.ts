@@ -20,6 +20,7 @@ function fixture(
     fromAddresses?: string[];
     transportFactory?: { create: (input: unknown) => SmtpReplyTransport };
     kind?: "email.reply" | "email.forward";
+    htmlBody?: string;
   } = {},
 ) {
   const database = createTestDatabase();
@@ -66,6 +67,7 @@ function fixture(
             to: ["lead@example.com", "finance@example.com"],
             subject: "Enc: Proposal",
             body: "Forwarded message",
+            ...(options.htmlBody ? { htmlBody: options.htmlBody } : {}),
             note: "",
             ...(options.fromAddress
               ? { fromAddress: options.fromAddress }
@@ -182,6 +184,7 @@ describe("ReplyDispatchService", () => {
   it("sends a forward without reply-thread headers", async () => {
     const { pending, service, transport } = fixture({
       kind: "email.forward",
+      htmlBody: "<main><strong>Forwarded message</strong></main>",
     });
 
     await expect(service.approveAndSend(pending.id)).resolves.toMatchObject({
@@ -192,6 +195,7 @@ describe("ReplyDispatchService", () => {
       to: ["lead@example.com", "finance@example.com"],
       subject: "Enc: Proposal",
       text: "Forwarded message",
+      html: "<main><strong>Forwarded message</strong></main>",
     });
   });
 

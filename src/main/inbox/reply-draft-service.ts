@@ -87,6 +87,7 @@ interface EmailForwardPayload {
   to: string[];
   subject: string;
   body: string;
+  htmlBody?: string;
   note: string;
   fromAddress?: string;
 }
@@ -185,6 +186,9 @@ export class InboxReplyDraftService {
       to: recipients,
       subject: forwardSubject(detail),
       body: forwardedBody(detail, source, note),
+      ...(source.bodyFormat === "html"
+        ? { htmlBody: forwardedHtmlBody(detail, source, note) }
+        : {}),
       note,
       fromAddress: this.resolveFromAddress(
         detail.thread.accountId,
@@ -436,6 +440,46 @@ function forwardedBody(
   return sections.join("\n").slice(0, 100_000).trim();
 }
 
+function forwardedHtmlBody(
+  detail: InboxThreadDetail,
+  message: InboxMessage,
+  note: string,
+): string {
+  const noteBlock = note
+    ? `<p style="margin:0 0 18px;font:14px/1.55 -apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;color:#262626;white-space:pre-wrap">${escapeHtml(note)}</p>`
+    : "";
+  const metadata = [
+    ["De", message.sender],
+    ["Data", message.receivedAt ?? message.sentAt ?? "indisponível"],
+    ["Assunto", detail.thread.subject || "(sem assunto)"],
+    ["Para", message.recipients.join(", ") || "indisponível"],
+  ]
+    .map(
+      ([label, value]) =>
+        `<div style="margin:2px 0"><strong>${escapeHtml(label)}:</strong> ${escapeHtml(value)}</div>`,
+    )
+    .join("");
+  const preamble = `${noteBlock}<div data-okami-forward-header="true" style="margin:0 0 24px;padding:16px 18px;border-left:3px solid #f97316;background:#f7f7f7;color:#404040;font:13px/1.5 -apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif"><div style="margin:0 0 10px;font-weight:700;color:#171717">Mensagem encaminhada</div>${metadata}</div>`;
+  const original = message.body.trim();
+  const bodyStart = /<body\b[^>]*>/iu;
+  return bodyStart.test(original)
+    ? original.replace(bodyStart, (match) => `${match}${preamble}`)
+    : `${preamble}${original}`;
+}
+
+function escapeHtml(value: string): string {
+  return value.replace(/[&<>"']/gu, (character) => {
+    const entities: Record<string, string> = {
+      "&": "&amp;",
+      "<": "&lt;",
+      ">": "&gt;",
+      '"': "&quot;",
+      "'": "&#39;",
+    };
+    return entities[character] ?? character;
+  });
+}
+
 function htmlToReadableText(value: string): string {
   return decodeHtmlEntities(
     value
@@ -535,7 +579,7 @@ function emailForwardPayload(value: unknown): EmailForwardPayload | undefined {
     "body",
     "note",
   ];
-  const allowedKeys = [...requiredKeys, "fromAddress"];
+  const allowedKeys = [...requiredKeys, "fromAddress", "htmlBody"];
   if (
     !Object.keys(payload).every((key) => allowedKeys.includes(key)) ||
     !requiredKeys.every((key) => key in payload) ||
@@ -544,6 +588,7 @@ function emailForwardPayload(value: unknown): EmailForwardPayload | undefined {
       .every((key) => typeof payload[key] === "string") ||
     (payload.fromAddress !== undefined &&
       typeof payload.fromAddress !== "string") ||
+    (payload.htmlBody !== undefined && typeof payload.htmlBody !== "string") ||
     !Array.isArray(payload.to) ||
     payload.to.length === 0 ||
     payload.to.length > 20 ||
@@ -558,6 +603,9 @@ function emailForwardPayload(value: unknown): EmailForwardPayload | undefined {
     to: payload.to as string[],
     subject: payload.subject as string,
     body: payload.body as string,
+    ...(typeof payload.htmlBody === "string"
+      ? { htmlBody: payload.htmlBody }
+      : {}),
     note: payload.note as string,
     ...(typeof payload.fromAddress === "string"
       ? { fromAddress: payload.fromAddress }
@@ -656,6 +704,9 @@ function isPublicReplyAction(
     payload.to.every((recipient) => isBoundedText(recipient, 320)) &&
     isBoundedText(payload.subject, 2_000) &&
     isBoundedText(payload.body, messageTypeBodyMaximum(record.kind)) &&
+    (!("htmlBody" in payload) ||
+      payload.htmlBody === undefined ||
+      isBoundedText(payload.htmlBody, 2_000_000)) &&
     isOutboxStatus(record.status) &&
     typeof record.requiresApproval === "boolean" &&
     typeof record.safeRetry === "boolean" &&

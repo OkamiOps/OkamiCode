@@ -7,6 +7,7 @@ export interface SmtpReplyMessage {
   to: string[];
   subject: string;
   text: string;
+  html?: string;
   inReplyTo?: string;
   references?: string;
 }
