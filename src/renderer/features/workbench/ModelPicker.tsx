@@ -3,6 +3,10 @@ import { useEffect, useRef, useState } from "react";
 import type { ModelCatalog, WorkbenchLane } from "./api";
 import type { RuntimeKind } from "../../../shared/contracts/lane";
 
+function isRunnableRuntime(runtime: string): runtime is RuntimeKind {
+  return ["claude", "codex", "cursor", "agy", "grok"].includes(runtime);
+}
+
 interface ModelPickerProps {
   catalog: ModelCatalog;
   disabled?: boolean;
@@ -147,9 +151,11 @@ export function ModelPicker({
                     <span className="model-picker__provider-meta">
                       {entry.providerLabel}
                       <small>
-                        {entry.routeKind === "bridged"
-                          ? "via harness Claude"
-                          : "nativo"}
+                        {entry.routeKind === "unavailable"
+                          ? "catálogo apenas"
+                          : entry.routeKind === "bridged"
+                            ? "via harness Claude"
+                            : "nativo"}
                         {" · "}
                         {entry.models.length}
                       </small>
@@ -176,10 +182,18 @@ export function ModelPicker({
                     <button
                       aria-selected={isSelected}
                       className="model-picker__option"
+                      disabled={
+                        activeEntry.routeKind === "unavailable" ||
+                        !isRunnableRuntime(activeEntry.runtimeKind)
+                      }
                       key={model.id}
                       onClick={() => {
                         setOpen(false);
-                        if (!isSelected)
+                        if (
+                          !isSelected &&
+                          activeEntry.routeKind !== "unavailable" &&
+                          isRunnableRuntime(activeEntry.runtimeKind)
+                        )
                           onSelectModel(activeEntry.runtimeKind, model.id);
                       }}
                       role="option"

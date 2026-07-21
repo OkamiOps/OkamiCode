@@ -2,10 +2,15 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { Star, Zap } from "lucide-react";
 import { useState } from "react";
 import { useNavigate } from "react-router-dom";
+import type { RuntimeKind } from "../../../shared/contracts/lane";
 import { workbenchClient } from "../../lib/ipc/client";
 import { useWorkbenchStore } from "../workbench/store";
 
 const FAVOURITES_KEY = "okami.favouriteModels";
+
+function isRunnableRuntime(runtime: string): runtime is RuntimeKind {
+  return ["claude", "codex", "cursor", "agy", "grok"].includes(runtime);
+}
 
 function loadFavourites(): string[] {
   try {
@@ -29,6 +34,10 @@ export function ModelsPage() {
   const catalog = useQuery({
     queryKey: ["workbench", "models"],
     queryFn: () => workbenchClient.modelsList(),
+    refetchInterval: (query) =>
+      query.state.data?.some((entry) => entry.source.startsWith("consultando"))
+        ? 2_000
+        : false,
   });
   const tasks = useQuery({
     queryKey: ["workbench", "tasks"],
@@ -67,8 +76,8 @@ export function ModelsPage() {
       <header className="eco-page__header">
         <h1>Modelos</h1>
         <p>
-          Catálogo que os CLIs reportam para esta conta. Marcar favoritos e
-          trocar o modelo da conversa aberta.
+          Catálogos locais desta conta, com a origem e o estado real de cada
+          integração.
         </p>
       </header>
 
@@ -87,20 +96,25 @@ export function ModelsPage() {
             model.id.toLowerCase().includes(term) ||
             model.label.toLowerCase().includes(term),
         );
-        if (models.length === 0) return null;
+        if (models.length === 0 && term !== "") return null;
         return (
           <section className="eco-card" key={entry.providerLabel}>
             <h2>
               <Zap aria-hidden="true" size={15} />
               {entry.providerLabel}
               <span className="eco-tag eco-tag--muted">
-                {entry.routeKind === "bridged"
-                  ? "via harness Claude"
-                  : "nativo"}
+                {entry.routeKind === "unavailable"
+                  ? "catálogo apenas"
+                  : entry.routeKind === "bridged"
+                    ? "via harness Claude"
+                    : "nativo"}
               </span>
               <span className="eco-count">{models.length}</span>
             </h2>
             <ul className="eco-list">
+              {models.length === 0 && (
+                <li className="eco-empty">{entry.source}</li>
+              )}
               {models.map((model) => (
                 <li key={model.id}>
                   <button
@@ -123,9 +137,15 @@ export function ModelsPage() {
                   </span>
                   <button
                     className="eco-action"
-                    disabled={!task || ensureLane.isPending}
+                    disabled={
+                      !task ||
+                      ensureLane.isPending ||
+                      entry.routeKind === "unavailable" ||
+                      !isRunnableRuntime(entry.runtimeKind)
+                    }
                     onClick={() =>
                       task &&
+                      isRunnableRuntime(entry.runtimeKind) &&
                       ensureLane.mutate({
                         taskId: task.id,
                         runtimeKind: entry.runtimeKind,
@@ -133,8 +153,15 @@ export function ModelsPage() {
                       })
                     }
                     type="button"
+                    title={
+                      entry.routeKind === "unavailable"
+                        ? entry.source
+                        : undefined
+                    }
                   >
-                    Usar na conversa
+                    {entry.routeKind === "unavailable"
+                      ? "Ainda não executável"
+                      : "Usar na conversa"}
                   </button>
                 </li>
               ))}

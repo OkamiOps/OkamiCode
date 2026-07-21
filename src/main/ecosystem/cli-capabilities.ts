@@ -13,6 +13,7 @@ const CLIENTS = [
   "agy",
   "grok",
   "minimax",
+  "mimo",
 ] as const;
 type Capability =
   | "sessions"
@@ -77,6 +78,7 @@ const CAPABILITIES = {
   agy: [],
   grok: [],
   minimax: [],
+  mimo: [],
 } as const satisfies Record<(typeof CLIENTS)[number], readonly Capability[]>;
 
 type CliClient = (typeof CLIENTS)[number];
@@ -104,7 +106,8 @@ const labels: Record<CliClient, string> = {
   cursor: "Cursor",
   agy: "Antigravity",
   grok: "Grok",
-  minimax: "MiniMax CLI",
+  minimax: "MiniMax mmx",
+  mimo: "MiMo Code",
 };
 
 function roleFor(client: CliClient): "runtime" | "launcher" {
@@ -129,12 +132,15 @@ export function localBinaryCandidates(client: CliClient): string[] {
     client === "cursor"
       ? ["/Applications/Cursor.app/Contents/Resources/app/bin/cursor-agent"]
       : [];
+  const mimoCandidates =
+    client === "mimo" ? [path.join(homedir(), ".mimocode", "bin", "mimo")] : [];
 
   return [
     ...fromPath,
     path.join(homedir(), ".local", "bin", binary),
     path.join(homedir(), ".cargo", "bin", binary),
     ...cursorCandidates,
+    ...mimoCandidates,
     ...appResources,
     path.join(path.dirname(process.execPath), binary),
     `/opt/homebrew/bin/${binary}`,
@@ -205,6 +211,19 @@ function helpHasCommand(help: string, command: string): boolean {
   const escaped = command.replace(/[.*+?^${}()|[\]\\]/gu, "\\$&");
   return new RegExp(
     `^\\s*(?:cursor-agent\\s+)?${escaped}(?=\\s|$)`,
+    "imu",
+  ).test(help);
+}
+
+function helpHasPrefixedCommand(
+  help: string,
+  prefix: string,
+  command: string,
+): boolean {
+  const escapedPrefix = prefix.replace(/[.*+?^${}()|[\]\\]/gu, "\\$&");
+  const escapedCommand = command.replace(/[.*+?^${}()|[\]\\]/gu, "\\$&");
+  return new RegExp(
+    `^\\s*(?:${escapedPrefix}\\s+)?${escapedCommand}(?=\\s|$)`,
     "imu",
   ).test(help);
 }
@@ -438,9 +457,40 @@ async function detectClient(
       role: "launcher",
       integrationStatus: textReady ? "ready" : "needs_adapter",
       detail: textReady
-        ? "MiniMax Token Plan CLI encontrado; disponível para ações de texto e mídia, sem harness de workspace."
+        ? "MiniMax mmx encontrado; disponível para ações de texto e mídia do Token Plan, sem catálogo nem harness de workspace."
         : "MiniMax CLI encontrado, mas os comandos do Token Plan não foram comprovados.",
-      capabilities: textReady ? ["models", "usage", "launcher"] : [],
+      capabilities: textReady ? ["usage", "launcher"] : [],
+    };
+  }
+
+  if (client === "mimo") {
+    let help = "";
+    try {
+      help = await dependencies.execute(binaryPath, ["--help"]);
+    } catch {
+      // A failed help probe cannot establish the native protocol surface.
+    }
+    const capabilities: Capability[] = [];
+    if (helpHasPrefixedCommand(help, "mimo", "session"))
+      capabilities.push("sessions");
+    if (helpHasPrefixedCommand(help, "mimo", "models"))
+      capabilities.push("models");
+    if (helpHasOption(help, "--variant")) capabilities.push("effort");
+    if (helpHasPrefixedCommand(help, "mimo", "mcp")) capabilities.push("mcp");
+    if (helpHasLiteral(help, "--format") && helpHasLiteral(help, "json"))
+      capabilities.push("structured_output");
+    const catalogReady = capabilities.includes("models");
+    return {
+      client,
+      label: labels.mimo,
+      binaryPath,
+      version,
+      role: "runtime",
+      integrationStatus: "needs_adapter",
+      detail: catalogReady
+        ? "MiMo Code encontrado; catálogo nativo disponível e adapter de execução ainda não integrado."
+        : "MiMo Code encontrado, mas o comando models não foi comprovado.",
+      capabilities,
     };
   }
 

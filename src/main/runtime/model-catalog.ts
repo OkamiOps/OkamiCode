@@ -1,12 +1,18 @@
 import { execFile, execFileSync, spawn } from "node:child_process";
 import { randomUUID } from "node:crypto";
-import { mkdirSync, readFileSync, realpathSync, writeFileSync } from "node:fs";
+import {
+  mkdirSync,
+  readFileSync,
+  readdirSync,
+  realpathSync,
+  writeFileSync,
+} from "node:fs";
 import { homedir } from "node:os";
 import path from "node:path";
 import readline from "node:readline";
 import { promisify } from "node:util";
 import { spawn as spawnPty } from "node-pty";
-import type { RuntimeKind } from "../../shared/contracts/lane";
+import type { CatalogRuntimeKind } from "../../shared/contracts/lane";
 import { locateLocalBinary } from "../ecosystem/cli-capabilities";
 
 const execFileAsync = promisify(execFile);
@@ -20,7 +26,7 @@ export interface CatalogModel {
 }
 
 export interface ModelCatalogEntry {
-  runtimeKind: RuntimeKind;
+  runtimeKind: CatalogRuntimeKind;
   providerLabel: string;
   routeKind: "direct" | "compatible" | "bridged" | "native" | "unavailable";
   source: string;
@@ -242,6 +248,10 @@ export interface ModelCatalogServiceOptions {
   agyBinary?: string | null;
   grokCachePath?: string;
   grokBinary?: string | null;
+  minimaxCachePath?: string;
+  minimaxCodeBundlePath?: string | null;
+  mimoCachePath?: string;
+  mimoBinary?: string | null;
   executeNative?: CursorModelListExecutor;
   now?: () => Date;
 }
@@ -396,6 +406,19 @@ async function executeCursorModelList(
   return `${stdout}\n${stderr}`;
 }
 
+async function executeMimoModelList(
+  binaryPath: string,
+  args: string[],
+): Promise<string> {
+  const { stdout, stderr } = await execFileAsync(binaryPath, args, {
+    cwd: homedir(),
+    env: process.env,
+    timeout: 15_000,
+    windowsHide: true,
+  });
+  return `${stdout}\n${stderr}`;
+}
+
 function executeAgyModelList(binaryPath: string): Promise<string> {
   return new Promise((resolve, reject) => {
     const terminal = spawnPty(binaryPath, ["models"], {
@@ -512,12 +535,136 @@ export function parseNamedModelsFromCli(output: string): CatalogModel[] {
   });
 }
 
+function titleModelSegment(segment: string): string {
+  if (/^mimo$/iu.test(segment)) return "MiMo";
+  if (/^v?\d+(?:\.\d+)*$/iu.test(segment)) return segment.replace(/^v/iu, "V");
+  return `${segment.slice(0, 1).toUpperCase()}${segment.slice(1)}`;
+}
+
+export function parseMimoModelsFromCli(output: string): CatalogModel[] {
+  const seen = new Set<string>();
+  return output
+    .replace(ANSI_ESCAPE, "")
+    .split(/\r?\n/u)
+    .flatMap((line) => {
+      const id = line.trim();
+      if (
+        !/^[a-z0-9][a-z0-9._-]*\/[a-z0-9][a-z0-9._-]*$/iu.test(id) ||
+        /\b(error|failed|unauthorized)\b/iu.test(id) ||
+        seen.has(id)
+      )
+        return [];
+      seen.add(id);
+      if (id === "mimo/mimo-auto") return [{ id, label: "Automático" }];
+      const model = id.split("/", 2)[1] ?? id;
+      return [
+        {
+          id,
+          label: model.split("-").map(titleModelSegment).join(" "),
+        },
+      ];
+    });
+}
+
+export function parseMiniMaxModelsFromCodeBundle(
+  bundle: string,
+): CatalogModel[] {
+  // MiniMax Code currently exposes no public model-list command. Its desktop
+  // package ships the exact provider registry used by that installed build,
+  // so read only that provider block and never infer models from API docs.
+  const provider = /(?:\\?")?minimax(?:\\?")?\s*:\s*\{/u.exec(bundle);
+  if (!provider) return [];
+  const openingBrace = bundle.indexOf("{", provider.index);
+  let depth = 0;
+  let inString = false;
+  let escaped = false;
+  let end = openingBrace + 80_000;
+  for (let index = openingBrace; index < bundle.length; index += 1) {
+    const character = bundle[index];
+    if (inString) {
+      if (escaped) escaped = false;
+      else if (character === "\\") escaped = true;
+      else if (character === '"') inString = false;
+      continue;
+    }
+    if (character === '"' && bundle[index - 1] !== "\\") {
+      inString = true;
+      continue;
+    }
+    if (character === "{") depth += 1;
+    if (character === "}") depth -= 1;
+    if (depth === 0) {
+      end = index + 1;
+      break;
+    }
+  }
+  const providerBlock = bundle.slice(provider.index, end);
+  const seen = new Set<string>();
+  return [...providerBlock.matchAll(/MiniMax-M\d+(?:\.\d+)*(?:-highspeed)?/gu)]
+    .map(([id]) => id)
+    .filter((id) => {
+      if (seen.has(id)) return false;
+      seen.add(id);
+      return true;
+    })
+    .map((id) => ({
+      id,
+      label: id
+        .replace("MiniMax-", "MiniMax ")
+        .replace("-highspeed", " Highspeed"),
+    }));
+}
+
+function readOpaqueBundle(bundlePath: string): string {
+  // Electron transparently mounts every *.asar path. Temporarily bypass that
+  // virtual filesystem so an independently installed application's archive is
+  // read as bytes rather than mistaken for a directory.
+  const electronProcess = process as NodeJS.Process & { noAsar?: boolean };
+  const previous = electronProcess.noAsar;
+  if (process.versions.electron) electronProcess.noAsar = true;
+  try {
+    return readFileSync(bundlePath, "utf8");
+  } finally {
+    if (process.versions.electron) electronProcess.noAsar = previous;
+  }
+}
+
+function readMiniMaxCatalogSource(sourcePath: string): string {
+  if (!process.versions.electron || !sourcePath.endsWith(".asar")) {
+    return readOpaqueBundle(sourcePath);
+  }
+
+  const archonChunks = path.join(
+    sourcePath,
+    "out",
+    "_next",
+    "static",
+    "chunks",
+    "app",
+    "(pages)",
+    "(mavis)",
+    "archon",
+  );
+  const candidates = readdirSync(archonChunks)
+    .filter((name) => /^page-.*\.js$/u.test(name))
+    .sort();
+  for (const candidate of candidates) {
+    const content = readFileSync(path.join(archonChunks, candidate), "utf8");
+    if (content.includes("MiniMax-M")) return content;
+  }
+  throw new Error(
+    "MiniMax provider catalog was not found in the installed app",
+  );
+}
+
 export interface ModelCatalogService {
   list(): ModelCatalogEntry[];
   refreshClaude(): Promise<void>;
   refreshCursor(): Promise<void>;
   refreshAgy(): Promise<void>;
   refreshGrok(): Promise<void>;
+  refreshMiniMax(): Promise<void>;
+  refreshMimo(): Promise<void>;
 }
 
 // Serves the catalog instantly from cache while a background refresh asks the
@@ -529,10 +676,14 @@ export function createModelCatalogService(
   let cursor: PersistedCursorCatalog | null = null;
   let agy: PersistedCursorCatalog | null = null;
   let grok: PersistedCursorCatalog | null = null;
+  let minimax: PersistedCursorCatalog | null = null;
+  let mimo: PersistedCursorCatalog | null = null;
   let refreshingClaude: Promise<void> | null = null;
   let refreshingCursor: Promise<void> | null = null;
   let refreshingAgy: Promise<void> | null = null;
   let refreshingGrok: Promise<void> | null = null;
+  let refreshingMiniMax: Promise<void> | null = null;
+  let refreshingMimo: Promise<void> | null = null;
   const cursorCachePath =
     options.cursorCachePath ??
     path.join(path.dirname(options.cachePath), "cursor-models.json");
@@ -554,8 +705,25 @@ export function createModelCatalogService(
     options.grokBinary === undefined
       ? locateLocalBinary("grok")
       : options.grokBinary;
+  const minimaxCachePath =
+    options.minimaxCachePath ??
+    path.join(path.dirname(options.cachePath), "minimax-models.json");
+  const minimaxCodeBundlePath =
+    options.minimaxCodeBundlePath === undefined
+      ? process.platform === "darwin"
+        ? "/Applications/MiniMax Code.app/Contents/Resources/app.asar"
+        : null
+      : options.minimaxCodeBundlePath;
+  const mimoCachePath =
+    options.mimoCachePath ??
+    path.join(path.dirname(options.cachePath), "mimo-models.json");
+  const mimoBinary =
+    options.mimoBinary === undefined
+      ? locateLocalBinary("mimo")
+      : options.mimoBinary;
   const executeCursor = options.executeCursor ?? executeCursorModelList;
   const executeNative = options.executeNative ?? executeCursorModelList;
+  const executeMimo = options.executeNative ?? executeMimoModelList;
   const now = options.now ?? (() => new Date());
   try {
     claude = JSON.parse(
@@ -567,6 +735,8 @@ export function createModelCatalogService(
   cursor = readCursorCatalog(cursorCachePath);
   agy = readNamedCatalog(agyCachePath);
   grok = readNamedCatalog(grokCachePath);
+  minimax = readNamedCatalog(minimaxCachePath);
+  mimo = readNamedCatalog(mimoCachePath);
 
   const refreshClaude = async () => {
     refreshingClaude ??= (async () => {
@@ -667,11 +837,59 @@ export function createModelCatalogService(
     await refreshingGrok;
   };
 
+  const refreshMiniMax = async () => {
+    refreshingMiniMax ??= (async () => {
+      try {
+        if (!minimaxCodeBundlePath) return;
+        const models = parseMiniMaxModelsFromCodeBundle(
+          readMiniMaxCatalogSource(minimaxCodeBundlePath),
+        );
+        if (models.length === 0) return;
+        minimax = {
+          cliPath: minimaxCodeBundlePath,
+          fetchedAt: now().toISOString(),
+          models,
+        };
+        mkdirSync(path.dirname(minimaxCachePath), { recursive: true });
+        writeFileSync(minimaxCachePath, JSON.stringify(minimax, null, 2));
+        console.log("[okami] MiniMax Code model catalog refreshed");
+      } catch {
+        console.error("[okami] MiniMax Code model catalog refresh failed");
+      } finally {
+        refreshingMiniMax = null;
+      }
+    })();
+    await refreshingMiniMax;
+  };
+
+  const refreshMimo = async () => {
+    refreshingMimo ??= (async () => {
+      try {
+        if (!mimoBinary) return;
+        const models = parseMimoModelsFromCli(
+          await executeMimo(mimoBinary, ["models"]),
+        );
+        if (models.length === 0) return;
+        mimo = { cliPath: mimoBinary, fetchedAt: now().toISOString(), models };
+        mkdirSync(path.dirname(mimoCachePath), { recursive: true });
+        writeFileSync(mimoCachePath, JSON.stringify(mimo, null, 2));
+        console.log("[okami] MiMo Code model catalog refreshed");
+      } catch {
+        console.error("[okami] MiMo Code model catalog refresh failed");
+      } finally {
+        refreshingMimo = null;
+      }
+    })();
+    await refreshingMimo;
+  };
+
   return {
     refreshClaude,
     refreshCursor,
     refreshAgy,
     refreshGrok,
+    refreshMiniMax,
+    refreshMimo,
     list() {
       const codexModels = readCodexModelsCache();
       return [
@@ -703,13 +921,7 @@ export function createModelCatalogService(
             : cursorBinary
               ? "catálogo do Cursor indisponível — autentique o Cursor"
               : "Cursor CLI não encontrado",
-          models: cursor?.models ?? [
-            {
-              id: "default",
-              label: "Automático",
-              description: "Modelo padrão configurado na assinatura Cursor",
-            },
-          ],
+          models: cursor?.models ?? [],
         },
         {
           runtimeKind: "agy",
@@ -732,6 +944,28 @@ export function createModelCatalogService(
               ? "consultando grok models…"
               : "Grok CLI não encontrado",
           models: grok?.models ?? [],
+        },
+        {
+          runtimeKind: "minimax",
+          providerLabel: "MiniMax",
+          routeKind: "unavailable",
+          source: minimax
+            ? `MiniMax Code instalado · catálogo local · ${minimax.fetchedAt}`
+            : minimaxCodeBundlePath
+              ? "MiniMax Code instalado · catálogo local indisponível"
+              : "MiniMax Code não encontrado",
+          models: minimax?.models ?? [],
+        },
+        {
+          runtimeKind: "mimo",
+          providerLabel: "MiMo Code",
+          routeKind: "unavailable",
+          source: mimo
+            ? `mimo models · ${mimo.fetchedAt}`
+            : mimoBinary
+              ? "consultando mimo models…"
+              : "MiMo Code CLI não encontrado",
+          models: mimo?.models ?? [],
         },
       ];
     },

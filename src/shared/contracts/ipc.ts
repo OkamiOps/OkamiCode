@@ -4,6 +4,7 @@ import {
   laneStatusSchema,
   permissionModes,
   providerKindSchema,
+  catalogRuntimeKindSchema,
   runtimeKindSchema,
 } from "./lane";
 import { isSafeCalendarHttpUrl } from "./calendar-url";
@@ -144,7 +145,12 @@ const clientCapabilityRules = {
   minimax: {
     role: "launcher",
     statuses: ["ready", "needs_adapter", "unavailable"],
-    capabilities: ["models", "usage", "launcher"],
+    capabilities: ["usage", "launcher"],
+  },
+  mimo: {
+    role: "runtime",
+    statuses: ["needs_adapter", "unavailable"],
+    capabilities: ["sessions", "models", "effort", "mcp", "structured_output"],
   },
 } as const;
 
@@ -160,7 +166,15 @@ function hasExactCapabilities(
 
 export const cliCapabilitySchema = z
   .object({
-    client: z.enum(["codex", "claude", "cursor", "agy", "grok", "minimax"]),
+    client: z.enum([
+      "codex",
+      "claude",
+      "cursor",
+      "agy",
+      "grok",
+      "minimax",
+      "mimo",
+    ]),
     label: z.string().min(1),
     binaryPath: z.string().min(1).nullable(),
     version: z.string().min(1).nullable(),
@@ -609,7 +623,7 @@ export const laneEnsureRequestSchema = z
 export const modelCatalogSchema = z.array(
   z
     .object({
-      runtimeKind: runtimeKindSchema,
+      runtimeKind: catalogRuntimeKindSchema,
       providerLabel: z.string().min(1),
       routeKind: z.enum([
         "direct",

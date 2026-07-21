@@ -296,11 +296,16 @@ async function bootstrap(): Promise<void> {
     agyBinary: agyCommand,
     grokCachePath: path.join(app.getPath("userData"), "grok-models.json"),
     grokBinary: locateLocalBinary("grok"),
+    minimaxCachePath: path.join(app.getPath("userData"), "minimax-models.json"),
+    mimoCachePath: path.join(app.getPath("userData"), "mimo-models.json"),
+    mimoBinary: locateLocalBinary("mimo"),
   });
   void modelCatalogService.refreshClaude();
   void modelCatalogService.refreshCursor();
   void modelCatalogService.refreshAgy();
   void modelCatalogService.refreshGrok();
+  void modelCatalogService.refreshMiniMax();
+  void modelCatalogService.refreshMimo();
 
   const state = createAppState({
     database,

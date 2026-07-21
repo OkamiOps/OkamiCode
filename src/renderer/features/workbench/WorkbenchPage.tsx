@@ -179,6 +179,10 @@ export function WorkbenchPage({ api = workbenchApi }: WorkbenchPageProps) {
   const modelsQuery = useQuery({
     queryKey: ["workbench", "models"],
     queryFn: api.listModels,
+    refetchInterval: (query) =>
+      query.state.data?.some((entry) => entry.source.startsWith("consultando"))
+        ? 2_000
+        : false,
   });
   const tasks = tasksQuery.data ?? [];
   const effectiveTaskId = selectedTaskId ?? tasks[0]?.id ?? null;

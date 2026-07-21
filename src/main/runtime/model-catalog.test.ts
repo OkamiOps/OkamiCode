@@ -6,6 +6,8 @@ import {
   createModelCatalogService,
   formatCursorModelLabel,
   parseCursorModelsFromCli,
+  parseMiniMaxModelsFromCodeBundle,
+  parseMimoModelsFromCli,
   parseNamedModelsFromCli,
 } from "./model-catalog";
 
@@ -16,6 +18,8 @@ function cachePaths() {
     cursor: path.join(directory, "cursor-models.json"),
     agy: path.join(directory, "agy-models.json"),
     grok: path.join(directory, "grok-models.json"),
+    minimax: path.join(directory, "minimax-models.json"),
+    mimo: path.join(directory, "mimo-models.json"),
   };
 }
 
@@ -120,6 +124,118 @@ describe("Cursor model catalog", () => {
       routeKind: "native",
       source: "grok models · 2026-07-21T12:00:00.000Z",
       models: [{ id: "grok-build", label: "grok-build" }],
+    });
+  });
+
+  it("parses the exact catalog emitted by MiMo Code without inventing aliases", () => {
+    expect(
+      parseMimoModelsFromCli(
+        [
+          "mimo/mimo-auto",
+          "xiaomi/mimo-v2.5",
+          "xiaomi/mimo-v2.5-pro",
+          "xiaomi/mimo-v2.5-pro-ultraspeed",
+        ].join("\n"),
+      ),
+    ).toEqual([
+      { id: "mimo/mimo-auto", label: "Automático" },
+      { id: "xiaomi/mimo-v2.5", label: "MiMo V2.5" },
+      { id: "xiaomi/mimo-v2.5-pro", label: "MiMo V2.5 Pro" },
+      {
+        id: "xiaomi/mimo-v2.5-pro-ultraspeed",
+        label: "MiMo V2.5 Pro Ultraspeed",
+      },
+    ]);
+  });
+
+  it("reads only the MiniMax provider models bundled by the installed MiniMax Code app", () => {
+    const bundle = String.raw`
+      \"minimax\": {
+        \"MiniMax-M2.7\": { \"provider\": \"minimax\" },
+        \"MiniMax-M2.7-highspeed\": { \"provider\": \"minimax\" },
+        \"MiniMax-M3\": { \"provider\": \"minimax\" }
+      },
+      \"minimax-cn\": {
+        \"MiniMax-M2.7\": { \"provider\": \"minimax-cn\" }
+      },
+      \"openrouter\": {
+        \"minimax/minimax-m2.5\": {}
+      }
+    `;
+
+    expect(parseMiniMaxModelsFromCodeBundle(bundle)).toEqual([
+      { id: "MiniMax-M2.7", label: "MiniMax M2.7" },
+      {
+        id: "MiniMax-M2.7-highspeed",
+        label: "MiniMax M2.7 Highspeed",
+      },
+      { id: "MiniMax-M3", label: "MiniMax M3" },
+    ]);
+  });
+
+  it("reads the minified MiniMax provider block shipped by the desktop renderer", () => {
+    const bundle =
+      'other:{models:{"MiniMax-Fake":{}}},minimax:{name:"MiniMax",models:{"MiniMax-M2.7":{},"MiniMax-M2.7-highspeed":{},"MiniMax-M3":{}}},gemini:{models:{"MiniMax-Fake":{}}}';
+
+    expect(parseMiniMaxModelsFromCodeBundle(bundle)).toEqual([
+      { id: "MiniMax-M2.7", label: "MiniMax M2.7" },
+      {
+        id: "MiniMax-M2.7-highspeed",
+        label: "MiniMax M2.7 Highspeed",
+      },
+      { id: "MiniMax-M3", label: "MiniMax M3" },
+    ]);
+  });
+
+  it("refreshes MiMo and MiniMax from their own installed products", async () => {
+    const paths = cachePaths();
+    const minimaxBundlePath = path.join(
+      path.dirname(paths.minimax),
+      "app.asar",
+    );
+    writeFileSync(
+      minimaxBundlePath,
+      String.raw`\"minimax\": { \"MiniMax-M2.7\": {}, \"MiniMax-M3\": {} }, \"minimax-cn\": {}`,
+    );
+    const executeNative = vi.fn().mockImplementation((binary, args) => {
+      if (binary === "/real/mimo" && args[0] === "models") {
+        return Promise.resolve("mimo/mimo-auto\nxiaomi/mimo-v2.5-pro\n");
+      }
+      return Promise.reject(new Error("unexpected command"));
+    });
+    const service = createModelCatalogService({
+      cachePath: paths.claude,
+      cursorBinary: null,
+      agyBinary: null,
+      grokBinary: null,
+      minimaxCachePath: paths.minimax,
+      minimaxCodeBundlePath: minimaxBundlePath,
+      mimoCachePath: paths.mimo,
+      mimoBinary: "/real/mimo",
+      executeNative,
+      now: () => new Date("2026-07-22T09:00:00.000Z"),
+    });
+
+    await service.refreshMiniMax();
+    await service.refreshMimo();
+
+    expect(executeNative).toHaveBeenCalledWith("/real/mimo", ["models"]);
+    expect(
+      service.list().find((entry) => entry.runtimeKind === "minimax"),
+    ).toMatchObject({
+      providerLabel: "MiniMax",
+      routeKind: "unavailable",
+      source:
+        "MiniMax Code instalado · catálogo local · 2026-07-22T09:00:00.000Z",
+      models: [{ id: "MiniMax-M2.7" }, { id: "MiniMax-M3" }],
+    });
+    expect(
+      service.list().find((entry) => entry.runtimeKind === "mimo"),
+    ).toMatchObject({
+      providerLabel: "MiMo Code",
+      routeKind: "unavailable",
+      source: "mimo models · 2026-07-22T09:00:00.000Z",
+      models: [{ id: "mimo/mimo-auto" }, { id: "xiaomi/mimo-v2.5-pro" }],
     });
   });
 
@@ -282,7 +398,7 @@ describe("Cursor model catalog", () => {
     });
   });
 
-  it("keeps an honest automatic fallback when no Cursor catalog is cached", () => {
+  it("does not invent a Cursor model when no account catalog is available", () => {
     const paths = cachePaths();
     const service = createModelCatalogService({
       cachePath: paths.claude,
@@ -297,13 +413,7 @@ describe("Cursor model catalog", () => {
       providerLabel: "Cursor",
       routeKind: "native",
       source: "Cursor CLI não encontrado",
-      models: [
-        {
-          id: "default",
-          label: "Automático",
-          description: "Modelo padrão configurado na assinatura Cursor",
-        },
-      ],
+      models: [],
     });
   });
 

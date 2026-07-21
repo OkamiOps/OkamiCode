@@ -72,13 +72,23 @@ it("reports unavailable clients without probing a missing binary", async () => {
     },
     {
       client: "minimax",
-      label: "MiniMax CLI",
+      label: "MiniMax mmx",
       binaryPath: null,
       version: null,
       role: "launcher",
       integrationStatus: "unavailable",
       detail:
         "mmx não encontrado. Instale o CLI oficial do Token Plan com npm install -g mmx-cli.",
+      capabilities: [],
+    },
+    {
+      client: "mimo",
+      label: "MiMo Code",
+      binaryPath: null,
+      version: null,
+      role: "runtime",
+      integrationStatus: "unavailable",
+      detail: "CLI não encontrado neste computador.",
       capabilities: [],
     },
   ]);
@@ -311,11 +321,40 @@ it("detects Grok as a native runtime and MiniMax as a Token Plan launcher", asyn
   expect(clients.find((client) => client.client === "minimax")).toMatchObject({
     role: "launcher",
     integrationStatus: "ready",
-    capabilities: ["models", "usage", "launcher"],
+    capabilities: ["usage", "launcher"],
   });
   expect(localBinaryCandidates("minimax")).toEqual(
     expect.arrayContaining([expect.stringMatching(/\/mmx$/u)]),
   );
+});
+
+it("locates the MiMo Code binary in its installer directory and detects its native catalog", async () => {
+  expect(localBinaryCandidates("mimo")).toEqual(
+    expect.arrayContaining([expect.stringMatching(/\.mimocode\/bin\/mimo$/u)]),
+  );
+  const injected = dependencies(
+    { mimo: "/Users/test/.mimocode/bin/mimo" },
+    {
+      "--version": "0.1.7",
+      "--help": [
+        "mimo models [provider]",
+        "mimo run [message..]",
+        "mimo session",
+        "mimo acp",
+      ].join("\n"),
+    },
+  );
+
+  const mimo = (await createCliCapabilityDetector(injected)()).find(
+    (client) => client.client === "mimo",
+  );
+
+  expect(mimo).toMatchObject({
+    label: "MiMo Code",
+    role: "runtime",
+    integrationStatus: "needs_adapter",
+    capabilities: expect.arrayContaining(["sessions", "models"]),
+  });
 });
 
 it("preserves useful stdout and stderr when a harmless probe exits non-zero", async () => {

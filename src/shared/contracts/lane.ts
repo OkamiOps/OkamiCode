@@ -7,6 +7,10 @@ export const runtimeKindSchema = z.enum([
   "agy",
   "grok",
 ]);
+export const catalogRuntimeKindSchema = z.union([
+  runtimeKindSchema,
+  z.enum(["minimax", "mimo"]),
+]);
 export const providerKindSchema = z.enum([
   "claude_max",
   "chatgpt",
@@ -31,6 +35,7 @@ export const permissionModes = [
 ] as const;
 
 export type RuntimeKind = z.infer<typeof runtimeKindSchema>;
+export type CatalogRuntimeKind = z.infer<typeof catalogRuntimeKindSchema>;
 export type ProviderKind = z.infer<typeof providerKindSchema>;
 export type LaneStatus = z.infer<typeof laneStatusSchema>;
 export type PermissionMode = (typeof permissionModes)[number];

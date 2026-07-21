@@ -761,7 +761,7 @@ interface ModelOption {
 
 function availableModels(catalog: IpcResponse<"models:list">): ModelOption[] {
   const options = catalog.flatMap((provider) =>
-    provider.runtimeKind === "cursor"
+    !["claude", "codex", "agy"].includes(provider.runtimeKind)
       ? []
       : provider.models.map((item) => ({
           key: `${provider.runtimeKind}:${item.id}`,
