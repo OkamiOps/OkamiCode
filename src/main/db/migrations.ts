@@ -15,6 +15,7 @@ const MIGRATIONS = [
   "schema/010-inbox-account-settings.sql",
   "schema/011-inbox-task-actions.sql",
   "schema/012-inbox-outgoing-settings.sql",
+  "schema/013-calendar-core.sql",
 ];
 
 export function runMigrations(db: InstanceType<typeof SqliteDatabase>): void {

@@ -11,7 +11,7 @@ describe("openDatabase", () => {
     const key = Buffer.alloc(32, 7);
     const db = openDatabase(file, key);
     expect(db.prepare("SELECT sqlite3mc_version()").pluck().get()).toBeTruthy();
-    expect(db.pragma("user_version", { simple: true })).toBe(12);
+    expect(db.pragma("user_version", { simple: true })).toBe(13);
     const settingsSql = db
       .prepare(
         "SELECT sql FROM sqlite_master WHERE type = 'table' AND name = 'inbox_account_settings'",
@@ -42,6 +42,47 @@ describe("openDatabase", () => {
            (account_id, host, port, secure, mailbox, max_initial_messages,
             max_message_bytes, created_at, updated_at)
            VALUES ('missing', 'mail.example.com', 0, 2, 'INBOX', 0, 0, 'now', 'now')`,
+        )
+        .run(),
+    ).toThrow();
+    const calendarSql = db
+      .prepare(
+        "SELECT sql FROM sqlite_master WHERE type = 'table' AND name = 'calendar_sources'",
+      )
+      .pluck()
+      .get() as string;
+    expect(calendarSql).toContain(
+      "CHECK(kind IN ('local', 'google', 'outlook', 'caldav', 'ics'))",
+    );
+    expect(calendarSql).not.toMatch(/credential|secret|token|password/i);
+    expect(() =>
+      db
+        .prepare(
+          `INSERT INTO calendar_sources
+           (id, kind, display_name, color, timezone, status, created_at, updated_at)
+           VALUES ('remote', 'google', 'Google', '#336699', 'UTC', 'active', 'now', 'now')`,
+        )
+        .run(),
+    ).toThrow();
+    expect(() =>
+      db
+        .prepare(
+          `INSERT INTO calendar_events
+           (id, source_id, external_id, title, attendees_json, status, all_day, timezone,
+            start_date, end_date, created_at, updated_at)
+           VALUES ('missing-source', 'missing', 'event', 'Event', '[]', 'confirmed', 1,
+                   'UTC', '2026-07-21', '2026-07-22', 'now', 'now')`,
+        )
+        .run(),
+    ).toThrow();
+    expect(() =>
+      db
+        .prepare(
+          `INSERT INTO calendar_events
+           (id, source_id, external_id, title, attendees_json, status, all_day, timezone,
+            created_at, updated_at)
+           VALUES ('invalid-shape', 'remote', 'event', 'Event', '[]', 'confirmed', 0,
+                   'UTC', 'now', 'now')`,
         )
         .run(),
     ).toThrow();
