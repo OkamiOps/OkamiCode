@@ -1261,6 +1261,26 @@ const inboxThreadGenerateReplyDraftRequestSchema = z
   })
   .strict();
 
+const inboxThreadAnalyzeRequestSchema = z
+  .object({
+    threadId: entityIdSchema,
+    runtimeKind: delegatedRuntimeKindSchema,
+    model: z.string().trim().min(1).max(120),
+    effort: z.string().trim().min(1).max(20).optional(),
+    action: z.enum(["summary", "key_points", "translate", "custom"]),
+    instructions: z.string().trim().min(1).max(4_000),
+  })
+  .strict();
+
+const inboxThreadAnalyzeResultSchema = z
+  .object({
+    threadId: entityIdSchema,
+    action: z.enum(["summary", "key_points", "translate", "custom"]),
+    content: z.string().trim().min(1).max(40_000),
+    generatedAt: z.iso.datetime({ offset: true }),
+  })
+  .strict();
+
 const inboxThreadCreateReplyDraftResultSchema = z
   .object({
     id: entityIdSchema,
@@ -1583,6 +1603,7 @@ export const ipcRequestSchemas = {
   "inbox:thread:createReplyDraft": inboxThreadCreateReplyDraftRequestSchema,
   "inbox:thread:createForwardDraft": inboxThreadCreateForwardDraftRequestSchema,
   "inbox:thread:generateReplyDraft": inboxThreadGenerateReplyDraftRequestSchema,
+  "inbox:thread:analyze": inboxThreadAnalyzeRequestSchema,
   "inbox:thread:replyActions:list": inboxThreadIdRequestSchema,
   "inbox:reply:discard": inboxReplyDiscardRequestSchema,
   "inbox:reply:approveAndSend": inboxReplyApproveAndSendRequestSchema,
@@ -1670,6 +1691,7 @@ export const ipcResponseSchemas = {
   "inbox:thread:createReplyDraft": inboxThreadCreateReplyDraftResultSchema,
   "inbox:thread:createForwardDraft": inboxThreadCreateReplyDraftResultSchema,
   "inbox:thread:generateReplyDraft": inboxThreadCreateReplyDraftResultSchema,
+  "inbox:thread:analyze": inboxThreadAnalyzeResultSchema,
   "inbox:thread:replyActions:list": z.array(inboxThreadReplyActionSchema),
   "inbox:reply:discard": inboxReplyDiscardResultSchema,
   "inbox:reply:approveAndSend": inboxReplyDispatchSchema,

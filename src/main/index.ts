@@ -7,8 +7,10 @@ import { promisify } from "node:util";
 import {
   app,
   BrowserWindow,
+  clipboard,
   dialog,
   ipcMain,
+  Menu,
   safeStorage,
   shell,
 } from "electron";
@@ -33,7 +35,11 @@ import { getOrCreateDatabaseKey } from "./secrets";
 import { MemoryService } from "./memory/indexer";
 import { StartupRecovery } from "./orchestration/recovery";
 import { AuditRepository } from "./db/repositories/audit";
-import { configureExternalNavigation, secureWebPreferences } from "./window";
+import {
+  configureExternalNavigation,
+  configureNativeEditing,
+  secureWebPreferences,
+} from "./window";
 import { InboxApplicationService } from "./inbox/application-service";
 import { ImapSyncAdapter } from "./inbox/imap-adapter";
 import { ReplyDispatchService } from "./inbox/reply-dispatch-service";
@@ -48,6 +54,7 @@ import { AgyCompanionServer } from "./runtime/agy/companion-server";
 import { AgyPluginManager } from "./runtime/agy/plugin";
 import { createAgyPolicyAuthorizer } from "./runtime/agy/policy-authorizer";
 import { GoogleInboxOAuthService } from "./inbox/google-oauth-service";
+import { InboxSyncScheduler } from "./inbox/sync-scheduler";
 
 const execFileAsync = promisify(execFile);
 
@@ -59,6 +66,7 @@ const LEASED_CAPABILITIES: Capability[] = [
   "browser.open",
 ];
 let memoryService: MemoryService | undefined;
+let inboxSyncScheduler: InboxSyncScheduler | undefined;
 
 export function createMainWindow(): BrowserWindow {
   const window = new BrowserWindow({
@@ -76,6 +84,16 @@ export function createMainWindow(): BrowserWindow {
   configureExternalNavigation(window.webContents, (url) =>
     shell.openExternal(url),
   );
+  configureNativeEditing({
+    webContents: window.webContents,
+    menu: {
+      buildFromTemplate: (template) => Menu.buildFromTemplate(template),
+      setApplicationMenu: (menu) =>
+        Menu.setApplicationMenu(menu as unknown as Menu),
+    },
+    clipboard,
+    openExternal: (url) => shell.openExternal(url),
+  });
   window.webContents.on("did-finish-load", () => {
     void window.webContents
       .executeJavaScript("typeof window.okami")
@@ -352,6 +370,14 @@ async function bootstrap(): Promise<void> {
     createId: randomUUID,
     clock: () => new Date(),
   });
+  inboxSyncScheduler = new InboxSyncScheduler(inboxService, {
+    reportError: (error, summary) =>
+      console.warn("[okami] automatic inbox sync failed", {
+        accountId: summary?.account.id ?? null,
+        errorName: error instanceof Error ? error.name : "UnknownError",
+      }),
+  });
+  inboxSyncScheduler.start();
   const inboxReplyDispatchService = new ReplyDispatchService({
     db: database,
     vault: inboxCredentialVault,
@@ -412,5 +438,6 @@ app.whenReady().then(async () => {
 });
 app.on("window-all-closed", () => app.quit());
 app.on("before-quit", () => {
+  inboxSyncScheduler?.stop();
   void memoryService?.close();
 });

@@ -104,7 +104,7 @@ export type InboxReplyDraftIpcService = Pick<
 
 export type InboxReplyGenerationIpcService = Pick<
   InboxReplyGenerationService,
-  "generateReplyDraft"
+  "generateReplyDraft" | "analyzeThread"
 >;
 
 export type InboxOutgoingSettingsIpcService = Pick<
@@ -623,6 +623,14 @@ async function dispatch(
     case "inbox:thread:generateReplyDraft":
       return inboxReplyGenerationService().generateReplyDraft(
         request as IpcRequest<"inbox:thread:generateReplyDraft">,
+        {
+          onEvent: (candidate) =>
+            persistAndForwardEvent(state, event.sender, candidate),
+        },
+      );
+    case "inbox:thread:analyze":
+      return inboxReplyGenerationService().analyzeThread(
+        request as IpcRequest<"inbox:thread:analyze">,
         {
           onEvent: (candidate) =>
             persistAndForwardEvent(state, event.sender, candidate),

@@ -1,5 +1,6 @@
 import {
   useCallback,
+  useEffect,
   useRef,
   useState,
   type KeyboardEvent,
@@ -53,6 +54,18 @@ export function ResizeHandle({
 }) {
   const [dragging, setDragging] = useState(false);
   const frameRef = useRef<number | null>(null);
+  const cleanupDragRef = useRef<(() => void) | null>(null);
+
+  useEffect(
+    () => () => {
+      cleanupDragRef.current?.();
+      cleanupDragRef.current = null;
+      if (frameRef.current !== null) cancelAnimationFrame(frameRef.current);
+      document.body.style.userSelect = "";
+      document.body.style.cursor = "";
+    },
+    [],
+  );
 
   function onPointerDown(event: PointerEvent<HTMLDivElement>) {
     event.preventDefault();
@@ -88,16 +101,21 @@ export function ResizeHandle({
       if (frameRef.current !== null) cancelAnimationFrame(frameRef.current);
       frameRef.current = requestAnimationFrame(() => pane.setWidth(latest));
     };
-    const up = () => {
+    const cleanup = () => {
       window.removeEventListener("pointermove", move);
       window.removeEventListener("pointerup", up);
       window.removeEventListener("mousemove", move);
       window.removeEventListener("mouseup", up);
       document.body.style.userSelect = "";
       document.body.style.cursor = "";
+      cleanupDragRef.current = null;
+    };
+    const up = () => {
+      cleanup();
       setDragging(false);
       pane.persist(latest);
     };
+    cleanupDragRef.current = cleanup;
     window.addEventListener("pointermove", move);
     window.addEventListener("pointerup", up);
     window.addEventListener("mousemove", move);

@@ -45,6 +45,7 @@ import { InboxCredentialModal } from "./InboxCredentialModal";
 import { InboxOutgoingSettingsModal } from "./InboxOutgoingSettingsModal";
 import { InboxReplyApprovalCard } from "./InboxReplyApprovalCard";
 import { InboxAgentReplyModal } from "./InboxAgentReplyModal";
+import { InboxAiActionsModal } from "./InboxAiActionsModal";
 import { InboxForwardModal } from "./InboxForwardModal";
 import { InboxReplyModal } from "./InboxReplyModal";
 import { InboxTaskModal } from "./InboxTaskModal";
@@ -117,6 +118,9 @@ export interface InboxApi {
   generateReplyDraft(
     request: IpcRequest<"inbox:thread:generateReplyDraft">,
   ): Promise<IpcResponse<"inbox:thread:generateReplyDraft">>;
+  analyzeThread(
+    request: IpcRequest<"inbox:thread:analyze">,
+  ): Promise<IpcResponse<"inbox:thread:analyze">>;
   listReplyActions(
     request: IpcRequest<"inbox:thread:replyActions:list">,
   ): Promise<IpcResponse<"inbox:thread:replyActions:list">>;
@@ -150,6 +154,7 @@ const defaultApi: InboxApi = {
   createForwardDraft: workbenchClient.inboxThreadCreateForwardDraft,
   listModels: workbenchClient.modelsList,
   generateReplyDraft: workbenchClient.inboxThreadGenerateReplyDraft,
+  analyzeThread: workbenchClient.inboxThreadAnalyze,
   listReplyActions: workbenchClient.inboxThreadReplyActionsList,
   approveReply: workbenchClient.inboxReplyApproveAndSend,
   discardReply: workbenchClient.inboxReplyDiscard,
@@ -197,6 +202,8 @@ export function InboxPage({ api = defaultApi }: { api?: InboxApi }) {
   const accounts = useQuery({
     queryKey: ["inbox", "accounts"],
     queryFn: api.listAccounts,
+    refetchInterval: 15_000,
+    refetchOnWindowFocus: true,
   });
   const threadRequest = useMemo<IpcRequest<"inbox:threads:list">>(() => {
     if (filter === "unread") return { unreadOnly: true, limit: 100 };
@@ -206,6 +213,8 @@ export function InboxPage({ api = defaultApi }: { api?: InboxApi }) {
   const threads = useQuery({
     queryKey: ["inbox", "threads", threadRequest],
     queryFn: () => api.listThreads(threadRequest),
+    refetchInterval: 15_000,
+    refetchOnWindowFocus: true,
   });
   const detail = useQuery({
     queryKey: ["inbox", "thread", selectedThreadId],
@@ -745,6 +754,7 @@ export function InboxPage({ api = defaultApi }: { api?: InboxApi }) {
         taskCreated={taskCreatedForThreadId === detail.data?.thread.id}
         listLanes={api.listLanes}
         listModels={api.listModels}
+        onAnalyze={api.analyzeThread}
       />
       <ResizeHandle
         ariaLabel="Redimensionar detalhes da conversa"
@@ -1287,6 +1297,7 @@ function Conversation({
   moveThreadError,
   listLanes,
   listModels,
+  onAnalyze,
   onApproveReply,
   onDiscardReply,
   onCreateReplyDraft,
@@ -1317,6 +1328,7 @@ function Conversation({
   moveThreadError: string | null;
   listLanes: InboxApi["listLanes"];
   listModels: InboxApi["listModels"];
+  onAnalyze: InboxApi["analyzeThread"];
   onApproveReply: (
     outboxId: string,
     threadId: string,
@@ -1364,6 +1376,11 @@ function Conversation({
         <div className="inbox-conversation__header-actions">
           {detail && (
             <>
+              <InboxAiActionsModal
+                listModels={listModels}
+                onAnalyze={onAnalyze}
+                threadId={detail.thread.id}
+              />
               <Button
                 aria-label="Marcar conversa como não lida"
                 className="inbox-thread-action"

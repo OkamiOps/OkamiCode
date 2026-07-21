@@ -222,6 +222,12 @@ function harness() {
       createdAt: now,
       updatedAt: now,
     })),
+    analyzeThread: vi.fn(async () => ({
+      threadId,
+      action: "summary" as const,
+      content: "Resumo da conversa",
+      generatedAt: now,
+    })),
   };
   const inboxOutgoingSettingsService = {
     get: vi.fn(() => ({

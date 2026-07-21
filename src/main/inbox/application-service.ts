@@ -131,6 +131,7 @@ type SettingsRow = {
 export class InboxApplicationService {
   private readonly inbox: InboxService;
   private readonly inFlight = new Map<string, Promise<InboxSyncResult>>();
+  private readonly accountOperations = new Map<string, Promise<void>>();
 
   constructor(private readonly options: InboxApplicationServiceOptions) {
     this.inbox = new InboxService(options.db);
@@ -266,7 +267,9 @@ export class InboxApplicationService {
     const configuration = this.findConfiguration(accountId);
     if (!account || !configuration)
       return Promise.reject(new InboxApplicationError());
-    const operation = this.executeSync(account, configuration).finally(() => {
+    const operation = this.runAccountOperation(accountId, () =>
+      this.executeSync(account, configuration),
+    ).finally(() => {
       this.inFlight.delete(accountId);
     });
     this.inFlight.set(accountId, operation);
@@ -346,31 +349,52 @@ export class InboxApplicationService {
     const account = this.findAccount(detail.thread.accountId);
     const configuration = this.findConfiguration(detail.thread.accountId);
     if (!account || !configuration) throw new InboxApplicationError();
-    const adapter = this.options.createAdapter(this.options.vault);
-    if (!adapter.moveMessages) throw new InboxApplicationError();
+    return this.runAccountOperation(account.id, async () => {
+      const adapter = this.options.createAdapter(this.options.vault);
+      if (!adapter.moveMessages) throw new InboxApplicationError();
 
-    try {
-      await adapter.moveMessages({
-        account,
-        configuration,
-        externalMessageIds: detail.messages.map(
-          (message) => message.externalMessageId,
-        ),
-        destination,
-      });
-      this.inbox.deleteThread(id);
-      return { threadId: id, destination, moved: true };
-    } catch (cause) {
-      if (cause instanceof ImapSyncError && cause.code === "auth_required") {
-        this.setPublicStatus(account.id, "auth_required", cause.message);
-        throw new InboxApplicationError(cause.message);
+      try {
+        await adapter.moveMessages({
+          account,
+          configuration,
+          externalMessageIds: detail.messages.map(
+            (message) => message.externalMessageId,
+          ),
+          destination,
+        });
+        this.inbox.deleteThread(id);
+        return { threadId: id, destination, moved: true as const };
+      } catch (cause) {
+        if (cause instanceof ImapSyncError && cause.code === "auth_required") {
+          this.setPublicStatus(account.id, "auth_required", cause.message);
+          throw new InboxApplicationError(cause.message);
+        }
+        throw new InboxApplicationError(
+          destination === "spam"
+            ? "Não foi possível mover a conversa para spam."
+            : "Não foi possível excluir a conversa.",
+        );
       }
-      throw new InboxApplicationError(
-        destination === "spam"
-          ? "Não foi possível mover a conversa para spam."
-          : "Não foi possível excluir a conversa.",
-      );
-    }
+    });
+  }
+
+  private runAccountOperation<T>(
+    accountId: string,
+    operation: () => Promise<T>,
+  ): Promise<T> {
+    const previous = this.accountOperations.get(accountId) ?? Promise.resolve();
+    const result = previous.then(operation, operation);
+    const tail = result.then(
+      () => undefined,
+      () => undefined,
+    );
+    this.accountOperations.set(accountId, tail);
+    void tail.then(() => {
+      if (this.accountOperations.get(accountId) === tail) {
+        this.accountOperations.delete(accountId);
+      }
+    });
+    return result;
   }
 
   private async executeSync(

@@ -194,6 +194,38 @@ function harness(
 }
 
 describe("InboxReplyGenerationService", () => {
+  it("returns an isolated analysis without creating an outgoing draft", async () => {
+    const { fixture, threadId, service, laneService, onEvent } = harness();
+
+    const result = await service.analyzeThread(
+      {
+        threadId,
+        runtimeKind: "codex",
+        model: "gpt-test",
+        effort: "low",
+        action: "summary",
+        instructions: "Resuma em português em até cinco linhas.",
+      },
+      { onEvent },
+    );
+
+    expect(result).toEqual({
+      threadId,
+      action: "summary",
+      content: "Generated reply",
+      generatedAt: now,
+    });
+    expect(
+      fixture.db.prepare("SELECT count(*) FROM external_outbox").pluck().get(),
+    ).toBe(0);
+    const prompt = (
+      laneService.sendTurn.mock.calls as unknown as Array<[unknown, string]>
+    )[0]![1];
+    expect(prompt).toContain("Requested action: summary");
+    expect(prompt).toContain("Resuma em português");
+    expect(prompt).toContain("untrusted external data");
+  });
+
   it("rejects invalid runtime/model/effort before creating records or opening a runtime", async () => {
     const { fixture, threadId, service, laneService, onEvent } = harness();
 

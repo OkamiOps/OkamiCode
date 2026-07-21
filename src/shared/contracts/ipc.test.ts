@@ -174,6 +174,25 @@ it("exposes strict Inbox contracts in both IPC maps", () => {
     }).success,
   ).toBe(true);
   expect(
+    ipcRequestSchemas["inbox:thread:analyze"].safeParse({
+      threadId: accountId,
+      runtimeKind: "codex",
+      model: "gpt-5.6-sol",
+      effort: "medium",
+      action: "summary",
+      instructions: "Resuma em português.",
+    }).success,
+  ).toBe(true);
+  expect(
+    ipcRequestSchemas["inbox:thread:analyze"].safeParse({
+      threadId: accountId,
+      runtimeKind: "codex",
+      model: "gpt-5.6-sol",
+      action: "summary",
+      instructions: "",
+    }).success,
+  ).toBe(false);
+  expect(
     ipcRequestSchemas["inbox:reply:discard"].safeParse({
       outboxId: accountId,
       threadId: accountId,

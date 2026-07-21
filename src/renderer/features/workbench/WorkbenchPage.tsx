@@ -102,6 +102,13 @@ export function WorkbenchPage({ api = workbenchApi }: WorkbenchPageProps) {
     initialLayout.columns,
   );
   const [dropTarget, setDropTarget] = useState<WorkspacePanelMode | null>(null);
+
+  useEffect(
+    () => () => {
+      setBodySelectable(true);
+    },
+    [],
+  );
   // Kept in a ref so the persist helpers always see the current choice.
   const panelColumnsRef = useRef<number | null>(initialLayout.columns);
   const updateOpenPanels = (

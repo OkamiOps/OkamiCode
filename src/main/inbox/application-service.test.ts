@@ -192,6 +192,67 @@ describe("InboxApplicationService", () => {
     expect(service.listThreads().threads).toEqual([]);
   });
 
+  it("serializes rapid remote moves for the same mailbox", async () => {
+    let active = 0;
+    let maximumActive = 0;
+    let releaseFirst: (() => void) | undefined;
+    let firstStarted: (() => void) | undefined;
+    const firstStartedPromise = new Promise<void>(
+      (resolve) => (firstStarted = resolve),
+    );
+    const releaseFirstPromise = new Promise<void>(
+      (resolve) => (releaseFirst = resolve),
+    );
+    const moveMessages = vi.fn(async () => {
+      active += 1;
+      maximumActive = Math.max(maximumActive, active);
+      if (moveMessages.mock.calls.length === 1) {
+        firstStarted?.();
+        await releaseFirstPromise;
+      }
+      active -= 1;
+    });
+    const { service } = fixture({
+      sync: async (input) => {
+        const first = batch(input.account.id);
+        return {
+          ...first,
+          threads: [
+            ...first.threads,
+            {
+              ...first.threads[0]!,
+              externalThreadId: "thread-2",
+              subject: "Second",
+            },
+          ],
+          messages: [
+            ...first.messages,
+            {
+              ...first.messages[0]!,
+              externalMessageId: "message-2",
+              threadExternalId: "thread-2",
+            },
+          ],
+        };
+      },
+      moveMessages,
+    });
+    const added = await service.addImapAccount(addInput());
+    await service.syncAccount(added.account.id);
+    const [first, second] = service.listThreads().threads;
+
+    const firstMove = service.moveThread(first!.id, "trash");
+    const secondMove = service.moveThread(second!.id, "trash");
+    await firstStartedPromise;
+
+    expect(moveMessages).toHaveBeenCalledTimes(1);
+    releaseFirst?.();
+    await expect(Promise.all([firstMove, secondMove])).resolves.toHaveLength(2);
+    expect(moveMessages).toHaveBeenCalledTimes(2);
+    expect(maximumActive).toBe(1);
+    expect(service.listThreads().threads).toEqual([]);
+  });
+
   it("keeps the local conversation when the remote move fails", async () => {
     const { service } = fixture({
       sync: async (input) => batch(input.account.id),

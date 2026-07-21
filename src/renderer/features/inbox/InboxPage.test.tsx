@@ -215,6 +215,12 @@ function makeApi(overrides: Partial<InboxApi> = {}): InboxApi {
     createForwardDraft: vi.fn().mockResolvedValue(forwardDraftResult),
     listModels: vi.fn().mockResolvedValue(replyModels),
     generateReplyDraft: vi.fn().mockResolvedValue(replyDraftResult),
+    analyzeThread: vi.fn().mockResolvedValue({
+      threadId,
+      action: "summary",
+      content: "Resumo claro da conversa.",
+      generatedAt: now,
+    }),
     listReplyActions: vi.fn().mockResolvedValue([]),
     discardReply: vi.fn().mockResolvedValue({
       outboxId: replyAction.id,
@@ -766,6 +772,38 @@ describe("InboxPage", () => {
     });
     expect(api.approveReply).not.toHaveBeenCalled();
     expect(await screen.findByText("Aguardando sua aprovação")).toBeVisible();
+  });
+
+  it("runs a prompted email action and shows a copyable result without creating a reply", async () => {
+    const { api } = renderInbox();
+    await userEvent.click(
+      await screen.findByRole("button", { name: /Proposta para landing page/ }),
+    );
+    await userEvent.click(screen.getByRole("button", { name: "Ações com IA" }));
+    const dialog = await screen.findByRole("dialog");
+    await vi.waitFor(() => expect(api.listModels).toHaveBeenCalled());
+    expect(within(dialog).getByLabelText("O que você quer saber?")).toHaveValue(
+      "Resuma este email em português do Brasil, com objetividade.",
+    );
+    await userEvent.click(
+      within(dialog).getByRole("button", { name: "Executar ação" }),
+    );
+
+    await vi.waitFor(() => expect(api.analyzeThread).toHaveBeenCalledOnce());
+    expect(vi.mocked(api.analyzeThread).mock.calls[0]?.[0]).toMatchObject({
+      threadId,
+      runtimeKind: "codex",
+      model: "gpt-5.6",
+      effort: "medium",
+      action: "summary",
+    });
+    expect(
+      await within(dialog).findByText("Resumo claro da conversa."),
+    ).toBeVisible();
+    expect(
+      within(dialog).getByRole("button", { name: "Copiar" }),
+    ).toBeVisible();
+    expect(api.createReplyDraft).not.toHaveBeenCalled();
   });
 
   it("requires drafting instructions and sends them with compact agent and model choices", async () => {
