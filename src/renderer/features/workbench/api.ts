@@ -6,6 +6,7 @@ import { subscribeToWorkbenchEvents } from "../../lib/ipc/events";
 export type WorkbenchTask = IpcResponse<"task:list">[number];
 export type WorkbenchLane = IpcResponse<"lane:list">[number];
 export type ModelCatalog = IpcResponse<"models:list">;
+export type ModelFavorites = IpcResponse<"models:favorites:list">;
 
 export interface WorkbenchApi {
   cancelRun(
@@ -13,6 +14,7 @@ export interface WorkbenchApi {
   ): Promise<IpcResponse<"run:cancel">>;
   listLanes(taskId?: string): Promise<IpcResponse<"lane:list">>;
   listModels(): Promise<IpcResponse<"models:list">>;
+  listModelFavorites(): Promise<IpcResponse<"models:favorites:list">>;
   ensureLane(
     request: IpcRequest<"lane:ensure">,
   ): Promise<IpcResponse<"lane:ensure">>;
@@ -44,6 +46,7 @@ export const workbenchApi: WorkbenchApi = {
   cancelRun: (request) => workbenchClient.runCancel(request),
   listLanes: (taskId) => workbenchClient.laneList(taskId ? { taskId } : {}),
   listModels: () => workbenchClient.modelsList(),
+  listModelFavorites: () => workbenchClient.modelFavoritesList(),
   ensureLane: (request) => workbenchClient.laneEnsure(request),
   listTasks: () => workbenchClient.taskList(),
   pickWorkspace: () => workbenchClient.workspacePick(),

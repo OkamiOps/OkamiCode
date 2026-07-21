@@ -21,7 +21,7 @@ import {
 } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { workbenchClient } from "../../lib/ipc/client";
-import type { ModelCatalog, WorkbenchLane } from "./api";
+import type { ModelCatalog, ModelFavorites, WorkbenchLane } from "./api";
 import { EffortPicker } from "./EffortPicker";
 import { ModelPicker } from "./ModelPicker";
 import {
@@ -38,6 +38,7 @@ interface ComposerProps {
   isSending: boolean;
   lane: WorkbenchLane | null;
   catalog: ModelCatalog;
+  favorites: ModelFavorites;
   effort: string | null;
   efforts: string[];
   contextNote: string | null;
@@ -234,6 +235,7 @@ export function Composer({
   isSending,
   lane,
   catalog,
+  favorites,
   effort,
   efforts,
   contextNote,
@@ -544,6 +546,7 @@ export function Composer({
             lock the picker. */}
         <ModelPicker
           catalog={catalog}
+          favorites={favorites}
           disabled={isSending}
           isOpening={isOpeningLane}
           onSelectModel={(runtimeKind, model) => {

@@ -5,6 +5,8 @@ export const ipcChannels = [
   "system:openExternal",
   "system:showItemInFolder",
   "models:list",
+  "models:favorites:list",
+  "models:favorites:set",
   "task:create",
   "task:rename",
   "task:delete",

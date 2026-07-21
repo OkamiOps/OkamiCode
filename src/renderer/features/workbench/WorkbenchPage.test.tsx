@@ -141,6 +141,7 @@ function renderWorkbenchFixture({
         ],
       },
     ]),
+    listModelFavorites: vi.fn(async () => []),
     ensureLane: vi.fn(async (request: IpcRequest<"lane:ensure">) => {
       calls.laneEnsure.push(request);
       return { ...codexLane, model: request.model };

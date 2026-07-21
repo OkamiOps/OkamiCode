@@ -6,20 +6,12 @@ import type { RuntimeKind } from "../../../shared/contracts/lane";
 import { workbenchClient } from "../../lib/ipc/client";
 import { useWorkbenchStore } from "../workbench/store";
 
-const FAVOURITES_KEY = "okami.favouriteModels";
-
 function isRunnableRuntime(runtime: string): runtime is RuntimeKind {
   return ["claude", "codex", "cursor", "agy", "grok"].includes(runtime);
 }
 
-function loadFavourites(): string[] {
-  try {
-    const raw = localStorage.getItem(FAVOURITES_KEY);
-    const parsed: unknown = raw ? JSON.parse(raw) : null;
-    return Array.isArray(parsed) ? (parsed as string[]) : [];
-  } catch {
-    return [];
-  }
+function favoriteKey(runtimeKind: string, modelId: string): string {
+  return `${runtimeKind}\u0000${modelId}`;
 }
 
 // The catalogue the CLIs report, with favourites and a one-click switch for
@@ -28,7 +20,6 @@ export function ModelsPage() {
   const navigate = useNavigate();
   const queryClient = useQueryClient();
   const selectedTaskId = useWorkbenchStore((state) => state.selectedTaskId);
-  const [favourites, setFavourites] = useState<string[]>(loadFavourites);
   const [filter, setFilter] = useState("");
 
   const catalog = useQuery({
@@ -43,6 +34,10 @@ export function ModelsPage() {
     queryKey: ["workbench", "tasks"],
     queryFn: () => workbenchClient.taskList(),
   });
+  const favorites = useQuery({
+    queryKey: ["workbench", "model-favorites"],
+    queryFn: () => workbenchClient.modelFavoritesList(),
+  });
   const task =
     (tasks.data ?? []).find((entry) => entry.id === selectedTaskId) ??
     (tasks.data ?? [])[0];
@@ -54,20 +49,17 @@ export function ModelsPage() {
       navigate("/workbench");
     },
   });
-
-  const toggleFavourite = (id: string) => {
-    setFavourites((current) => {
-      const next = current.includes(id)
-        ? current.filter((entry) => entry !== id)
-        : [...current, id];
-      try {
-        localStorage.setItem(FAVOURITES_KEY, JSON.stringify(next));
-      } catch {
-        // Favourites are a convenience; failing to persist is not fatal.
-      }
-      return next;
-    });
-  };
+  const favoriteMutation = useMutation({
+    mutationFn: workbenchClient.modelFavoriteSet,
+    onSuccess: (next) => {
+      queryClient.setQueryData(["workbench", "model-favorites"], next);
+    },
+  });
+  const favoriteKeys = new Set(
+    (favorites.data ?? []).map((favorite) =>
+      favoriteKey(favorite.runtimeKind, favorite.modelId),
+    ),
+  );
 
   const term = filter.trim().toLowerCase();
 
@@ -119,12 +111,43 @@ export function ModelsPage() {
                 <li key={model.id}>
                   <button
                     aria-label={`Favoritar ${model.label}`}
+                    aria-pressed={favoriteKeys.has(
+                      favoriteKey(entry.runtimeKind, model.id),
+                    )}
                     className="eco-icon"
-                    data-active={favourites.includes(model.id) || undefined}
-                    onClick={() => toggleFavourite(model.id)}
+                    data-active={
+                      favoriteKeys.has(
+                        favoriteKey(entry.runtimeKind, model.id),
+                      ) || undefined
+                    }
+                    disabled={favoriteMutation.isPending}
+                    onClick={() =>
+                      favoriteMutation.mutate({
+                        runtimeKind: entry.runtimeKind,
+                        modelId: model.id,
+                        favorite: !favoriteKeys.has(
+                          favoriteKey(entry.runtimeKind, model.id),
+                        ),
+                      })
+                    }
+                    title={
+                      favoriteKeys.has(favoriteKey(entry.runtimeKind, model.id))
+                        ? "Remover dos favoritos"
+                        : "Adicionar aos favoritos"
+                    }
                     type="button"
                   >
-                    <Star aria-hidden="true" size={13} />
+                    <Star
+                      aria-hidden="true"
+                      fill={
+                        favoriteKeys.has(
+                          favoriteKey(entry.runtimeKind, model.id),
+                        )
+                          ? "currentColor"
+                          : "none"
+                      }
+                      size={13}
+                    />
                   </button>
                   <span className="eco-list__main">
                     <strong>{model.label}</strong>

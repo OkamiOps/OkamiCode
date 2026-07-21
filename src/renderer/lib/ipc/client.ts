@@ -118,6 +118,9 @@ export const workbenchClient = {
   laneEnsure: (request: IpcRequest<"lane:ensure">) =>
     invokeCommand("lane:ensure", request),
   modelsList: () => invokeCommand("models:list", {}),
+  modelFavoritesList: () => invokeCommand("models:favorites:list", {}),
+  modelFavoriteSet: (request: IpcRequest<"models:favorites:set">) =>
+    invokeCommand("models:favorites:set", request),
   laneOpen: (request: IpcRequest<"lane:open">) =>
     invokeCommand("lane:open", request),
   laneSendTurn: (request: IpcRequest<"lane:sendTurn">) =>

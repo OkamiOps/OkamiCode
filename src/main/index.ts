@@ -29,6 +29,7 @@ import { startGatewayServer } from "./gateway/server";
 import { LeaseRepository, type CapabilityLease } from "./policy/lease";
 import { RepositoryApprovalBroker } from "./runtime/codex/adapter";
 import { createModelCatalogService } from "./runtime/model-catalog";
+import { ModelFavoritesService } from "./runtime/model-favorites";
 import { createRuntimeRegistry } from "./runtime/registry";
 import { RuntimeSupervisor } from "./runtime/supervisor";
 import { getOrCreateDatabaseKey } from "./secrets";
@@ -300,6 +301,9 @@ async function bootstrap(): Promise<void> {
     mimoCachePath: path.join(app.getPath("userData"), "mimo-models.json"),
     mimoBinary: locateLocalBinary("mimo"),
   });
+  const modelFavoritesService = new ModelFavoritesService({
+    filePath: path.join(app.getPath("userData"), "model-favorites.json"),
+  });
   void modelCatalogService.refreshClaude();
   void modelCatalogService.refreshCursor();
   void modelCatalogService.refreshAgy();
@@ -430,6 +434,7 @@ async function bootstrap(): Promise<void> {
     ipcMain,
     laneEffort,
     modelCatalog: () => modelCatalogService.list(),
+    modelFavoritesService,
     rendererUrl:
       process.env.ELECTRON_RENDERER_URL ??
       `file://${path.join(import.meta.dirname, "../renderer/index.html")}`,

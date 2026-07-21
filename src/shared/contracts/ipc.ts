@@ -647,6 +647,17 @@ export const modelCatalogSchema = z.array(
     })
     .strict(),
 );
+export const modelFavoriteSchema = z
+  .object({
+    runtimeKind: catalogRuntimeKindSchema,
+    modelId: z.string().trim().min(1).max(240),
+  })
+  .strict();
+export const modelFavoritesSchema = z.array(modelFavoriteSchema);
+export type ModelFavorite = z.infer<typeof modelFavoriteSchema>;
+export const modelFavoriteSetRequestSchema = modelFavoriteSchema
+  .extend({ favorite: z.boolean() })
+  .strict();
 export const openedLaneSchema = laneSummarySchema;
 
 export const laneSendTurnRequestSchema = z
@@ -1639,6 +1650,8 @@ export const ipcRequestSchemas = {
   "system:openExternal": systemOpenExternalRequestSchema,
   "system:showItemInFolder": systemShowItemInFolderRequestSchema,
   "models:list": emptyRequestSchema,
+  "models:favorites:list": emptyRequestSchema,
+  "models:favorites:set": modelFavoriteSetRequestSchema,
   "task:create": taskCreateRequestSchema,
   "task:rename": taskRenameRequestSchema,
   "task:delete": taskDeleteRequestSchema,
@@ -1727,6 +1740,8 @@ export const ipcResponseSchemas = {
   "system:openExternal": systemOpenExternalResultSchema,
   "system:showItemInFolder": systemShowItemInFolderResultSchema,
   "models:list": modelCatalogSchema,
+  "models:favorites:list": modelFavoritesSchema,
+  "models:favorites:set": modelFavoritesSchema,
   "task:create": taskSchema,
   "task:rename": taskSchema,
   "task:delete": taskDeleteResultSchema,

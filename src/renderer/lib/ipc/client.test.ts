@@ -188,6 +188,8 @@ it("exposes exactly the enumerated command surface", () => {
     "system:openExternal",
     "system:showItemInFolder",
     "models:list",
+    "models:favorites:list",
+    "models:favorites:set",
     "task:create",
     "task:rename",
     "task:delete",

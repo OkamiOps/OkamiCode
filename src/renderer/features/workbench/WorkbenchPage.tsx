@@ -184,6 +184,10 @@ export function WorkbenchPage({ api = workbenchApi }: WorkbenchPageProps) {
         ? 2_000
         : false,
   });
+  const modelFavoritesQuery = useQuery({
+    queryKey: ["workbench", "model-favorites"],
+    queryFn: api.listModelFavorites,
+  });
   const tasks = tasksQuery.data ?? [];
   const effectiveTaskId = selectedTaskId ?? tasks[0]?.id ?? null;
   const historyQuery = useQuery({
@@ -322,6 +326,7 @@ export function WorkbenchPage({ api = workbenchApi }: WorkbenchPageProps) {
       isSending={sendTurn.isPending}
       lane={selectedLane}
       catalog={modelsQuery.data ?? []}
+      favorites={modelFavoritesQuery.data ?? []}
       effort={efforts.length > 0 ? effort : null}
       efforts={efforts}
       contextNote={context?.label ?? null}

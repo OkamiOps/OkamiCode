@@ -50,6 +50,7 @@ import {
 } from "../ecosystem/readers";
 
 import type { ModelCatalogEntry } from "../runtime/model-catalog";
+import type { ModelFavoritesService } from "../runtime/model-favorites";
 import {
   createCliCapabilityDetector,
   type CliCapability,
@@ -139,6 +140,7 @@ interface RegisterIpcHandlersOptions {
   rendererUrl: string;
   state: AppState;
   modelCatalog?: () => ModelCatalogEntry[];
+  modelFavoritesService?: Pick<ModelFavoritesService, "list" | "set">;
   laneEffort?: Map<string, string>;
   clientCapabilities?: () => Promise<CliCapability[]>;
   memoryService?: MemoryService;
@@ -173,6 +175,7 @@ export function registerIpcHandlers({
   rendererUrl,
   state,
   modelCatalog = () => [],
+  modelFavoritesService,
   laneEffort = new Map<string, string>(),
   clientCapabilities = createCliCapabilityDetector(),
   memoryService,
@@ -277,6 +280,7 @@ export function registerIpcHandlers({
         quickChatService,
         usageService,
         modelCatalog,
+        modelFavoritesService,
         laneEffort,
         clientCapabilities,
         getMemoryService,
@@ -307,6 +311,8 @@ async function dispatch(
   quickChatService: () => QuickChatService,
   usageService: () => UsageCommands,
   modelCatalog: () => ModelCatalogEntry[],
+  modelFavoritesService:
+    Pick<ModelFavoritesService, "list" | "set"> | undefined,
   laneEffort: Map<string, string>,
   clientCapabilities: () => Promise<CliCapability[]>,
   getMemoryService: () => MemoryService,
@@ -338,6 +344,16 @@ async function dispatch(
     }
     case "models:list":
       return modelCatalog();
+    case "models:favorites:list":
+      return modelFavoritesService?.list() ?? [];
+    case "models:favorites:set": {
+      if (!modelFavoritesService) {
+        throw new Error("Model favorites are unavailable.");
+      }
+      return modelFavoritesService.set(
+        request as IpcRequest<"models:favorites:set">,
+      );
+    }
     case "task:create":
       return createTask(state, request as IpcRequest<"task:create">);
     case "task:rename":

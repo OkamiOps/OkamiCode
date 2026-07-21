@@ -1,6 +1,6 @@
-import { Check, ChevronDown } from "lucide-react";
+import { Check, ChevronDown, Star } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
-import type { ModelCatalog, WorkbenchLane } from "./api";
+import type { ModelCatalog, ModelFavorites, WorkbenchLane } from "./api";
 import type { RuntimeKind } from "../../../shared/contracts/lane";
 
 function isRunnableRuntime(runtime: string): runtime is RuntimeKind {
@@ -9,6 +9,7 @@ function isRunnableRuntime(runtime: string): runtime is RuntimeKind {
 
 interface ModelPickerProps {
   catalog: ModelCatalog;
+  favorites: ModelFavorites;
   disabled?: boolean;
   isOpening: boolean;
   onSelectModel: (runtimeKind: RuntimeKind, model: string) => void;
@@ -36,6 +37,7 @@ export function modelDetail(lane: WorkbenchLane): string {
 
 export function ModelPicker({
   catalog,
+  favorites,
   disabled,
   isOpening,
   onSelectModel,
@@ -119,6 +121,18 @@ export function ModelPicker({
             catalog.find((entry) => providerKey(entry) === activeProvider) ??
             owningProvider ??
             fallbackProvider;
+          const showingFavorites = activeProvider === "favorites";
+          const favoriteModels = favorites.flatMap((favorite) => {
+            const provider = catalog.find(
+              (entry) => entry.runtimeKind === favorite.runtimeKind,
+            );
+            const model = provider?.models.find(
+              (entry) =>
+                normalizeModelId(entry.id) ===
+                normalizeModelId(favorite.modelId),
+            );
+            return provider && model ? [{ provider, model }] : [];
+          });
           return (
             <div
               aria-label="Modelos disponíveis"
@@ -129,14 +143,30 @@ export function ModelPicker({
                 className="model-picker__providers"
                 role="tablist"
               >
+                <button
+                  aria-selected={showingFavorites}
+                  className="model-picker__provider"
+                  data-active={showingFavorites || undefined}
+                  onClick={() => setActiveProvider("favorites")}
+                  role="tab"
+                  type="button"
+                >
+                  <Star aria-hidden="true" size={13} />
+                  <span className="model-picker__provider-meta">
+                    Favoritos
+                    <small>acesso rápido · {favoriteModels.length}</small>
+                  </span>
+                </button>
                 {catalog.map((entry) => (
                   <button
                     aria-selected={
+                      !showingFavorites &&
                       providerKey(entry) === providerKey(activeEntry)
                     }
                     className="model-picker__provider"
                     data-active={
-                      providerKey(entry) === providerKey(activeEntry) ||
+                      (!showingFavorites &&
+                        providerKey(entry) === providerKey(activeEntry)) ||
                       undefined
                     }
                     key={providerKey(entry)}
@@ -164,61 +194,122 @@ export function ModelPicker({
                 ))}
               </div>
               <div
-                aria-label={`Modelos de ${activeEntry.providerLabel}`}
+                aria-label={
+                  showingFavorites
+                    ? "Modelos favoritos"
+                    : `Modelos de ${activeEntry.providerLabel}`
+                }
                 className="model-picker__models"
                 role="listbox"
               >
-                {activeEntry.models.length === 0 && (
+                {showingFavorites && favoriteModels.length === 0 && (
+                  <div className="model-picker__empty">
+                    Marque modelos com estrela na tela Modelos.
+                  </div>
+                )}
+                {showingFavorites &&
+                  favoriteModels.map(({ provider, model }) => {
+                    const isSelected =
+                      selectedLane !== null &&
+                      selectedLane.runtimeKind === provider.runtimeKind &&
+                      normalizeModelId(selectedLane.model) ===
+                        normalizeModelId(model.id);
+                    return (
+                      <button
+                        aria-selected={isSelected}
+                        className="model-picker__option"
+                        disabled={
+                          provider.routeKind === "unavailable" ||
+                          !isRunnableRuntime(provider.runtimeKind)
+                        }
+                        key={`${provider.runtimeKind}-${model.id}`}
+                        onClick={() => {
+                          setOpen(false);
+                          if (
+                            !isSelected &&
+                            provider.routeKind !== "unavailable" &&
+                            isRunnableRuntime(provider.runtimeKind)
+                          ) {
+                            onSelectModel(provider.runtimeKind, model.id);
+                          }
+                        }}
+                        role="option"
+                        type="button"
+                      >
+                        <Star
+                          aria-hidden="true"
+                          fill="currentColor"
+                          size={13}
+                        />
+                        <span className="model-picker__option-meta">
+                          {model.label}
+                          <small>
+                            {provider.providerLabel}
+                            {model.description ? ` · ${model.description}` : ""}
+                          </small>
+                        </span>
+                        {isSelected && (
+                          <Check
+                            aria-hidden="true"
+                            className="model-picker__check"
+                            size={14}
+                          />
+                        )}
+                      </button>
+                    );
+                  })}
+                {!showingFavorites && activeEntry.models.length === 0 && (
                   <div className="model-picker__empty">
                     {activeEntry.source}
                   </div>
                 )}
-                {activeEntry.models.map((model) => {
-                  const isSelected =
-                    selectedLane !== null &&
-                    normalizeModelId(selectedLane.model) ===
-                      normalizeModelId(model.id);
-                  return (
-                    <button
-                      aria-selected={isSelected}
-                      className="model-picker__option"
-                      disabled={
-                        activeEntry.routeKind === "unavailable" ||
-                        !isRunnableRuntime(activeEntry.runtimeKind)
-                      }
-                      key={model.id}
-                      onClick={() => {
-                        setOpen(false);
-                        if (
-                          !isSelected &&
-                          activeEntry.routeKind !== "unavailable" &&
-                          isRunnableRuntime(activeEntry.runtimeKind)
-                        )
-                          onSelectModel(activeEntry.runtimeKind, model.id);
-                      }}
-                      role="option"
-                      type="button"
-                    >
-                      <span
-                        aria-hidden="true"
-                        className={`route-dot route-dot--${activeEntry.routeKind}`}
-                      />
-                      <span className="model-picker__option-meta">
-                        {model.label}
-                        <small>
-                          {model.description ?? activeEntry.providerLabel}
-                        </small>
-                      </span>
-                      {isSelected && (
-                        <Check
+                {!showingFavorites &&
+                  activeEntry.models.map((model) => {
+                    const isSelected =
+                      selectedLane !== null &&
+                      normalizeModelId(selectedLane.model) ===
+                        normalizeModelId(model.id);
+                    return (
+                      <button
+                        aria-selected={isSelected}
+                        className="model-picker__option"
+                        disabled={
+                          activeEntry.routeKind === "unavailable" ||
+                          !isRunnableRuntime(activeEntry.runtimeKind)
+                        }
+                        key={model.id}
+                        onClick={() => {
+                          setOpen(false);
+                          if (
+                            !isSelected &&
+                            activeEntry.routeKind !== "unavailable" &&
+                            isRunnableRuntime(activeEntry.runtimeKind)
+                          )
+                            onSelectModel(activeEntry.runtimeKind, model.id);
+                        }}
+                        role="option"
+                        type="button"
+                      >
+                        <span
                           aria-hidden="true"
-                          className="model-picker__check"
-                          size={14}
+                          className={`route-dot route-dot--${activeEntry.routeKind}`}
                         />
-                      )}
-                    </button>
-                  );
-                })}
+                        <span className="model-picker__option-meta">
+                          {model.label}
+                          <small>
+                            {model.description ?? activeEntry.providerLabel}
+                          </small>
+                        </span>
+                        {isSelected && (
+                          <Check
+                            aria-hidden="true"
+                            className="model-picker__check"
+                            size={14}
+                          />
+                        )}
+                      </button>
+                    );
+                  })}
               </div>
             </div>
           );
