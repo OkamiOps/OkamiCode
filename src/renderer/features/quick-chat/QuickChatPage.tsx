@@ -8,12 +8,14 @@ import {
 } from "@tanstack/react-query";
 import {
   ArrowUpRight,
+  ArrowUpDown,
   Bot,
   ChevronDown,
   MoreHorizontal,
   MessageSquareText,
   Palette,
   Pencil,
+  Pin,
   Plus,
   Search,
   Send,
@@ -189,6 +191,9 @@ function QuickChatContent({
   const [filter, setFilter] = useState("");
   const [conversationColors, setConversationColors] = useState(
     readConversationColors,
+  );
+  const [historyPreferences, setHistoryPreferences] = useState(
+    readHistoryPreferences,
   );
   const [editingChat, setEditingChat] = useState<QuickChatSummary | null>(null);
   const [runtime, setRuntime] =
@@ -386,9 +391,26 @@ function QuickChatContent({
   );
   const selectedCount = Object.keys(selectedMessageIds).length;
   const term = filter.trim().toLowerCase();
-  const chats = (chatsQuery.data ?? []).filter((item) =>
-    `${item.title} ${item.preview ?? ""}`.toLowerCase().includes(term),
-  );
+  const chats = (chatsQuery.data ?? [])
+    .filter((item) =>
+      `${item.title} ${item.preview ?? ""}`.toLowerCase().includes(term),
+    )
+    .sort((left, right) => {
+      const pinned =
+        Number(historyPreferences.pinned.includes(right.id)) -
+        Number(historyPreferences.pinned.includes(left.id));
+      if (pinned) return pinned;
+      if (historyPreferences.sort === "name")
+        return left.title.localeCompare(right.title, "pt-BR");
+      if (historyPreferences.sort === "oldest")
+        return Date.parse(left.updatedAt) - Date.parse(right.updatedAt);
+      return Date.parse(right.updatedAt) - Date.parse(left.updatedAt);
+    });
+
+  function saveHistoryPreferences(next: HistoryPreferences) {
+    setHistoryPreferences(next);
+    localStorage.setItem(historyPreferencesKey, JSON.stringify(next));
+  }
 
   return (
     <section aria-labelledby="quick-chat-heading" className="quick-chat-shell">
@@ -397,10 +419,14 @@ function QuickChatContent({
         currentChatId={chatId}
         filter={filter}
         colors={conversationColors}
+        preferences={historyPreferences}
         onFilter={setFilter}
         onNew={() => setSearchParams({ new: crypto.randomUUID() })}
         onSelect={(id) => setSearchParams({ chat: id })}
         onManage={setEditingChat}
+        onSort={(sort) =>
+          saveHistoryPreferences({ ...historyPreferences, sort })
+        }
       />
 
       <div className="quick-chat-main">
@@ -592,11 +618,12 @@ function QuickChatContent({
         <ConversationDialog
           chat={editingChat}
           color={conversationColors[editingChat.id] ?? "orange"}
+          pinned={historyPreferences.pinned.includes(editingChat.id)}
           deleting={deleteChat.isPending}
           renaming={renameChat.isPending}
           onClose={() => setEditingChat(null)}
           onDelete={() => deleteChat.mutate({ taskId: editingChat.taskId })}
-          onSave={async (title, color) => {
+          onSave={async (title, color, pinned) => {
             if (title.trim() !== editingChat.title) {
               await renameChat.mutateAsync({
                 taskId: editingChat.taskId,
@@ -609,6 +636,19 @@ function QuickChatContent({
               conversationColorStorageKey,
               JSON.stringify(next),
             );
+            saveHistoryPreferences({
+              ...historyPreferences,
+              pinned: pinned
+                ? [
+                    editingChat.id,
+                    ...historyPreferences.pinned.filter(
+                      (id) => id !== editingChat.id,
+                    ),
+                  ]
+                : historyPreferences.pinned.filter(
+                    (id) => id !== editingChat.id,
+                  ),
+            });
             setEditingChat(null);
           }}
         />
@@ -622,19 +662,23 @@ function QuickChatHistory({
   currentChatId,
   filter,
   colors,
+  preferences,
   onFilter,
   onNew,
   onSelect,
   onManage,
+  onSort,
 }: {
   chats: QuickChatSummary[];
   currentChatId: string | null;
   filter: string;
   colors: Record<string, ConversationColor>;
+  preferences: HistoryPreferences;
   onFilter: (value: string) => void;
   onNew: () => void;
   onSelect: (id: string) => void;
   onManage: (chat: QuickChatSummary) => void;
+  onSort: (sort: HistorySort) => void;
 }) {
   return (
     <aside aria-label="Histórico de chats" className="quick-chat-history">
@@ -655,6 +699,18 @@ function QuickChatHistory({
           value={filter}
         />
       </label>
+      <label className="quick-chat-history__sort">
+        <ArrowUpDown aria-hidden="true" size={12} />
+        <select
+          aria-label="Ordenar conversas"
+          onChange={(event) => onSort(event.target.value as HistorySort)}
+          value={preferences.sort}
+        >
+          <option value="recent">Mais recentes</option>
+          <option value="oldest">Mais antigas</option>
+          <option value="name">Nome</option>
+        </select>
+      </label>
       <nav aria-label="Conversas recentes">
         {chats.length === 0 ? (
           <p>Nenhuma conversa salva.</p>
@@ -671,7 +727,12 @@ function QuickChatHistory({
                 onClick={() => onSelect(chat.id)}
                 type="button"
               >
-                <strong>{chat.title}</strong>
+                <strong>
+                  {preferences.pinned.includes(chat.id) && (
+                    <Pin aria-label="Fixada" size={10} />
+                  )}
+                  {chat.title}
+                </strong>
                 <span>{chat.preview ?? modelDisplay(chat.model)}</span>
               </button>
               <button
@@ -748,6 +809,7 @@ function providersFor(options: ModelOption[]) {
 }
 
 const conversationColorStorageKey = "okami.quick-chat.colors";
+const historyPreferencesKey = "okami.quick-chat.history-preferences";
 const conversationColors = [
   "orange",
   "cyan",
@@ -757,6 +819,29 @@ const conversationColors = [
   "amber",
 ] as const;
 type ConversationColor = (typeof conversationColors)[number];
+type HistorySort = "recent" | "oldest" | "name";
+interface HistoryPreferences {
+  sort: HistorySort;
+  pinned: string[];
+}
+
+function readHistoryPreferences(): HistoryPreferences {
+  try {
+    const value = JSON.parse(
+      localStorage.getItem(historyPreferencesKey) ?? "null",
+    ) as Partial<HistoryPreferences> | null;
+    return {
+      sort: ["recent", "oldest", "name"].includes(value?.sort ?? "")
+        ? value!.sort!
+        : "recent",
+      pinned: Array.isArray(value?.pinned)
+        ? value.pinned.filter((id): id is string => typeof id === "string")
+        : [],
+    };
+  } catch {
+    return { sort: "recent", pinned: [] };
+  }
+}
 
 function readConversationColors(): Record<string, ConversationColor> {
   try {
@@ -777,6 +862,7 @@ function readConversationColors(): Record<string, ConversationColor> {
 function ConversationDialog({
   chat,
   color,
+  pinned,
   deleting,
   onClose,
   onDelete,
@@ -785,14 +871,20 @@ function ConversationDialog({
 }: {
   chat: QuickChatSummary;
   color: ConversationColor;
+  pinned: boolean;
   deleting: boolean;
   onClose: () => void;
   onDelete: () => void;
-  onSave: (title: string, color: ConversationColor) => Promise<void>;
+  onSave: (
+    title: string,
+    color: ConversationColor,
+    pinned: boolean,
+  ) => Promise<void>;
   renaming: boolean;
 }) {
   const [title, setTitle] = useState(chat.title);
   const [selectedColor, setSelectedColor] = useState(color);
+  const [isPinned, setIsPinned] = useState(pinned);
   const [confirmDelete, setConfirmDelete] = useState(false);
   return (
     <div className="ok-modal-backdrop" role="presentation">
@@ -861,6 +953,14 @@ function ConversationDialog({
                 ))}
               </div>
             </fieldset>
+            <label className="quick-chat-dialog__pin">
+              <input
+                checked={isPinned}
+                onChange={(event) => setIsPinned(event.target.checked)}
+                type="checkbox"
+              />
+              <Pin aria-hidden="true" size={13} /> Fixar no topo do histórico
+            </label>
             <footer>
               <Button
                 className="quick-chat-dialog__trash"
@@ -876,7 +976,7 @@ function ConversationDialog({
               <Button
                 className="quick-chat-dialog__save"
                 isDisabled={!title.trim() || renaming}
-                onPress={() => void onSave(title, selectedColor)}
+                onPress={() => void onSave(title, selectedColor, isPinned)}
               >
                 Salvar
               </Button>

@@ -425,6 +425,7 @@ async function bootstrap(): Promise<void> {
     googleInboxOAuthService,
     calendarService,
     openExternal: (url) => shell.openExternal(url),
+    showItemInFolder: async (targetPath) => shell.showItemInFolder(targetPath),
   });
 }
 

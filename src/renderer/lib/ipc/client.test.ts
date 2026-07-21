@@ -186,6 +186,7 @@ it("exposes exactly the enumerated command surface", () => {
   expect(ipcChannels).toEqual([
     "system:doctor",
     "system:openExternal",
+    "system:showItemInFolder",
     "models:list",
     "task:create",
     "task:rename",
@@ -231,6 +232,7 @@ it("exposes exactly the enumerated command surface", () => {
     "quickChat:updateModel",
     "quickChat:send",
     "usage:overview",
+    "usage:openRouterPricing",
     "usage:refresh",
     "usage:alertSet",
     "memory:configure",

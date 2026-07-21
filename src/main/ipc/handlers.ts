@@ -37,6 +37,7 @@ import { QuickChatService } from "../orchestration/quick-chat";
 import { MemoryService } from "../memory/indexer";
 import type { RunHandle, RuntimeHealth } from "../runtime/adapter";
 import { createUsageCommands, type UsageCommands } from "../usage/service";
+import { OpenRouterPricingService } from "../usage/openrouter-pricing";
 import type { AppState } from "./app-state";
 import {
   readAgents,
@@ -150,6 +151,8 @@ interface RegisterIpcHandlersOptions {
   googleInboxOAuthService?: GoogleInboxOAuthIpcService;
   calendarService?: CalendarIpcService;
   openExternal?: (url: string) => Promise<unknown>;
+  showItemInFolder?: (path: string) => Promise<unknown>;
+  openRouterPricingService?: Pick<OpenRouterPricingService, "list">;
 }
 
 interface TaskRow {
@@ -184,6 +187,10 @@ export function registerIpcHandlers({
   openExternal = async () => {
     throw new Error("External navigation is unavailable.");
   },
+  showItemInFolder = async () => {
+    throw new Error("Finder integration is unavailable.");
+  },
+  openRouterPricingService = new OpenRouterPricingService(),
 }: RegisterIpcHandlersOptions): void {
   const openedLanes = new Map<string, OpenedLane>();
   let memory = memoryService;
@@ -283,6 +290,8 @@ export function registerIpcHandlers({
         getGoogleInboxOAuthService,
         getCalendarService,
         openExternal,
+        showItemInFolder,
+        openRouterPricingService,
       );
       return ipcResponseSchemas[channel].parse(response);
     });
@@ -311,6 +320,8 @@ async function dispatch(
   googleInboxOAuthService: () => GoogleInboxOAuthIpcService,
   calendarService: () => CalendarIpcService,
   openExternal: (url: string) => Promise<unknown>,
+  showItemInFolder: (path: string) => Promise<unknown>,
+  openRouterPricingService: Pick<OpenRouterPricingService, "list">,
 ): Promise<unknown> {
   switch (channel) {
     case "system:doctor":
@@ -319,6 +330,11 @@ async function dispatch(
       const external = request as IpcRequest<"system:openExternal">;
       await openExternal(external.url);
       return { opened: true as const };
+    }
+    case "system:showItemInFolder": {
+      const target = request as IpcRequest<"system:showItemInFolder">;
+      await showItemInFolder(target.path);
+      return { shown: true as const };
     }
     case "models:list":
       return modelCatalog();
@@ -508,6 +524,8 @@ async function dispatch(
       );
     case "usage:overview":
       return usageService().overview("overview");
+    case "usage:openRouterPricing":
+      return openRouterPricingService.list();
     case "usage:refresh":
       return usageService().overview("refresh");
     case "usage:alertSet":

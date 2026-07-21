@@ -3,6 +3,7 @@
 export const ipcChannels = [
   "system:doctor",
   "system:openExternal",
+  "system:showItemInFolder",
   "models:list",
   "task:create",
   "task:rename",
@@ -48,6 +49,7 @@ export const ipcChannels = [
   "quickChat:updateModel",
   "quickChat:send",
   "usage:overview",
+  "usage:openRouterPricing",
   "usage:refresh",
   "usage:alertSet",
   "memory:configure",

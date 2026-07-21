@@ -7,6 +7,7 @@ import {
   CalendarDays,
   CheckCircle2,
   CircleDollarSign,
+  ExternalLink,
   Inbox,
   MessageSquareText,
   RefreshCw,
@@ -18,6 +19,13 @@ import { useState } from "react";
 import { Link } from "react-router-dom";
 import type { IpcResponse } from "../../../shared/contracts/ipc";
 import { workbenchClient } from "../../lib/ipc/client";
+import {
+  calculateRoi,
+  defaultSubscriptionPrices,
+  subscriptionDefaults,
+  type RoiSummary,
+  type SubscriptionPrices,
+} from "./roi";
 
 type UsageOverview = IpcResponse<"usage:overview">;
 type SystemDoctor = IpcResponse<"system:doctor">;
@@ -33,17 +41,23 @@ interface DashboardSnapshot {
   tasks: Tasks | null;
 }
 
-const pricingStorageKey = "okami.dashboard.api-pricing";
+const subscriptionStorageKey = "okami.dashboard.subscriptions";
 
 export function HomePage() {
   const [pricingOpen, setPricingOpen] = useState(false);
-  const [pricing, setPricing] = useState(readPricing);
+  const [subscriptions, setSubscriptions] = useState(readSubscriptions);
   const snapshot = useQuery({
     queryKey: ["home", "snapshot"],
     queryFn: loadDashboardSnapshot,
     refetchInterval: 60_000,
   });
   const data = snapshot.data;
+  const pricingCatalog = useQuery({
+    queryKey: ["usage", "openrouter-pricing"],
+    queryFn: () => workbenchClient.usageOpenRouterPricing(),
+    staleTime: 6 * 60 * 60 * 1_000,
+    retry: 1,
+  });
   const totals = (data?.usage?.activity ?? []).reduce(
     (sum, item) => ({
       input: sum.input + item.inputTokens + item.cachedInputTokens,
@@ -52,11 +66,11 @@ export function HomePage() {
     }),
     { input: 0, output: 0, calls: 0 },
   );
-  const estimate =
-    pricing.input > 0 || pricing.output > 0
-      ? (totals.input / 1_000_000) * pricing.input +
-        (totals.output / 1_000_000) * pricing.output
-      : null;
+  const roi = calculateRoi(
+    data?.usage?.activity ?? [],
+    pricingCatalog.data ?? null,
+    subscriptions,
+  );
   const runtimeClients = data?.doctor?.clients ?? [];
   const readyClients = runtimeClients.filter(
     (client) => client.integrationStatus === "ready",
@@ -141,9 +155,13 @@ export function HomePage() {
           <MetricCard
             accent="orange"
             icon={CircleDollarSign}
-            label="Simulação API equivalente"
-            value={estimate === null ? "Não configurada" : usd(estimate)}
-            detail="Estimativa local; não é cobrança da assinatura"
+            label="API equivalente · 30 dias"
+            value={
+              roi.pricedTokens > 0
+                ? usdEquivalent(roi.apiEquivalentTotalUsd)
+                : "Sem cobertura"
+            }
+            detail={`${usd(roi.subscriptionTotalUsd)}/mês em assinaturas · ${coverageLabel(roi)}`}
             onClick={() => setPricingOpen(true)}
           />
           <MetricCard
@@ -167,6 +185,14 @@ export function HomePage() {
             href="/usage"
           />
         </div>
+
+        <RoiPanel
+          catalogError={pricingCatalog.isError}
+          catalogFetchedAt={pricingCatalog.data?.fetchedAt ?? null}
+          loading={pricingCatalog.isLoading}
+          roi={roi}
+          onConfigure={() => setPricingOpen(true)}
+        />
 
         <div className="home-columns">
           <section
@@ -242,15 +268,100 @@ export function HomePage() {
 
       {pricingOpen && (
         <PricingDialog
-          pricing={pricing}
+          subscriptions={subscriptions}
           onClose={() => setPricingOpen(false)}
           onSave={(next) => {
-            setPricing(next);
-            localStorage.setItem(pricingStorageKey, JSON.stringify(next));
+            setSubscriptions(next);
+            localStorage.setItem(subscriptionStorageKey, JSON.stringify(next));
             setPricingOpen(false);
           }}
         />
       )}
+    </section>
+  );
+}
+
+function RoiPanel({
+  catalogError,
+  catalogFetchedAt,
+  loading,
+  onConfigure,
+  roi,
+}: {
+  catalogError: boolean;
+  catalogFetchedAt: string | null;
+  loading: boolean;
+  onConfigure: () => void;
+  roi: RoiSummary;
+}) {
+  return (
+    <section className="home-roi" aria-labelledby="roi-heading">
+      <header className="home-roi__header">
+        <div>
+          <span className="pane-kicker">Retorno das assinaturas</span>
+          <h2 id="roi-heading">Assinatura ou API?</h2>
+          <p>
+            Uso local dos últimos 30 dias comparado ao preço equivalente no
+            OpenRouter, incluindo a taxa de compra de créditos de 5,5%.
+          </p>
+        </div>
+        <button onClick={onConfigure} type="button">
+          Ajustar mensalidades
+        </button>
+      </header>
+      <div
+        className="home-roi__table"
+        role="table"
+        aria-label="Comparação de custo"
+      >
+        <div className="home-roi__row home-roi__row--head" role="row">
+          <span>Fornecedor</span>
+          <span>Assinatura</span>
+          <span>API equivalente</span>
+          <span>Cobertura</span>
+          <span>Leitura</span>
+        </div>
+        {roi.rows.map((row) => (
+          <div className="home-roi__row" key={row.id} role="row">
+            <strong>{row.label}</strong>
+            <span>{usd(row.subscriptionUsd)}/mês</span>
+            <span>
+              {row.apiEquivalentUsd === null
+                ? "—"
+                : usdEquivalent(row.apiEquivalentUsd)}
+            </span>
+            <span>
+              {row.coveragePercent === null
+                ? "Sem telemetria"
+                : `${row.coveragePercent}%`}
+            </span>
+            <span
+              className={`home-roi__verdict home-roi__verdict--${row.verdict}`}
+            >
+              {verdictLabel(row.verdict)}
+            </span>
+          </div>
+        ))}
+      </div>
+      <footer className="home-roi__footer">
+        <span>
+          {loading
+            ? "Atualizando preços públicos…"
+            : catalogError
+              ? "Preço do OpenRouter indisponível; valores não foram estimados."
+              : `Preços atualizados ${relativeTime(catalogFetchedAt)}.`}
+        </span>
+        <button
+          onClick={() =>
+            void workbenchClient.systemOpenExternal({
+              url: "https://openrouter.ai/models",
+            })
+          }
+          type="button"
+        >
+          Fonte: OpenRouter <ExternalLink aria-hidden="true" size={12} />
+        </button>
+      </footer>
     </section>
   );
 }
@@ -402,14 +513,13 @@ function EmptyRow({
 function PricingDialog({
   onClose,
   onSave,
-  pricing,
+  subscriptions,
 }: {
-  pricing: Pricing;
+  subscriptions: SubscriptionPrices;
   onClose: () => void;
-  onSave: (pricing: Pricing) => void;
+  onSave: (subscriptions: SubscriptionPrices) => void;
 }) {
-  const [input, setInput] = useState(String(pricing.input || ""));
-  const [output, setOutput] = useState(String(pricing.output || ""));
+  const [draft, setDraft] = useState(subscriptions);
   return (
     <div className="ok-modal-backdrop" role="presentation">
       <section
@@ -418,33 +528,30 @@ function PricingDialog({
         className="home-pricing-dialog"
         role="dialog"
       >
-        <p className="pane-kicker">Referência local</p>
-        <h2 id="pricing-heading">Simular custo de API</h2>
+        <p className="pane-kicker">Compromisso mensal</p>
+        <h2 id="pricing-heading">Mensalidades das assinaturas</h2>
         <p>
-          Informe o preço por 1 milhão de tokens. Isso não altera nem representa
-          a cobrança das suas assinaturas.
+          O preço por token vem automaticamente do OpenRouter. Ajuste apenas o
+          que você paga por mês em cada assinatura.
         </p>
         <div className="home-pricing-dialog__fields">
-          <label>
-            Entrada (US$)
-            <input
-              inputMode="decimal"
-              min="0"
-              onChange={(event) => setInput(event.target.value)}
-              type="number"
-              value={input}
-            />
-          </label>
-          <label>
-            Saída (US$)
-            <input
-              inputMode="decimal"
-              min="0"
-              onChange={(event) => setOutput(event.target.value)}
-              type="number"
-              value={output}
-            />
-          </label>
+          {subscriptionDefaults.map((plan) => (
+            <label key={plan.id}>
+              {plan.label} (US$/mês)
+              <input
+                inputMode="decimal"
+                min="0"
+                onChange={(event) =>
+                  setDraft((current) => ({
+                    ...current,
+                    [plan.id]: Math.max(0, Number(event.target.value) || 0),
+                  }))
+                }
+                type="number"
+                value={draft[plan.id]}
+              />
+            </label>
+          ))}
         </div>
         <footer>
           <Button variant="ghost" onPress={onClose}>
@@ -452,14 +559,9 @@ function PricingDialog({
           </Button>
           <Button
             className="home-pricing-dialog__save"
-            onPress={() =>
-              onSave({
-                input: Math.max(0, Number(input) || 0),
-                output: Math.max(0, Number(output) || 0),
-              })
-            }
+            onPress={() => onSave(draft)}
           >
-            Salvar referência
+            Salvar mensalidades
           </Button>
         </footer>
       </section>
@@ -467,22 +569,38 @@ function PricingDialog({
   );
 }
 
-interface Pricing {
-  input: number;
-  output: number;
-}
-function readPricing(): Pricing {
+function readSubscriptions(): SubscriptionPrices {
+  const fallback = defaultSubscriptionPrices();
   try {
     const value = JSON.parse(
-      localStorage.getItem(pricingStorageKey) ?? "null",
-    ) as Partial<Pricing> | null;
-    return {
-      input: Number(value?.input) || 0,
-      output: Number(value?.output) || 0,
-    };
+      localStorage.getItem(subscriptionStorageKey) ?? "null",
+    ) as Partial<SubscriptionPrices> | null;
+    return Object.fromEntries(
+      subscriptionDefaults.map((plan) => [
+        plan.id,
+        Math.max(0, Number(value?.[plan.id] ?? fallback[plan.id]) || 0),
+      ]),
+    ) as SubscriptionPrices;
   } catch {
-    return { input: 0, output: 0 };
+    return fallback;
   }
+}
+function verdictLabel(value: RoiSummary["rows"][number]["verdict"]): string {
+  if (value === "subscription") return "Assinatura compensou";
+  if (value === "api") return "API seria mais barata";
+  return "Dados insuficientes";
+}
+function coverageLabel(roi: RoiSummary): string {
+  return roi.coveragePercent === null
+    ? "sem telemetria"
+    : `${roi.coveragePercent}% precificado`;
+}
+function relativeTime(value: string | null): string {
+  if (!value) return "agora";
+  return new Intl.RelativeTimeFormat("pt-BR", { numeric: "auto" }).format(
+    -Math.max(0, Math.round((Date.now() - Date.parse(value)) / 60_000)),
+    "minute",
+  );
 }
 function compact(value: number): string {
   return new Intl.NumberFormat("pt-BR", {
@@ -495,6 +613,14 @@ function usd(value: number): string {
     style: "currency",
     currency: "USD",
     maximumFractionDigits: 2,
+  }).format(value);
+}
+function usdEquivalent(value: number): string {
+  return new Intl.NumberFormat("pt-BR", {
+    style: "currency",
+    currency: "USD",
+    minimumFractionDigits: value < 1 ? 4 : 2,
+    maximumFractionDigits: value < 1 ? 4 : 2,
   }).format(value);
 }
 function environmentLabel(data?: DashboardSnapshot): string {

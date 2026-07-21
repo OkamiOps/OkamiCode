@@ -291,6 +291,9 @@ describe("QuickChatPage", () => {
     await user.clear(title);
     await user.type(title, "Pesquisa de mercado");
     await user.click(screen.getByRole("button", { name: "Cor cyan" }));
+    await user.click(
+      screen.getByRole("checkbox", { name: "Fixar no topo do histórico" }),
+    );
     await user.click(screen.getByRole("button", { name: "Salvar" }));
 
     await waitFor(() =>
@@ -299,6 +302,9 @@ describe("QuickChatPage", () => {
       ]),
     );
     expect(localStorage.getItem("okami.quick-chat.colors")).toContain("cyan");
+    expect(
+      localStorage.getItem("okami.quick-chat.history-preferences"),
+    ).toContain(chatId);
 
     await user.click(
       await screen.findByRole("button", { name: "Opções de Chat rápido" }),

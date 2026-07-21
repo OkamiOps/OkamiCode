@@ -54,6 +54,8 @@ export const workbenchClient = {
   systemDoctor: () => invokeCommand("system:doctor", {}),
   systemOpenExternal: (request: IpcRequest<"system:openExternal">) =>
     invokeCommand("system:openExternal", request),
+  systemShowItemInFolder: (request: IpcRequest<"system:showItemInFolder">) =>
+    invokeCommand("system:showItemInFolder", request),
   taskCreate: (request: IpcRequest<"task:create">) =>
     invokeCommand("task:create", request),
   taskList: () => invokeCommand("task:list", {}),
@@ -134,6 +136,7 @@ export const workbenchClient = {
   quickChatSend: (request: IpcRequest<"quickChat:send">) =>
     invokeCommand("quickChat:send", request),
   usageOverview: () => invokeCommand("usage:overview", {}),
+  usageOpenRouterPricing: () => invokeCommand("usage:openRouterPricing", {}),
   usageRefresh: () => invokeCommand("usage:refresh", {}),
   usageAlertSet: (request: IpcRequest<"usage:alertSet">) =>
     invokeCommand("usage:alertSet", request),

@@ -33,6 +33,12 @@ const systemOpenExternalRequestSchema = z
 const systemOpenExternalResultSchema = z
   .object({ opened: z.literal(true) })
   .strict();
+const systemShowItemInFolderRequestSchema = z
+  .object({ path: z.string().trim().min(1).max(4_096) })
+  .strict();
+const systemShowItemInFolderResultSchema = z
+  .object({ shown: z.literal(true) })
+  .strict();
 // Workspace-free chat and delegated email generation still have dedicated
 // lifecycle tests only for the two original runtimes. Cursor is exposed first
 // in Workbench and fails closed here until those flows gain equivalent tests.
@@ -848,6 +854,26 @@ export const usageOverviewSchema = z
   })
   .strict();
 
+const openRouterModelPricingSchema = z
+  .object({
+    id: z.string().min(1),
+    name: z.string().min(1),
+    promptPerToken: z.number().nonnegative(),
+    completionPerToken: z.number().nonnegative(),
+    cacheReadPerToken: z.number().nonnegative().nullable(),
+    reasoningPerToken: z.number().nonnegative().nullable(),
+    requestCost: z.number().nonnegative().nullable(),
+  })
+  .strict();
+
+export const openRouterPricingCatalogSchema = z
+  .object({
+    fetchedAt: z.iso.datetime({ offset: true }),
+    sourceUrl: z.literal("https://openrouter.ai/api/v1/models"),
+    models: z.array(openRouterModelPricingSchema),
+  })
+  .strict();
+
 export type UsageOverviewContract = z.output<typeof usageOverviewSchema>;
 export type UsageSnapshotContract = z.output<typeof usageSnapshotSchema>;
 export type UsageActivityBucketContract = z.output<
@@ -1567,6 +1593,7 @@ const calendarDeleteLocalEventResultSchema = z
 export const ipcRequestSchemas = {
   "system:doctor": emptyRequestSchema,
   "system:openExternal": systemOpenExternalRequestSchema,
+  "system:showItemInFolder": systemShowItemInFolderRequestSchema,
   "models:list": emptyRequestSchema,
   "task:create": taskCreateRequestSchema,
   "task:rename": taskRenameRequestSchema,
@@ -1612,6 +1639,7 @@ export const ipcRequestSchemas = {
   "quickChat:updateModel": quickChatUpdateModelRequestSchema,
   "quickChat:send": quickChatSendRequestSchema,
   "usage:overview": emptyRequestSchema,
+  "usage:openRouterPricing": emptyRequestSchema,
   "usage:refresh": emptyRequestSchema,
   "usage:alertSet": usageAlertSetRequestSchema,
   "memory:configure": memoryConfigureRequestSchema,
@@ -1653,6 +1681,7 @@ export const ipcRequestSchemas = {
 export const ipcResponseSchemas = {
   "system:doctor": systemDoctorSchema,
   "system:openExternal": systemOpenExternalResultSchema,
+  "system:showItemInFolder": systemShowItemInFolderResultSchema,
   "models:list": modelCatalogSchema,
   "task:create": taskSchema,
   "task:rename": taskSchema,
@@ -1698,6 +1727,7 @@ export const ipcResponseSchemas = {
   "quickChat:updateModel": quickChatConversationSchema,
   "quickChat:send": quickChatSendResultSchema,
   "usage:overview": usageOverviewSchema,
+  "usage:openRouterPricing": openRouterPricingCatalogSchema,
   "usage:refresh": usageOverviewSchema,
   "usage:alertSet": usageAlertSchema,
   "memory:configure": z.array(memorySourceSchema),

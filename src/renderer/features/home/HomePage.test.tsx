@@ -7,6 +7,8 @@ import { HomePage } from "./HomePage";
 
 const api = vi.hoisted(() => ({
   usageOverview: vi.fn(),
+  usageOpenRouterPricing: vi.fn(),
+  systemOpenExternal: vi.fn(),
   systemDoctor: vi.fn(),
   inboxAccountsList: vi.fn(),
   calendarSourcesList: vi.fn(),
@@ -56,6 +58,21 @@ describe("HomePage", () => {
       ],
     });
     api.systemDoctor.mockRejectedValue(new Error("not needed"));
+    api.usageOpenRouterPricing.mockResolvedValue({
+      fetchedAt: "2026-07-21T20:00:00.000Z",
+      sourceUrl: "https://openrouter.ai/api/v1/models",
+      models: [
+        {
+          id: "openai/gpt-5.6-luna",
+          name: "GPT-5.6 Luna",
+          promptPerToken: 0.000001,
+          completionPerToken: 0.000006,
+          cacheReadPerToken: 0.0000001,
+          reasoningPerToken: null,
+          requestCost: null,
+        },
+      ],
+    });
     api.inboxAccountsList.mockResolvedValue([]);
     api.calendarSourcesList.mockResolvedValue([]);
     api.taskList.mockResolvedValue([]);
@@ -69,23 +86,25 @@ describe("HomePage", () => {
     );
 
     expect(await screen.findByText("1,5 mi")).toBeVisible();
-    expect(screen.getByText("Não configurada")).toBeVisible();
+    expect(await screen.findAllByText(/US\$\s*4,22/u)).not.toHaveLength(0);
+    expect(screen.getByText(/US\$\s*370,00\/mês/u)).toBeVisible();
 
     const user = userEvent.setup();
     await user.click(
-      screen.getByRole("button", { name: /Simulação API equivalente/u }),
+      screen.getByRole("button", { name: /API equivalente · 30 dias/u }),
     );
-    await user.type(
-      screen.getByRole("spinbutton", { name: "Entrada (US$)" }),
-      "2",
+    const openAi = screen.getByRole("spinbutton", {
+      name: "OpenAI (US$/mês)",
+    });
+    await user.clear(openAi);
+    await user.type(openAi, "150");
+    await user.click(
+      screen.getByRole("button", { name: "Salvar mensalidades" }),
     );
-    await user.type(
-      screen.getByRole("spinbutton", { name: "Saída (US$)" }),
-      "4",
-    );
-    await user.click(screen.getByRole("button", { name: "Salvar referência" }));
 
-    await waitFor(() => expect(screen.getByText(/US\$.*4/u)).toBeVisible());
-    expect(screen.getByText(/não é cobrança da assinatura/iu)).toBeVisible();
+    await waitFor(() =>
+      expect(screen.getByText(/US\$\s*320,00\/mês/u)).toBeVisible(),
+    );
+    expect(screen.getByText(/incluindo a taxa.*5,5%/iu)).toBeVisible();
   });
 });
