@@ -506,7 +506,7 @@ export class CalendarService {
       etag: null,
       providerUpdatedAt: null,
       attendees: canonicalAttendees(input.attendees ?? []),
-      status: input.status ?? "confirmed",
+      status: requireEventStatus(input.status ?? "confirmed"),
       timezone,
       deletedAt: null,
       createdAt,
@@ -772,6 +772,13 @@ function optionalText(value: string | null | undefined): string | null {
   }
   const normalized = value.trim();
   return normalized || null;
+}
+
+function requireEventStatus(value: CalendarEventStatus): CalendarEventStatus {
+  if (!(["confirmed", "tentative", "cancelled"] as const).includes(value)) {
+    throw new Error("Calendar event status is invalid");
+  }
+  return value;
 }
 
 function requireCursor(value: string | null, label: string): string | null {

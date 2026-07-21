@@ -1,4 +1,4 @@
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import { createTestDatabase } from "../db/test-support";
 import { CalendarService, CalendarSyncCursorConflictError } from "./service";
 
@@ -6,11 +6,13 @@ function createService() {
   const fx = createTestDatabase();
   let id = 0;
   let tick = 0;
+  const createId = vi.fn(() => `calendar-${++id}`);
   return {
     ...fx,
+    createId,
     service: new CalendarService({
       db: fx.db,
-      createId: () => `calendar-${++id}`,
+      createId,
       clock: () => `2026-07-21T00:00:${String(++tick).padStart(2, "0")}.000Z`,
     }),
   };
@@ -395,6 +397,88 @@ describe("CalendarService", () => {
     expect(
       fx.db.prepare("SELECT count(*) AS count FROM calendar_events").get(),
     ).toEqual({ count: 0 });
+  });
+
+  it("validates every provider event before generating ids or entering the mutating phase", () => {
+    const fx = createService();
+    const source = createRemoteSource(fx);
+
+    expect(() =>
+      fx.service.applySyncBatch(
+        syncInput(source.id, {
+          upserts: [
+            timedUpsert("a-valid"),
+            {
+              ...timedUpsert("z-invalid"),
+              status: "provider-made-this-up",
+            },
+          ],
+        }) as Parameters<typeof fx.service.applySyncBatch>[0],
+      ),
+    ).toThrow("Calendar event status is invalid");
+    expect(fx.createId).not.toHaveBeenCalled();
+    expect(
+      fx.db.prepare("SELECT count(*) AS count FROM calendar_events").get(),
+    ).toEqual({ count: 0 });
+  });
+
+  it("rolls back earlier event writes and cursor metadata when SQLite rejects a later write", () => {
+    const fx = createService();
+    const source = createRemoteSource(fx);
+    fx.db.exec(`
+      CREATE TRIGGER reject_calendar_sync_insert
+      BEFORE INSERT ON calendar_events
+      WHEN NEW.external_id = 'z-rejected'
+      BEGIN
+        SELECT RAISE(ABORT, 'forced calendar write failure');
+      END;
+    `);
+
+    expect(() =>
+      fx.service.applySyncBatch(
+        syncInput(source.id, {
+          upserts: [timedUpsert("a-written-first"), timedUpsert("z-rejected")],
+        }),
+      ),
+    ).toThrow("forced calendar write failure");
+    expect(
+      fx.db.prepare("SELECT count(*) AS count FROM calendar_events").get(),
+    ).toEqual({ count: 0 });
+    expect(
+      fx.db
+        .prepare(
+          "SELECT sync_cursor, last_synced_at, last_error FROM calendar_sources WHERE id = ?",
+        )
+        .get(source.id),
+    ).toEqual({
+      sync_cursor: null,
+      last_synced_at: null,
+      last_error: "previous error",
+    });
+  });
+
+  it("assigns stable local identities independently of provider array order", () => {
+    const forward = createService();
+    const reverse = createService();
+    const forwardSource = createRemoteSource(forward);
+    const reverseSource = createRemoteSource(reverse);
+    const a = timedUpsert("provider-a");
+    const b = timedUpsert("provider-b");
+
+    forward.service.applySyncBatch(
+      syncInput(forwardSource.id, { upserts: [a, b] }),
+    );
+    reverse.service.applySyncBatch(
+      syncInput(reverseSource.id, { upserts: [b, a] }),
+    );
+
+    const mapping = (fx: ReturnType<typeof createService>) =>
+      fx.db
+        .prepare(
+          "SELECT external_id, id FROM calendar_events ORDER BY external_id ASC",
+        )
+        .all();
+    expect(mapping(reverse)).toEqual(mapping(forward));
   });
 
   it("upserts only newer provider versions and preserves the local event identity", () => {
