@@ -1,5 +1,12 @@
 import { Button, Spinner } from "@heroui/react";
-import { BadgeCheck, CircleAlert, Clock3, MailCheck, Send } from "lucide-react";
+import {
+  BadgeCheck,
+  CircleAlert,
+  Clock3,
+  MailCheck,
+  Send,
+  Trash2,
+} from "lucide-react";
 import { useRef, useState } from "react";
 import type { IpcResponse } from "../../../shared/contracts/ipc";
 
@@ -9,14 +16,17 @@ type ReplyDispatch = IpcResponse<"inbox:reply:approveAndSend">;
 interface InboxReplyApprovalCardProps {
   action: ReplyAction;
   onApprove: (outboxId: string) => Promise<ReplyDispatch>;
+  onDiscard: (outboxId: string) => Promise<unknown>;
 }
 
 export function InboxReplyApprovalCard({
   action,
   onApprove,
+  onDiscard,
 }: InboxReplyApprovalCardProps) {
   const [error, setError] = useState<string | null>(null);
   const [isApproving, setIsApproving] = useState(false);
+  const [isDiscarding, setIsDiscarding] = useState(false);
   const inFlight = useRef(false);
 
   async function approve() {
@@ -32,6 +42,25 @@ export function InboxReplyApprovalCard({
     } finally {
       inFlight.current = false;
       setIsApproving(false);
+    }
+  }
+
+  async function discard() {
+    if (
+      inFlight.current ||
+      (action.status !== "draft" && action.status !== "approval_pending")
+    )
+      return;
+    inFlight.current = true;
+    setError(null);
+    setIsDiscarding(true);
+    try {
+      await onDiscard(action.id);
+    } catch (cause) {
+      setError(messageFor(cause));
+    } finally {
+      inFlight.current = false;
+      setIsDiscarding(false);
     }
   }
 
@@ -82,6 +111,23 @@ export function InboxReplyApprovalCard({
       {(action.status === "approval_pending" ||
         action.status === "dispatching") && (
         <div className="inbox-reply-approval__actions">
+          <Button
+            aria-label="Descartar rascunho"
+            className="inbox-reply-approval__discard"
+            isDisabled={
+              isApproving || isDiscarding || action.status === "dispatching"
+            }
+            onPress={discard}
+            size="sm"
+            variant="ghost"
+          >
+            {isDiscarding ? (
+              <Spinner size="sm" />
+            ) : (
+              <Trash2 aria-hidden="true" size={14} />
+            )}
+            {isDiscarding ? "Descartando…" : "Descartar"}
+          </Button>
           <Button
             aria-label="Aprovar e enviar"
             className="inbox-reply-approval__approve"

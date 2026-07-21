@@ -18,8 +18,11 @@ import {
   MoreHorizontal,
   Paperclip,
   RefreshCw,
+  Send,
+  ShieldCheck,
   Tag,
   Trash2,
+  Users,
 } from "lucide-react";
 import { useEffect, useMemo, useRef, useState } from "react";
 import type { IpcRequest, IpcResponse } from "../../../shared/contracts/ipc";
@@ -80,6 +83,9 @@ export interface InboxApi {
   approveReply(
     request: IpcRequest<"inbox:reply:approveAndSend">,
   ): Promise<IpcResponse<"inbox:reply:approveAndSend">>;
+  discardReply(
+    request: IpcRequest<"inbox:reply:discard">,
+  ): Promise<IpcResponse<"inbox:reply:discard">>;
 }
 
 const defaultApi: InboxApi = {
@@ -99,6 +105,7 @@ const defaultApi: InboxApi = {
   generateReplyDraft: workbenchClient.inboxThreadGenerateReplyDraft,
   listReplyActions: workbenchClient.inboxThreadReplyActionsList,
   approveReply: workbenchClient.inboxReplyApproveAndSend,
+  discardReply: workbenchClient.inboxReplyDiscard,
 };
 
 type AccountFilter = "all" | "unread" | string;
@@ -247,6 +254,29 @@ export function InboxPage({ api = defaultApi }: { api?: InboxApi }) {
       void queryClient.invalidateQueries({ queryKey });
     },
   });
+  const discardReply = useMutation({
+    mutationFn: ({
+      outboxId,
+      threadId,
+    }: {
+      outboxId: string;
+      threadId: string;
+    }) =>
+      api.discardReply({
+        outboxId,
+        threadId,
+        confirmation: "discard_unsent_draft",
+      }),
+    onSuccess: (result) => {
+      const queryKey = ["inbox", "reply-actions", result.sourceThreadId];
+      queryClient.setQueryData<IpcResponse<"inbox:thread:replyActions:list">>(
+        queryKey,
+        (current = []) =>
+          current.filter((action) => action.id !== result.outboxId),
+      );
+      void queryClient.invalidateQueries({ queryKey, refetchType: "none" });
+    },
+  });
 
   const selectedThread =
     detail.data?.thread ?? threadById(threads.data?.threads, selectedThreadId);
@@ -314,6 +344,9 @@ export function InboxPage({ api = defaultApi }: { api?: InboxApi }) {
         }
         onApproveReply={(outboxId, actionThreadId) =>
           approveReply.mutateAsync({ outboxId, threadId: actionThreadId })
+        }
+        onDiscardReply={(outboxId, actionThreadId) =>
+          discardReply.mutateAsync({ outboxId, threadId: actionThreadId })
         }
         onCreateReplyDraft={(request) => createReplyDraft.mutateAsync(request)}
         onGenerateReplyDraft={(request) =>
@@ -638,11 +671,15 @@ function ThreadList({
             aria-label={`${thread.subject} — ${thread.snippet}`}
             className="inbox-thread-row"
             data-selected={thread.id === selectedThreadId || undefined}
+            data-unread={thread.unreadCount > 0 || undefined}
             key={thread.id}
             onClick={() => onSelect(thread)}
             type="button"
           >
-            <span className="inbox-thread-avatar">
+            <span
+              className="inbox-thread-avatar"
+              data-tone={participantTone(primaryParticipant(thread))}
+            >
               {initials(primaryParticipant(thread))}
             </span>
             <span className="inbox-thread-row__body">
@@ -699,6 +736,7 @@ function Conversation({
   listLanes,
   listModels,
   onApproveReply,
+  onDiscardReply,
   onCreateReplyDraft,
   onGenerateReplyDraft,
   onCreateTask,
@@ -719,6 +757,10 @@ function Conversation({
     outboxId: string,
     threadId: string,
   ) => Promise<IpcResponse<"inbox:reply:approveAndSend">>;
+  onDiscardReply: (
+    outboxId: string,
+    threadId: string,
+  ) => Promise<IpcResponse<"inbox:reply:discard">>;
   onCreateReplyDraft: InboxApi["createReplyDraft"];
   onGenerateReplyDraft: InboxApi["generateReplyDraft"];
   onCreateTask: InboxApi["createTask"];
@@ -751,13 +793,11 @@ function Conversation({
     <section className="inbox-conversation" aria-label="Conversa selecionada">
       <header className="inbox-conversation__header">
         <div className="inbox-conversation__heading">
-          <p className="inbox-eyebrow">
-            {detail?.thread.subject || "Conversa"}
-          </p>
-          <h2>
+          <p className="inbox-conversation__participant">
             {detail?.thread.participants.map(displayName).join(", ") ||
               "Carregando conversa"}
-          </h2>
+          </p>
+          <h2>{detail?.thread.subject || "(sem assunto)"}</h2>
         </div>
         <Button
           aria-label="Abrir detalhes"
@@ -787,20 +827,31 @@ function Conversation({
                 className={`inbox-message inbox-message--${message.direction}`}
                 key={message.id}
               >
-                <div className="inbox-message__meta">
-                  <strong>{displayName(message.sender)}</strong>
+                <header className="inbox-message__meta">
+                  <span
+                    className="inbox-message__avatar"
+                    data-tone={participantTone(displayName(message.sender))}
+                  >
+                    {initials(displayName(message.sender))}
+                  </span>
+                  <span className="inbox-message__sender">
+                    <strong>{displayName(message.sender)}</strong>
+                    <small>{directionLabel(message.direction)}</small>
+                  </span>
                   <time>
                     {shortDate(
                       message.receivedAt ?? message.sentAt ?? message.createdAt,
                       true,
                     )}
                   </time>
+                </header>
+                <div className="inbox-message__body">
+                  {readableMessageBody(message.body, message.bodyFormat)}
                 </div>
-                <div className="inbox-message__body">{message.body}</div>
                 {message.bodyFormat === "html" && (
                   <p className="inbox-untrusted">
-                    <ExternalLink aria-hidden="true" size={11} /> Conteúdo HTML
-                    exibido como texto
+                    <ExternalLink aria-hidden="true" size={11} /> Conteúdo
+                    convertido para leitura segura
                   </p>
                 )}
                 {message.attachments.length > 0 && (
@@ -827,6 +878,9 @@ function Conversation({
                   key={action.id}
                   onApprove={(outboxId) =>
                     onApproveReply(outboxId, action.sourceThreadId)
+                  }
+                  onDiscard={(outboxId) =>
+                    onDiscardReply(outboxId, action.sourceThreadId)
                   }
                 />
               ))}
@@ -884,23 +938,34 @@ function FutureActions({
 }) {
   return (
     <footer className="inbox-future-actions">
-      <InboxTaskModal
-        isCreating={isCreatingTask}
-        listLanes={listLanes}
-        onCreateTask={onCreateTask}
-        thread={thread}
-      />
-      <InboxReplyModal
-        detail={detail}
-        isSaving={isSavingReply}
-        onCreateReplyDraft={onCreateReplyDraft}
-      />
-      <InboxAgentReplyModal
-        isGenerating={isGeneratingReply}
-        listModels={listModels}
-        onGenerate={onGenerateReplyDraft}
-        thread={thread}
-      />
+      <div className="inbox-action-dock__intro">
+        <span className="inbox-action-dock__mark">
+          <Send aria-hidden="true" size={15} />
+        </span>
+        <span>
+          <strong>Próximo passo</strong>
+          <small>Nada é enviado sem sua aprovação.</small>
+        </span>
+      </div>
+      <div className="inbox-action-dock__buttons">
+        <InboxTaskModal
+          isCreating={isCreatingTask}
+          listLanes={listLanes}
+          onCreateTask={onCreateTask}
+          thread={thread}
+        />
+        <InboxAgentReplyModal
+          isGenerating={isGeneratingReply}
+          listModels={listModels}
+          onGenerate={onGenerateReplyDraft}
+          thread={thread}
+        />
+        <InboxReplyModal
+          detail={detail}
+          isSaving={isSavingReply}
+          onCreateReplyDraft={onCreateReplyDraft}
+        />
+      </div>
     </footer>
   );
 }
@@ -923,9 +988,12 @@ function InboxDetails({
     <div className="inbox-details">
       <header>
         <p className="inbox-eyebrow">Detalhes</p>
-        <h2>{thread.subject || "Sem assunto"}</h2>
+        <p className="inbox-details__subject">
+          {thread.subject || "Sem assunto"}
+        </p>
       </header>
       <DetailsGroup
+        icon={<Mail aria-hidden="true" size={14} />}
         title="Conversa"
         rows={[
           [
@@ -939,10 +1007,15 @@ function InboxDetails({
         ]}
       />
       <DetailsGroup
+        icon={<Users aria-hidden="true" size={14} />}
         title="Participantes"
-        rows={thread.participants.map((participant) => ["", participant])}
+        rows={thread.participants.map((participant) => [
+          "",
+          participantSummary(participant),
+        ])}
       />
       <DetailsGroup
+        icon={<Tag aria-hidden="true" size={14} />}
         title="Labels"
         rows={
           thread.labels.length
@@ -951,10 +1024,11 @@ function InboxDetails({
         }
       />
       <DetailsGroup
+        icon={<ShieldCheck aria-hidden="true" size={14} />}
         title="Origem"
         rows={[
           ["Conteúdo", "externo e não confiável"],
-          ["Thread", thread.externalThreadId],
+          ["Thread", compactIdentifier(thread.externalThreadId)],
         ]}
       />
     </div>
@@ -962,17 +1036,22 @@ function InboxDetails({
 }
 
 function DetailsGroup({
+  icon,
   rows,
   title,
 }: {
+  icon: React.ReactNode;
   rows: Array<[string, string]>;
   title: string;
 }) {
   return (
     <section className="inbox-details-group">
-      <h3>{title}</h3>
+      <h3>
+        {icon}
+        {title}
+      </h3>
       {rows.map(([label, value], index) => (
-        <div key={`${label}-${value}-${index}`}>
+        <div data-label={label || undefined} key={`${label}-${value}-${index}`}>
           <dt>{label}</dt>
           <dd>{value}</dd>
         </div>
@@ -1039,6 +1118,57 @@ function initials(value: string) {
       .join("")
       .toUpperCase() || "?"
   );
+}
+function participantTone(value: string) {
+  const tones = ["cyan", "orange", "violet", "green", "pink"] as const;
+  const hash = [...value].reduce((sum, char) => sum + char.charCodeAt(0), 0);
+  return tones[hash % tones.length];
+}
+function directionLabel(direction: string) {
+  if (direction === "outgoing") return "Enviado por você";
+  if (direction === "draft") return "Rascunho";
+  return "Recebido";
+}
+function participantSummary(value: string) {
+  const email = value.match(/<([^>]+)>/u)?.[1];
+  return email ? `${displayName(value)}\n${email}` : value;
+}
+function compactIdentifier(value: string) {
+  return value.length > 26 ? `${value.slice(0, 12)}…${value.slice(-8)}` : value;
+}
+function readableMessageBody(body: string, format: string) {
+  const safe = format === "html" ? stripHtml(body) : body;
+  const lines = safe.replace(/\r\n?/gu, "\n").split("\n");
+  let hiddenLink = false;
+  const readable = lines.flatMap((line) => {
+    const candidate = line.trim().replace(/^\[|\]$/gu, "");
+    if (/^https?:\/\/\S{120,}$/iu.test(candidate)) {
+      if (hiddenLink) return [];
+      hiddenLink = true;
+      return ["[Link técnico ocultado para facilitar a leitura]"];
+    }
+    return [line];
+  });
+  return readable
+    .join("\n")
+    .replace(/\n{3,}/gu, "\n\n")
+    .trim();
+}
+function stripHtml(value: string) {
+  return value
+    .replace(/<(script|style|head)[^>]*>[\s\S]*?<\/\1>/giu, " ")
+    .replace(/<br\s*\/?\s*>/giu, "\n")
+    .replace(/<\/p\s*>/giu, "\n\n")
+    .replace(/<[^>]+>/gu, " ")
+    .replace(/&nbsp;/giu, " ")
+    .replace(/&amp;/giu, "&")
+    .replace(/&lt;/giu, "<")
+    .replace(/&gt;/giu, ">")
+    .replace(/&quot;/giu, '"')
+    .replace(/&#39;/giu, "'")
+    .replace(/[ \t]+\n/gu, "\n")
+    .replace(/[ \t]{2,}/gu, " ")
+    .trim();
 }
 function shortDate(value: string, includeTime = false) {
   const date = new Date(value);

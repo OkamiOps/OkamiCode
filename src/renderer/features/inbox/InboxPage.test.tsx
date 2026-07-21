@@ -173,6 +173,11 @@ function makeApi(overrides: Partial<InboxApi> = {}): InboxApi {
     listModels: vi.fn().mockResolvedValue(replyModels),
     generateReplyDraft: vi.fn().mockResolvedValue(replyDraftResult),
     listReplyActions: vi.fn().mockResolvedValue([]),
+    discardReply: vi.fn().mockResolvedValue({
+      outboxId: replyAction.id,
+      sourceThreadId: threadId,
+      discarded: true,
+    }),
     approveReply: vi.fn().mockResolvedValue({
       id: replyAction.id,
       status: "confirmed",
@@ -213,10 +218,9 @@ describe("InboxPage", () => {
     expect(
       await screen.findByText("Ana Silva <ana@cliente.com>"),
     ).toBeVisible();
-    expect(screen.getByText("<b>Conteúdo externo</b>")).toBeVisible();
-    expect(
-      screen.queryByText("Conteúdo externo", { selector: "b" }),
-    ).toBeNull();
+    expect(screen.getByText("Conteúdo externo")).toBeVisible();
+    expect(screen.getByText("Próximo passo")).toBeVisible();
+    expect(screen.getByText(/Nada é enviado sem sua aprovação/i)).toBeVisible();
     expect(api.markThreadRead).toHaveBeenCalledTimes(1);
 
     await userEvent.click(item);
@@ -1012,6 +1016,35 @@ describe("InboxPage", () => {
     });
     expect(await screen.findByText("Email enviado")).toBeVisible();
     expect(api.listReplyActions).toHaveBeenCalledWith({ threadId });
+  });
+
+  it("discards an unsent reply draft and removes it from the conversation", async () => {
+    const discardReply = vi.fn().mockResolvedValue({
+      outboxId: replyAction.id,
+      sourceThreadId: threadId,
+      discarded: true as const,
+    });
+    renderInbox(
+      makeApi({
+        discardReply,
+        listReplyActions: vi.fn().mockResolvedValue([replyAction]),
+      }),
+    );
+
+    await userEvent.click(
+      await screen.findByRole("button", { name: /Proposta para landing page/ }),
+    );
+    await userEvent.click(
+      await screen.findByRole("button", { name: "Descartar rascunho" }),
+    );
+
+    await vi.waitFor(() => expect(discardReply).toHaveBeenCalledOnce());
+    expect(discardReply).toHaveBeenCalledWith({
+      outboxId: replyAction.id,
+      threadId,
+      confirmation: "discard_unsent_draft",
+    });
+    expect(screen.queryByText("Aguardando sua aprovação")).toBeNull();
   });
 
   it("prevents duplicate approval while dispatch is pending", async () => {

@@ -92,7 +92,7 @@ export type InboxTaskActionIpcService = Pick<
 
 export type InboxReplyDraftIpcService = Pick<
   InboxReplyDraftService,
-  "createReplyDraft" | "listReplyActions"
+  "createReplyDraft" | "listReplyActions" | "discardReplyAction"
 >;
 
 export type InboxReplyGenerationIpcService = Pick<
@@ -568,6 +568,13 @@ async function dispatch(
       return inboxReplyDraftService().listReplyActions(
         (request as IpcRequest<"inbox:thread:replyActions:list">).threadId,
       );
+    case "inbox:reply:discard": {
+      const discard = request as IpcRequest<"inbox:reply:discard">;
+      return inboxReplyDraftService().discardReplyAction(
+        discard.threadId,
+        discard.outboxId,
+      );
+    }
     case "inbox:reply:approveAndSend":
       return inboxReplyDispatchService().approveAndSend(
         (request as IpcRequest<"inbox:reply:approveAndSend">).outboxId,

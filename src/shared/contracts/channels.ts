@@ -70,6 +70,7 @@ export const ipcChannels = [
   "inbox:thread:createReplyDraft",
   "inbox:thread:generateReplyDraft",
   "inbox:thread:replyActions:list",
+  "inbox:reply:discard",
   "inbox:reply:approveAndSend",
 ] as const;
 

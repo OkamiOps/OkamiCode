@@ -81,14 +81,17 @@ export function InboxReplyModal({
   return (
     <Modal.Root state={state}>
       {thread ? (
-        <Modal.Trigger aria-label="Responder" className="inbox-future-action">
+        <Modal.Trigger
+          aria-label="Responder"
+          className="inbox-future-action inbox-future-action--primary"
+        >
           <Send aria-hidden="true" size={14} />
           Responder
         </Modal.Trigger>
       ) : (
         <Button
           aria-label="Responder"
-          className="inbox-future-action"
+          className="inbox-future-action inbox-future-action--primary"
           isDisabled
           size="sm"
           variant="ghost"

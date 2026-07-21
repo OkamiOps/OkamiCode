@@ -1040,6 +1040,20 @@ const inboxReplyApproveAndSendRequestSchema = z
     confirmation: z.literal("approve_and_send"),
   })
   .strict();
+const inboxReplyDiscardRequestSchema = z
+  .object({
+    outboxId: entityIdSchema,
+    threadId: entityIdSchema,
+    confirmation: z.literal("discard_unsent_draft"),
+  })
+  .strict();
+const inboxReplyDiscardResultSchema = z
+  .object({
+    outboxId: entityIdSchema,
+    sourceThreadId: entityIdSchema,
+    discarded: z.literal(true),
+  })
+  .strict();
 const inboxReplyDispatchSchema = z
   .object({
     id: entityIdSchema,
@@ -1488,6 +1502,7 @@ export const ipcRequestSchemas = {
   "inbox:thread:createReplyDraft": inboxThreadCreateReplyDraftRequestSchema,
   "inbox:thread:generateReplyDraft": inboxThreadGenerateReplyDraftRequestSchema,
   "inbox:thread:replyActions:list": inboxThreadIdRequestSchema,
+  "inbox:reply:discard": inboxReplyDiscardRequestSchema,
   "inbox:reply:approveAndSend": inboxReplyApproveAndSendRequestSchema,
 } satisfies Record<IpcChannel, z.ZodType>;
 
@@ -1566,6 +1581,7 @@ export const ipcResponseSchemas = {
   "inbox:thread:createReplyDraft": inboxThreadCreateReplyDraftResultSchema,
   "inbox:thread:generateReplyDraft": inboxThreadCreateReplyDraftResultSchema,
   "inbox:thread:replyActions:list": z.array(inboxThreadReplyActionSchema),
+  "inbox:reply:discard": inboxReplyDiscardResultSchema,
   "inbox:reply:approveAndSend": inboxReplyDispatchSchema,
 } satisfies Record<IpcChannel, z.ZodType>;
 

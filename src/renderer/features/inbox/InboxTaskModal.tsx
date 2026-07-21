@@ -98,7 +98,7 @@ export function InboxTaskModal({
       {thread ? (
         <Modal.Trigger
           aria-label="Virar tarefa"
-          className="inbox-future-action"
+          className="inbox-future-action inbox-future-action--task"
         >
           <CheckSquare aria-hidden="true" size={14} />
           Virar tarefa
@@ -106,7 +106,7 @@ export function InboxTaskModal({
       ) : (
         <Button
           aria-label="Virar tarefa"
-          className="inbox-future-action"
+          className="inbox-future-action inbox-future-action--task"
           isDisabled
           size="sm"
           variant="ghost"

@@ -185,6 +185,8 @@ export const workbenchClient = {
   inboxThreadReplyActionsList: (
     request: IpcRequest<"inbox:thread:replyActions:list">,
   ) => invokeCommand("inbox:thread:replyActions:list", request),
+  inboxReplyDiscard: (request: IpcRequest<"inbox:reply:discard">) =>
+    invokeCommand("inbox:reply:discard", request),
   inboxReplyApproveAndSend: (
     request: IpcRequest<"inbox:reply:approveAndSend">,
   ) => invokeCommand("inbox:reply:approveAndSend", request),

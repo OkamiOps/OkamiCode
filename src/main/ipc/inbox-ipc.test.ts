@@ -157,6 +157,11 @@ function harness() {
         updatedAt: now,
       },
     ]),
+    discardReplyAction: vi.fn(() => ({
+      outboxId: "0f7c4f9c-33dd-4dbd-98cb-8e768646b386",
+      sourceThreadId: threadId,
+      discarded: true as const,
+    })),
   };
   const inboxReplyGenerationService = {
     generateReplyDraft: vi.fn(async () => ({
@@ -581,4 +586,24 @@ it("requires explicit reply-send confirmation before dispatch and rejects creden
       confirmation: "approve_and_send",
     }),
   ).rejects.toThrow();
+});
+
+it("requires explicit confirmation before discarding an unsent reply", async () => {
+  const { handlers, inboxReplyDraftService, event } = harness();
+  const outboxId = "0f7c4f9c-33dd-4dbd-98cb-8e768646b386";
+
+  await expect(
+    handlers.get("inbox:reply:discard")?.(event, { outboxId, threadId }),
+  ).rejects.toThrow();
+  await expect(
+    handlers.get("inbox:reply:discard")?.(event, {
+      outboxId,
+      threadId,
+      confirmation: "discard_unsent_draft",
+    }),
+  ).resolves.toEqual({ outboxId, sourceThreadId: threadId, discarded: true });
+  expect(inboxReplyDraftService.discardReplyAction).toHaveBeenCalledWith(
+    threadId,
+    outboxId,
+  );
 });

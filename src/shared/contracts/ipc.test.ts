@@ -135,6 +135,19 @@ it("exposes strict Inbox contracts in both IPC maps", () => {
   expect(
     ipcRequestSchemas["inbox:thread:get"].safeParse({ threadId: accountId }),
   ).toMatchObject({ success: true });
+  expect(
+    ipcRequestSchemas["inbox:reply:discard"].safeParse({
+      outboxId: accountId,
+      threadId: accountId,
+      confirmation: "discard_unsent_draft",
+    }).success,
+  ).toBe(true);
+  expect(
+    ipcRequestSchemas["inbox:reply:discard"].safeParse({
+      outboxId: accountId,
+      threadId: accountId,
+    }).success,
+  ).toBe(false);
 });
 
 it("exposes a strict public-only linked Calendar source contract", () => {

@@ -224,6 +224,7 @@ it("exposes exactly the enumerated command surface", () => {
     "inbox:thread:createReplyDraft",
     "inbox:thread:generateReplyDraft",
     "inbox:thread:replyActions:list",
+    "inbox:reply:discard",
     "inbox:reply:approveAndSend",
   ]);
   expect(Object.keys(window.okami.invoke)).toEqual(ipcChannels);
@@ -447,6 +448,11 @@ it("provides typed Inbox account and thread commands through the bridge", async 
         updatedAt: now,
       },
     ],
+    "inbox:reply:discard": {
+      outboxId: "0f7c4f9c-33dd-4dbd-98cb-8e768646b386",
+      sourceThreadId: threadId,
+      discarded: true,
+    },
     "inbox:reply:approveAndSend": {
       id: "0f7c4f9c-33dd-4dbd-98cb-8e768646b386",
       status: "confirmed",
@@ -523,6 +529,17 @@ it("provides typed Inbox account and thread commands through the bridge", async 
   ).resolves.toMatchObject([
     { sourceThreadId: threadId, status: "approval_pending" },
   ]);
+  await expect(
+    workbenchClient.inboxReplyDiscard({
+      outboxId: "0f7c4f9c-33dd-4dbd-98cb-8e768646b386",
+      threadId,
+      confirmation: "discard_unsent_draft",
+    }),
+  ).resolves.toEqual({
+    outboxId: "0f7c4f9c-33dd-4dbd-98cb-8e768646b386",
+    sourceThreadId: threadId,
+    discarded: true,
+  });
   const approveAndSend = vi.fn(async () => ({
     id: "0f7c4f9c-33dd-4dbd-98cb-8e768646b386",
     status: "confirmed",

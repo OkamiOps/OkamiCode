@@ -129,7 +129,7 @@ export function InboxAgentReplyModal({
       {thread ? (
         <Modal.Trigger
           aria-label="Pedir rascunho"
-          className="inbox-future-action"
+          className="inbox-future-action inbox-future-action--agent"
         >
           <Sparkles aria-hidden="true" size={14} />
           Pedir rascunho
@@ -137,7 +137,7 @@ export function InboxAgentReplyModal({
       ) : (
         <Button
           aria-label="Pedir rascunho"
-          className="inbox-future-action"
+          className="inbox-future-action inbox-future-action--agent"
           isDisabled
           size="sm"
           variant="ghost"

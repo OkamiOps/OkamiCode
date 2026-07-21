@@ -233,6 +233,48 @@ describe("InboxReplyDraftService", () => {
     });
   });
 
+  it("discards only an unsent draft while preserving the audited outbox record", () => {
+    const { fixture, service, threadId } = harness();
+    const draft = service.createReplyDraft({
+      threadId,
+      body: "Draft to discard",
+      idempotencyKey: randomUUID(),
+    });
+
+    expect(service.discardReplyAction(threadId, draft.id)).toEqual({
+      outboxId: draft.id,
+      sourceThreadId: threadId,
+      discarded: true,
+    });
+    expect(service.discardReplyAction(threadId, draft.id)).toMatchObject({
+      discarded: true,
+    });
+    expect(service.listReplyActions(threadId)).toEqual([]);
+    expect(
+      fixture.db
+        .prepare("SELECT status FROM external_outbox WHERE id = ?")
+        .get(draft.id),
+    ).toEqual({ status: "approval_pending" });
+  });
+
+  it("refuses to discard a reply that already started dispatching", () => {
+    const { fixture, service, threadId } = harness();
+    const draft = service.createReplyDraft({
+      threadId,
+      body: "Draft already dispatching",
+      idempotencyKey: randomUUID(),
+    });
+    fixture.db
+      .prepare(
+        "UPDATE external_outbox SET status = 'dispatching', attempts = 1 WHERE id = ?",
+      )
+      .run(draft.id);
+
+    expect(() => service.discardReplyAction(threadId, draft.id)).toThrow(
+      "Only unsent reply drafts can be discarded",
+    );
+  });
+
   it("uses a bounded fallback subject without duplicating Re", () => {
     const { fixture, service, threadId } = harness();
     fixture.db

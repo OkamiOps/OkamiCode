@@ -50,6 +50,12 @@ export interface InboxThreadReplyDraftResult {
   updatedAt: string;
 }
 
+export interface DiscardInboxReplyResult {
+  outboxId: string;
+  sourceThreadId: string;
+  discarded: true;
+}
+
 interface EmailReplyPayload {
   threadId: string;
   externalThreadId: string;
@@ -74,10 +80,12 @@ export class InboxReplyDraftNoIncomingMessageError extends Error {
 }
 
 export class InboxReplyDraftService {
+  private readonly db: Database;
   private readonly inbox: InboxService;
   private readonly outbox: ExternalOutboxService;
 
   constructor({ db }: { db: Database }) {
+    this.db = db;
     this.inbox = new InboxService(db);
     this.outbox = new ExternalOutboxService(db);
   }
@@ -149,6 +157,15 @@ export class InboxReplyDraftService {
   }
 
   listReplyActions(threadId: string): InboxThreadReplyAction[] {
+    const dismissed = new Set(
+      (
+        this.db
+          .prepare(
+            "SELECT outbox_id FROM inbox_reply_dismissals WHERE source_thread_id = ?",
+          )
+          .all(threadId) as Array<{ outbox_id: string }>
+      ).map((row) => row.outbox_id),
+    );
     return this.outbox
       .list()
       .flatMap((record) => {
@@ -157,6 +174,7 @@ export class InboxReplyDraftService {
           record.kind !== "email.reply" ||
           !payload ||
           payload.threadId !== threadId ||
+          dismissed.has(record.id) ||
           !isPublicReplyAction(record, payload)
         ) {
           return [];
@@ -168,6 +186,38 @@ export class InboxReplyDraftService {
           right.createdAt.localeCompare(left.createdAt) ||
           right.id.localeCompare(left.id),
       );
+  }
+
+  discardReplyAction(
+    threadId: string,
+    outboxId: string,
+  ): DiscardInboxReplyResult {
+    const record = this.outbox.findById(outboxId);
+    const payload = record ? emailReplyPayload(record.payload) : undefined;
+    if (
+      !record ||
+      record.kind !== "email.reply" ||
+      !payload ||
+      payload.threadId !== threadId
+    ) {
+      throw new Error("Reply draft was not found for this thread");
+    }
+    if (
+      (record.status !== "draft" && record.status !== "approval_pending") ||
+      record.approvedAt !== null ||
+      record.attempts !== 0
+    ) {
+      throw new Error("Only unsent reply drafts can be discarded");
+    }
+    this.db
+      .prepare(
+        `INSERT INTO inbox_reply_dismissals
+         (outbox_id, source_thread_id, dismissed_at)
+         VALUES (?, ?, ?)
+         ON CONFLICT(outbox_id) DO NOTHING`,
+      )
+      .run(outboxId, threadId, new Date().toISOString());
+    return { outboxId, sourceThreadId: threadId, discarded: true };
   }
 }
 
