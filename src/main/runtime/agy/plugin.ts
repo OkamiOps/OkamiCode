@@ -118,7 +118,17 @@ export class AgyPluginManager {
     const sourceDirectory = this.requireSourceDirectory();
     await this.run("validation", ["plugin", "validate", sourceDirectory]);
     await this.run("installation", ["plugin", "install", sourceDirectory]);
-    await this.run("enable", ["plugin", "enable", AGY_COMPANION_PLUGIN_NAME]);
+  }
+
+  async ensureEnabled(): Promise<void> {
+    await this.prepare();
+    const status = await this.status();
+    if (status === "enabled") return;
+    if (status === "disabled") {
+      await this.run("enable", ["plugin", "enable", AGY_COMPANION_PLUGIN_NAME]);
+      return;
+    }
+    await this.install();
   }
 
   async disable(): Promise<void> {

@@ -202,11 +202,52 @@ describe("AgyPluginManager", () => {
     expect(executions.map(({ command, args }) => ({ command, args }))).toEqual([
       { command: "agy", args: ["plugin", "validate", sourceDirectory] },
       { command: "agy", args: ["plugin", "install", sourceDirectory] },
-      { command: "agy", args: ["plugin", "enable", "okami-agy-companion"] },
       { command: "agy", args: ["plugin", "disable", "okami-agy-companion"] },
       { command: "agy", args: ["plugin", "uninstall", "okami-agy-companion"] },
     ]);
   });
+
+  it.each([
+    ["absent", ["validate", "install"]],
+    ["disabled", ["enable"]],
+    ["enabled", []],
+  ] as const)(
+    "ensures an %s companion is enabled idempotently",
+    async (status, operations) => {
+      const directory = await temporaryDirectory();
+      const sourceDirectory = path.join(directory, "source");
+      const hookScriptPath = path.join(directory, "okami-agy-hook.mjs");
+      await writeFile(hookScriptPath, "#!/usr/bin/env node\n", { mode: 0o700 });
+      const executions: Execution[] = [];
+      const manager = new AgyPluginManager({
+        command: "agy",
+        sourceDirectory,
+        hookScriptPath,
+        execute: async (command, args, options) => {
+          executions.push({ command, args, env: options.env });
+          if (args.join(" ") === "plugin list") {
+            return {
+              stdout:
+                status === "absent"
+                  ? "No imported plugins."
+                  : status === "disabled"
+                    ? "okami-agy-companion (disabled)"
+                    : "okami-agy-companion",
+            };
+          }
+          return {};
+        },
+      });
+
+      await manager.ensureEnabled();
+
+      expect(
+        executions
+          .filter(({ args }) => args[1] !== "list")
+          .map(({ args }) => args[1]),
+      ).toEqual(operations);
+    },
+  );
 
   it("rejects a relative or missing hook helper and sanitizes executor failures", async () => {
     const directory = await temporaryDirectory();

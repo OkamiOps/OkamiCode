@@ -11,6 +11,7 @@ import {
 } from "./cursor/adapter";
 import { AgyAdapter, type AgyAdapterDependencies } from "./agy/adapter";
 import { GrokAdapter, type GrokAdapterDependencies } from "./grok/adapter";
+import { MimoAdapter, type MimoAdapterDependencies } from "./mimo/adapter";
 
 export class RuntimeRegistry {
   private readonly adapters = new Map<RuntimeKind, RuntimeAdapter>();
@@ -30,6 +31,7 @@ export interface RuntimeRegistryDependencies {
   cursor: CursorAdapterDependencies;
   agy: AgyAdapterDependencies;
   grok: GrokAdapterDependencies;
+  mimo: MimoAdapterDependencies;
 }
 
 export function createRuntimeRegistry(
@@ -41,5 +43,6 @@ export function createRuntimeRegistry(
   registry.register(new CursorAdapter(dependencies.cursor));
   registry.register(new AgyAdapter(dependencies.agy));
   registry.register(new GrokAdapter(dependencies.grok));
+  registry.register(new MimoAdapter(dependencies.mimo));
   return registry;
 }

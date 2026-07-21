@@ -6,10 +6,11 @@ export const runtimeKindSchema = z.enum([
   "cursor",
   "agy",
   "grok",
+  "mimo",
 ]);
 export const catalogRuntimeKindSchema = z.union([
   runtimeKindSchema,
-  z.enum(["minimax", "mimo"]),
+  z.literal("minimax"),
 ]);
 export const providerKindSchema = z.enum([
   "claude_max",
@@ -17,6 +18,7 @@ export const providerKindSchema = z.enum([
   "cursor",
   "antigravity",
   "grok",
+  "mimo",
 ]);
 export const laneStatusSchema = z.enum([
   "ready",
@@ -56,6 +58,7 @@ const grokPermissionModes: readonly PermissionMode[] = [
   "plan",
   "bypassPermissions",
 ];
+const mimoPermissionModes: readonly PermissionMode[] = ["manual"];
 
 export function permissionModesForRuntime(
   runtime: RuntimeKind,
@@ -63,5 +66,6 @@ export function permissionModesForRuntime(
   if (runtime === "cursor") return cursorPermissionModes;
   if (runtime === "agy") return agyPermissionModes;
   if (runtime === "grok") return grokPermissionModes;
+  if (runtime === "mimo") return mimoPermissionModes;
   return permissionModes;
 }

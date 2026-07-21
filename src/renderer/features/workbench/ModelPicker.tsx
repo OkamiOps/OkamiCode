@@ -4,7 +4,7 @@ import type { ModelCatalog, ModelFavorites, WorkbenchLane } from "./api";
 import type { RuntimeKind } from "../../../shared/contracts/lane";
 
 function isRunnableRuntime(runtime: string): runtime is RuntimeKind {
-  return ["claude", "codex", "cursor", "agy", "grok"].includes(runtime);
+  return ["claude", "codex", "cursor", "agy", "grok", "mimo"].includes(runtime);
 }
 
 interface ModelPickerProps {

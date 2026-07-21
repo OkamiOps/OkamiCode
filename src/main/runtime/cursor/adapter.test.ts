@@ -141,7 +141,7 @@ describe("CursorAdapter", () => {
     expect(createCalls[0]).toMatchObject([
       "cursor-agent",
       ["create-chat"],
-      { cwd: "/workspace" },
+      { cwd: "/workspace", env: expect.any(Object) },
     ]);
     expect(deps.spawn).not.toHaveBeenCalled();
   });
@@ -190,7 +190,7 @@ describe("CursorAdapter", () => {
         "--resume=chat-123",
         "Inspect",
       ],
-      { cwd: "/workspace" },
+      { cwd: "/workspace", env: expect.any(Object) },
     );
     const args = deps.spawn.mock.calls[0]?.[1] ?? [];
     expect(args.at(-1)).toBe("Inspect");

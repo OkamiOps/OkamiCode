@@ -345,7 +345,8 @@ export class LaneService {
     if (
       lane.runtimeKind === "cursor" ||
       lane.runtimeKind === "agy" ||
-      lane.runtimeKind === "grok"
+      lane.runtimeKind === "grok" ||
+      lane.runtimeKind === "mimo"
     ) {
       return {
         harness: "native",
@@ -357,7 +358,9 @@ export class LaneService {
             ? "Antigravity subscription"
             : lane.runtimeKind === "grok"
               ? "Grok subscription"
-              : "Cursor subscription",
+              : lane.runtimeKind === "mimo"
+                ? "MiMo subscription"
+                : "Cursor subscription",
       };
     }
     const gateway = this.dependencies.gateway;

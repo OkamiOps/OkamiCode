@@ -950,16 +950,16 @@ export function createModelCatalogService(
           providerLabel: "MiniMax",
           routeKind: "unavailable",
           source: minimax
-            ? `MiniMax Code instalado · catálogo local · ${minimax.fetchedAt}`
+            ? `MiniMax Code instalado · sem CLI headless de assinatura · mmx usa API · ${minimax.fetchedAt}`
             : minimaxCodeBundlePath
-              ? "MiniMax Code instalado · catálogo local indisponível"
+              ? "MiniMax Code instalado · sem CLI headless de assinatura · mmx usa API"
               : "MiniMax Code não encontrado",
           models: minimax?.models ?? [],
         },
         {
           runtimeKind: "mimo",
           providerLabel: "MiMo Code",
-          routeKind: "unavailable",
+          routeKind: "native",
           source: mimo
             ? `mimo models · ${mimo.fetchedAt}`
             : mimoBinary

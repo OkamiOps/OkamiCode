@@ -24,3 +24,20 @@ it("projects Grok streaming-json without inventing tool events", () => {
     "run_completed",
   );
 });
+
+it("anchors every text delta to one assistant message", () => {
+  const projector = new GrokProjector({
+    taskId: randomUUID() as TaskId,
+    laneId: randomUUID() as LaneId,
+    runId: randomUUID() as RunId,
+    nativeSessionId: randomUUID(),
+    createEventId: () => randomUUID(),
+    now: () => "2026-07-21T12:00:00.000Z",
+  });
+
+  const first = projector.project({ type: "text", data: "G" })[0];
+  const second = projector.project({ type: "text", data: "rok" })[0];
+
+  expect(first?.payload.messageAnchor).toBe("assistant-0");
+  expect(second?.payload.messageAnchor).toBe("assistant-0");
+});

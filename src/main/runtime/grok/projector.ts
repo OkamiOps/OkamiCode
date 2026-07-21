@@ -35,7 +35,11 @@ export class GrokProjector {
     if (!native || typeof native.type !== "string") return [];
     if (native.type === "text" && typeof native.data === "string") {
       return [
-        this.event("message_delta", native, { delta: native.data, native }),
+        this.event("message_delta", native, {
+          delta: native.data,
+          messageAnchor: "assistant-0",
+          native,
+        }),
       ];
     }
     if (native.type === "end") {

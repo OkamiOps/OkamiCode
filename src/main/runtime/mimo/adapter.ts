@@ -17,19 +17,19 @@ import {
   type JsonlProcessOptions,
   type ProcessWaitResult,
 } from "../transport";
-import { grokArgs } from "./command";
-import { GrokProjector } from "./projector";
+import { mimoArgs } from "./command";
+import { MimoProjector } from "./projector";
 import { subscriptionEnvironment } from "../agy/adapter";
 
 type NativeRecord = Record<string, unknown>;
 
-interface GrokProcess {
+interface MimoProcess {
   next(): Promise<NativeRecord | undefined>;
   wait(): Promise<ProcessWaitResult>;
   cancel(): Promise<void>;
 }
 
-export interface GrokAdapterDependencies {
+export interface MimoAdapterDependencies {
   taskIdForRun: (runId: NativeTurnRequest["runId"]) => TaskId | Promise<TaskId>;
   command?: string;
   env?: NodeJS.ProcessEnv;
@@ -42,39 +42,39 @@ export interface GrokAdapterDependencies {
     command: string,
     args: string[],
     options?: JsonlProcessOptions,
-  ) => Promise<GrokProcess>;
+  ) => Promise<MimoProcess>;
   createEventId?: (sequence: number) => string;
 }
 
-interface SessionState {
+interface MimoSessionState {
   laneId: NativeSession["laneId"];
   cwd: string;
   env?: NodeJS.ProcessEnv;
   model?: string;
   permissionMode?: string;
   runtimeVersion: string;
-  hasTurns: boolean;
+  nativeSessionId?: string;
 }
 
-export class GrokAdapter implements RuntimeAdapter {
-  readonly kind = "grok" as const;
-  private readonly sessions = new Map<string, SessionState>();
+export class MimoAdapter implements RuntimeAdapter {
+  readonly kind = "mimo" as const;
+  private readonly sessions = new Map<string, MimoSessionState>();
   private readonly active = new Map<
     NativeTurnRequest["runId"],
-    { process: GrokProcess; cancelled: boolean }
+    { process: MimoProcess; cancelled: boolean }
   >();
 
-  constructor(private readonly dependencies: GrokAdapterDependencies) {}
+  constructor(private readonly dependencies: MimoAdapterDependencies) {}
 
   async detect(): Promise<RuntimeHealth> {
-    const command = this.dependencies.command ?? "grok";
+    const command = this.dependencies.command ?? "mimo";
     const execute = this.dependencies.execute ?? executeFile;
     try {
       const versionResult = await execute(command, ["--version"]);
       const version =
         versionResult.stdout.match(/\b\d+\.\d+\.\d+\b/u)?.[0] ?? null;
-      const help = await execute(command, ["--help"]);
-      const required = ["streaming-json", "--resume", "--session-id", "models"];
+      const help = await execute(command, ["run", "--help"]);
+      const required = ["--format", "json", "--session", "--model", "--dir"];
       const missing = required.filter((token) => !help.stdout.includes(token));
       return missing.length === 0
         ? { available: true, protocolSupported: true, version }
@@ -82,49 +82,82 @@ export class GrokAdapter implements RuntimeAdapter {
             available: true,
             protocolSupported: false,
             version,
-            detail: `Grok CLI is missing: ${missing.join(", ")}`,
+            detail: `MiMo CLI is missing required capabilities: ${missing.join(", ")}`,
           };
     } catch (error) {
       return {
         available: false,
         protocolSupported: false,
         version: null,
-        detail: errorMessage(error),
+        detail: error instanceof Error ? error.message : String(error),
       };
     }
   }
 
   async start(request: StartSessionRequest): Promise<NativeSession> {
-    const health = await this.requireProtocol();
-    return this.record(request, randomUUID(), health.version, false);
+    const { version } = await this.requireProtocol();
+    this.sessions.set(request.laneId, {
+      laneId: request.laneId,
+      cwd: request.cwd,
+      env: subscriptionEnvironment(this.dependencies.env, request.env),
+      model: request.model,
+      permissionMode: request.permissionMode,
+      runtimeVersion: version,
+    });
+    return {
+      laneId: request.laneId,
+      bindingState: "deferred",
+      nativeSessionId: null,
+      runtimeVersion: version,
+    };
   }
 
   async resume(request: ResumeSessionRequest): Promise<NativeSession> {
-    const health = await this.requireProtocol();
-    return this.record(request, request.nativeSessionId, health.version, true);
+    const { version } = await this.requireProtocol();
+    this.sessions.set(request.laneId, {
+      laneId: request.laneId,
+      cwd: request.cwd,
+      env: subscriptionEnvironment(this.dependencies.env, request.env),
+      model: request.model,
+      permissionMode: request.permissionMode,
+      runtimeVersion: version,
+      nativeSessionId: request.nativeSessionId,
+    });
+    return {
+      laneId: request.laneId,
+      bindingState: "authoritative",
+      nativeSessionId: request.nativeSessionId,
+      runtimeVersion: version,
+    };
   }
 
   async sendTurn(request: NativeTurnRequest): Promise<RunHandle> {
-    if (!request.nativeSessionId)
-      throw new Error("Grok requires a native session id");
-    const session = this.sessions.get(request.nativeSessionId);
-    if (!session || session.laneId !== request.laneId)
-      throw new Error("Unknown Grok session");
-    if (this.active.has(request.runId))
-      throw new Error(`Grok run ${request.runId} is already active`);
+    const session = this.sessions.get(request.laneId);
+    if (!session) throw new Error("Unknown MiMo lane session");
+    if (this.active.has(request.runId)) {
+      throw new Error(`MiMo run ${request.runId} is already active`);
+    }
+    if (
+      session.nativeSessionId &&
+      request.nativeSessionId !== session.nativeSessionId
+    ) {
+      throw new Error("MiMo native session does not belong to the lane");
+    }
+    if (session.permissionMode === "bypassPermissions") {
+      throw new Error("MiMo permission bypass is not enabled by Okami");
+    }
     const spawn =
       this.dependencies.spawn ??
       ((command, args, options) =>
         JsonlProcess.spawn<NativeRecord>(command, args, options));
     const process = await spawn(
-      this.dependencies.command ?? "grok",
-      grokArgs({
+      this.dependencies.command ?? "mimo",
+      mimoArgs({
         prompt: request.input,
-        sessionId: request.nativeSessionId,
-        resume: session.hasTurns,
+        cwd: session.cwd,
         model: request.model ?? session.model,
+        sessionId: request.nativeSessionId ?? session.nativeSessionId,
         effort: request.effort,
-        permissionMode: session.permissionMode,
       }),
       session.env
         ? { cwd: session.cwd, env: session.env }
@@ -132,11 +165,11 @@ export class GrokAdapter implements RuntimeAdapter {
     );
     const run = { process, cancelled: false };
     this.active.set(request.runId, run);
-    const projector = new GrokProjector({
+    const projector = new MimoProjector({
       taskId: await this.dependencies.taskIdForRun(request.runId),
       laneId: request.laneId,
       runId: request.runId,
-      nativeSessionId: request.nativeSessionId,
+      nativeSessionId: request.nativeSessionId ?? session.nativeSessionId,
       createEventId: this.dependencies.createEventId ?? (() => randomUUID()),
     });
     return {
@@ -147,9 +180,7 @@ export class GrokAdapter implements RuntimeAdapter {
 
   async respondToApproval(response: ApprovalResponse): Promise<void> {
     void response;
-    throw new Error(
-      "Grok interactive approvals are not exposed by streaming-json",
-    );
+    throw new Error("MiMo interactive approvals are not exposed by JSON mode");
   }
 
   async cancel(runId: NativeTurnRequest["runId"]): Promise<void> {
@@ -170,61 +201,36 @@ export class GrokAdapter implements RuntimeAdapter {
   private async requireProtocol(): Promise<{ version: string }> {
     const health = await this.detect();
     if (!health.available || !health.protocolSupported || !health.version) {
-      throw new Error(health.detail ?? "Grok CLI protocol is unavailable");
+      throw new Error(health.detail ?? "MiMo CLI protocol is unavailable");
     }
     return { version: health.version };
   }
 
-  private record(
-    request: StartSessionRequest,
-    id: string,
-    version: string,
-    hasTurns: boolean,
-  ): NativeSession {
-    this.sessions.set(id, {
-      laneId: request.laneId,
-      cwd: request.cwd,
-      env: subscriptionEnvironment(this.dependencies.env, request.env),
-      model: request.model,
-      permissionMode: request.permissionMode,
-      runtimeVersion: version,
-      hasTurns,
-    });
-    return {
-      laneId: request.laneId,
-      bindingState: "authoritative",
-      nativeSessionId: id,
-      runtimeVersion: version,
-    };
-  }
-
   private async *events(
     request: NativeTurnRequest,
-    session: SessionState,
-    run: { process: GrokProcess; cancelled: boolean },
-    projector: GrokProjector,
+    session: MimoSessionState,
+    run: { process: MimoProcess; cancelled: boolean },
+    projector: MimoProjector,
   ) {
-    let terminal = false;
     try {
-      yield projector.sessionEvent();
       for (;;) {
         const message = await run.process.next();
         if (!message) break;
-        // Once Grok emitted native output the session exists and subsequent
-        // turns must resume it. A process that dies before output can safely
-        // retry the original new-session command.
-        session.hasTurns = true;
         for (const event of projector.project(message)) {
-          if (event.kind === "run_completed" || event.kind === "run_failed")
-            terminal = true;
+          if (
+            (event.kind === "session_started" ||
+              event.kind === "session_resumed") &&
+            projector.nativeSessionId
+          ) {
+            session.nativeSessionId = projector.nativeSessionId;
+          }
           yield event;
         }
       }
       const result = await run.process.wait();
-      if (run.cancelled)
-        yield projector.cancelled({ type: "cancelled", result });
-      else if (!terminal)
-        yield projector.failed({ type: "process_failure", result });
+      yield run.cancelled
+        ? projector.cancelled()
+        : projector.completed(result.successOrCancelled);
     } finally {
       this.active.delete(request.runId);
     }
@@ -237,14 +243,9 @@ function executeFile(
   options?: JsonlProcessOptions,
 ): Promise<{ stdout: string; stderr?: string }> {
   return new Promise((resolve, reject) => {
-    execFile(command, args, options, (error, stdout, stderr) =>
-      error
-        ? reject(error)
-        : resolve({ stdout: String(stdout), stderr: String(stderr) }),
-    );
+    execFile(command, args, options, (error, stdout, stderr) => {
+      if (error) reject(error);
+      else resolve({ stdout: String(stdout), stderr: String(stderr) });
+    });
   });
-}
-
-function errorMessage(error: unknown): string {
-  return error instanceof Error ? error.message : String(error);
 }

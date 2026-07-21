@@ -213,7 +213,8 @@ async function bootstrap(): Promise<void> {
     stateRef,
     () => leaseRepository,
   );
-  const agyCommand = locateLocalBinary("agy") ?? "agy";
+  const agyBinary = locateLocalBinary("agy");
+  const agyCommand = agyBinary ?? "agy";
   const agyPluginManager = new AgyPluginManager({
     command: agyCommand,
     sourceDirectory: path.join(app.getPath("userData"), "agy-companion-plugin"),
@@ -227,6 +228,15 @@ async function bootstrap(): Promise<void> {
       return { stdout: String(stdout) };
     },
   });
+  if (agyBinary) {
+    try {
+      await agyPluginManager.ensureEnabled();
+    } catch {
+      // AGY remains visible with a protocol-health error; one optional runtime
+      // must never prevent the rest of the desktop from starting.
+      console.error("[okami] AGY companion provisioning failed");
+    }
+  }
   const runtimes = createRuntimeRegistry({
     claude: {
       policyEngine: {
@@ -266,6 +276,10 @@ async function bootstrap(): Promise<void> {
     grok: {
       taskIdForRun,
       command: locateLocalBinary("grok") ?? "grok",
+    },
+    mimo: {
+      taskIdForRun,
+      command: locateLocalBinary("mimo") ?? "mimo",
     },
   });
 

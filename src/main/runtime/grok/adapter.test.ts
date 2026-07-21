@@ -57,7 +57,7 @@ it("detects and runs the documented Grok streaming protocol", async () => {
       "streaming-json",
       "--session-id",
     ]),
-    { cwd: "/workspace" },
+    { cwd: "/workspace", env: expect.any(Object) },
   );
 });
 

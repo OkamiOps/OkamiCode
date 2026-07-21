@@ -7,7 +7,7 @@ import { workbenchClient } from "../../lib/ipc/client";
 import { useWorkbenchStore } from "../workbench/store";
 
 function isRunnableRuntime(runtime: string): runtime is RuntimeKind {
-  return ["claude", "codex", "cursor", "agy", "grok"].includes(runtime);
+  return ["claude", "codex", "cursor", "agy", "grok", "mimo"].includes(runtime);
 }
 
 function favoriteKey(runtimeKind: string, modelId: string): string {

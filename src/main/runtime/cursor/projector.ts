@@ -30,6 +30,7 @@ export function cursorSessionIdFromInit(message: unknown): string | undefined {
 
 export class CursorProjector {
   private sequence = 0;
+  private assistantMessageOrdinal = 0;
   private readonly now: () => string;
 
   constructor(private readonly context: CursorProjectionContext) {
@@ -90,6 +91,7 @@ export class CursorProjector {
       return [
         this.event("message_delta", native, {
           delta: block.text,
+          messageAnchor: `assistant-${this.assistantMessageOrdinal}`,
           native,
         }),
       ];
@@ -117,6 +119,7 @@ export class CursorProjector {
       throw new Error("Cursor tool_call requires a structured tool entry");
     }
     const output = textualOutput(nativeTool.result);
+    if (subtype === "completed") this.assistantMessageOrdinal += 1;
     return [
       this.event(
         subtype === "started" ? "tool_call_started" : "tool_call_completed",

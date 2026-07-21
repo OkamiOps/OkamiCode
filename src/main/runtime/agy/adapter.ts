@@ -608,5 +608,10 @@ export function subscriptionEnvironment(
   delete environment.ANTHROPIC_API_KEY;
   delete environment.GOOGLE_API_KEY;
   delete environment.GEMINI_API_KEY;
+  delete environment.CURSOR_API_KEY;
+  delete environment.XAI_API_KEY;
+  delete environment.GROK_API_KEY;
+  delete environment.MINIMAX_API_KEY;
+  delete environment.XIAOMI_API_KEY;
   return environment;
 }

@@ -226,14 +226,14 @@ describe("Cursor model catalog", () => {
       providerLabel: "MiniMax",
       routeKind: "unavailable",
       source:
-        "MiniMax Code instalado · catálogo local · 2026-07-22T09:00:00.000Z",
+        "MiniMax Code instalado · sem CLI headless de assinatura · mmx usa API · 2026-07-22T09:00:00.000Z",
       models: [{ id: "MiniMax-M2.7" }, { id: "MiniMax-M3" }],
     });
     expect(
       service.list().find((entry) => entry.runtimeKind === "mimo"),
     ).toMatchObject({
       providerLabel: "MiMo Code",
-      routeKind: "unavailable",
+      routeKind: "native",
       source: "mimo models · 2026-07-22T09:00:00.000Z",
       models: [{ id: "mimo/mimo-auto" }, { id: "xiaomi/mimo-v2.5-pro" }],
     });

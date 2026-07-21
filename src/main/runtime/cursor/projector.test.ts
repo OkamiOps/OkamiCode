@@ -45,6 +45,21 @@ describe("CursorProjector", () => {
     ).not.toThrow();
   });
 
+  it("anchors streamed assistant deltas to one message", () => {
+    const projector = new CursorProjector(testIds());
+    const first = projector.project({
+      type: "assistant",
+      message: { content: [{ type: "text", text: "Com" }] },
+    })[0];
+    const second = projector.project({
+      type: "assistant",
+      message: { content: [{ type: "text", text: "poser" }] },
+    })[0];
+
+    expect(first?.payload.messageAnchor).toBe("assistant-0");
+    expect(second?.payload.messageAnchor).toBe("assistant-0");
+  });
+
   it("extracts the authoritative init session without inventing a terminal event for process failure", () => {
     const native = fixture("process-failure");
     const projected = new CursorProjector({

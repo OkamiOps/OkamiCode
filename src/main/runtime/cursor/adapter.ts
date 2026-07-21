@@ -19,6 +19,7 @@ import {
 } from "../transport";
 import { cursorArgs } from "./command";
 import { CursorProjector, cursorSessionIdFromInit } from "./projector";
+import { subscriptionEnvironment } from "../agy/adapter";
 
 type NativeRecord = Record<string, unknown>;
 
@@ -147,7 +148,10 @@ export class CursorAdapter implements RuntimeAdapter {
     const result = await execute(
       this.dependencies.command ?? "cursor-agent",
       ["create-chat"],
-      processOptions(request.cwd, request.env ?? this.dependencies.env),
+      processOptions(
+        request.cwd,
+        subscriptionEnvironment(this.dependencies.env, request.env),
+      ),
     );
     const nativeSessionId = result.stdout.trim();
     if (!SESSION_ID.test(nativeSessionId)) {
@@ -250,7 +254,7 @@ export class CursorAdapter implements RuntimeAdapter {
     this.sessions.set(nativeSessionId, {
       laneId: request.laneId,
       cwd: request.cwd,
-      env: request.env ?? this.dependencies.env,
+      env: subscriptionEnvironment(this.dependencies.env, request.env),
       model: request.model,
       permissionMode: request.permissionMode,
       runtimeVersion,

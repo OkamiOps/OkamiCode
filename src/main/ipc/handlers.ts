@@ -1600,6 +1600,7 @@ function providerForRuntime(runtime: RuntimeKind): ProviderKind {
   if (runtime === "codex") return "chatgpt";
   if (runtime === "agy") return "antigravity";
   if (runtime === "grok") return "grok";
+  if (runtime === "mimo") return "mimo";
   return "cursor";
 }
 
