@@ -27,19 +27,39 @@ interface NavigationItem {
   path: string;
 }
 
-const navigationItems: NavigationItem[] = [
-  { icon: Home, label: "Início", path: "/quick-chat" },
-  { icon: PanelsTopLeft, label: "Workbench", path: "/workbench" },
-  { icon: Inbox, label: "Inbox", path: "/inbox" },
-  { icon: CalendarDays, label: "Agenda", path: "/calendar" },
-  { icon: Columns3, label: "Kanban", path: "/kanban" },
-  { icon: Gauge, label: "Uso e limites", path: "/usage" },
-  { icon: Brain, label: "Memória", path: "/memory" },
-  { icon: PlugZap, label: "Conexões", path: "/connections" },
-  { icon: SlidersHorizontal, label: "Gestão", path: "/management" },
-  { icon: Sparkles, label: "Modelos", path: "/models" },
-  { icon: Bot, label: "Agentes", path: "/agents" },
-  { icon: Cog, label: "Configurações", path: "/settings" },
+interface NavigationGroup {
+  label: string;
+  items: NavigationItem[];
+}
+
+const navigationGroups: NavigationGroup[] = [
+  {
+    label: "Trabalho",
+    items: [
+      { icon: Home, label: "Início", path: "/quick-chat" },
+      { icon: PanelsTopLeft, label: "Workbench", path: "/workbench" },
+      { icon: Inbox, label: "Inbox", path: "/inbox" },
+      { icon: CalendarDays, label: "Agenda", path: "/calendar" },
+      { icon: Columns3, label: "Kanban", path: "/kanban" },
+    ],
+  },
+  {
+    label: "Inteligência",
+    items: [
+      { icon: Bot, label: "Agentes", path: "/agents" },
+      { icon: Sparkles, label: "Modelos", path: "/models" },
+      { icon: Brain, label: "Memória", path: "/memory" },
+    ],
+  },
+  {
+    label: "Sistema",
+    items: [
+      { icon: Gauge, label: "Uso e limites", path: "/usage" },
+      { icon: PlugZap, label: "Conexões", path: "/connections" },
+      { icon: SlidersHorizontal, label: "Gestão", path: "/management" },
+      { icon: Cog, label: "Configurações", path: "/settings" },
+    ],
+  },
 ];
 
 interface NavigationRailProps {
@@ -111,38 +131,57 @@ export function NavigationRail({
       </header>
       <div className="navigation-rail__items">
         <div className="navigation-rail__destinations">
-          {navigationItems.map(({ icon: Icon, label, path }) => {
-            const destination = (triggerProps = {}) => (
-              <NavLink
-                {...triggerProps}
-                aria-label={label}
-                className={({ isActive }) =>
-                  `rail-action${isActive ? " rail-action--active" : ""}`
-                }
-                key={label}
-                role="link"
-                to={path}
-              >
-                <Icon aria-hidden="true" size={19} strokeWidth={1.8} />
-                {!collapsed && (
-                  <span className="rail-action__label">{label}</span>
-                )}
-              </NavLink>
-            );
+          {navigationGroups.map((group) => (
+            <div
+              aria-label={group.label}
+              className="navigation-rail__group"
+              key={group.label}
+              role="group"
+            >
+              {!collapsed && (
+                <span
+                  aria-hidden="true"
+                  className="navigation-rail__group-label"
+                >
+                  {group.label}
+                </span>
+              )}
+              <div className="navigation-rail__group-items">
+                {group.items.map(({ icon: Icon, label, path }) => {
+                  const destination = (triggerProps = {}) => (
+                    <NavLink
+                      {...triggerProps}
+                      aria-label={label}
+                      className={({ isActive }) =>
+                        `rail-action${isActive ? " rail-action--active" : ""}`
+                      }
+                      key={label}
+                      role="link"
+                      to={path}
+                    >
+                      <Icon aria-hidden="true" size={18} strokeWidth={1.8} />
+                      {!collapsed && (
+                        <span className="rail-action__label">{label}</span>
+                      )}
+                    </NavLink>
+                  );
 
-            return collapsed ? (
-              <Tooltip.Root key={label} closeDelay={0} delay={300}>
-                <Tooltip.Trigger<"a">
-                  render={(triggerProps) => destination(triggerProps)}
-                />
-                <Tooltip.Content className="ok-tooltip" placement="right">
-                  {label}
-                </Tooltip.Content>
-              </Tooltip.Root>
-            ) : (
-              destination()
-            );
-          })}
+                  return collapsed ? (
+                    <Tooltip.Root key={label} closeDelay={0} delay={300}>
+                      <Tooltip.Trigger<"a">
+                        render={(triggerProps) => destination(triggerProps)}
+                      />
+                      <Tooltip.Content className="ok-tooltip" placement="right">
+                        {label}
+                      </Tooltip.Content>
+                    </Tooltip.Root>
+                  ) : (
+                    destination()
+                  );
+                })}
+              </div>
+            </div>
+          ))}
         </div>
         {!collapsed && showWorkbench && (
           <section

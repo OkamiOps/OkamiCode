@@ -86,7 +86,7 @@ a {
   align-items: center;
   justify-content: space-between;
   gap: 8px;
-  padding: 0 12px 8px;
+  padding: 0 10px 10px;
 }
 
 .navigation-rail__brand {
@@ -118,6 +118,20 @@ a {
   letter-spacing: -0.02em;
 }
 
+.navigation-rail__toggle {
+  width: 32px;
+  min-width: 32px;
+  height: 32px;
+  min-height: 32px;
+  flex: none;
+  justify-content: center;
+  padding: 0;
+}
+
+.navigation-rail__toggle:focus:not(:focus-visible) {
+  box-shadow: none;
+}
+
 .navigation-rail--collapsed .navigation-rail__header {
   justify-content: center;
   padding-inline: 8px;
@@ -136,6 +150,35 @@ a {
   gap: 4px;
 }
 
+.navigation-rail__destinations {
+  gap: 10px;
+}
+
+.navigation-rail__group,
+.navigation-rail__group-items {
+  display: flex;
+  width: 100%;
+  flex-direction: column;
+}
+
+.navigation-rail__group {
+  gap: 3px;
+}
+
+.navigation-rail__group-items {
+  gap: 2px;
+}
+
+.navigation-rail__group-label {
+  padding: 0 10px;
+  color: color-mix(in srgb, var(--ok-text-muted) 72%, transparent);
+  font-size: 9px;
+  font-weight: 700;
+  letter-spacing: 0.12em;
+  line-height: 18px;
+  text-transform: uppercase;
+}
+
 .navigation-rail__items {
   display: flex;
   width: 100%;
@@ -149,6 +192,17 @@ a {
 .navigation-rail--collapsed .navigation-rail__items {
   align-items: center;
   padding-inline: 12px;
+}
+
+.navigation-rail--collapsed .navigation-rail__destinations,
+.navigation-rail--collapsed .navigation-rail__group,
+.navigation-rail--collapsed .navigation-rail__group-items {
+  align-items: center;
+}
+
+.navigation-rail--collapsed .navigation-rail__group + .navigation-rail__group {
+  padding-top: 8px;
+  border-top: 1px solid var(--ok-border);
 }
 
 .navigation-rail__workbench {
@@ -195,6 +249,13 @@ a {
 .navigation-rail--expanded .rail-action {
   height: 34px;
   min-height: 34px;
+  justify-content: flex-start;
+  padding-inline: 10px;
+}
+
+.navigation-rail--expanded .navigation-rail__toggle {
+  justify-content: center;
+  padding: 0;
 }
 
 .rail-action:hover:not([data-disabled="true"]) {
@@ -213,6 +274,10 @@ a {
   text-overflow: ellipsis;
   white-space: nowrap;
   font-size: 12px;
+}
+
+.rail-action > svg {
+  flex: none;
 }
 
 .rail-action--active {

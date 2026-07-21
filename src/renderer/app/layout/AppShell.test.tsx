@@ -1,4 +1,4 @@
-import { cleanup, render, screen } from "@testing-library/react";
+import { cleanup, render, screen, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { App } from "../App";
@@ -39,6 +39,37 @@ describe("AppShell", () => {
     expect(
       screen.getByRole("navigation", { name: "Histórico de conversas" }),
     ).toBeVisible();
+  });
+
+  it("groups expanded destinations in a predictable work, intelligence and system order", async () => {
+    renderApp("/workbench");
+
+    const navigation = await screen.findByRole("navigation", {
+      name: "Navegação principal",
+    });
+    expect(
+      within(navigation)
+        .getAllByRole("group")
+        .map((group) => group.getAttribute("aria-label")),
+    ).toEqual(["Trabalho", "Inteligência", "Sistema"]);
+    expect(
+      within(navigation)
+        .getAllByRole("link")
+        .map((link) => link.getAttribute("aria-label")),
+    ).toEqual([
+      "Início",
+      "Workbench",
+      "Inbox",
+      "Agenda",
+      "Kanban",
+      "Agentes",
+      "Modelos",
+      "Memória",
+      "Uso e limites",
+      "Conexões",
+      "Gestão",
+      "Configurações",
+    ]);
   });
 
   it("persists a collapsed navigation across routes while keeping destinations accessible", async () => {
