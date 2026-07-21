@@ -14,6 +14,25 @@ import type { IpcChannel } from "./channels";
 const emptyRequestSchema = z.object({}).strict();
 const entityIdSchema = z.uuid();
 const userTextSchema = z.string().trim().min(1).max(100_000);
+const externalWebUrlSchema = z
+  .string()
+  .trim()
+  .url()
+  .max(8_192)
+  .refine((value) => {
+    const url = new URL(value);
+    return (
+      (url.protocol === "https:" || url.protocol === "http:") &&
+      !url.username &&
+      !url.password
+    );
+  }, "Only credential-free HTTP(S) URLs are allowed");
+const systemOpenExternalRequestSchema = z
+  .object({ url: externalWebUrlSchema })
+  .strict();
+const systemOpenExternalResultSchema = z
+  .object({ opened: z.literal(true) })
+  .strict();
 // Workspace-free chat and delegated email generation still have dedicated
 // lifecycle tests only for the two original runtimes. Cursor is exposed first
 // in Workbench and fails closed here until those flows gain equivalent tests.
@@ -1489,6 +1508,7 @@ const calendarDeleteLocalEventResultSchema = z
 
 export const ipcRequestSchemas = {
   "system:doctor": emptyRequestSchema,
+  "system:openExternal": systemOpenExternalRequestSchema,
   "models:list": emptyRequestSchema,
   "task:create": taskCreateRequestSchema,
   "task:rename": taskRenameRequestSchema,
@@ -1570,6 +1590,7 @@ export const ipcRequestSchemas = {
 
 export const ipcResponseSchemas = {
   "system:doctor": systemDoctorSchema,
+  "system:openExternal": systemOpenExternalResultSchema,
   "models:list": modelCatalogSchema,
   "task:create": taskSchema,
   "task:rename": taskSchema,

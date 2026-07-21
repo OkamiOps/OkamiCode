@@ -429,7 +429,10 @@ describe("InboxPage", () => {
     await userEvent.click(item);
 
     const emailDocument = await screen.findByTitle("Conteúdo HTML do email");
-    expect(emailDocument).toHaveAttribute("sandbox", "allow-same-origin");
+    expect(emailDocument).toHaveAttribute(
+      "sandbox",
+      "allow-same-origin allow-popups",
+    );
     expect(emailDocument.getAttribute("srcdoc")).toContain("Conteúdo externo");
     expect(emailDocument.getAttribute("srcdoc")).not.toContain("<script");
     expect(emailDocument.getAttribute("srcdoc")).not.toContain(

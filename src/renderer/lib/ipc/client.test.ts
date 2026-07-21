@@ -55,11 +55,16 @@ const handlerModule = (await vi.importActual("../../../main/ipc/handlers")) as {
     rendererUrl: string;
     state: TestAppState;
     clientCapabilities?: () => Promise<unknown[]>;
+    openExternal?: (url: string) => Promise<unknown>;
   }): void;
 };
 const { registerIpcHandlers } = handlerModule;
 
-function ipcHarness(state: TestAppState, clientCapabilities = async () => []) {
+function ipcHarness(
+  state: TestAppState,
+  clientCapabilities = async () => [],
+  openExternal: (url: string) => Promise<unknown> = async () => undefined,
+) {
   const handlers = new Map<IpcChannel, RegisteredHandler>();
   registerIpcHandlers({
     ipcMain: {
@@ -70,6 +75,7 @@ function ipcHarness(state: TestAppState, clientCapabilities = async () => []) {
     rendererUrl: "http://127.0.0.1:5173/index.html",
     state,
     clientCapabilities,
+    openExternal,
   });
   return handlers;
 }
@@ -152,10 +158,34 @@ it("validates command requests before invoking the bridge", async () => {
   expect(approveAndSend).not.toHaveBeenCalled();
 });
 
+it("opens only validated web URLs through the trusted main process boundary", async () => {
+  const openExternal = vi.fn(async () => undefined);
+  const handlers = ipcHarness(stateFixture(), async () => [], openExternal);
+  const handler = handlers.get("system:openExternal");
+
+  await expect(
+    handler?.(trustedEvent(), {
+      url: "https://meet.google.com/abc-defg-hij?authuser=1",
+    }),
+  ).resolves.toEqual({ opened: true });
+  expect(openExternal).toHaveBeenCalledWith(
+    "https://meet.google.com/abc-defg-hij?authuser=1",
+  );
+
+  await expect(
+    handler?.(trustedEvent(), { url: "javascript:alert(1)" }),
+  ).rejects.toThrow();
+  await expect(
+    handler?.(trustedEvent(), { url: "file:///etc/passwd" }),
+  ).rejects.toThrow();
+  expect(openExternal).toHaveBeenCalledTimes(1);
+});
+
 it("exposes exactly the enumerated command surface", () => {
   expect(ipcChannels).toEqual(ipcChannels);
   expect(ipcChannels).toEqual([
     "system:doctor",
+    "system:openExternal",
     "models:list",
     "task:create",
     "task:rename",

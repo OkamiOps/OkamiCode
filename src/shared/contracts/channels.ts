@@ -2,6 +2,7 @@
 // imports this module and must stay dependency-free.
 export const ipcChannels = [
   "system:doctor",
+  "system:openExternal",
   "models:list",
   "task:create",
   "task:rename",

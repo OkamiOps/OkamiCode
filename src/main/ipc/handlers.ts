@@ -149,6 +149,7 @@ interface RegisterIpcHandlersOptions {
   inboxReplyDispatchService?: InboxReplyDispatchIpcService;
   googleInboxOAuthService?: GoogleInboxOAuthIpcService;
   calendarService?: CalendarIpcService;
+  openExternal?: (url: string) => Promise<unknown>;
 }
 
 interface TaskRow {
@@ -180,6 +181,9 @@ export function registerIpcHandlers({
   inboxReplyDispatchService,
   googleInboxOAuthService,
   calendarService,
+  openExternal = async () => {
+    throw new Error("External navigation is unavailable.");
+  },
 }: RegisterIpcHandlersOptions): void {
   const openedLanes = new Map<string, OpenedLane>();
   let memory = memoryService;
@@ -278,6 +282,7 @@ export function registerIpcHandlers({
         getInboxReplyDispatchService,
         getGoogleInboxOAuthService,
         getCalendarService,
+        openExternal,
       );
       return ipcResponseSchemas[channel].parse(response);
     });
@@ -305,10 +310,16 @@ async function dispatch(
   inboxReplyDispatchService: () => InboxReplyDispatchIpcService,
   googleInboxOAuthService: () => GoogleInboxOAuthIpcService,
   calendarService: () => CalendarIpcService,
+  openExternal: (url: string) => Promise<unknown>,
 ): Promise<unknown> {
   switch (channel) {
     case "system:doctor":
       return systemDoctor(state, clientCapabilities);
+    case "system:openExternal": {
+      const external = request as IpcRequest<"system:openExternal">;
+      await openExternal(external.url);
+      return { opened: true as const };
+    }
     case "models:list":
       return modelCatalog();
     case "task:create":

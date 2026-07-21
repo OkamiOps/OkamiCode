@@ -33,7 +33,7 @@ import { getOrCreateDatabaseKey } from "./secrets";
 import { MemoryService } from "./memory/indexer";
 import { StartupRecovery } from "./orchestration/recovery";
 import { AuditRepository } from "./db/repositories/audit";
-import { secureWebPreferences } from "./window";
+import { configureExternalNavigation, secureWebPreferences } from "./window";
 import { InboxApplicationService } from "./inbox/application-service";
 import { ImapSyncAdapter } from "./inbox/imap-adapter";
 import { ReplyDispatchService } from "./inbox/reply-dispatch-service";
@@ -73,6 +73,9 @@ export function createMainWindow(): BrowserWindow {
   window.webContents.on("preload-error", (_event, preloadPath, error) => {
     console.error("[okami] preload error", preloadPath, error);
   });
+  configureExternalNavigation(window.webContents, (url) =>
+    shell.openExternal(url),
+  );
   window.webContents.on("did-finish-load", () => {
     void window.webContents
       .executeJavaScript("typeof window.okami")
@@ -395,6 +398,7 @@ async function bootstrap(): Promise<void> {
     inboxReplyDispatchService,
     googleInboxOAuthService,
     calendarService,
+    openExternal: (url) => shell.openExternal(url),
   });
 }
 

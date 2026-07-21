@@ -1,6 +1,7 @@
 import { Button } from "@heroui/react";
 import { FileCode2, ImageOff, ShieldCheck } from "lucide-react";
 import { useMemo, useState, type SyntheticEvent } from "react";
+import { workbenchClient } from "../../lib/ipc/client";
 
 interface EmailMessageBodyProps {
   body: string;
@@ -88,8 +89,8 @@ export function EmailMessageBody({
       )}
       <iframe
         className="inbox-email-document__frame"
-        onLoad={resizeEmailFrame}
-        sandbox="allow-same-origin"
+        onLoad={initializeEmailFrame}
+        sandbox="allow-same-origin allow-popups"
         srcDoc={sourceDocument}
         title="Conteúdo HTML do email"
       />
@@ -157,8 +158,15 @@ export function buildEmailDocument(body: string, allowRemoteImages: boolean) {
     }
     if (element instanceof HTMLAnchorElement) {
       const href = element.getAttribute("href")?.trim() ?? "";
-      if (href && !/^(?:https?:|mailto:|tel:|#)/iu.test(href))
+      const trustedWebLink = /^https?:/iu.test(href);
+      if (href && !/^(?:https?:|mailto:|tel:|#)/iu.test(href)) {
         element.removeAttribute("href");
+        element.removeAttribute("target");
+      } else if (trustedWebLink) {
+        element.setAttribute("target", "_blank");
+      } else {
+        element.removeAttribute("target");
+      }
       element.setAttribute("rel", "noreferrer noopener");
     }
   });
@@ -226,10 +234,13 @@ function containsRemoteImages(body: string) {
   );
 }
 
-function resizeEmailFrame(event: SyntheticEvent<HTMLIFrameElement>) {
+function initializeEmailFrame(event: SyntheticEvent<HTMLIFrameElement>) {
   const frame = event.currentTarget;
   const document = frame.contentDocument;
   if (!document) return;
+  activateEmailDocumentLinks(document, (url) => {
+    void workbenchClient.systemOpenExternal({ url });
+  });
   const resize = () => {
     const height = Math.max(
       240,
@@ -242,6 +253,32 @@ function resizeEmailFrame(event: SyntheticEvent<HTMLIFrameElement>) {
     image.addEventListener("load", resize, { once: true });
     image.addEventListener("error", resize, { once: true });
   });
+}
+
+export function activateEmailDocumentLinks(
+  document: Document,
+  openExternal: (url: string) => void,
+): void {
+  document.addEventListener("click", (event) => {
+    const target = event.target as {
+      closest?: (selector: string) => Element | null;
+    } | null;
+    const anchor = target?.closest?.("a[href]");
+    if (!anchor || anchor.tagName.toLowerCase() !== "a") return;
+    const href = anchor.getAttribute("href")?.trim() ?? "";
+    if (!isTrustedWebLink(href)) return;
+    event.preventDefault();
+    openExternal(href);
+  });
+}
+
+function isTrustedWebLink(value: string): boolean {
+  try {
+    const url = new URL(value);
+    return url.protocol === "https:" || url.protocol === "http:";
+  } catch {
+    return false;
+  }
 }
 
 function readableTextBody(body: string) {

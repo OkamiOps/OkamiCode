@@ -52,6 +52,8 @@ async function invokeCommand<C extends IpcChannel>(
 
 export const workbenchClient = {
   systemDoctor: () => invokeCommand("system:doctor", {}),
+  systemOpenExternal: (request: IpcRequest<"system:openExternal">) =>
+    invokeCommand("system:openExternal", request),
   taskCreate: (request: IpcRequest<"task:create">) =>
     invokeCommand("task:create", request),
   taskList: () => invokeCommand("task:list", {}),
