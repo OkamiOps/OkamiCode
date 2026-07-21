@@ -143,6 +143,7 @@ export function InboxPage({ api = defaultApi }: { api?: InboxApi }) {
     string | null
   >(null);
   const markedRead = useRef(new Set<string>());
+  const automaticallySyncedAccounts = useRef(new Set<string>());
   const detailsDrawer = useOverlayState();
   const accounts = useQuery({
     queryKey: ["inbox", "accounts"],
@@ -177,7 +178,7 @@ export function InboxPage({ api = defaultApi }: { api?: InboxApi }) {
   });
   const syncAccount = useMutation({
     mutationFn: api.syncAccount,
-    onSuccess: refresh,
+    onSettled: refresh,
   });
   const removeAccount = useMutation({
     mutationFn: api.removeAccount,
@@ -309,6 +310,21 @@ export function InboxPage({ api = defaultApi }: { api?: InboxApi }) {
     (thread) => thread.unreadCount > 0,
   ).length;
   const markThreadRead = markRead.mutate;
+  const triggerAccountSync = syncAccount.mutate;
+
+  useEffect(() => {
+    for (const summary of accounts.data ?? []) {
+      const account = summary.account;
+      if (
+        !summary.hasCredential ||
+        (account.status !== "connected" && account.status !== "degraded") ||
+        automaticallySyncedAccounts.current.has(account.id)
+      )
+        continue;
+      automaticallySyncedAccounts.current.add(account.id);
+      triggerAccountSync({ accountId: account.id });
+    }
+  }, [accounts.data, triggerAccountSync]);
 
   useEffect(() => {
     if (
@@ -832,14 +848,6 @@ function Conversation({
           <h2>Selecione uma conversa</h2>
           <p>Leia e organize suas caixas sem iniciar nenhum agente.</p>
         </div>
-        <footer className="inbox-future-actions">
-          <InboxAgentReplyModal
-            isGenerating={isGeneratingReply}
-            listModels={listModels}
-            onGenerate={onGenerateReplyDraft}
-            thread={undefined}
-          />
-        </footer>
       </section>
     );
   return (

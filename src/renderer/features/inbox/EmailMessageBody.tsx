@@ -104,6 +104,14 @@ export function buildEmailDocument(body: string, allowRemoteImages: boolean) {
     });
   }
 
+  const hasAuthoredPresentation = Boolean(
+    email.querySelector(
+      "style, [style], [bgcolor], [background], table[width], td[width]",
+    ),
+  );
+  if (!hasAuthoredPresentation)
+    email.body.setAttribute("data-okami-fallback", "true");
+
   const contentSecurityPolicy = email.createElement("meta");
   contentSecurityPolicy.httpEquiv = "Content-Security-Policy";
   contentSecurityPolicy.content = allowRemoteImages
@@ -112,18 +120,17 @@ export function buildEmailDocument(body: string, allowRemoteImages: boolean) {
   email.head.prepend(contentSecurityPolicy);
 
   const baseStyles = email.createElement("style");
+  baseStyles.setAttribute("data-okami-reader", "true");
   baseStyles.textContent = `
-    :root { color-scheme: light; }
-    html, body { min-height: 100%; margin: 0; background: #fffdfa; color: #25211d; }
-    body { padding: 28px clamp(22px, 4vw, 48px); font: 15px/1.65 -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; overflow-wrap: anywhere; }
-    img { max-width: 100%; height: auto; }
-    img[data-okami-blocked] { display: inline-flex; min-width: 140px; min-height: 48px; border: 1px dashed #c9c1b7; border-radius: 8px; background: #f4f0eb; color: #776f67; }
-    table { max-width: 100%; }
-    a { color: #b84f13; text-decoration-thickness: 1px; text-underline-offset: 3px; }
-    blockquote { margin: 1.25em 0; padding-left: 1em; border-left: 3px solid #ddd4ca; color: #625b54; }
-    pre { max-width: 100%; overflow: auto; white-space: pre-wrap; }
+    :where(html, body) { min-height: 100%; margin: 0; }
+    body[data-okami-fallback="true"] { padding: 32px clamp(24px, 5vw, 56px); background: #fffdfa; color: #25211d; font: 15px/1.65 -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; overflow-wrap: anywhere; }
+    :where(img) { max-width: 100%; height: auto; }
+    img[data-okami-blocked] { display: inline-block; min-width: 0; min-height: 0; max-width: 96px !important; max-height: 40px !important; border: 1px dashed #c9c1b7; border-radius: 7px; background: #f4f0eb; color: #776f67; font-size: 9px; object-fit: contain; }
+    body[data-okami-fallback="true"] a { color: #b84f13; text-decoration-thickness: 1px; text-underline-offset: 3px; }
+    body[data-okami-fallback="true"] blockquote { margin: 1.25em 0; padding-left: 1em; border-left: 3px solid #ddd4ca; color: #625b54; }
+    :where(pre) { max-width: 100%; overflow: auto; white-space: pre-wrap; }
   `;
-  email.head.append(baseStyles);
+  email.head.prepend(baseStyles);
 
   return `<!doctype html>${email.documentElement.outerHTML}`;
 }

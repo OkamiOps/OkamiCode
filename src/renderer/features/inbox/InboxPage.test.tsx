@@ -252,18 +252,37 @@ describe("InboxPage", () => {
     expect(screen.getAllByRole("slider")).toHaveLength(3);
   });
 
-  it("only synchronizes after an explicit account action", async () => {
+  it("synchronizes connected accounts on entry and still allows a manual refresh", async () => {
     const { api } = renderInbox(
       makeApi({ listReplyActions: vi.fn().mockResolvedValue([replyAction]) }),
     );
     expect(await screen.findByText("Projetos")).toBeVisible();
-    expect(api.syncAccount).not.toHaveBeenCalled();
-    await userEvent.click(
-      screen.getByRole("button", { name: "Sincronizar Projetos" }),
-    );
+    await vi.waitFor(() => expect(api.syncAccount).toHaveBeenCalledOnce());
     expect(vi.mocked(api.syncAccount).mock.calls[0]?.[0]).toEqual({
       accountId,
     });
+    await userEvent.click(
+      screen.getByRole("button", { name: "Sincronizar Projetos" }),
+    );
+    await vi.waitFor(() => expect(api.syncAccount).toHaveBeenCalledTimes(2));
+    expect(vi.mocked(api.syncAccount).mock.calls[1]?.[0]).toEqual({
+      accountId,
+    });
+  });
+
+  it("does not wake a paused account automatically", async () => {
+    const paused = {
+      ...account,
+      account: { ...account.account, status: "paused" as const },
+    };
+    const api = makeApi({
+      listAccounts: vi.fn().mockResolvedValue([paused]),
+    });
+    renderInbox(api);
+
+    expect(await screen.findByText("Projetos")).toBeVisible();
+    await Promise.resolve();
+    expect(api.syncAccount).not.toHaveBeenCalled();
   });
 
   it("clears the password when the add-account modal closes or succeeds", async () => {
@@ -339,7 +358,7 @@ describe("InboxPage", () => {
     ).toBeVisible();
   });
 
-  it("filters unread threads and confirms removal while keeping the AI draft action disabled without a conversation", async () => {
+  it("filters unread threads, confirms removal and hides actions without a conversation", async () => {
     const { api } = renderInbox();
     await screen.findByText("Projetos");
     await userEvent.click(screen.getByRole("button", { name: "Não lidos" }));
@@ -357,9 +376,7 @@ describe("InboxPage", () => {
       accountId,
     });
 
-    expect(
-      screen.getByRole("button", { name: "Pedir rascunho" }),
-    ).toBeDisabled();
+    expect(screen.queryByRole("button", { name: "Pedir rascunho" })).toBeNull();
   });
 
   it("generates an approval-pending agent draft only after an explicit catalog choice", async () => {

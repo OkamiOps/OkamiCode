@@ -132,7 +132,7 @@ export function InboxAgentReplyModal({
           className="inbox-future-action inbox-future-action--agent"
         >
           <Sparkles aria-hidden="true" size={14} />
-          Rascunho com IA
+          Rascunho IA
         </Modal.Trigger>
       ) : (
         <Button
@@ -143,7 +143,7 @@ export function InboxAgentReplyModal({
           variant="ghost"
         >
           <Sparkles aria-hidden="true" size={14} />
-          Rascunho com IA
+          Rascunho IA
         </Button>
       )}
       <Modal.Backdrop
