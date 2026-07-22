@@ -212,6 +212,15 @@ export function WorkbenchPage({ api = workbenchApi }: WorkbenchPageProps) {
     (effectiveLaneId ? (openedLanes[effectiveLaneId] ?? null) : null);
   const selectedTask =
     tasks.find((task) => task.id === effectiveTaskId) ?? null;
+  const skillsQuery = useQuery({
+    queryKey: ["workbench", "skills", selectedTask?.workspacePath ?? null],
+    queryFn: () =>
+      api.listSkills(
+        selectedTask?.workspacePath
+          ? { workspacePath: selectedTask.workspacePath }
+          : {},
+      ),
+  });
   const hasConversation =
     sentMessages.length > 0 || Object.keys(streams).length > 0;
   // Bridged lanes run on the Claude harness, so the catalog entry is found by
@@ -336,6 +345,7 @@ export function WorkbenchPage({ api = workbenchApi }: WorkbenchPageProps) {
       contextBreakdown={context?.breakdown ?? null}
       draftKey={effectiveTaskId}
       taskId={effectiveTaskId}
+      skills={skillsQuery.data ?? []}
       suggestions={suggestedUrls}
       onOpenPanel={(mode) =>
         updateOpenPanels((current) =>

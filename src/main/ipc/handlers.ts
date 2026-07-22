@@ -418,7 +418,9 @@ async function dispatch(
         (request as IpcRequest<"eco:mcp">).workspacePath ?? null,
       );
     case "eco:skills":
-      return readSkills();
+      return readSkills(
+        (request as IpcRequest<"eco:skills">).workspacePath ?? null,
+      );
     case "eco:memoryList":
       return readMemoryFiles(
         (request as IpcRequest<"eco:memoryList">).workspacePath ?? null,

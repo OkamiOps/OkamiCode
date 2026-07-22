@@ -427,6 +427,9 @@ export const skillsSchema = z.array(
       name: z.string().min(1),
       description: z.string(),
       source: z.string().min(1),
+      category: z.string().min(1),
+      invocation: z.string().min(1),
+      runtimes: z.array(z.enum(["claude", "codex"])).min(1),
     })
     .strict(),
 );
@@ -1681,7 +1684,7 @@ export const ipcRequestSchemas = {
   "conversation:export": conversationExportRequestSchema,
   "audit:export": auditExportRequestSchema,
   "eco:mcp": workspaceScopedRequestSchema,
-  "eco:skills": emptyRequestSchema,
+  "eco:skills": workspaceScopedRequestSchema,
   "eco:memoryList": workspaceScopedRequestSchema,
   "eco:memoryRead": memoryReadRequestSchema,
   "eco:memoryWrite": memoryWriteRequestSchema,

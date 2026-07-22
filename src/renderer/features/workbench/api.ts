@@ -7,6 +7,7 @@ export type WorkbenchTask = IpcResponse<"task:list">[number];
 export type WorkbenchLane = IpcResponse<"lane:list">[number];
 export type ModelCatalog = IpcResponse<"models:list">;
 export type ModelFavorites = IpcResponse<"models:favorites:list">;
+export type SkillCatalog = IpcResponse<"eco:skills">;
 
 export interface WorkbenchApi {
   cancelRun(
@@ -15,6 +16,9 @@ export interface WorkbenchApi {
   listLanes(taskId?: string): Promise<IpcResponse<"lane:list">>;
   listModels(): Promise<IpcResponse<"models:list">>;
   listModelFavorites(): Promise<IpcResponse<"models:favorites:list">>;
+  listSkills(
+    request?: IpcRequest<"eco:skills">,
+  ): Promise<IpcResponse<"eco:skills">>;
   ensureLane(
     request: IpcRequest<"lane:ensure">,
   ): Promise<IpcResponse<"lane:ensure">>;
@@ -47,6 +51,7 @@ export const workbenchApi: WorkbenchApi = {
   listLanes: (taskId) => workbenchClient.laneList(taskId ? { taskId } : {}),
   listModels: () => workbenchClient.modelsList(),
   listModelFavorites: () => workbenchClient.modelFavoritesList(),
+  listSkills: (request = {}) => workbenchClient.ecoSkills(request),
   ensureLane: (request) => workbenchClient.laneEnsure(request),
   listTasks: () => workbenchClient.taskList(),
   pickWorkspace: () => workbenchClient.workspacePick(),

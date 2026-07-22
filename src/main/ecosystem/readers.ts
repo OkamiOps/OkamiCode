@@ -1,4 +1,5 @@
 import {
+  type Dirent,
   existsSync,
   readdirSync,
   readFileSync,
@@ -23,6 +24,9 @@ export interface SkillInfo {
   name: string;
   description: string;
   source: string;
+  category: string;
+  invocation: string;
+  runtimes: Array<"claude" | "codex">;
 }
 
 export interface MemoryFileInfo {
@@ -121,27 +125,184 @@ function frontmatterField(text: string, field: string): string | undefined {
   return line?.trim().replace(/^["']|["']$/gu, "");
 }
 
-export function readSkills(limit = 200): SkillInfo[] {
-  const roots = [
-    { dir: path.join(homedir(), ".claude", "skills"), source: "usuário" },
-  ];
-  const skills: SkillInfo[] = [];
-  for (const root of roots) {
-    if (!existsSync(root.dir)) continue;
-    for (const entry of readdirSync(root.dir, { withFileTypes: true })) {
-      if (!entry.isDirectory()) continue;
-      const file = path.join(root.dir, entry.name, "SKILL.md");
-      if (!existsSync(file)) continue;
-      const text = readFileSync(file, "utf8").slice(0, 4000);
-      skills.push({
-        name: frontmatterField(text, "name") ?? entry.name,
-        description: frontmatterField(text, "description") ?? "",
-        source: root.source,
-      });
-      if (skills.length >= limit) return skills;
-    }
+interface SkillRoot {
+  dir: string;
+  source: string;
+  runtimes: Array<"claude" | "codex">;
+  pluginRuntime?: "claude" | "codex";
+}
+
+export function readSkills(
+  workspacePath?: string | null,
+  limit = 1_500,
+  home = homedir(),
+): SkillInfo[] {
+  const roots: SkillRoot[] = [];
+  if (workspacePath) {
+    roots.push(
+      {
+        dir: path.join(workspacePath, ".agents", "skills"),
+        source: "projeto · compartilhada",
+        runtimes: ["claude", "codex"],
+      },
+      {
+        dir: path.join(workspacePath, ".codex", "skills"),
+        source: "projeto · Codex",
+        runtimes: ["codex"],
+      },
+      {
+        dir: path.join(workspacePath, ".claude", "skills"),
+        source: "projeto · Claude",
+        runtimes: ["claude"],
+      },
+    );
   }
-  return skills;
+  roots.push(
+    {
+      dir: path.join(home, ".agents", "skills"),
+      source: "pessoal · compartilhada",
+      runtimes: ["claude", "codex"],
+    },
+    {
+      dir: path.join(home, ".codex", "skills"),
+      source: "pessoal · Codex",
+      runtimes: ["codex"],
+    },
+    {
+      dir: path.join(home, ".claude", "skills"),
+      source: "pessoal · Claude",
+      runtimes: ["claude"],
+    },
+    {
+      dir: path.join(home, ".codex", "plugins", "cache"),
+      source: "plugin · Codex",
+      runtimes: ["codex"],
+      pluginRuntime: "codex",
+    },
+    {
+      dir: path.join(home, ".claude", "plugins", "cache"),
+      source: "plugin · Claude",
+      runtimes: ["claude"],
+      pluginRuntime: "claude",
+    },
+  );
+
+  const skills = new Map<string, SkillInfo>();
+  for (const root of roots) {
+    visitSkillRoot(root.dir, root, root.dir, 0, (file, plugin) => {
+      if (skills.size >= limit) return false;
+      let text: string;
+      try {
+        text = readFileSync(file, "utf8").slice(0, 8_000);
+      } catch {
+        return true;
+      }
+      const directoryName = path.basename(path.dirname(file));
+      const name = frontmatterField(text, "name") ?? directoryName;
+      const invocation = name.trim().replace(/\s+/gu, "-");
+      const runtimes = [...root.runtimes].sort() as Array<"claude" | "codex">;
+      const key = invocation.toLowerCase();
+      const existing = skills.get(key);
+      if (existing) {
+        existing.runtimes = [
+          ...new Set([...existing.runtimes, ...runtimes]),
+        ].sort() as Array<"claude" | "codex">;
+      } else {
+        const description = frontmatterField(text, "description") ?? "";
+        skills.set(key, {
+          name,
+          description,
+          source: plugin
+            ? `${root.source} · ${humanizeSkillName(plugin)}`
+            : root.source,
+          category: inferSkillCategory(name, description, plugin),
+          invocation,
+          runtimes,
+        });
+      }
+      return true;
+    });
+    if (skills.size >= limit) break;
+  }
+
+  return [...skills.values()].sort(
+    (left, right) =>
+      left.category.localeCompare(right.category, "pt-BR") ||
+      left.name.localeCompare(right.name, "pt-BR") ||
+      left.source.localeCompare(right.source, "pt-BR"),
+  );
+}
+
+function visitSkillRoot(
+  dir: string,
+  root: SkillRoot,
+  rootDir: string,
+  depth: number,
+  visit: (file: string, plugin?: string) => boolean,
+): boolean {
+  if (depth > 8 || !existsSync(dir)) return true;
+  let entries: Dirent<string>[];
+  try {
+    entries = readdirSync(dir, { withFileTypes: true });
+  } catch {
+    return true;
+  }
+  for (const entry of entries) {
+    const full = path.join(dir, entry.name);
+    if (entry.isDirectory()) {
+      if (!visitSkillRoot(full, root, rootDir, depth + 1, visit)) return false;
+      continue;
+    }
+    if (!entry.isFile() || entry.name !== "SKILL.md") continue;
+    const relative = path.relative(rootDir, full).split(path.sep);
+    const skillsIndex = relative.lastIndexOf("skills");
+    const plugin = root.pluginRuntime
+      ? relative[Math.max(0, skillsIndex - 2)]
+      : undefined;
+    if (!visit(full, plugin)) return false;
+  }
+  return true;
+}
+
+function humanizeSkillName(value: string): string {
+  return value
+    .replace(/[-_]+/gu, " ")
+    .replace(/\b\w/gu, (letter) => letter.toUpperCase());
+}
+
+function inferSkillCategory(
+  name: string,
+  description: string,
+  plugin?: string,
+): string {
+  const value = `${name} ${description} ${plugin ?? ""}`.toLowerCase();
+  const categories: Array<[RegExp, string]> = [
+    [/frontend|design|figma|canvas|canva|ui|ux|brand/iu, "Design"],
+    [/marketing|campaign|seo|content|copywrit/iu, "Marketing"],
+    [/sales|crm|lead|account|apollo/iu, "Sales"],
+    [/finance|financial|investment|equity|payroll/iu, "Finance"],
+    [/legal|compliance|contract|risk assessment/iu, "Legal"],
+    [
+      /human resource|people|performance review|onboarding/iu,
+      "Human Resources",
+    ],
+    [/support|inbox|gmail|outlook|email|slack|telegram/iu, "Communication"],
+    [
+      /data|analytics|metric|spreadsheet|excel|database|postgres|supabase/iu,
+      "Data",
+    ],
+    [/product|roadmap|linear|notion|planning|kanban/iu, "Product Management"],
+    [/code review|debug|test|ci|github|git|security/iu, "Code review"],
+    [
+      /cloudflare|vercel|worker|api|sdk|agent|engineering|system|sandbox/iu,
+      "Engineering",
+    ],
+    [/document|pdf|slide|presentation|docx|markdown/iu, "Productivity"],
+    [/calendar|meeting|schedule|operation|capacity/iu, "Operations"],
+    [/hyperframe|remotion|video|media|animation/iu, "Hyperframes"],
+    [/skill|plugin|mcp|superpower/iu, "AI plugins"],
+  ];
+  return categories.find(([pattern]) => pattern.test(value))?.[1] ?? "Outros";
 }
 
 export interface AgentInfo {

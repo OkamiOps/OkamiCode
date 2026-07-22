@@ -22,7 +22,7 @@ export function ConnectionsPage() {
   });
   const skills = useQuery({
     queryKey: ["eco", "skills"],
-    queryFn: () => workbenchClient.ecoSkills(),
+    queryFn: () => workbenchClient.ecoSkills({}),
   });
   const [filter, setFilter] = useState("");
 

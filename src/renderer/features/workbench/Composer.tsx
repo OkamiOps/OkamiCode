@@ -1,5 +1,6 @@
 import {
   ArrowUp,
+  Blocks,
   Check,
   Clock3,
   Command,
@@ -29,7 +30,12 @@ import {
 } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { workbenchClient } from "../../lib/ipc/client";
-import type { ModelCatalog, ModelFavorites, WorkbenchLane } from "./api";
+import type {
+  ModelCatalog,
+  ModelFavorites,
+  SkillCatalog,
+  WorkbenchLane,
+} from "./api";
 import { EffortPicker } from "./EffortPicker";
 import { ModelPicker } from "./ModelPicker";
 import {
@@ -58,6 +64,7 @@ interface ComposerProps {
   }> | null;
   draftKey: string | null;
   taskId: string | null;
+  skills: SkillCatalog;
   slashCommands: string[];
   suggestions: string[];
   onOpenPanel: (mode: "files" | "terminal" | "browser" | "tasks") => void;
@@ -270,6 +277,7 @@ export function Composer({
   contextBreakdown,
   draftKey,
   taskId,
+  skills,
   slashCommands,
   suggestions,
   onOpenPanel,
@@ -293,6 +301,7 @@ export function Composer({
     }
   });
   const [slashIndex, setSlashIndex] = useState(0);
+  const [skillCategory, setSkillCategory] = useState("Todas");
   const [contextOpen, setContextOpen] = useState(false);
   const [mentionIndex, setMentionIndex] = useState(0);
   const [attachments, setAttachments] = useState<string[]>([]);
@@ -366,13 +375,88 @@ export function Composer({
 
   // The menu tracks the first token only: once a space lands, the command is
   // chosen and the rest of the message is free text.
-  const slashMatches = useMemo(() => {
-    if (!input.startsWith("/") || /\s/u.test(input)) return [];
-    const term = input.slice(1).toLowerCase();
-    return [...new Set(["goal", ...slashCommands])]
-      .filter((name) => name.toLowerCase().startsWith(term))
-      .slice(0, 8);
-  }, [input, slashCommands]);
+  const slashPalette = useMemo(() => {
+    if (!input.startsWith("/") || /\s/u.test(input)) return null;
+    const term = input.slice(1).trim().toLocaleLowerCase("pt-BR");
+    const skillRuntime: "claude" | "codex" | null =
+      lane?.harness === "claude"
+        ? "claude"
+        : lane?.runtimeKind === "codex"
+          ? "codex"
+          : null;
+    const categories = [
+      "Todas",
+      ...new Set(skills.map((skill) => skill.category)),
+    ];
+    const skillInvocations = new Set(
+      skills.map((skill) => skill.invocation.toLocaleLowerCase("pt-BR")),
+    );
+    const commands = [...new Set(["goal", ...slashCommands])]
+      .filter((name) => {
+        const leaf = name.split(":").at(-1) ?? name;
+        return !skillInvocations.has(leaf.toLocaleLowerCase("pt-BR"));
+      })
+      .filter((name) => name.toLocaleLowerCase("pt-BR").includes(term))
+      .map((name) => ({
+        id: `command:${name}`,
+        kind: "command" as const,
+        name,
+        description:
+          name === "goal"
+            ? "Defina um objetivo persistente para este projeto."
+            : "Comando nativo desta sessão.",
+      }));
+    const matchingSkills = skills
+      .filter((skill) => {
+        const categoryMatches =
+          term.length > 0 ||
+          skillCategory === "Todas" ||
+          skill.category === skillCategory;
+        const searchable =
+          `${skill.name} ${skill.description} ${skill.category} ${skill.source}`
+            .toLocaleLowerCase("pt-BR")
+            .normalize("NFD")
+            .replace(/\p{Diacritic}/gu, "");
+        const normalizedTerm = term
+          .normalize("NFD")
+          .replace(/\p{Diacritic}/gu, "");
+        return categoryMatches && searchable.includes(normalizedTerm);
+      })
+      .map((skill) => ({
+        id: `skill:${skill.invocation}`,
+        kind: "skill" as const,
+        compatible:
+          skillRuntime !== null && skill.runtimes.includes(skillRuntime),
+        nativeInvocation:
+          slashCommands.find(
+            (command) =>
+              command.toLocaleLowerCase("pt-BR") ===
+              skill.invocation.toLocaleLowerCase("pt-BR"),
+          ) ??
+          slashCommands.find(
+            (command) =>
+              command.split(":").at(-1)?.toLocaleLowerCase("pt-BR") ===
+              skill.invocation.toLocaleLowerCase("pt-BR"),
+          ) ??
+          skill.invocation,
+        ...skill,
+      }))
+      .sort(
+        (left, right) =>
+          Number(right.compatible) - Number(left.compatible) ||
+          left.name.localeCompare(right.name, "pt-BR"),
+      );
+    return {
+      categories,
+      entries: [...commands, ...matchingSkills],
+      runtime: skillRuntime,
+      compatibleCount: matchingSkills.filter((skill) => skill.compatible)
+        .length,
+      skillCount: skills.length,
+      term,
+    };
+  }, [input, lane, skillCategory, skills, slashCommands]);
+  const slashMatches = slashPalette?.entries ?? [];
   const highlighted = Math.min(
     slashIndex,
     Math.max(slashMatches.length - 1, 0),
@@ -411,8 +495,12 @@ export function Composer({
     textareaRef.current?.focus();
   }
 
-  function applySlashCommand(name: string) {
-    updateInput(`/${name} `);
+  function applySlashEntry(entry: (typeof slashMatches)[number]) {
+    if (entry.kind === "skill" && !entry.compatible) return;
+    const prefix =
+      entry.kind === "skill" && slashPalette?.runtime === "codex" ? "$" : "/";
+    const name = entry.kind === "skill" ? entry.nativeInvocation : entry.name;
+    updateInput(`${prefix}${name} `);
     textareaRef.current?.focus();
   }
 
@@ -466,7 +554,7 @@ export function Composer({
       }
       if (event.key === "Tab" || event.key === "Enter") {
         event.preventDefault();
-        applySlashCommand(slashMatches[highlighted]);
+        applySlashEntry(slashMatches[highlighted]);
         return;
       }
       if (event.key === "Escape") {
@@ -503,20 +591,118 @@ export function Composer({
           ))}
         </ul>
       )}
-      {slashMatches.length > 0 && (
-        <ul aria-label="Comandos disponíveis" className="chat-slash-menu">
-          {slashMatches.map((name, index) => (
-            <li key={name}>
-              <button
-                data-active={index === highlighted || undefined}
-                onClick={() => applySlashCommand(name)}
-                type="button"
-              >
-                /{name}
-              </button>
-            </li>
-          ))}
-        </ul>
+      {slashPalette && (
+        <section
+          aria-label="Comandos e skills"
+          className="chat-command-palette"
+        >
+          <header className="chat-command-palette__header">
+            <span>
+              <Blocks aria-hidden="true" size={14} /> Skills e comandos
+            </span>
+            <small>
+              {slashPalette.runtime
+                ? `${slashPalette.skillCount} skills · ${slashPalette.compatibleCount} compatíveis com ${slashPalette.runtime === "codex" ? "Codex" : "Claude"}`
+                : `${slashPalette.skillCount} skills · troque para Claude ou Codex para executar`}
+            </small>
+          </header>
+          <div className="chat-command-palette__body">
+            <nav
+              aria-label="Categorias de skills"
+              className="chat-command-palette__categories"
+            >
+              {slashPalette.categories.map((category) => {
+                const count =
+                  category === "Todas"
+                    ? slashPalette.skillCount
+                    : skills.filter((skill) => skill.category === category)
+                        .length;
+                return (
+                  <button
+                    aria-pressed={skillCategory === category}
+                    key={category}
+                    onClick={() => {
+                      setSkillCategory(category);
+                      setSlashIndex(0);
+                      textareaRef.current?.focus();
+                    }}
+                    type="button"
+                  >
+                    <span>{category}</span>
+                    <small>{count}</small>
+                  </button>
+                );
+              })}
+            </nav>
+            <div className="chat-command-palette__results">
+              <div className="chat-command-palette__result-heading">
+                <span>{slashPalette.term ? "Resultados" : skillCategory}</span>
+                <small>↑↓ navegar · Enter usar</small>
+              </div>
+              {slashMatches.length > 0 ? (
+                <ul aria-label="Comandos disponíveis">
+                  {slashMatches.map((entry, index) => (
+                    <li key={entry.id}>
+                      <button
+                        data-active={index === highlighted || undefined}
+                        disabled={entry.kind === "skill" && !entry.compatible}
+                        onClick={() => applySlashEntry(entry)}
+                        title={
+                          entry.kind === "skill" && !entry.compatible
+                            ? `Disponível em ${entry.runtimes
+                                .map((runtime) =>
+                                  runtime === "codex" ? "Codex" : "Claude",
+                                )
+                                .join(" e ")}`
+                            : undefined
+                        }
+                        type="button"
+                      >
+                        <span className="chat-command-palette__icon">
+                          {entry.kind === "skill" ? (
+                            <Blocks aria-hidden="true" size={13} />
+                          ) : (
+                            <Command aria-hidden="true" size={13} />
+                          )}
+                        </span>
+                        <span className="chat-command-palette__copy">
+                          <strong>
+                            {entry.kind === "skill" &&
+                            slashPalette.runtime === "codex"
+                              ? "$"
+                              : "/"}
+                            {entry.kind === "skill"
+                              ? entry.nativeInvocation
+                              : entry.name}
+                          </strong>
+                          <small>{entry.description}</small>
+                        </span>
+                        <span className="chat-command-palette__meta">
+                          {entry.kind === "skill"
+                            ? entry.compatible
+                              ? entry.category
+                              : `Requer ${entry.runtimes
+                                  .map((runtime) =>
+                                    runtime === "codex" ? "Codex" : "Claude",
+                                  )
+                                  .join("/")}`
+                            : "Comando"}
+                          {entry.kind === "skill" && (
+                            <small>{entry.source}</small>
+                          )}
+                        </span>
+                      </button>
+                    </li>
+                  ))}
+                </ul>
+              ) : (
+                <div className="chat-command-palette__empty">
+                  Nenhuma skill ou comando corresponde a “{slashPalette.term}”.
+                </div>
+              )}
+            </div>
+          </div>
+        </section>
       )}
       {attachments.length > 0 && (
         <div aria-label="Anexos" className="chat-attachments">

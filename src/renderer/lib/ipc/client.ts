@@ -99,7 +99,8 @@ export const workbenchClient = {
   auditExport: (request: IpcRequest<"audit:export">) =>
     invokeCommand("audit:export", request),
   ecoMcp: (request: IpcRequest<"eco:mcp">) => invokeCommand("eco:mcp", request),
-  ecoSkills: () => invokeCommand("eco:skills", {}),
+  ecoSkills: (request: IpcRequest<"eco:skills"> = {}) =>
+    invokeCommand("eco:skills", request),
   ecoMemoryList: (request: IpcRequest<"eco:memoryList">) =>
     invokeCommand("eco:memoryList", request),
   ecoMemoryRead: (request: IpcRequest<"eco:memoryRead">) =>

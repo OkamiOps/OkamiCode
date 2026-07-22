@@ -142,6 +142,24 @@ function renderWorkbenchFixture({
       },
     ]),
     listModelFavorites: vi.fn(async () => []),
+    listSkills: vi.fn(async () => [
+      {
+        name: "frontend-design",
+        invocation: "frontend-design",
+        description: "Crie interfaces premium com acabamento visual.",
+        category: "Design",
+        source: "pessoal · compartilhada",
+        runtimes: ["claude", "codex"] as Array<"claude" | "codex">,
+      },
+      {
+        name: "systematic-debugging",
+        invocation: "systematic-debugging",
+        description: "Diagnóstico disciplinado de bugs.",
+        category: "Code review",
+        source: "plugin · Codex · Superpowers",
+        runtimes: ["codex"] as Array<"claude" | "codex">,
+      },
+    ]),
     ensureLane: vi.fn(async (request: IpcRequest<"lane:ensure">) => {
       calls.laneEnsure.push(request);
       return { ...codexLane, model: request.model };
@@ -351,6 +369,41 @@ describe("WorkbenchPage", () => {
     expect(localStorage.getItem(`okami.goal.${taskId}`)).toContain(
       "entregar o painel premium",
     );
+  });
+
+  it("discovers compatible skills in the slash palette and inserts the native invocation", async () => {
+    renderWorkbenchFixture({ lanes: [claudeLane] });
+    await screen.findByTitle("Modo de permissão da lane");
+    const composer = await screen.findByRole("textbox", { name: "Mensagem" });
+
+    fireEvent.change(composer, { target: { value: "/" } });
+
+    await waitFor(() =>
+      expect(
+        screen.getByRole("region", { name: "Comandos e skills" }),
+      ).toBeInTheDocument(),
+    );
+    expect(
+      screen.getByRole("navigation", { name: "Categorias de skills" }),
+    ).toBeVisible();
+    expect(screen.getByRole("button", { name: /Design1/u })).toBeVisible();
+
+    fireEvent.click(screen.getByRole("button", { name: /\/frontend-design/u }));
+    expect(composer).toHaveValue("/frontend-design ");
+  });
+
+  it("keeps the skill catalog visible and honest on runtimes without native skill support", async () => {
+    renderWorkbenchFixture({ lanes: [cursorLane] });
+    await screen.findByTitle("Modo de permissão da lane");
+    const composer = screen.getByRole("textbox", { name: "Mensagem" });
+
+    fireEvent.change(composer, { target: { value: "/frontend" } });
+
+    const skill = await screen.findByRole("button", {
+      name: /\/frontend-design/u,
+    });
+    expect(skill).toBeDisabled();
+    expect(skill).toHaveAttribute("title", "Disponível em Claude e Codex");
   });
 
   it("hides permission modes the Cursor runtime cannot execute safely", async () => {
