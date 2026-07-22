@@ -220,6 +220,8 @@ it("exposes exactly the enumerated command surface", () => {
     "kanban:list",
     "kanban:create",
     "kanban:move",
+    "kanban:update",
+    "kanban:delete",
     "kanban:assign",
     "lane:list",
     "conversation:history",
@@ -583,6 +585,7 @@ it("provides typed Inbox account and thread commands through the bridge", async 
       threadId,
       mode: "manual",
       laneId: null,
+      instruction: "Prepare os próximos passos.",
       idempotencyKey: "f1db4f0c-a4ff-4fd2-9966-7fa6315d160d",
     }),
   ).resolves.toMatchObject({

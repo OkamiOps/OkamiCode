@@ -1377,7 +1377,7 @@
   height: 100%;
 }
 .inbox-task-modal [role="dialog"] {
-  width: min(520px, calc(100vw - 32px));
+  width: min(640px, calc(100vw - 32px));
   overflow: hidden;
   border: 1px solid var(--ok-border);
   border-radius: var(--ok-radius-md);
@@ -1938,6 +1938,12 @@
   padding: 0;
   border: 0;
 }
+.inbox-task-mode {
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+}
+.inbox-task-mode legend {
+  grid-column: 1 / -1;
+}
 .inbox-task-mode legend {
   padding: 0 0 2px;
   color: var(--ok-text-muted);
@@ -2024,6 +2030,9 @@
   grid-template-columns: auto minmax(0, 1fr);
 }
 .inbox-task-safety {
+  display: flex;
+  align-items: flex-start;
+  gap: 7px;
   margin: 0;
   padding: 7px 9px;
   border-left: 2px solid var(--ok-green);
@@ -2718,7 +2727,8 @@
   font: 600 12px/1.35 var(--ok-font-ui);
 }
 .inbox-form-field input,
-.inbox-form-field textarea {
+.inbox-form-field textarea,
+.inbox-form-field select {
   width: 100%;
   min-width: 0;
   height: 42px;
@@ -2729,6 +2739,9 @@
   background: color-mix(in srgb, var(--ok-bg) 74%, var(--ok-surface-2));
   color: var(--ok-text);
   font: 13px var(--ok-font-ui);
+}
+.inbox-form-field select {
+  appearance: auto;
 }
 .inbox-form-field textarea {
   min-height: 76px;
@@ -2743,9 +2756,31 @@
   opacity: 1;
 }
 .inbox-form-field input:focus,
-.inbox-form-field textarea:focus {
+.inbox-form-field textarea:focus,
+.inbox-form-field select:focus {
   border-color: var(--ok-cyan);
   box-shadow: var(--ok-focus);
+}
+.inbox-form-field--instruction {
+  padding: 12px;
+  border: 1px solid color-mix(in srgb, var(--ok-cyan) 35%, var(--ok-border));
+  border-radius: 9px;
+  background: color-mix(in srgb, var(--ok-cyan) 5%, var(--ok-surface-2));
+}
+.inbox-form-field--instruction textarea {
+  min-height: 112px;
+}
+.inbox-form-field--instruction small {
+  color: var(--ok-text-muted);
+  font: 9.5px/1.4 var(--ok-font-mono);
+}
+@media (max-width: 560px) {
+  .inbox-task-mode {
+    grid-template-columns: 1fr;
+  }
+  .inbox-task-mode legend {
+    grid-column: auto;
+  }
 }
 .inbox-tls-toggle {
   display: grid;

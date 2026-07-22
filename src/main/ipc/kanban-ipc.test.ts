@@ -112,4 +112,30 @@ it("keeps manual cards local and wakes a delegated lane once per update", async 
     idempotencyKey,
   });
   expect(sendTurn).toHaveBeenCalledTimes(2);
+
+  const updated = await handlers.get("kanban:update")?.(event, {
+    cardId,
+    title: "Revisar documentação e riscos",
+    description: "Validar o PR, registrar riscos e preparar uma recomendação.",
+    idempotencyKey: randomUUID(),
+  });
+  expect(updated).toMatchObject({
+    card: {
+      title: "Revisar documentação e riscos",
+      description:
+        "Validar o PR, registrar riscos e preparar uma recomendação.",
+    },
+    wake: { shouldWake: false, reason: "no_relevant_change" },
+  });
+  expect(sendTurn).toHaveBeenCalledTimes(2);
+
+  await expect(
+    handlers.get("kanban:delete")?.(event, {
+      cardId,
+      confirmation: "delete_kanban_card",
+    }),
+  ).resolves.toEqual({ cardId, deleted: true });
+  expect(
+    fixture.db.prepare("SELECT 1 FROM kanban_cards WHERE id = ?").get(cardId),
+  ).toBeUndefined();
 });

@@ -26,6 +26,7 @@ const MIGRATIONS = [
   "schema/021-inbox-remote-state.sql",
   "schema/022-inbox-local-seen-overrides.sql",
   "schema/023-inbox-flows-and-ownership.sql",
+  "schema/024-kanban-card-updates.sql",
 ];
 
 export function runMigrations(db: InstanceType<typeof SqliteDatabase>): void {

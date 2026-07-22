@@ -67,6 +67,7 @@ describe("InboxTaskActionService", () => {
       threadId,
       mode: "manual",
       laneId: null,
+      instruction: "Prepare the proposal and next steps.",
       idempotencyKey: randomUUID(),
     });
 
@@ -101,6 +102,7 @@ describe("InboxTaskActionService", () => {
       mode: "delegate",
       laneId: fixture.laneId,
       title: "Review the proposal request",
+      instruction: "Review scope and prepare a recommendation.",
       idempotencyKey: randomUUID(),
     });
 
@@ -132,6 +134,7 @@ describe("InboxTaskActionService", () => {
       threadId,
       mode: "delegate",
       laneId: fixture.laneId,
+      instruction: "Watch for changes and prepare next steps.",
       idempotencyKey: randomUUID(),
     });
     expect(delegated.card.laneId).not.toBeNull();
@@ -194,6 +197,7 @@ describe("InboxTaskActionService", () => {
         threadId,
         mode: "delegate",
         laneId: randomUUID(),
+        instruction: "Review the request.",
         idempotencyKey: randomUUID(),
       }),
     ).toThrow("Lane");
@@ -202,6 +206,7 @@ describe("InboxTaskActionService", () => {
         threadId: randomUUID(),
         mode: "manual",
         laneId: null,
+        instruction: "Review the request.",
         idempotencyKey: randomUUID(),
       }),
     ).toThrow(InboxTaskActionThreadNotFoundError);
@@ -215,6 +220,7 @@ describe("InboxTaskActionService", () => {
       mode: "manual" as const,
       laneId: null,
       title: "  Prepare proposal  ",
+      instruction: "Prepare a concise proposal.",
       idempotencyKey,
     };
 
@@ -241,6 +247,7 @@ describe("InboxTaskActionService", () => {
       threadId,
       mode: "manual",
       laneId: null,
+      instruction: "Prepare the proposal.",
       idempotencyKey,
     });
 
@@ -250,6 +257,7 @@ describe("InboxTaskActionService", () => {
         mode: "manual",
         laneId: null,
         title: "Different title",
+        instruction: "Prepare the proposal.",
         idempotencyKey,
       }),
     ).toThrow(InboxTaskActionConflictError);
@@ -293,6 +301,7 @@ describe("InboxTaskActionService", () => {
       threadId,
       mode: "manual",
       laneId: null,
+      instruction: "Extract the actionable request.",
       idempotencyKey: randomUUID(),
     });
 
@@ -312,6 +321,7 @@ describe("InboxTaskActionService", () => {
       threadId,
       mode: "manual",
       laneId: null,
+      instruction: "Prepare the next step.",
       idempotencyKey: randomUUID(),
     });
 

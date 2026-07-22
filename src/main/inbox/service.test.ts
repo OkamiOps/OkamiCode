@@ -489,6 +489,7 @@ describe("InboxService", () => {
       threadId: delegated.id,
       mode: "delegate",
       laneId: fx.laneId,
+      instruction: "Observe novas mensagens e prepare os próximos passos.",
       idempotencyKey: "00000000-0000-4000-8000-000000000099",
     });
 

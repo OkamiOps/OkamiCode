@@ -28,7 +28,7 @@ export interface KanbanCardEventRecord {
   id: string;
   cardId: string;
   sequence: number;
-  kind: "created" | "moved" | "assigned";
+  kind: "created" | "moved" | "assigned" | "updated";
   idempotencyKey: string;
   delta: KanbanCardDelta;
   stateHash: string;
@@ -83,6 +83,13 @@ export interface AssignKanbanCardInput {
   ownerKind: KanbanOwnerKind;
   laneId: string | null;
   activationPolicy?: KanbanActivationPolicy;
+  idempotencyKey: string;
+}
+
+export interface UpdateKanbanCardInput {
+  cardId: string;
+  title: string;
+  description: string;
   idempotencyKey: string;
 }
 
@@ -224,6 +231,24 @@ export class KanbanCardRepository {
       .get(cardId) as { sequence: number };
     return row.sequence;
   }
+
+  delete(cardId: string): boolean {
+    return this.db.transaction(() => {
+      this.db
+        .prepare("DELETE FROM inbox_agent_assignments WHERE card_id = ?")
+        .run(cardId);
+      this.db
+        .prepare("DELETE FROM inbox_thread_actions WHERE card_id = ?")
+        .run(cardId);
+      this.db
+        .prepare("DELETE FROM kanban_card_events WHERE card_id = ?")
+        .run(cardId);
+      return (
+        this.db.prepare("DELETE FROM kanban_cards WHERE id = ?").run(cardId)
+          .changes === 1
+      );
+    })();
+  }
 }
 
 export class KanbanCardService {
@@ -301,10 +326,30 @@ export class KanbanCardService {
     );
   }
 
+  update(input: UpdateKanbanCardInput): KanbanCardMutationResult {
+    const title = input.title.trim();
+    const description = input.description.trim();
+    if (!title) throw new Error("Kanban card title cannot be empty");
+    if (!description) {
+      throw new Error("Kanban card instructions cannot be empty");
+    }
+    return this.mutate(
+      input.cardId,
+      input.idempotencyKey,
+      "updated",
+      (card) => ({ ...card, title, description }),
+    );
+  }
+
+  delete(cardId: string): boolean {
+    this.requireCard(cardId);
+    return this.dependencies.cards.delete(cardId);
+  }
+
   private mutate(
     cardId: string,
     idempotencyKey: string,
-    kind: "moved" | "assigned",
+    kind: "moved" | "assigned" | "updated",
     change: (card: KanbanCardRecord) => KanbanCardRecord,
   ): KanbanCardMutationResult {
     const duplicate =

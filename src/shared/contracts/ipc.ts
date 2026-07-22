@@ -1313,6 +1313,26 @@ export const kanbanMoveRequestSchema = z
   })
   .strict();
 
+export const kanbanUpdateRequestSchema = z
+  .object({
+    cardId: entityIdSchema,
+    title: z.string().trim().min(1).max(240),
+    description: z.string().trim().min(1).max(8_000),
+    idempotencyKey: entityIdSchema,
+  })
+  .strict();
+
+export const kanbanDeleteRequestSchema = z
+  .object({
+    cardId: entityIdSchema,
+    confirmation: z.literal("delete_kanban_card"),
+  })
+  .strict();
+
+export const kanbanDeleteResultSchema = z
+  .object({ cardId: entityIdSchema, deleted: z.literal(true) })
+  .strict();
+
 export const kanbanAssignRequestSchema = z
   .object({
     cardId: entityIdSchema,
@@ -1329,6 +1349,7 @@ const inboxThreadCreateTaskRequestSchema = z
     mode: z.enum(["manual", "delegate"]),
     laneId: entityIdSchema.nullable(),
     title: z.string().trim().min(1).max(240).optional(),
+    instruction: z.string().trim().min(1).max(4_000),
     idempotencyKey: entityIdSchema,
   })
   .strict()
@@ -1690,6 +1711,8 @@ export const ipcRequestSchemas = {
   "kanban:list": emptyRequestSchema,
   "kanban:create": kanbanCreateRequestSchema,
   "kanban:move": kanbanMoveRequestSchema,
+  "kanban:update": kanbanUpdateRequestSchema,
+  "kanban:delete": kanbanDeleteRequestSchema,
   "kanban:assign": kanbanAssignRequestSchema,
   "lane:list": laneListRequestSchema,
   "conversation:history": conversationHistoryRequestSchema,
@@ -1780,6 +1803,8 @@ export const ipcResponseSchemas = {
   "kanban:list": z.array(kanbanCardSchema),
   "kanban:create": kanbanMutationSchema,
   "kanban:move": kanbanMutationSchema,
+  "kanban:update": kanbanMutationSchema,
+  "kanban:delete": kanbanDeleteResultSchema,
   "kanban:assign": kanbanMutationSchema,
   "lane:list": laneListSchema,
   "conversation:history": conversationHistorySchema,

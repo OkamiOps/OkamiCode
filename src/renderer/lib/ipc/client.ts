@@ -64,6 +64,10 @@ export const workbenchClient = {
     invokeCommand("kanban:create", request),
   kanbanMove: (request: IpcRequest<"kanban:move">) =>
     invokeCommand("kanban:move", request),
+  kanbanUpdate: (request: IpcRequest<"kanban:update">) =>
+    invokeCommand("kanban:update", request),
+  kanbanDelete: (request: IpcRequest<"kanban:delete">) =>
+    invokeCommand("kanban:delete", request),
   kanbanAssign: (request: IpcRequest<"kanban:assign">) =>
     invokeCommand("kanban:assign", request),
   taskRename: (request: IpcRequest<"task:rename">) =>

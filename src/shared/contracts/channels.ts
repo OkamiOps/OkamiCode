@@ -37,6 +37,8 @@ export const ipcChannels = [
   "kanban:list",
   "kanban:create",
   "kanban:move",
+  "kanban:update",
+  "kanban:delete",
   "kanban:assign",
   "lane:list",
   "conversation:history",

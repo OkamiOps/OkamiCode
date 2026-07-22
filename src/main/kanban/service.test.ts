@@ -189,4 +189,45 @@ describe("KanbanCardService", () => {
 
     expect(fx.service.listEvents(card.id)).toHaveLength(2);
   });
+
+  it("updates the human directive and wakes a relevant-change owner", () => {
+    const fx = createService();
+    const card = fx.service.create({
+      taskId: fx.taskId,
+      title: "Review request",
+      description: "Read the request.",
+      ownerKind: "lane",
+      laneId: fx.laneId,
+      activationPolicy: "relevant_change",
+    });
+
+    const result = fx.service.update({
+      cardId: card.id,
+      title: "Review payment request",
+      description: "Validate the amount and prepare next steps.",
+      idempotencyKey: "update-1",
+    });
+
+    expect(result.card).toMatchObject({
+      title: "Review payment request",
+      description: "Validate the amount and prepare next steps.",
+    });
+    expect(result.wake).toMatchObject({
+      shouldWake: true,
+      reason: "relevant_change",
+    });
+    expect(fx.service.listEvents(card.id).at(-1)?.kind).toBe("updated");
+  });
+
+  it("deletes a card and its event history", () => {
+    const fx = createService();
+    const card = fx.service.create({
+      title: "Discard obsolete task",
+      description: "This is no longer needed.",
+    });
+
+    expect(fx.service.delete(card.id)).toBe(true);
+    expect(fx.service.list()).toEqual([]);
+    expect(() => fx.service.delete(card.id)).toThrow("was not found");
+  });
 });

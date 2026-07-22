@@ -1,5 +1,5 @@
 import { Button, Modal, Spinner, useOverlayState } from "@heroui/react";
-import { Bot, CheckSquare, UserRound, X } from "lucide-react";
+import { Bot, CheckSquare, FolderKanban, UserRound, X } from "lucide-react";
 import { useMemo, useRef, useState, type FormEvent } from "react";
 import type { IpcRequest, IpcResponse } from "../../../shared/contracts/ipc";
 
@@ -24,6 +24,7 @@ export function InboxTaskModal({
 }: InboxTaskModalProps) {
   const [mode, setMode] = useState<TaskMode>("manual");
   const [title, setTitle] = useState("");
+  const [instruction, setInstruction] = useState("");
   const [selectedLaneId, setSelectedLaneId] = useState<string | null>(null);
   const [lanes, setLanes] = useState<Lane[] | null>(null);
   const [lanesError, setLanesError] = useState<string | null>(null);
@@ -36,6 +37,7 @@ export function InboxTaskModal({
         idempotencyKey.current = createUuid();
         setMode("manual");
         setTitle(thread.subject.trim() || "E-mail sem assunto");
+        setInstruction("");
         setSelectedLaneId(null);
         setLanes(null);
         setLanesError(null);
@@ -79,12 +81,17 @@ export function InboxTaskModal({
       setError("Escolha uma lane com workspace para preparar a tarefa.");
       return;
     }
+    if (!instruction.trim()) {
+      setError("Descreva o resultado esperado para esta tarefa.");
+      return;
+    }
     try {
       await onCreateTask({
         threadId: thread.id,
         mode,
         laneId: mode === "delegate" ? selectedLaneId : null,
         title: trimmedTitle,
+        instruction: instruction.trim(),
         idempotencyKey: idempotencyKey.current ?? createUuid(),
       });
       state.close();
@@ -144,6 +151,25 @@ export function InboxTaskModal({
                   />
                 </label>
 
+                <label className="inbox-form-field inbox-form-field--instruction">
+                  <span>O que precisa ser feito?</span>
+                  <textarea
+                    aria-label="Instrução da tarefa"
+                    maxLength={4000}
+                    onChange={(event) => {
+                      setInstruction(event.target.value);
+                      setError(null);
+                    }}
+                    placeholder="Ex.: valide a cobrança, identifique o risco e prepare os próximos passos. Não responda ao remetente sem minha aprovação."
+                    rows={5}
+                    value={instruction}
+                  />
+                  <small>
+                    Esta é a diretriz que ficará no card e orientará o agente.
+                    {` ${instruction.length}/4000`}
+                  </small>
+                </label>
+
                 <fieldset className="inbox-task-mode">
                   <legend>Responsabilidade</legend>
                   <label data-selected={mode === "manual" || undefined}>
@@ -171,10 +197,12 @@ export function InboxTaskModal({
                       type="radio"
                       value="delegate"
                     />
-                    <Bot aria-hidden="true" size={14} />
+                    <FolderKanban aria-hidden="true" size={14} />
                     <span>
-                      <strong>Preparar para agente</strong>
-                      <small>Associa uma lane; não inicia execução.</small>
+                      <strong>Delegar acompanhamento</strong>
+                      <small>
+                        O agente assume o card e observa atualizações.
+                      </small>
                     </span>
                   </label>
                 </fieldset>
@@ -184,7 +212,7 @@ export function InboxTaskModal({
                     className="inbox-task-lanes"
                     aria-label="Lanes disponíveis"
                   >
-                    <p className="inbox-section-label">Lane com workspace</p>
+                    <p className="inbox-section-label">Agente e workspace</p>
                     {isLoadingLanes && (
                       <p className="inbox-task-lanes__state" role="status">
                         <Spinner size="sm" /> Carregando lanes…
@@ -202,37 +230,27 @@ export function InboxTaskModal({
                             Nenhuma lane com workspace está disponível.
                           </p>
                         ) : (
-                          <div className="inbox-task-lanes__list">
-                            {eligibleLanes.map((lane) => (
-                              <label
-                                aria-label={`${lane.model} — ${lane.providerAccountLabel}`}
-                                data-selected={
-                                  selectedLaneId === lane.laneId || undefined
-                                }
-                                htmlFor={`inbox-task-lane-${lane.laneId}`}
-                                key={lane.laneId}
-                              >
-                                <input
-                                  checked={selectedLaneId === lane.laneId}
-                                  id={`inbox-task-lane-${lane.laneId}`}
-                                  name="lane"
-                                  onChange={() => {
-                                    setSelectedLaneId(lane.laneId);
-                                    setError(null);
-                                  }}
-                                  type="radio"
-                                  value={lane.laneId}
-                                />
-                                <span>
-                                  <strong>{lane.model}</strong>
-                                  <small>
-                                    {lane.providerAccountLabel} ·{" "}
-                                    {lane.workspacePath}
-                                  </small>
-                                </span>
-                              </label>
-                            ))}
-                          </div>
+                          <label className="inbox-form-field">
+                            <span>Execução vinculada</span>
+                            <select
+                              aria-label="Agente e workspace"
+                              onChange={(event) => {
+                                setSelectedLaneId(event.target.value || null);
+                                setError(null);
+                              }}
+                              value={selectedLaneId ?? ""}
+                            >
+                              <option value="">
+                                Selecione agente, modelo e pasta
+                              </option>
+                              {eligibleLanes.map((lane) => (
+                                <option key={lane.laneId} value={lane.laneId}>
+                                  {lane.providerAccountLabel} · {lane.model} ·{" "}
+                                  {lane.workspacePath}
+                                </option>
+                              ))}
+                            </select>
+                          </label>
                         )}
                       </>
                     )}
@@ -240,7 +258,10 @@ export function InboxTaskModal({
                 )}
 
                 <p className="inbox-task-safety">
-                  Nenhum agente será iniciado.
+                  <Bot aria-hidden="true" size={13} />
+                  {mode === "delegate"
+                    ? "O agente será acordado apenas quando houver mudança relevante no card ou no e-mail."
+                    : "A tarefa fica sob seu controle; nenhum agente será iniciado."}
                 </p>
                 {error && (
                   <p className="inbox-form-error" role="alert">

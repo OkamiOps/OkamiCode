@@ -11,7 +11,7 @@ describe("openDatabase", () => {
     const key = Buffer.alloc(32, 7);
     const db = openDatabase(file, key);
     expect(db.prepare("SELECT sqlite3mc_version()").pluck().get()).toBeTruthy();
-    expect(db.pragma("user_version", { simple: true })).toBe(23);
+    expect(db.pragma("user_version", { simple: true })).toBe(24);
     expect(
       db
         .prepare("PRAGMA table_info(inbox_messages)")

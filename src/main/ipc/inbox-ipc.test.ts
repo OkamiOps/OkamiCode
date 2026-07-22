@@ -458,6 +458,7 @@ it("creates a task through the strict trusted Inbox channel without starting a l
       threadId,
       mode: "manual",
       laneId: null,
+      instruction: "Prepare os próximos passos.",
       idempotencyKey,
     }),
   ).resolves.toMatchObject({
@@ -469,6 +470,7 @@ it("creates a task through the strict trusted Inbox channel without starting a l
     threadId,
     mode: "manual",
     laneId: null,
+    instruction: "Prepare os próximos passos.",
     idempotencyKey,
   });
   expect(sendTurn).not.toHaveBeenCalled();
@@ -477,6 +479,7 @@ it("creates a task through the strict trusted Inbox channel without starting a l
       threadId,
       mode: "delegate",
       laneId: null,
+      instruction: "Prepare os próximos passos.",
       idempotencyKey,
     }),
   ).rejects.toThrow();

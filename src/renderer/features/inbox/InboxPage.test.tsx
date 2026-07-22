@@ -1523,7 +1523,12 @@ describe("InboxPage", () => {
     expect(screen.getByLabelText("Título da tarefa")).toHaveValue(
       "Proposta para landing page",
     );
-    expect(screen.getByText("Nenhum agente será iniciado.")).toBeVisible();
+    expect(screen.getByText(/nenhum agente será iniciado/i)).toBeVisible();
+
+    await userEvent.type(
+      screen.getByLabelText("Instrução da tarefa"),
+      "Preparar a proposta e validar escopo e prazo.",
+    );
 
     await userEvent.click(screen.getByRole("button", { name: "Criar tarefa" }));
     await vi.waitFor(() => expect(api.createTask).toHaveBeenCalledTimes(1));
@@ -1532,6 +1537,7 @@ describe("InboxPage", () => {
       mode: "manual",
       laneId: null,
       title: "Proposta para landing page",
+      instruction: "Preparar a proposta e validar escopo e prazo.",
       idempotencyKey: expect.stringMatching(
         /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i,
       ),
@@ -1557,15 +1563,19 @@ describe("InboxPage", () => {
     );
     await userEvent.click(screen.getByRole("button", { name: "Virar tarefa" }));
     await userEvent.click(
-      screen.getByRole("radio", { name: /Preparar para agente/ }),
+      screen.getByRole("radio", { name: /Delegar acompanhamento/ }),
     );
 
-    expect(await screen.findByText("Claude Sonnet 4.5")).toBeVisible();
-    expect(screen.getByText(/Anthropic Max/)).toBeVisible();
-    expect(screen.getByText(/Projetos\/landing/)).toBeVisible();
-    expect(screen.queryAllByText("Claude Sonnet 4.5")).toHaveLength(1);
-    await userEvent.click(
-      screen.getByRole("radio", { name: /Claude Sonnet 4.5/ }),
+    const laneSelect = await screen.findByRole("combobox", {
+      name: "Agente e workspace",
+    });
+    expect(laneSelect).toHaveTextContent("Claude Sonnet 4.5");
+    expect(laneSelect).toHaveTextContent("Anthropic Max");
+    expect(laneSelect).toHaveTextContent("Projetos/landing");
+    await userEvent.selectOptions(laneSelect, workspaceLane.laneId);
+    await userEvent.type(
+      screen.getByLabelText("Instrução da tarefa"),
+      "Revisar o pedido e preparar uma resposta para aprovação.",
     );
     await userEvent.click(screen.getByRole("button", { name: "Criar tarefa" }));
 
@@ -1599,6 +1609,10 @@ describe("InboxPage", () => {
     await userEvent.type(
       screen.getByLabelText("Título da tarefa"),
       "Proposta revisada",
+    );
+    await userEvent.type(
+      screen.getByLabelText("Instrução da tarefa"),
+      "Revisar a proposta e listar os próximos passos.",
     );
     await userEvent.click(screen.getByRole("button", { name: "Criar tarefa" }));
     expect(await screen.findByRole("alert")).toHaveTextContent(

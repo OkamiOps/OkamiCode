@@ -478,6 +478,21 @@ async function dispatch(
         request as IpcRequest<"kanban:move">,
         (input) => kanbanService().move(input),
       );
+    case "kanban:update":
+      return mutateKanbanCard(
+        state,
+        openedLanes,
+        event.sender,
+        laneEffort,
+        kanbanService(),
+        request as IpcRequest<"kanban:update">,
+        (input) => kanbanService().update(input),
+      );
+    case "kanban:delete": {
+      const input = request as IpcRequest<"kanban:delete">;
+      kanbanService().delete(input.cardId);
+      return { cardId: input.cardId, deleted: true as const };
+    }
     case "kanban:assign":
       return mutateKanbanCard(
         state,
