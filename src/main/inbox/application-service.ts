@@ -310,27 +310,23 @@ export class InboxApplicationService {
     const configuration = this.findConfiguration(detail.thread.accountId);
     if (!account || !configuration) throw new InboxApplicationError();
     return this.runAccountOperation(account.id, async () => {
+      const local = this.inbox.markThreadRead(id);
       const adapter = this.options.createAdapter(this.options.vault);
-      if (!adapter.setMessagesSeen) throw new InboxApplicationError();
+      if (!adapter.setMessagesSeen) return local;
 
       try {
         await adapter.setMessagesSeen({
           account,
           configuration,
-          externalMessageIds: detail.messages.map(
-            (message) => message.providerUid ?? message.externalMessageId,
-          ),
+          externalMessageIds: detail.messages.map(remoteMessageIdentifier),
           seen: true,
         });
-        return this.inbox.markThreadRead(id);
+        return this.inbox.confirmThreadSeenState(id, true);
       } catch (cause) {
         if (cause instanceof ImapSyncError && cause.code === "auth_required") {
           this.setPublicStatus(account.id, "auth_required", cause.message);
-          throw new InboxApplicationError(cause.message);
         }
-        throw new InboxApplicationError(
-          "Não foi possível marcar a conversa como lida.",
-        );
+        return local;
       }
     });
   }
@@ -341,27 +337,23 @@ export class InboxApplicationService {
     const configuration = this.findConfiguration(detail.thread.accountId);
     if (!account || !configuration) throw new InboxApplicationError();
     return this.runAccountOperation(account.id, async () => {
+      const local = this.inbox.markThreadUnread(id);
       const adapter = this.options.createAdapter(this.options.vault);
-      if (!adapter.setMessagesSeen) throw new InboxApplicationError();
+      if (!adapter.setMessagesSeen) return local;
 
       try {
         await adapter.setMessagesSeen({
           account,
           configuration,
-          externalMessageIds: detail.messages.map(
-            (message) => message.providerUid ?? message.externalMessageId,
-          ),
+          externalMessageIds: detail.messages.map(remoteMessageIdentifier),
           seen: false,
         });
-        return this.inbox.markThreadUnread(id);
+        return this.inbox.confirmThreadSeenState(id, false);
       } catch (cause) {
         if (cause instanceof ImapSyncError && cause.code === "auth_required") {
           this.setPublicStatus(account.id, "auth_required", cause.message);
-          throw new InboxApplicationError(cause.message);
         }
-        throw new InboxApplicationError(
-          "Não foi possível marcar a conversa como não lida.",
-        );
+        return local;
       }
     });
   }
@@ -386,9 +378,7 @@ export class InboxApplicationService {
         await adapter.moveMessages({
           account,
           configuration,
-          externalMessageIds: detail.messages.map(
-            (message) => message.providerUid ?? message.externalMessageId,
-          ),
+          externalMessageIds: detail.messages.map(remoteMessageIdentifier),
           destination,
         });
         this.inbox.deleteThread(id);
@@ -556,6 +546,18 @@ export class InboxApplicationService {
       throw new InboxApplicationError();
     }
   }
+}
+
+function remoteMessageIdentifier(message: {
+  externalMessageId: string;
+  providerUid: string | null;
+}): string {
+  // IMAP UIDs are scoped to a mailbox and UIDVALIDITY generation. Gmail can
+  // reassign them after label/folder changes, so mutable operations should
+  // resolve the current UID from the stable RFC Message-ID whenever available.
+  return message.externalMessageId.startsWith("imap:")
+    ? (message.providerUid ?? message.externalMessageId)
+    : message.externalMessageId;
 }
 
 function inboxErrorCode(cause: unknown): string | null {

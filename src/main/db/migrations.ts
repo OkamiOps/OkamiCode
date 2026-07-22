@@ -24,6 +24,7 @@ const MIGRATIONS = [
   "schema/019-google-calendar-sources.sql",
   "schema/020-inbox-provider-uids.sql",
   "schema/021-inbox-remote-state.sql",
+  "schema/022-inbox-local-seen-overrides.sql",
 ];
 
 export function runMigrations(db: InstanceType<typeof SqliteDatabase>): void {

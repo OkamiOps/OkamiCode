@@ -97,6 +97,67 @@ describe("InboxService", () => {
     expect(detail.thread.unreadCount).toBe(0);
   });
 
+  it("keeps a local read override until Gmail confirms the Seen flag", () => {
+    const { service } = createService();
+    const account = service.addAccount(accountInput());
+    service.applySyncBatch({
+      accountId: account.id,
+      previousCursor: null,
+      nextCursor: "cursor-1",
+      threads: [threadInput({ unreadCount: 1 })],
+      messages: [
+        messageInput({
+          externalMessageId: "4",
+          providerUid: "imap:99:4",
+          seen: false,
+        }),
+      ],
+      syncedAt: "2026-07-21T10:05:00.000Z",
+    } as never);
+    const threadId = service.listThreads().threads[0]!.id;
+
+    service.markThreadRead(threadId);
+    service.applySyncBatch({
+      accountId: account.id,
+      previousCursor: "cursor-1",
+      nextCursor: "cursor-1",
+      threads: [],
+      messages: [],
+      reconciliation: {
+        checkedProviderUids: ["imap:99:4"],
+        states: [{ providerUid: "imap:99:4", seen: false }],
+      },
+      syncedAt: "2026-07-21T10:06:00.000Z",
+    } as never);
+    expect(service.getThread(threadId).thread.unreadCount).toBe(0);
+
+    service.applySyncBatch({
+      accountId: account.id,
+      previousCursor: "cursor-1",
+      nextCursor: "cursor-1",
+      threads: [],
+      messages: [],
+      reconciliation: {
+        checkedProviderUids: ["imap:99:4"],
+        states: [{ providerUid: "imap:99:4", seen: true }],
+      },
+      syncedAt: "2026-07-21T10:07:00.000Z",
+    } as never);
+    service.applySyncBatch({
+      accountId: account.id,
+      previousCursor: "cursor-1",
+      nextCursor: "cursor-1",
+      threads: [],
+      messages: [],
+      reconciliation: {
+        checkedProviderUids: ["imap:99:4"],
+        states: [{ providerUid: "imap:99:4", seen: false }],
+      },
+      syncedAt: "2026-07-21T10:08:00.000Z",
+    } as never);
+    expect(service.getThread(threadId).thread.unreadCount).toBe(1);
+  });
+
   it("normalizes account addresses per provider and exposes no credential fields", () => {
     const { fx, service } = createService();
     const gmail = service.addAccount(

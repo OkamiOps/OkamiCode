@@ -149,7 +149,7 @@ describe("InboxApplicationService", () => {
     );
   });
 
-  it("marks every provider message seen before updating the local thread", async () => {
+  it("marks every provider message seen by its stable message id before updating the local thread", async () => {
     const setMessagesSeen = vi.fn().mockResolvedValue(undefined);
     const { service } = fixture({
       sync: async (input: { account: { id: string } }) =>
@@ -167,13 +167,13 @@ describe("InboxApplicationService", () => {
     expect(setMessagesSeen).toHaveBeenCalledWith(
       expect.objectContaining({
         account: expect.objectContaining({ id: added.account.id }),
-        externalMessageIds: ["imap:99:4"],
+        externalMessageIds: ["message-1"],
         seen: true,
       }),
     );
   });
 
-  it("keeps an unread thread local when marking it seen fails remotely", async () => {
+  it("keeps a thread read locally when marking it seen is still pending remotely", async () => {
     const { service } = fixture({
       sync: async (input: { account: { id: string } }) =>
         batch(input.account.id),
@@ -183,10 +183,11 @@ describe("InboxApplicationService", () => {
     await service.syncAccount(added.account.id);
     const selected = service.listThreads().threads[0]!;
 
-    await expect(service.markThreadRead(selected.id)).rejects.toThrow(
-      "Não foi possível marcar a conversa como lida.",
-    );
-    expect(service.getThread(selected.id).thread.unreadCount).toBe(1);
+    await expect(service.markThreadRead(selected.id)).resolves.toMatchObject({
+      id: selected.id,
+      unreadCount: 0,
+    });
+    expect(service.getThread(selected.id).thread.unreadCount).toBe(0);
   });
 
   it("marks every provider message unseen before updating the local thread", async () => {
@@ -208,13 +209,13 @@ describe("InboxApplicationService", () => {
     expect(setMessagesSeen).toHaveBeenCalledWith(
       expect.objectContaining({
         account: expect.objectContaining({ id: added.account.id }),
-        externalMessageIds: ["imap:99:4"],
+        externalMessageIds: ["message-1"],
         seen: false,
       }),
     );
   });
 
-  it("keeps a read thread local when marking it unseen fails remotely", async () => {
+  it("keeps a thread unread locally when marking it unseen is still pending remotely", async () => {
     const setMessagesSeen = vi
       .fn()
       .mockResolvedValueOnce(undefined)
@@ -229,10 +230,11 @@ describe("InboxApplicationService", () => {
     const selected = service.listThreads().threads[0]!;
     await service.markThreadRead(selected.id);
 
-    await expect(service.markThreadUnread(selected.id)).rejects.toThrow(
-      "Não foi possível marcar a conversa como não lida.",
-    );
-    expect(service.getThread(selected.id).thread.unreadCount).toBe(0);
+    await expect(service.markThreadUnread(selected.id)).resolves.toMatchObject({
+      id: selected.id,
+      unreadCount: 1,
+    });
+    expect(service.getThread(selected.id).thread.unreadCount).toBe(1);
   });
 
   it("moves every message in a thread remotely before removing the local conversation", async () => {
@@ -253,7 +255,7 @@ describe("InboxApplicationService", () => {
     expect(moveMessages).toHaveBeenCalledWith(
       expect.objectContaining({
         account: expect.objectContaining({ id: added.account.id }),
-        externalMessageIds: ["imap:99:4"],
+        externalMessageIds: ["message-1"],
         destination: "trash",
       }),
     );

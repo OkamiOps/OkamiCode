@@ -225,6 +225,7 @@ interface MessageRow {
   external_message_id: string;
   provider_uid: string | null;
   seen: number;
+  remote_seen_override: number | null;
   direction: InboxMessageDirection;
   sender: string;
   recipients_json: string;
@@ -477,7 +478,9 @@ export class InboxService {
       if (thread.unreadCount === 0) return thread;
       this.db
         .prepare(
-          "UPDATE inbox_messages SET seen = 1, updated_at = ? WHERE thread_id = ?",
+          `UPDATE inbox_messages
+           SET seen = 1, remote_seen_override = 1, updated_at = ?
+           WHERE thread_id = ?`,
         )
         .run(updatedAt, id);
       this.db
@@ -499,7 +502,9 @@ export class InboxService {
       if (thread.unreadCount > 0) return thread;
       this.db
         .prepare(
-          "UPDATE inbox_messages SET seen = 0, updated_at = ? WHERE thread_id = ?",
+          `UPDATE inbox_messages
+           SET seen = 0, remote_seen_override = 0, updated_at = ?
+           WHERE thread_id = ?`,
         )
         .run(updatedAt, id);
       this.recalculateThreadUnread(id, updatedAt);
@@ -507,6 +512,20 @@ export class InboxService {
       if (!updated) throw new InboxThreadNotFoundError(id);
       return updated;
     })();
+  }
+
+  confirmThreadSeenState(id: string, seen: boolean): InboxThread {
+    const updatedAt = new Date().toISOString();
+    const thread = this.findThread(id);
+    if (!thread) throw new InboxThreadNotFoundError(id);
+    this.db
+      .prepare(
+        `UPDATE inbox_messages
+         SET remote_seen_override = NULL, updated_at = ?
+         WHERE thread_id = ? AND remote_seen_override = ?`,
+      )
+      .run(updatedAt, id, seen ? 1 : 0);
+    return this.findThread(id) ?? thread;
   }
 
   deleteThread(id: string): void {
@@ -625,7 +644,7 @@ export class InboxService {
     if (
       current.threadId === candidate.threadId &&
       current.providerUid === candidate.providerUid &&
-      current.seen === candidate.seen &&
+      current.seen === (current.remote_seen_override ?? candidate.seen) &&
       current.direction === candidate.direction &&
       current.sender === candidate.sender &&
       canonicalSetJson(current.recipients, normalizeAddress) ===
@@ -644,7 +663,8 @@ export class InboxService {
          SET thread_id = @threadId, provider_uid = @providerUid,
              direction = @direction, sender = @sender,
              recipients_json = @recipientsJson, body = @body, body_format = @bodyFormat,
-             sent_at = @sentAt, received_at = @receivedAt, seen = @seen,
+             sent_at = @sentAt, received_at = @receivedAt,
+             seen = CASE WHEN remote_seen_override IS NULL THEN @seen ELSE seen END,
              attachments_json = @attachmentsJson, updated_at = @updatedAt
          WHERE id = @id`,
       )
@@ -662,7 +682,7 @@ export class InboxService {
     );
     const affectedThreadIds = new Set<string>();
     const findMessage = this.db.prepare(
-      `SELECT id, thread_id, seen FROM inbox_messages
+      `SELECT id, thread_id, seen, remote_seen_override FROM inbox_messages
        WHERE account_id = ? AND provider_uid = ?`,
     );
     const deleteMessage = this.db.prepare(
@@ -674,17 +694,41 @@ export class InboxService {
 
     for (const providerUid of reconciliation.checkedProviderUids) {
       const row = findMessage.get(accountId, providerUid) as
-        { id: string; thread_id: string; seen: number } | undefined;
+        | {
+            id: string;
+            thread_id: string;
+            seen: number;
+            remote_seen_override: number | null;
+          }
+        | undefined;
       if (!row || present.has(providerUid)) continue;
       affectedThreadIds.add(row.thread_id);
       deleteMessage.run(row.id);
     }
     for (const state of reconciliation.states) {
       const row = findMessage.get(accountId, state.providerUid) as
-        { id: string; thread_id: string; seen: number } | undefined;
+        | {
+            id: string;
+            thread_id: string;
+            seen: number;
+            remote_seen_override: number | null;
+          }
+        | undefined;
       if (!row) continue;
       affectedThreadIds.add(row.thread_id);
       const seen = state.seen ? 1 : 0;
+      if (row.remote_seen_override !== null) {
+        if (row.remote_seen_override === seen) {
+          this.db
+            .prepare(
+              `UPDATE inbox_messages
+               SET seen = ?, remote_seen_override = NULL, updated_at = ?
+               WHERE id = ?`,
+            )
+            .run(seen, syncedAt, row.id);
+        }
+        continue;
+      }
       if (row.seen !== seen) updateSeen.run(seen, syncedAt, row.id);
     }
     for (const threadId of affectedThreadIds) {
@@ -769,13 +813,21 @@ export class InboxService {
   private findMessageByExternalId(
     accountId: string,
     externalMessageId: string,
-  ): (InboxMessage & { seen: number }) | undefined {
+  ):
+    | (InboxMessage & { seen: number; remote_seen_override: number | null })
+    | undefined {
     const row = this.db
       .prepare(
         "SELECT * FROM inbox_messages WHERE account_id = ? AND external_message_id = ?",
       )
       .get(accountId, externalMessageId) as MessageRow | undefined;
-    return row ? { ...messageFromRow(row), seen: row.seen } : undefined;
+    return row
+      ? {
+          ...messageFromRow(row),
+          seen: row.seen,
+          remote_seen_override: row.remote_seen_override,
+        }
+      : undefined;
   }
 }
 
