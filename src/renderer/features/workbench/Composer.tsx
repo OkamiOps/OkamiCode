@@ -1,14 +1,22 @@
 import {
   ArrowUp,
+  Check,
   Clock3,
+  Command,
   FileText,
   FolderTree,
   Globe,
+  ListChecks,
   Paperclip,
+  Pause,
+  Play,
+  PlugZap,
   Plus,
   ShieldCheck,
   Square,
   SquareTerminal,
+  Target,
+  Users,
   X,
 } from "lucide-react";
 import {
@@ -54,6 +62,7 @@ interface ComposerProps {
   suggestions: string[];
   onOpenPanel: (mode: "files" | "terminal" | "browser" | "tasks") => void;
   onOpenUrl: (url: string) => void;
+  onNavigate: (path: string) => void;
   onSelectPermissionMode: (mode: PermissionMode) => void;
   onCancel: (runId: string) => Promise<void>;
   onPickFiles: () => Promise<string[]>;
@@ -64,11 +73,17 @@ interface ComposerProps {
 
 function ComposerAddMenu({
   onAttach,
+  onCommand,
+  onGoal,
+  onNavigate,
   onOpenPanel,
   onOpenUrl,
   suggestions,
 }: {
   onAttach: () => void;
+  onCommand: () => void;
+  onGoal: () => void;
+  onNavigate: (path: string) => void;
   onOpenPanel: (mode: "files" | "terminal" | "browser" | "tasks") => void;
   onOpenUrl: (url: string) => void;
   suggestions: string[];
@@ -112,10 +127,22 @@ function ComposerAddMenu({
       </button>
       {open && (
         <div className="conv-menu__list conv-menu__list--up" role="menu">
-          {entry("Anexar arquivos", Paperclip, onAttach)}
-          {entry("Navegador", Globe, () => onOpenPanel("browser"))}
-          {entry("Terminal", SquareTerminal, () => onOpenPanel("terminal"))}
+          <span className="conv-menu__label">Contexto</span>
+          {entry("Adicionar arquivos ou fotos", Paperclip, onAttach)}
           {entry("Arquivos da pasta", FolderTree, () => onOpenPanel("files"))}
+          {entry("Navegador", Globe, () => onOpenPanel("browser"))}
+          <span className="conv-menu__separator" />
+          <span className="conv-menu__label">Trabalho</span>
+          {entry("Terminal", SquareTerminal, () => onOpenPanel("terminal"))}
+          {entry("Tarefas em segundo plano", ListChecks, () =>
+            onOpenPanel("tasks"),
+          )}
+          {entry("Definir objetivo", Target, onGoal)}
+          {entry("Comandos", Command, onCommand)}
+          <span className="conv-menu__separator" />
+          <span className="conv-menu__label">Ecossistema</span>
+          {entry("Conexões", PlugZap, () => onNavigate("/connections"))}
+          {entry("Agentes e plugins", Users, () => onNavigate("/agents"))}
           {suggestions.length > 0 && (
             <>
               <span className="conv-menu__separator" />
@@ -247,6 +274,7 @@ export function Composer({
   suggestions,
   onOpenPanel,
   onOpenUrl,
+  onNavigate,
   onSelectPermissionMode,
   onCancel,
   onPickFiles,
@@ -269,6 +297,9 @@ export function Composer({
   const [mentionIndex, setMentionIndex] = useState(0);
   const [attachments, setAttachments] = useState<string[]>([]);
   const [queued, setQueued] = useState<string[]>([]);
+  const [goal, setGoal] = useState<ComposerGoal | null>(() =>
+    readGoal(draftKey),
+  );
   const textareaRef = useRef<HTMLTextAreaElement>(null);
   const lastSentRef = useRef<string>("");
   const dispatchingRef = useRef(false);
@@ -338,7 +369,7 @@ export function Composer({
   const slashMatches = useMemo(() => {
     if (!input.startsWith("/") || /\s/u.test(input)) return [];
     const term = input.slice(1).toLowerCase();
-    return slashCommands
+    return [...new Set(["goal", ...slashCommands])]
       .filter((name) => name.toLowerCase().startsWith(term))
       .slice(0, 8);
   }, [input, slashCommands]);
@@ -358,6 +389,16 @@ export function Composer({
   async function submit() {
     const outgoing = composeOutgoing();
     if (!lane || !outgoing || isSending) return;
+    const goalText = /^\/goal\s+(.+)$/isu.exec(outgoing)?.[1]?.trim();
+    if (goalText) {
+      const nextGoal: ComposerGoal = {
+        text: goalText,
+        status: "active",
+        startedAt: new Date().toISOString(),
+      };
+      setGoal(nextGoal);
+      persistGoal(draftKey, nextGoal);
+    }
     lastSentRef.current = outgoing;
     updateInput("");
     setAttachments([]);
@@ -519,6 +560,52 @@ export function Composer({
           ))}
         </div>
       )}
+      {goal && (
+        <div className="chat-goal" data-status={goal.status}>
+          <span className="chat-goal__icon" aria-hidden="true">
+            <Target size={13} />
+          </span>
+          <span className="chat-goal__body">
+            <small>
+              Objetivo {goal.status === "paused" ? "pausado" : "em andamento"}
+            </small>
+            <strong>{goal.text}</strong>
+          </span>
+          <span className="chat-goal__elapsed">
+            {formatGoalAge(goal.startedAt)}
+          </span>
+          <button
+            aria-label={
+              goal.status === "paused" ? "Retomar objetivo" : "Pausar objetivo"
+            }
+            onClick={() => {
+              const next: ComposerGoal = {
+                ...goal,
+                status: goal.status === "paused" ? "active" : "paused",
+              };
+              setGoal(next);
+              persistGoal(draftKey, next);
+            }}
+            type="button"
+          >
+            {goal.status === "paused" ? (
+              <Play size={12} />
+            ) : (
+              <Pause size={12} />
+            )}
+          </button>
+          <button
+            aria-label="Concluir objetivo"
+            onClick={() => {
+              setGoal(null);
+              persistGoal(draftKey, null);
+            }}
+            type="button"
+          >
+            <Check size={13} />
+          </button>
+        </div>
+      )}
       <textarea
         aria-label="Mensagem"
         onChange={(event) => updateInput(event.target.value)}
@@ -538,6 +625,9 @@ export function Composer({
         )}
         <ComposerAddMenu
           onAttach={() => void attachFiles()}
+          onCommand={() => updateInput("/")}
+          onGoal={() => updateInput("/goal ")}
+          onNavigate={onNavigate}
           onOpenPanel={onOpenPanel}
           onOpenUrl={onOpenUrl}
           suggestions={suggestions}
@@ -667,4 +757,50 @@ export function Composer({
       )}
     </form>
   );
+}
+
+interface ComposerGoal {
+  text: string;
+  status: "active" | "paused";
+  startedAt: string;
+}
+
+function goalStorageKey(draftKey: string | null): string | null {
+  return draftKey ? `okami.goal.${draftKey}` : null;
+}
+
+function readGoal(draftKey: string | null): ComposerGoal | null {
+  const key = goalStorageKey(draftKey);
+  if (!key) return null;
+  try {
+    const value = JSON.parse(
+      localStorage.getItem(key) ?? "null",
+    ) as ComposerGoal | null;
+    return value?.text && ["active", "paused"].includes(value.status)
+      ? value
+      : null;
+  } catch {
+    return null;
+  }
+}
+
+function persistGoal(draftKey: string | null, goal: ComposerGoal | null) {
+  const key = goalStorageKey(draftKey);
+  if (!key) return;
+  try {
+    if (goal) localStorage.setItem(key, JSON.stringify(goal));
+    else localStorage.removeItem(key);
+  } catch {
+    // The visible goal remains usable when persistence is unavailable.
+  }
+}
+
+function formatGoalAge(startedAt: string): string {
+  const elapsed = Math.max(0, Date.now() - Date.parse(startedAt));
+  if (!Number.isFinite(elapsed)) return "agora";
+  const minutes = Math.floor(elapsed / 60_000);
+  if (minutes < 1) return "agora";
+  if (minutes < 60) return `${minutes} min`;
+  const hours = Math.floor(minutes / 60);
+  return `${hours}h ${minutes % 60}m`;
 }

@@ -704,7 +704,16 @@ export const approvalResultSchema = z
   })
   .strict();
 
-const quickChatRuntimeKindSchema = z.enum(["claude", "codex", "agy"]);
+// Cursor requires a workspace. Every other native subscription runtime can
+// power the workspace-free chat without silently falling back to an API.
+const quickChatRuntimeKindSchema = z.enum([
+  "claude",
+  "codex",
+  "agy",
+  "grok",
+  "mimo",
+  "minimax",
+]);
 
 export const quickChatCreateRequestSchema = z
   .object({

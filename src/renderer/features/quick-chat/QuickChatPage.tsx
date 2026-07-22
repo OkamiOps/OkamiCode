@@ -11,20 +11,26 @@ import {
   ArrowUpDown,
   Bot,
   ChevronDown,
+  FilePlus2,
+  Languages,
+  ListTodo,
   MoreHorizontal,
   MessageSquareText,
   Palette,
+  Paperclip,
   Pencil,
   Pin,
+  PlugZap,
   Plus,
   Search,
   Send,
   ShieldCheck,
+  Sparkles,
   Trash2,
   X,
 } from "lucide-react";
-import { useEffect, useMemo, useState, type FormEvent } from "react";
-import { useSearchParams } from "react-router-dom";
+import { useEffect, useMemo, useRef, useState, type FormEvent } from "react";
+import { useNavigate, useSearchParams } from "react-router-dom";
 import { useStore } from "zustand";
 import { createStore, type StoreApi } from "zustand/vanilla";
 import type { CanonicalEvent } from "../../../shared/contracts/event";
@@ -34,6 +40,7 @@ import { workbenchClient } from "../../lib/ipc/client";
 import { subscribeToWorkbenchEvents } from "../../lib/ipc/events";
 import { ContextChips, type ContextChipItem } from "./ContextChips";
 import { MemoryPicker } from "./MemoryPicker";
+import { MessageMarkdown } from "../workbench/MessageMarkdown";
 
 const DEFAULT_RUNTIME = "codex" as const;
 const DEFAULT_MODEL = "gpt-5.6-luna";
@@ -179,6 +186,7 @@ function QuickChatContent({
   store: StoreApi<QuickChatUiState>;
 }) {
   const queryClient = useQueryClient();
+  const navigate = useNavigate();
   const [searchParams, setSearchParams] = useSearchParams();
   const chatId = searchParams.get("chat");
   const chips = useStore(store, (state) => state.chips);
@@ -435,9 +443,16 @@ function QuickChatContent({
               {historyQuery.data?.title ?? "Chat rápido"}
             </h1>
           </div>
-          <span className="quick-chat-workspace-badge">
-            <ShieldCheck aria-hidden="true" size={12} /> Sem workspace
-          </span>
+          <div className="quick-chat-header__badges">
+            <span className="quick-chat-runtime-badge">
+              <Bot aria-hidden="true" size={12} />
+              {selectedDefinition?.providerLabel ?? activeRuntime} ·{" "}
+              {selectedDefinition?.label ?? modelDisplay(activeModel)}
+            </span>
+            <span className="quick-chat-workspace-badge">
+              <ShieldCheck aria-hidden="true" size={12} /> Sem workspace
+            </span>
+          </div>
         </header>
 
         <div className="quick-chat-messages">
@@ -451,6 +466,21 @@ function QuickChatContent({
                 Este chat não carrega pasta, projeto ou memória automaticamente.
                 Contexto é opcional — digite normalmente para começar.
               </p>
+              <div className="quick-chat-empty__actions">
+                {quickChatStarters.map(({ icon: Icon, label, prompt }) => (
+                  <button
+                    key={label}
+                    onClick={() => store.getState().setInput(prompt)}
+                    type="button"
+                  >
+                    <Icon aria-hidden="true" size={14} />
+                    <span>
+                      <strong>{label}</strong>
+                      <small>{prompt}</small>
+                    </span>
+                  </button>
+                ))}
+              </div>
             </div>
           ) : (
             <div
@@ -478,7 +508,9 @@ function QuickChatContent({
                       </Checkbox.Control>
                     </Checkbox.Content>
                   </Checkbox>
-                  <p>{message.body}</p>
+                  <div className="quick-chat-message__body">
+                    <MessageMarkdown>{message.body}</MessageMarkdown>
+                  </div>
                 </Surface>
               ))}
             </div>
@@ -495,6 +527,18 @@ function QuickChatContent({
               onRemove={(ref) => store.getState().removeChip(ref)}
             />
             <div>
+              <QuickChatAddMenu
+                onAttach={async () => {
+                  const picked = await workbenchClient.filePick({});
+                  for (const path of picked.paths) {
+                    store.getState().addChip({
+                      label: path.split("/").filter(Boolean).at(-1) ?? path,
+                      ref: `file:${path}`,
+                    });
+                  }
+                }}
+                onNavigate={(path) => navigate(path)}
+              />
               <MemoryPicker
                 onSelect={(chip) => store.getState().addChip(chip)}
               />
@@ -749,9 +793,93 @@ function QuickChatHistory({
   );
 }
 
+function QuickChatAddMenu({
+  onAttach,
+  onNavigate,
+}: {
+  onAttach: () => Promise<void>;
+  onNavigate: (path: string) => void;
+}) {
+  const [open, setOpen] = useState(false);
+  const rootRef = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    if (!open) return;
+    const close = (event: PointerEvent) => {
+      if (!rootRef.current?.contains(event.target as Node)) setOpen(false);
+    };
+    window.addEventListener("pointerdown", close);
+    return () => window.removeEventListener("pointerdown", close);
+  }, [open]);
+
+  const action = (
+    label: string,
+    Icon: typeof Paperclip,
+    onPress: () => void,
+  ) => (
+    <button
+      className="conv-menu__item"
+      onClick={() => {
+        setOpen(false);
+        onPress();
+      }}
+      type="button"
+    >
+      <Icon aria-hidden="true" size={13} /> {label}
+    </button>
+  );
+
+  return (
+    <div className="conv-menu" ref={rootRef}>
+      <button
+        aria-expanded={open}
+        aria-label="Adicionar contexto ao chat"
+        className="quick-chat-add"
+        onClick={() => setOpen((value) => !value)}
+        type="button"
+      >
+        <Plus aria-hidden="true" size={13} /> Contexto
+      </button>
+      {open && (
+        <div className="conv-menu__list conv-menu__list--up" role="menu">
+          <span className="conv-menu__label">Adicionar</span>
+          {action("Arquivos ou fotos", FilePlus2, () => void onAttach())}
+          <span className="conv-menu__separator" />
+          <span className="conv-menu__label">Fontes conectadas</span>
+          {action("Conexões", PlugZap, () => onNavigate("/connections"))}
+          {action("Memória", MessageSquareText, () => onNavigate("/memory"))}
+        </div>
+      )}
+    </div>
+  );
+}
+
+const quickChatStarters = [
+  {
+    icon: Sparkles,
+    label: "Resumir",
+    prompt: "Resuma o contexto que eu adicionar e destaque decisões.",
+  },
+  {
+    icon: Languages,
+    label: "Traduzir",
+    prompt: "Traduza o conteúdo para português natural e preserve o sentido.",
+  },
+  {
+    icon: ListTodo,
+    label: "Organizar",
+    prompt: "Transforme minhas notas em próximos passos priorizados.",
+  },
+  {
+    icon: FilePlus2,
+    label: "Escrever",
+    prompt: "Ajude-me a criar um primeiro rascunho claro e objetivo.",
+  },
+] as const;
+
 interface ModelOption {
   key: string;
-  runtime: "claude" | "codex" | "agy";
+  runtime: QuickChatRuntime;
   id: string;
   label: string;
   providerLabel: string;
@@ -761,7 +889,7 @@ interface ModelOption {
 
 function availableModels(catalog: IpcResponse<"models:list">): ModelOption[] {
   const options = catalog.flatMap((provider) =>
-    !["claude", "codex", "agy"].includes(provider.runtimeKind)
+    provider.runtimeKind === "cursor"
       ? []
       : provider.models.map((item) => ({
           key: `${provider.runtimeKind}:${item.id}`,
@@ -1071,4 +1199,4 @@ function createQuickChatStore(
 function firstError(...errors: unknown[]): Error | null {
   return errors.find((error): error is Error => error instanceof Error) ?? null;
 }
-type QuickChatRuntime = Extract<RuntimeKind, "claude" | "codex" | "agy">;
+type QuickChatRuntime = Exclude<RuntimeKind, "cursor">;

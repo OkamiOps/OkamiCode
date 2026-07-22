@@ -10,6 +10,7 @@ import {
   type QuickChatMessage,
 } from "./QuickChatPage";
 import type { ContextChipItem } from "./ContextChips";
+import type { RuntimeKind } from "../../../shared/contracts/lane";
 
 const chatId = "5e20d53c-6fc7-4a95-923f-c244d74aa2f0";
 const taskId = "e7bbb2ef-dd6e-4039-bdd1-b2e93038e884";
@@ -33,13 +34,15 @@ afterEach(() => {
 function renderQuickChat({
   chips,
   messages = [],
+  models = [],
 }: {
   chips: ContextChipItem[];
   messages?: QuickChatMessage[];
+  models?: Awaited<ReturnType<QuickChatApi["models"]>>;
 }) {
   const calls = {
     quickChatCreate: [] as Array<{
-      runtime: "claude" | "codex" | "agy";
+      runtime: Exclude<RuntimeKind, "cursor">;
       model: string;
     }>,
     quickChatSend: [] as Array<{
@@ -121,7 +124,7 @@ function renderQuickChat({
         createdAt: `2026-07-18T12:00:0${index}.000Z`,
       })),
     })),
-    models: vi.fn(async () => []),
+    models: vi.fn(async () => models),
     updateModel: vi.fn(async (request) => ({
       id: request.chatId,
       taskId,
@@ -219,6 +222,46 @@ describe("QuickChatPage", () => {
     expect(
       screen.getByRole("combobox", { name: "Nível de esforço" }),
     ).toHaveValue("high");
+  });
+
+  it("offers every workspace-free native provider and useful starters", async () => {
+    renderQuickChat({
+      chips: [],
+      models: [
+        {
+          runtimeKind: "minimax",
+          providerLabel: "MiniMax",
+          routeKind: "native",
+          source: "fixture",
+          models: [{ id: "MiniMax-M3", label: "MiniMax M3" }],
+        },
+        {
+          runtimeKind: "mimo",
+          providerLabel: "MiMo Code",
+          routeKind: "native",
+          source: "fixture",
+          models: [{ id: "xiaomi/mimo-v2.5-pro", label: "MiMo V2.5 Pro" }],
+        },
+      ],
+    });
+    const user = userEvent.setup();
+
+    const starter = await screen.findByRole("button", {
+      name: /^Resumir/u,
+    });
+    expect(starter).toBeVisible();
+    await user.click(starter);
+    expect(
+      (
+        screen.getByRole("textbox", {
+          name: "Mensagem rápida",
+        }) as HTMLTextAreaElement
+      ).value,
+    ).toMatch(/Resuma o contexto/u);
+
+    const provider = screen.getByRole("combobox", { name: "Provider do chat" });
+    expect(provider).toContainHTML("MiniMax");
+    expect(provider).toContainHTML("MiMo Code");
   });
 
   it("removes a context chip before sending", async () => {

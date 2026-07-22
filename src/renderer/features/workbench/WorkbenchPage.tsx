@@ -7,6 +7,7 @@ import {
   Sparkle,
 } from "lucide-react";
 import { useEffect, useRef, useState, type CSSProperties } from "react";
+import { useNavigate } from "react-router-dom";
 import { useShallow } from "zustand/react/shallow";
 import { Composer } from "./Composer";
 import { Conversation } from "./Conversation";
@@ -71,6 +72,7 @@ function setBodySelectable(selectable: boolean): void {
 }
 
 export function WorkbenchPage({ api = workbenchApi }: WorkbenchPageProps) {
+  const navigate = useNavigate();
   const selectedTaskId = useWorkbenchStore((state) => state.selectedTaskId);
   const selectedLaneId = useWorkbenchStore((state) => state.selectedLaneId);
   const openedLanes = useWorkbenchStore((state) => state.openedLanes);
@@ -355,6 +357,7 @@ export function WorkbenchPage({ api = workbenchApi }: WorkbenchPageProps) {
           current.includes("browser") ? current : [...current, "browser"],
         );
       }}
+      onNavigate={navigate}
       slashCommands={
         selectedLane ? (slashCommandsByLane[selectedLane.laneId] ?? []) : []
       }

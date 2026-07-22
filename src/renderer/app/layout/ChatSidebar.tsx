@@ -275,6 +275,15 @@ export function ChatSidebar() {
                     type="button"
                   >
                     <span className="chat-session__title">{task.title}</span>
+                    <span className="chat-session__meta">
+                      <span data-status={projectStatus(task.status).tone}>
+                        <i aria-hidden="true" />
+                        {projectStatus(task.status).label}
+                      </span>
+                      <time dateTime={task.updatedAt}>
+                        {formatProjectUpdate(task.updatedAt)}
+                      </time>
+                    </span>
                     {task.workspacePath && (
                       <span className="chat-session__path">
                         {task.workspacePath}
@@ -419,4 +428,30 @@ function workspaceLabel(task: WorkbenchTask): string {
   return (
     task.workspacePath?.split("/").filter(Boolean).at(-1) ?? "Sem workspace"
   );
+}
+
+function projectStatus(status: string) {
+  const normalized = status.toLowerCase();
+  if (/error|failed|blocked|erro|falh/u.test(normalized))
+    return { label: "Erro", tone: "error" } as const;
+  if (/running|execut|working/u.test(normalized))
+    return { label: "Executando", tone: "running" } as const;
+  if (/archived|arquiv/u.test(normalized))
+    return { label: "Arquivado", tone: "muted" } as const;
+  if (/waiting|approval|aguard/u.test(normalized))
+    return { label: "Aguardando", tone: "waiting" } as const;
+  return { label: "Ativo", tone: "active" } as const;
+}
+
+function formatProjectUpdate(value: string): string {
+  const date = new Date(value);
+  if (Number.isNaN(date.valueOf())) return "sem data";
+  const elapsed = Date.now() - date.valueOf();
+  if (elapsed < 60_000) return "agora";
+  if (elapsed < 3_600_000) return `${Math.floor(elapsed / 60_000)} min`;
+  if (elapsed < 86_400_000) return `${Math.floor(elapsed / 3_600_000)} h`;
+  return new Intl.DateTimeFormat("pt-BR", {
+    day: "2-digit",
+    month: "short",
+  }).format(date);
 }

@@ -313,6 +313,46 @@ describe("WorkbenchPage", () => {
     expect(runtime.calls.runCancel).toEqual([{ runId }]);
   });
 
+  it("turns /goal into a persistent objective strip and exposes the full add menu", async () => {
+    const runtime = renderWorkbenchFixture({ lanes: [codexLane] });
+
+    await screen.findByTitle("Modo de permissão da lane");
+    const sendButton = await screen.findByRole("button", { name: "Enviar" });
+    fireEvent.click(
+      await screen.findByRole("button", { name: "Adicionar ao contexto" }),
+    );
+    expect(
+      screen.getByRole("button", { name: "Adicionar arquivos ou fotos" }),
+    ).toBeVisible();
+    expect(
+      screen.getByRole("button", { name: "Tarefas em segundo plano" }),
+    ).toBeVisible();
+    expect(
+      screen.getByRole("button", { name: "Definir objetivo" }),
+    ).toBeVisible();
+
+    fireEvent.click(screen.getByRole("button", { name: "Definir objetivo" }));
+    const composer = screen.getByRole("textbox", { name: "Mensagem" });
+    await waitFor(() => expect(composer).toHaveValue("/goal "));
+    fireEvent.change(composer, {
+      target: { value: "/goal entregar o painel premium" },
+    });
+    expect(composer).toHaveValue("/goal entregar o painel premium");
+    await waitFor(() => expect(sendButton).toBeEnabled());
+    fireEvent.click(sendButton);
+
+    await waitFor(() =>
+      expect(runtime.calls.laneSendTurn.at(-1)?.input).toBe(
+        "/goal entregar o painel premium",
+      ),
+    );
+    expect(await screen.findByText("Objetivo em andamento")).toBeVisible();
+    expect(screen.getByText("entregar o painel premium")).toBeVisible();
+    expect(localStorage.getItem(`okami.goal.${taskId}`)).toContain(
+      "entregar o painel premium",
+    );
+  });
+
   it("hides permission modes the Cursor runtime cannot execute safely", async () => {
     renderWorkbenchFixture({ lanes: [cursorLane] });
     const menu = await screen.findByTitle("Modo de permissão da lane");

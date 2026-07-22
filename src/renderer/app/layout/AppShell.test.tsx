@@ -48,6 +48,28 @@ describe("AppShell", () => {
     ).toBeVisible();
   });
 
+  it("shows a readable project status instead of an unexplained dot", async () => {
+    installOkamiMock({
+      "task:list": [
+        {
+          id: "27ee79a7-d3c3-48dd-84c6-cb589a4cb606",
+          kind: "workbench",
+          title: "Okami Workspace",
+          objective: "Continuar o app",
+          status: "active",
+          workspacePath: "/workspace/okami",
+          createdAt: "2026-07-22T03:00:00.000Z",
+          updatedAt: new Date().toISOString(),
+        },
+      ],
+      "lane:list": [],
+    });
+    renderApp("/workbench");
+
+    expect(await screen.findByText("Ativo")).toBeVisible();
+    expect(screen.getByText("agora")).toBeVisible();
+  });
+
   it("opens a fresh workspace-free chat from the global action", async () => {
     renderApp("/workbench");
 
