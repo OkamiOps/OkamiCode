@@ -129,22 +129,13 @@ describe("AGY hook contract", () => {
     ]);
   });
 
-  it("emits an honestly sparse correlatable completion when PostToolUse arrives without PreToolUse", () => {
+  it("ignores AGY's empty PostToolUse bookkeeping when no tool started", () => {
     const events = new AgyHookProjector(testIds()).project(
       "PostToolUse",
       hook("PostToolUse"),
     );
-    const completed = events.at(-1);
 
-    expect(completed).toMatchObject({
-      kind: "tool_call_completed",
-      payload: {
-        toolUseId: "<redacted-agy-conversation-id>:1",
-        isError: false,
-      },
-    });
-    expect(completed?.payload).not.toHaveProperty("toolName");
-    expect(completed?.payload).not.toHaveProperty("input");
+    expect(events.map((event) => event.kind)).toEqual(["session_started"]);
   });
 
   it.each([

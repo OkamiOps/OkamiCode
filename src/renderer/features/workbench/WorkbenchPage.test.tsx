@@ -441,3 +441,45 @@ it("marks completed and failed runs without mutating duplicate events", () => {
   expect(next.runStatus[runId]).toBe("completed");
   expect(reduceCanonicalEvent(next, completed)).toBe(next);
 });
+
+it("projects completion-only provider responses into the Code conversation", () => {
+  const base = {
+    appliedEventIds: {},
+    streams: {},
+    runStatus: {},
+  } as WorkbenchState;
+  const completed: CanonicalEvent = {
+    ...messageDelta(""),
+    id: "agy-completed-message",
+    kind: "message_completed",
+    payload: { text: "CODE_AGY_OK", messageAnchor: "assistant-0" },
+  };
+
+  const next = reduceCanonicalEvent(base, completed);
+
+  expect(next.streams[`${runId}:assistant-0`]).toMatchObject({
+    text: "CODE_AGY_OK",
+    laneId: claudeLaneId,
+  });
+});
+
+it("does not duplicate a response that was already streamed as deltas", () => {
+  const base = {
+    appliedEventIds: {},
+    streams: {},
+    runStatus: {},
+  } as WorkbenchState;
+  const streamed = reduceCanonicalEvent(base, messageDelta("Já transmitida"));
+  const completed: CanonicalEvent = {
+    ...messageDelta(""),
+    id: "streamed-completed-message",
+    kind: "message_completed",
+    nativeEventId: "completed-anchor",
+    payload: { text: "Já transmitida" },
+  };
+
+  const next = reduceCanonicalEvent(streamed, completed);
+
+  expect(Object.values(next.streams)).toHaveLength(1);
+  expect(Object.values(next.streams)[0]?.text).toBe("Já transmitida");
+});

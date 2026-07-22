@@ -46,7 +46,7 @@ export interface QuickChatSummary extends QuickChatConversation {
 }
 
 export interface QuickChatHistory extends QuickChatSummary {
-  messages: QuickChatMessageRecord[];
+  messages: Array<Omit<QuickChatMessageRecord, "chatId">>;
 }
 
 export interface QuickChatMessageRecord {
@@ -167,7 +167,6 @@ export class QuickChatService {
     const messages = [
       ...stored.map((message) => ({
         id: message.id,
-        chatId,
         role: message.role,
         body: bodyFromContent(message.content_json),
         createdAt: message.createdAt,
@@ -178,7 +177,6 @@ export class QuickChatService {
           ? [
               {
                 id: event.id,
-                chatId,
                 role: "assistant" as const,
                 body: payload.text,
                 createdAt: event.createdAt,

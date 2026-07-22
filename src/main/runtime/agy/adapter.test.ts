@@ -461,7 +461,7 @@ describe("AgyAdapter", () => {
     await collect(first.events);
   });
 
-  it("keeps terminal failures singular for missing Stop, oversized stdout, and conversation mismatch", async () => {
+  it("completes a clean printed response when AGY omits its Stop hook", async () => {
     const withoutStop = dependencies();
     await withoutStop.adapter.start({ laneId, cwd: workspace });
     const noStop = await withoutStop.adapter.sendTurn({
@@ -473,6 +473,24 @@ describe("AgyAdapter", () => {
     withoutStop.process.finish();
     await expect(collect(noStop.events)).resolves.toMatchObject([
       { kind: "message_completed" },
+      {
+        kind: "run_completed",
+        payload: { reason: "agy_stdout_completed" },
+      },
+    ]);
+  });
+
+  it("keeps terminal failures singular for empty stdout, oversized stdout, and conversation mismatch", async () => {
+    const withoutStop = dependencies();
+    await withoutStop.adapter.start({ laneId, cwd: workspace });
+    const noStop = await withoutStop.adapter.sendTurn({
+      runId,
+      laneId,
+      nativeSessionId: null,
+      input: "Inspect",
+    });
+    withoutStop.process.finish({ exitCode: 0, stdout: "" });
+    await expect(collect(noStop.events)).resolves.toMatchObject([
       {
         kind: "run_failed",
         payload: { reason: "agy_process_ended_without_stop" },
@@ -517,7 +535,7 @@ describe("AgyAdapter", () => {
     ]);
   });
 
-  it("accepts successful stdout without Stop only for a sandboxed plan session", async () => {
+  it("accepts successful stdout without Stop for a sandboxed plan session", async () => {
     const deps = dependencies();
     await deps.adapter.start({
       laneId,

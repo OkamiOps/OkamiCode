@@ -226,7 +226,8 @@ export class AgyHookProjector {
         }),
       );
     } else if (hook.hookName === "PostToolUse") {
-      events.push(this.postToolEvent(hook));
+      const completion = this.postToolEvent(hook);
+      if (completion) events.push(completion);
     } else if (hook.hookName === "Stop" && hook.fullyIdle) {
       // The native Stop can arrive before the process closes stdout. Keep it
       // pending so the final assistant message always precedes the terminal.
@@ -300,10 +301,14 @@ export class AgyHookProjector {
     return this.pendingTerminal !== undefined;
   }
 
-  private postToolEvent(hook: AgyPostToolHook): CanonicalEvent {
+  private postToolEvent(hook: AgyPostToolHook): CanonicalEvent | undefined {
     const toolUseId = `${hook.conversationId}:${hook.stepIdx}`;
     const metadata = this.tools.get(toolUseId);
     const error = nonEmpty(hook.error);
+    // AGY 1.1.5 emits empty PostToolUse bookkeeping around a response even
+    // when terminationReason is NO_TOOL_CALL. Without a matching PreToolUse,
+    // this is not a tool lifecycle and must not poison read-only consumers.
+    if (!metadata && error === undefined) return undefined;
     return this.event("tool_call_completed", hook, toolUseId, {
       toolUseId,
       ...(metadata ?? {}),

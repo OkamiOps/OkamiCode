@@ -2,6 +2,7 @@ import { randomUUID } from "node:crypto";
 import { tmpdir } from "node:os";
 import { describe, expect, it } from "vitest";
 import type { RunId } from "../../shared/ids";
+import { quickChatHistorySchema } from "../../shared/contracts/ipc";
 import { createTestDatabase } from "../db/test-support";
 import type { RunHandle } from "../runtime/adapter";
 import type { LaneService, OpenedLane } from "./lane-service";
@@ -91,6 +92,17 @@ describe("QuickChatService", () => {
         body: "Explique esta arquitetura",
       }),
     ]);
+  });
+
+  it("returns history messages that satisfy the strict quick-chat IPC contract", () => {
+    const h = createQuickChatHarness();
+    const chat = h.create("codex");
+    h.service.appendMessage(chat.id, "user", "Sem campo de conversa repetido");
+
+    const history = h.service.history(chat.id);
+
+    expect(() => quickChatHistorySchema.parse(history)).not.toThrow();
+    expect(history.messages[0]).not.toHaveProperty("chatId");
   });
 
   it("switches a quick chat to Gemini without attaching a workspace", () => {

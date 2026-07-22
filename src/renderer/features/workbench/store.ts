@@ -75,6 +75,29 @@ export function reduceCanonicalEvent(
       },
     };
   }
+  if (event.kind === "message_completed") {
+    const text =
+      typeof event.payload.text === "string" ? event.payload.text : "";
+    const runPrefix = `${event.runId}:`;
+    const alreadyStreamed = Object.keys(state.streams).some((key) =>
+      key.startsWith(runPrefix),
+    );
+    // Some native CLIs (notably AGY) return one final stdout message instead
+    // of deltas. Project that completion into the same conversation stream,
+    // while leaving providers that already streamed this run untouched.
+    if (text.trim().length > 0 && !alreadyStreamed) {
+      const anchor = event.payload.messageAnchor ?? event.nativeEventId;
+      const key = `${event.runId}:${String(anchor)}`;
+      next.streams = {
+        ...state.streams,
+        [key]: {
+          text,
+          laneId: event.laneId,
+          at: event.occurredAt,
+        },
+      };
+    }
+  }
   if (event.kind === "run_completed" || event.kind === "run_failed") {
     next.runStatus = {
       ...state.runStatus,
