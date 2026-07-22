@@ -70,6 +70,7 @@ function batch(accountId: string): ApplyInboxSyncBatch {
     messages: [
       {
         externalMessageId: "message-1",
+        providerUid: "imap:99:4",
         threadExternalId: "thread-1",
         direction: "incoming",
         sender: "ana@example.com",
@@ -143,7 +144,7 @@ describe("InboxApplicationService", () => {
     expect(setMessagesSeen).toHaveBeenCalledWith(
       expect.objectContaining({
         account: expect.objectContaining({ id: added.account.id }),
-        externalMessageIds: ["message-1"],
+        externalMessageIds: ["imap:99:4"],
         seen: true,
       }),
     );
@@ -184,7 +185,7 @@ describe("InboxApplicationService", () => {
     expect(setMessagesSeen).toHaveBeenCalledWith(
       expect.objectContaining({
         account: expect.objectContaining({ id: added.account.id }),
-        externalMessageIds: ["message-1"],
+        externalMessageIds: ["imap:99:4"],
         seen: false,
       }),
     );
@@ -229,7 +230,7 @@ describe("InboxApplicationService", () => {
     expect(moveMessages).toHaveBeenCalledWith(
       expect.objectContaining({
         account: expect.objectContaining({ id: added.account.id }),
-        externalMessageIds: ["message-1"],
+        externalMessageIds: ["imap:99:4"],
         destination: "trash",
       }),
     );
@@ -274,6 +275,7 @@ describe("InboxApplicationService", () => {
             {
               ...first.messages[0]!,
               externalMessageId: "message-2",
+              providerUid: "imap:99:5",
               threadExternalId: "thread-2",
             },
           ],

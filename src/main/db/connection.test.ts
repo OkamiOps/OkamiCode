@@ -11,7 +11,13 @@ describe("openDatabase", () => {
     const key = Buffer.alloc(32, 7);
     const db = openDatabase(file, key);
     expect(db.prepare("SELECT sqlite3mc_version()").pluck().get()).toBeTruthy();
-    expect(db.pragma("user_version", { simple: true })).toBe(19);
+    expect(db.pragma("user_version", { simple: true })).toBe(20);
+    expect(
+      db
+        .prepare("PRAGMA table_info(inbox_messages)")
+        .all()
+        .some((column) => (column as { name: string }).name === "provider_uid"),
+    ).toBe(true);
     const settingsSql = db
       .prepare(
         "SELECT sql FROM sqlite_master WHERE type = 'table' AND name = 'inbox_account_settings'",
@@ -128,6 +134,8 @@ describe("openDatabase", () => {
                100, 2097152, 'created', 'updated')`,
     ).run();
     db.exec(`
+      DROP INDEX inbox_messages_account_provider_uid_idx;
+      ALTER TABLE inbox_messages DROP COLUMN provider_uid;
       DROP TRIGGER calendar_google_source_delete_source;
       DROP TABLE calendar_google_sources;
       DROP TRIGGER calendar_inbox_source_delete_source;

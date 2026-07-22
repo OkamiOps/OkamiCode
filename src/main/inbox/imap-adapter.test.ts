@@ -241,6 +241,42 @@ describe("ImapSyncAdapter", () => {
     expect(messageMove).toHaveBeenCalledWith([27], "Trash", { uid: true });
   });
 
+  it("treats a message that already left the source mailbox as moved", async () => {
+    const messageMove = vi.fn();
+    const { client } = fakeClient({
+      search: vi.fn().mockResolvedValue([]),
+      messageMove,
+    });
+
+    await expect(
+      adapter(client).adapter.moveMessages({
+        account,
+        configuration: { host: "mail.example.com", port: 993, secure: true },
+        externalMessageIds: ["<already-moved@example.com>"],
+        destination: "trash",
+      }),
+    ).resolves.toBeUndefined();
+    expect(messageMove).not.toHaveBeenCalled();
+  });
+
+  it("keeps a completed move successful when logout cleanup fails", async () => {
+    const messageMove = vi.fn().mockResolvedValue({ destination: "Trash" });
+    const { client } = fakeClient({
+      messageMove,
+      logout: vi.fn().mockRejectedValue(new Error("socket already closed")),
+    });
+
+    await expect(
+      adapter(client).adapter.moveMessages({
+        account,
+        configuration: { host: "mail.example.com", port: 993, secure: true },
+        externalMessageIds: ["imap:99:27"],
+        destination: "trash",
+      }),
+    ).resolves.toBeUndefined();
+    expect(messageMove).toHaveBeenCalledWith([27], "Trash", { uid: true });
+  });
+
   it("marks an expired Google refresh grant as auth_required before opening IMAP", async () => {
     const { client } = fakeClient();
     const factory: ImapClientFactory = vi.fn().mockReturnValue(client);
@@ -507,6 +543,7 @@ describe("ImapSyncAdapter", () => {
     expect(result.messages).toHaveLength(2);
     expect(result.messages[0]).toMatchObject({
       externalMessageId: "<message-2@example.com>",
+      providerUid: "imap:99:203",
       direction: "outgoing",
       bodyFormat: "text",
       sender: "me@example.com",

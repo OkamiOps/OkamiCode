@@ -53,6 +53,7 @@ export interface InboxMessage {
   accountId: string;
   threadId: string;
   externalMessageId: string;
+  providerUid: string | null;
   direction: InboxMessageDirection;
   sender: string;
   recipients: string[];
@@ -86,6 +87,7 @@ export interface SyncThread {
 
 export interface SyncMessage {
   externalMessageId: string;
+  providerUid?: string;
   threadExternalId?: string;
   threadId?: string;
   direction: InboxMessageDirection;
@@ -214,6 +216,7 @@ interface MessageRow {
   account_id: string;
   thread_id: string;
   external_message_id: string;
+  provider_uid: string | null;
   direction: InboxMessageDirection;
   sender: string;
   recipients_json: string;
@@ -549,6 +552,7 @@ export class InboxService {
       accountId,
       threadId: thread.id,
       externalMessageId: input.externalMessageId,
+      providerUid: input.providerUid ?? null,
       direction: input.direction,
       sender: normalizeAddress(input.sender),
       recipientsJson: canonicalSetJson(input.recipients, normalizeAddress),
@@ -562,10 +566,10 @@ export class InboxService {
       this.db
         .prepare(
           `INSERT INTO inbox_messages
-           (id, account_id, thread_id, external_message_id, direction, sender,
+           (id, account_id, thread_id, external_message_id, provider_uid, direction, sender,
             recipients_json, body, body_format, sent_at, received_at,
             attachments_json, untrusted_content, created_at, updated_at)
-           VALUES (@id, @accountId, @threadId, @externalMessageId, @direction,
+           VALUES (@id, @accountId, @threadId, @externalMessageId, @providerUid, @direction,
                    @sender, @recipientsJson, @body, @bodyFormat, @sentAt,
                    @receivedAt, @attachmentsJson, 1, @createdAt, @updatedAt)`,
         )
@@ -579,6 +583,7 @@ export class InboxService {
     }
     if (
       current.threadId === candidate.threadId &&
+      current.providerUid === candidate.providerUid &&
       current.direction === candidate.direction &&
       current.sender === candidate.sender &&
       canonicalSetJson(current.recipients, normalizeAddress) ===
@@ -594,7 +599,8 @@ export class InboxService {
     this.db
       .prepare(
         `UPDATE inbox_messages
-         SET thread_id = @threadId, direction = @direction, sender = @sender,
+         SET thread_id = @threadId, provider_uid = @providerUid,
+             direction = @direction, sender = @sender,
              recipients_json = @recipientsJson, body = @body, body_format = @bodyFormat,
              sent_at = @sentAt, received_at = @receivedAt,
              attachments_json = @attachmentsJson, updated_at = @updatedAt
@@ -705,6 +711,7 @@ function messageFromRow(row: MessageRow): InboxMessage {
     accountId: row.account_id,
     threadId: row.thread_id,
     externalMessageId: row.external_message_id,
+    providerUid: row.provider_uid,
     direction: row.direction,
     sender: row.sender,
     recipients: JSON.parse(row.recipients_json) as string[],
@@ -753,6 +760,8 @@ function validateThread(input: SyncThread): void {
 
 function validateMessage(input: SyncMessage): void {
   requireText(input.externalMessageId, "externalMessageId");
+  if (input.providerUid !== undefined)
+    requireText(input.providerUid, "providerUid");
   if (!input.threadId && !input.threadExternalId) {
     throw new InboxInvalidInputError(
       "message requires threadId or threadExternalId",

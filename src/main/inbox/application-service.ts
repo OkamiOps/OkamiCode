@@ -318,7 +318,7 @@ export class InboxApplicationService {
           account,
           configuration,
           externalMessageIds: detail.messages.map(
-            (message) => message.externalMessageId,
+            (message) => message.providerUid ?? message.externalMessageId,
           ),
           seen: true,
         });
@@ -349,7 +349,7 @@ export class InboxApplicationService {
           account,
           configuration,
           externalMessageIds: detail.messages.map(
-            (message) => message.externalMessageId,
+            (message) => message.providerUid ?? message.externalMessageId,
           ),
           seen: false,
         });
@@ -387,7 +387,7 @@ export class InboxApplicationService {
           account,
           configuration,
           externalMessageIds: detail.messages.map(
-            (message) => message.externalMessageId,
+            (message) => message.providerUid ?? message.externalMessageId,
           ),
           destination,
         });

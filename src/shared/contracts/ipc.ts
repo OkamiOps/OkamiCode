@@ -1099,6 +1099,7 @@ const inboxMessageSchema = z
     accountId: entityIdSchema,
     threadId: entityIdSchema,
     externalMessageId: z.string().min(1).max(4_096),
+    providerUid: z.string().min(1).max(512).nullable(),
     direction: inboxDirectionSchema,
     sender: z.string().min(1).max(512),
     recipients: z.array(z.string().min(1).max(512)).max(100),

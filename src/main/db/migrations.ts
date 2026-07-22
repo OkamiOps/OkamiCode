@@ -22,6 +22,7 @@ const MIGRATIONS = [
   "schema/017-inbox-hostinger-outgoing.sql",
   "schema/018-calendar-auth-and-inbox-invitations.sql",
   "schema/019-google-calendar-sources.sql",
+  "schema/020-inbox-provider-uids.sql",
 ];
 
 export function runMigrations(db: InstanceType<typeof SqliteDatabase>): void {

@@ -207,6 +207,48 @@ it("exposes strict Inbox contracts in both IPC maps", () => {
   ).toBe(false);
 });
 
+it("accepts the stable provider UID in Inbox thread details", () => {
+  const id = "b672d2e8-688b-48ac-a618-3294bfc96a99";
+  const timestamp = "2026-07-22T08:00:00.000Z";
+  const result = ipcResponseSchemas["inbox:thread:get"].safeParse({
+    thread: {
+      id,
+      accountId: id,
+      externalThreadId: "thread-1",
+      subject: "Subject",
+      snippet: "Snippet",
+      participants: ["me@example.com"],
+      unreadCount: 1,
+      lastMessageAt: timestamp,
+      labels: ["inbox"],
+      createdAt: timestamp,
+      updatedAt: timestamp,
+    },
+    messages: [
+      {
+        id,
+        accountId: id,
+        threadId: id,
+        externalMessageId: "<message@example.com>",
+        providerUid: "imap:99:42",
+        direction: "incoming",
+        sender: "sender@example.com",
+        recipients: ["me@example.com"],
+        body: "Hello",
+        bodyFormat: "text",
+        sentAt: timestamp,
+        receivedAt: timestamp,
+        attachments: [],
+        untrustedContent: true,
+        createdAt: timestamp,
+        updatedAt: timestamp,
+      },
+    ],
+  });
+
+  expect(result.success).toBe(true);
+});
+
 it("exposes a strict public-only linked Calendar source contract", () => {
   const request = {
     accountId: "b672d2e8-688b-48ac-a618-3294bfc96a99",

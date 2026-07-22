@@ -227,11 +227,12 @@ export class ImapSyncAdapter {
         readOnly: false,
       });
       const uids = await resolveMessageUids(client, input.externalMessageIds);
-      if (uids.length === 0) {
-        throw new ImapSyncError("Messages are no longer available");
+      if (uids.length > 0) {
+        const moved = await client.messageMove(uids, destination, {
+          uid: true,
+        });
+        if (moved === false) throw new ImapSyncError("Message move failed");
       }
-      const moved = await client.messageMove(uids, destination, { uid: true });
-      if (moved === false) throw new ImapSyncError("Message move failed");
     } catch (cause) {
       primaryError =
         cause instanceof ImapSyncError
@@ -259,7 +260,13 @@ export class ImapSyncAdapter {
       cleanupFailed = true;
     }
     if (primaryError) throw primaryError;
-    if (cleanupFailed) throw new ImapSyncError();
+    if (cleanupFailed) {
+      console.warn("[okami] IMAP move cleanup failed after a completed move", {
+        accountId: input.account.id,
+        provider: input.account.provider,
+        destination: input.destination,
+      });
+    }
   }
 
   async setMessagesSeen(input: ImapSetMessagesSeenInput): Promise<void> {
@@ -726,6 +733,7 @@ function normalizeMessage(
   return {
     message: {
       externalMessageId,
+      providerUid: `imap:${uidValidity}:${item.uid}`,
       threadExternalId: externalThreadId,
       direction:
         sender.toLowerCase() === account.address.trim().toLowerCase()

@@ -36,8 +36,10 @@ function threadInput(overrides: Record<string, unknown> = {}) {
 }
 
 function messageInput(overrides: Record<string, unknown> = {}) {
+  const externalMessageId = String(overrides.externalMessageId ?? "message-1");
   return {
-    externalMessageId: "message-1",
+    externalMessageId,
+    providerUid: `imap:99:${externalMessageId}`,
     threadExternalId: "thread-1",
     direction: "incoming" as const,
     sender: "ana@example.com",
@@ -103,6 +105,14 @@ describe("InboxService", () => {
       syncCursor: "cursor-1",
       lastSyncedAt: "2026-07-21T10:05:00.000Z",
     });
+    expect(
+      service.listThreads({ accountIds: [account.id] }).threads,
+    ).toHaveLength(1);
+    expect(
+      service.getThread(
+        service.listThreads({ accountIds: [account.id] }).threads[0]!.id,
+      ).messages[0],
+    ).toMatchObject({ providerUid: "imap:99:message-1" });
 
     expect(
       service.applySyncBatch({
