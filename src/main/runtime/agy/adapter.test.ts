@@ -9,6 +9,7 @@ import type { LaneId, RunId, TaskId } from "../../../shared/ids";
 import {
   AgyAdapter,
   EventQueue,
+  type AgyAdapterDependencies,
   type AgyCompanion,
   type AgyProcess,
   type AgyTurnAuthorizer,
@@ -79,13 +80,15 @@ function dependencies() {
     close: vi.fn(async () => undefined),
   };
   const process = new FakeProcess();
-  const execute = vi.fn(async (_command: string, args: string[]) => {
-    if (args[0] === "--version") return { stdout: "agy 1.2.3\n" };
-    if (args[0] === "--help") {
-      return { stdout: "--print --conversation --add-dir --sandbox" };
-    }
-    throw new Error(`unexpected probe ${args.join(" ")}`);
-  });
+  const execute = vi.fn<NonNullable<AgyAdapterDependencies["execute"]>>(
+    async (_command: string, args: string[]) => {
+      if (args[0] === "--version") return { stdout: "agy 1.2.3\n" };
+      if (args[0] === "--help") {
+        return { stdout: "--print --conversation --add-dir --sandbox" };
+      }
+      throw new Error(`unexpected probe ${args.join(" ")}`);
+    },
+  );
   const spawn = vi.fn<
     (
       command: string,
@@ -191,6 +194,26 @@ describe("AgyAdapter", () => {
       ["--help"],
     ]);
     expect(deps.pluginStatus).toHaveBeenCalledOnce();
+  });
+
+  it("detects capabilities when the Go CLI writes help to stderr", async () => {
+    const deps = dependencies();
+    deps.execute.mockImplementation(async (_command, args) => {
+      if (args[0] === "--version") return { stdout: "agy 1.1.5\n" };
+      if (args[0] === "--help") {
+        return {
+          stdout: "",
+          stderr: "--print --conversation --add-dir --sandbox",
+        };
+      }
+      throw new Error(`unexpected probe ${args.join(" ")}`);
+    });
+
+    await expect(deps.adapter.detect()).resolves.toEqual({
+      available: true,
+      protocolSupported: true,
+      version: "1.1.5",
+    });
   });
 
   it("starts deferred without spawning and resumes only a strict native id", async () => {

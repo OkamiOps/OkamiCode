@@ -69,7 +69,10 @@ export interface AgyAdapterDependencies {
     | ((
         context: Parameters<AgyTurnAuthorizer["authorize"]>[0],
       ) => Promise<"allow" | "deny">);
-  execute?: (command: string, args: string[]) => Promise<{ stdout?: string }>;
+  execute?: (
+    command: string,
+    args: string[],
+  ) => Promise<{ stdout?: string; stderr?: string }>;
   spawn?: (
     command: string,
     args: string[],
@@ -200,8 +203,9 @@ export class AgyAdapter implements RuntimeAdapter {
         execute(command, ["--help"]),
         this.dependencies.pluginStatus(),
       ]);
+      const helpText = `${String(help.stdout ?? "")}\n${String(help.stderr ?? "")}`;
       const missing: string[] = REQUIRED_HELP_TOKENS.filter(
-        (token) => !String(help.stdout ?? "").includes(token),
+        (token) => !helpText.includes(token),
       );
       if (plugin !== "enabled") missing.push("okami-agy-companion");
       return missing.length === 0
@@ -511,9 +515,9 @@ function completeAuthorizerRun(
 async function executeAgy(
   command: string,
   args: string[],
-): Promise<{ stdout?: string }> {
-  const { stdout } = await execFileAsync(command, args);
-  return { stdout: String(stdout) };
+): Promise<{ stdout?: string; stderr?: string }> {
+  const { stdout, stderr } = await execFileAsync(command, args);
+  return { stdout: String(stdout), stderr: String(stderr) };
 }
 
 async function spawnAgy(
