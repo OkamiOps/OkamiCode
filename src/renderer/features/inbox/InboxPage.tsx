@@ -59,6 +59,26 @@ import {
 type InboxAccount = IpcResponse<"inbox:accounts:list">[number];
 type InboxThread = IpcResponse<"inbox:threads:list">["threads"][number];
 type InboxThreadDetail = IpcResponse<"inbox:thread:get">;
+type InboxThreadPage = IpcResponse<"inbox:threads:list">;
+
+export function projectLocallyReadThreads(
+  page: InboxThreadPage,
+  locallyReadThreadIds: ReadonlySet<string>,
+  unreadOnly: boolean,
+): InboxThreadPage {
+  const visibleThreads = unreadOnly
+    ? page.threads.filter((thread) => !locallyReadThreadIds.has(thread.id))
+    : page.threads;
+
+  return {
+    ...page,
+    threads: visibleThreads.map((thread) =>
+      locallyReadThreadIds.has(thread.id) && thread.unreadCount > 0
+        ? { ...thread, unreadCount: 0 }
+        : thread,
+    ),
+  };
+}
 
 export interface InboxApi {
   listAccounts(): Promise<IpcResponse<"inbox:accounts:list">>;
@@ -196,7 +216,10 @@ export function InboxPage({ api = defaultApi }: { api?: InboxApi }) {
   const [taskCreatedForThreadId, setTaskCreatedForThreadId] = useState<
     string | null
   >(null);
-  const markedRead = useRef(new Set<string>());
+  const [locallyReadThreadIds, setLocallyReadThreadIds] = useState<Set<string>>(
+    () => new Set(),
+  );
+  const failedRead = useRef(new Set<string>());
   const automaticallySyncedAccounts = useRef(new Set<string>());
   const detailsDrawer = useOverlayState();
   const accounts = useQuery({
@@ -306,7 +329,9 @@ export function InboxPage({ api = defaultApi }: { api?: InboxApi }) {
       );
       return { detailKey, listKey, previousDetail, previousList };
     },
-    onError: (_error, _request, context) => {
+    onError: (_error, request, context) => {
+      forgetLocallyReadThreads([request.threadId]);
+      failedRead.current.add(request.threadId);
       if (!context) return;
       if (context.previousList) {
         queryClient.setQueryData(context.listKey, context.previousList);
@@ -316,6 +341,7 @@ export function InboxPage({ api = defaultApi }: { api?: InboxApi }) {
       }
     },
     onSuccess: (updated) => {
+      failedRead.current.delete(updated.id);
       queryClient.setQueryData<IpcResponse<"inbox:threads:list">>(
         ["inbox", "threads", threadRequest],
         (current) =>
@@ -347,7 +373,8 @@ export function InboxPage({ api = defaultApi }: { api?: InboxApi }) {
   const markUnread = useMutation({
     mutationFn: api.markThreadUnread,
     onSuccess: (updated) => {
-      markedRead.current.delete(updated.id);
+      forgetLocallyReadThreads([updated.id]);
+      failedRead.current.delete(updated.id);
       if (updated.id === selectedThreadId) {
         setSelectedThreadId(null);
         detailsDrawer.close();
@@ -508,8 +535,16 @@ export function InboxPage({ api = defaultApi }: { api?: InboxApi }) {
     },
   });
 
+  const visibleThreadPage = threads.data
+    ? projectLocallyReadThreads(
+        threads.data,
+        locallyReadThreadIds,
+        threadRequest.unreadOnly === true,
+      )
+    : undefined;
   const selectedThread =
-    detail.data?.thread ?? threadById(threads.data?.threads, selectedThreadId);
+    detail.data?.thread ??
+    threadById(visibleThreadPage?.threads, selectedThreadId);
   const selectedAccount = accountForThread(accounts.data ?? [], selectedThread);
   const selectedAccountId = selectedAccount?.account.id ?? null;
   const outgoingForSelectedAccount = useQuery({
@@ -529,7 +564,7 @@ export function InboxPage({ api = defaultApi }: { api?: InboxApi }) {
     detail.data,
     replyFromAddresses,
   );
-  const visibleUnreadCount = threads.data?.threads.filter(
+  const visibleUnreadCount = visibleThreadPage?.threads.filter(
     (thread) => thread.unreadCount > 0,
   ).length;
   const markThreadRead = markRead.mutate;
@@ -556,18 +591,32 @@ export function InboxPage({ api = defaultApi }: { api?: InboxApi }) {
       selectedThread.unreadCount === 0
     )
       return;
-    if (markedRead.current.has(selectedThreadId)) return;
-    markedRead.current.add(selectedThreadId);
+    if (
+      locallyReadThreadIds.has(selectedThreadId) ||
+      failedRead.current.has(selectedThreadId)
+    )
+      return;
+    setLocallyReadThreadIds((current) =>
+      new Set(current).add(selectedThreadId),
+    );
     markThreadRead({ threadId: selectedThreadId });
-  }, [markThreadRead, selectedThread, selectedThreadId]);
+  }, [locallyReadThreadIds, markThreadRead, selectedThread, selectedThreadId]);
 
   function selectThread(thread: InboxThread) {
-    if (thread.id !== selectedThreadId) markedRead.current.delete(thread.id);
+    if (thread.id !== selectedThreadId) failedRead.current.delete(thread.id);
     setSelectedThreadId(thread.id);
   }
 
   function refreshThreads() {
     void queryClient.invalidateQueries({ queryKey: ["inbox", "threads"] });
+  }
+
+  function forgetLocallyReadThreads(threadIds: Iterable<string>) {
+    setLocallyReadThreadIds((current) => {
+      const next = new Set(current);
+      for (const threadId of threadIds) next.delete(threadId);
+      return next;
+    });
   }
 
   async function beginOptimisticMove(threadIds: string[]) {
@@ -614,8 +663,8 @@ export function InboxPage({ api = defaultApi }: { api?: InboxApi }) {
       queryClient.removeQueries({
         queryKey: ["inbox", "reply-actions", threadId],
       });
-      markedRead.current.delete(threadId);
     }
+    forgetLocallyReadThreads(threadIds);
     setSelectedThreadIds(new Set());
     setSelectionMode(false);
   }
@@ -627,7 +676,7 @@ export function InboxPage({ api = defaultApi }: { api?: InboxApi }) {
     queryClient.removeQueries({
       queryKey: ["inbox", "reply-actions", result.threadId],
     });
-    markedRead.current.delete(result.threadId);
+    forgetLocallyReadThreads([result.threadId]);
     if (selectedThreadId === result.threadId) {
       setSelectedThreadId(null);
       detailsDrawer.close();
@@ -718,7 +767,7 @@ export function InboxPage({ api = defaultApi }: { api?: InboxApi }) {
         selectedThreadId={selectedThreadId}
         selectedThreadIds={selectedThreadIds}
         selectionMode={selectionMode}
-        threads={threads.data?.threads ?? []}
+        threads={visibleThreadPage?.threads ?? []}
         onMarkSelectedRead={() =>
           markSelectedRead.mutate([...selectedThreadIds])
         }

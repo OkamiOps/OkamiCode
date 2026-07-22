@@ -1,5 +1,6 @@
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import {
+  act,
   cleanup,
   fireEvent,
   render,
@@ -9,7 +10,11 @@ import {
 import userEvent from "@testing-library/user-event";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { IpcRequest, IpcResponse } from "../../../shared/contracts/ipc";
-import { InboxPage, type InboxApi } from "./InboxPage";
+import {
+  InboxPage,
+  projectLocallyReadThreads,
+  type InboxApi,
+} from "./InboxPage";
 
 const accountId = "11111111-1111-4111-8111-111111111111";
 const threadId = "22222222-2222-4222-8222-222222222222";
@@ -268,6 +273,14 @@ async function configureAgentDraft(dialog: HTMLElement, model = "gpt-5.6") {
 }
 
 describe("InboxPage", () => {
+  it("does not resurrect unread badges from a stale remote refresh", () => {
+    const stalePage = { threads: [thread, secondThread], nextCursor: null };
+
+    expect(
+      projectLocallyReadThreads(stalePage, new Set([threadId]), false).threads,
+    ).toEqual([{ ...thread, unreadCount: 0 }, secondThread]);
+  });
+
   beforeEach(() => localStorage.clear());
   afterEach(cleanup);
 
@@ -544,7 +557,7 @@ describe("InboxPage", () => {
       ),
       markThreadRead,
     });
-    renderInbox(api);
+    const rendered = renderInbox(api);
 
     await userEvent.click(
       await screen.findByRole("button", { name: /Proposta para landing page/ }),
@@ -557,6 +570,28 @@ describe("InboxPage", () => {
     expect(
       screen.getByRole("button", { name: /Proposta para landing page/ }),
     ).not.toHaveAttribute("data-unread");
+
+    const [[activeThreadKey]] = rendered.queryClient.getQueriesData({
+      queryKey: ["inbox", "threads"],
+    });
+    act(() => {
+      rendered.queryClient.setQueryData(activeThreadKey, {
+        threads: [thread, secondThread],
+        nextCursor: null,
+      });
+    });
+
+    expect(
+      rendered.queryClient.getQueryData<IpcResponse<"inbox:threads:list">>(
+        activeThreadKey,
+      )?.threads[0]?.unreadCount,
+    ).toBe(1);
+
+    await vi.waitFor(() =>
+      expect(
+        screen.getByRole("button", { name: /Proposta para landing page/ }),
+      ).not.toHaveAttribute("data-unread"),
+    );
   });
 
   it("restores persisted column widths and exposes three resize handles", () => {
