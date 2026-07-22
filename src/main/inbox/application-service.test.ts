@@ -297,6 +297,55 @@ describe("InboxApplicationService", () => {
     expect(service.listThreads().threads).toEqual([]);
   });
 
+  it("serializes marking a conversation read before moving it to trash", async () => {
+    let active = 0;
+    let maximumActive = 0;
+    let releaseRead: (() => void) | undefined;
+    let readStarted: (() => void) | undefined;
+    let readFinished: (() => void) | undefined;
+    const readStartedPromise = new Promise<void>(
+      (resolve) => (readStarted = resolve),
+    );
+    const releaseReadPromise = new Promise<void>(
+      (resolve) => (releaseRead = resolve),
+    );
+    const readFinishedPromise = new Promise<void>(
+      (resolve) => (readFinished = resolve),
+    );
+    const setMessagesSeen = vi.fn(async () => {
+      active += 1;
+      maximumActive = Math.max(maximumActive, active);
+      readStarted?.();
+      await releaseReadPromise;
+      active -= 1;
+      readFinished?.();
+    });
+    const moveMessages = vi.fn(async () => {
+      active += 1;
+      maximumActive = Math.max(maximumActive, active);
+      await readFinishedPromise;
+      active -= 1;
+    });
+    const { service } = fixture({
+      sync: async (input) => batch(input.account.id),
+      setMessagesSeen,
+      moveMessages,
+    });
+    const added = await service.addImapAccount(addInput());
+    await service.syncAccount(added.account.id);
+    const selected = service.listThreads().threads[0]!;
+
+    const markRead = service.markThreadRead(selected.id);
+    await readStartedPromise;
+    const moveToTrash = service.moveThread(selected.id, "trash");
+    await Promise.resolve();
+    releaseRead?.();
+
+    await expect(Promise.all([markRead, moveToTrash])).resolves.toHaveLength(2);
+    expect(maximumActive).toBe(1);
+    expect(service.listThreads().threads).toEqual([]);
+  });
+
   it("keeps the local conversation when the remote move fails", async () => {
     const { service } = fixture({
       sync: async (input) => batch(input.account.id),
