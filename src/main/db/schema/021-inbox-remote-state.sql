@@ -1,0 +1,6 @@
+BEGIN IMMEDIATE;
+
+ALTER TABLE inbox_messages ADD COLUMN seen INTEGER NOT NULL DEFAULT 1;
+
+PRAGMA user_version = 21;
+COMMIT;

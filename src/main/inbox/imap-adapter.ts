@@ -31,6 +31,7 @@ export interface ImapAccountConfiguration {
 export interface ImapSyncInput {
   account: ConnectorAccount;
   configuration: ImapAccountConfiguration;
+  knownProviderUids?: string[];
 }
 
 export interface ImapMailboxState {
@@ -83,7 +84,7 @@ export interface ImapClient {
     options: { uid: true },
   ): Promise<unknown | false>;
   fetchAll(
-    range: string,
+    range: string | number[],
     query: Record<string, boolean>,
     options: { uid: true },
   ): Promise<ImapFetchedMessage[]>;
@@ -371,12 +372,40 @@ export class ImapSyncAdapter {
     const lastUid = reset ? 0 : cursor.lastUid;
     const nextCursor = (value: number) =>
       JSON.stringify({ version: 3, uidValidity, lastUid: value });
+    const knownProviderUids = unique(input.knownProviderUids ?? []);
+    const currentKnownUids = knownProviderUids.flatMap((providerUid) => {
+      const parsed = parseProviderUid(providerUid);
+      return parsed?.uidValidity === uidValidity ? [parsed.uid] : [];
+    });
+    const knownMetadata =
+      currentKnownUids.length > 0
+        ? await client.fetchAll(
+            currentKnownUids,
+            { uid: true, flags: true },
+            { uid: true },
+          )
+        : [];
+    const reconciliation: NonNullable<ApplyInboxSyncBatch["reconciliation"]> = {
+      checkedProviderUids: knownProviderUids,
+      states: knownMetadata
+        .filter((item) => Number.isInteger(item.uid) && item.uid > 0)
+        .map((item) => ({
+          providerUid: `imap:${uidValidity}:${item.uid}`,
+          seen: item.flags?.has("\\Seen") ?? false,
+        })),
+    };
 
     if (mailbox.exists === 0) {
-      return emptyBatch(input.account, nextCursor(0), this.clock());
+      return {
+        ...emptyBatch(input.account, nextCursor(0), this.clock()),
+        reconciliation,
+      };
     }
     if (!reset && lastUid >= mailbox.uidNext - 1) {
-      return emptyBatch(input.account, nextCursor(lastUid), this.clock());
+      return {
+        ...emptyBatch(input.account, nextCursor(lastUid), this.clock()),
+        reconciliation,
+      };
     }
 
     const startUid = reset
@@ -436,6 +465,7 @@ export class ImapSyncAdapter {
       threads: groupThreads(threadInputs),
       messages,
       calendarInvitations,
+      reconciliation,
       syncedAt: this.clock().toISOString(),
     };
   }
@@ -734,6 +764,7 @@ function normalizeMessage(
     message: {
       externalMessageId,
       providerUid: `imap:${uidValidity}:${item.uid}`,
+      seen: item.flags?.has("\\Seen") ?? false,
       threadExternalId: externalThreadId,
       direction:
         sender.toLowerCase() === account.address.trim().toLowerCase()
@@ -801,6 +832,15 @@ function emptyBatch(
     calendarInvitations: [],
     syncedAt: clock.toISOString(),
   };
+}
+
+function parseProviderUid(
+  providerUid: string,
+): { uidValidity: string; uid: number } | null {
+  const match = /^imap:([0-9]+):([1-9][0-9]*)$/.exec(providerUid);
+  if (!match) return null;
+  const uid = Number(match[2]);
+  return Number.isSafeInteger(uid) ? { uidValidity: match[1]!, uid } : null;
 }
 
 function calendarInvitationsFrom(

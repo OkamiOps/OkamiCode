@@ -126,6 +126,29 @@ function addInput(overrides: Record<string, unknown> = {}) {
 }
 
 describe("InboxApplicationService", () => {
+  it("passes locally persisted provider UIDs into the next IMAP sync", async () => {
+    const sync = vi
+      .fn()
+      .mockImplementationOnce(async (input) => batch(input.account.id))
+      .mockImplementationOnce(async (input) => ({
+        ...batch(input.account.id),
+        previousCursor: "cursor-1",
+        nextCursor: "cursor-1",
+        threads: [],
+        messages: [],
+      }));
+    const { service } = fixture({ sync });
+    const added = await service.addImapAccount(addInput());
+
+    await service.syncAccount(added.account.id);
+    await service.syncAccount(added.account.id);
+
+    expect(sync).toHaveBeenNthCalledWith(
+      2,
+      expect.objectContaining({ knownProviderUids: ["imap:99:4"] }),
+    );
+  });
+
   it("marks every provider message seen before updating the local thread", async () => {
     const setMessagesSeen = vi.fn().mockResolvedValue(undefined);
     const { service } = fixture({

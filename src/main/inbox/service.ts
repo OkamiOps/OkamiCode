@@ -88,6 +88,7 @@ export interface SyncThread {
 export interface SyncMessage {
   externalMessageId: string;
   providerUid?: string;
+  seen?: boolean;
   threadExternalId?: string;
   threadId?: string;
   direction: InboxMessageDirection;
@@ -98,6 +99,11 @@ export interface SyncMessage {
   sentAt: string | null;
   receivedAt: string | null;
   attachments: InboxAttachment[];
+}
+
+export interface InboxRemoteStateReconciliation {
+  checkedProviderUids: string[];
+  states: Array<{ providerUid: string; seen: boolean }>;
 }
 
 export interface InboxCalendarInvitation {
@@ -112,6 +118,7 @@ export interface ApplyInboxSyncBatch {
   threads: SyncThread[];
   messages: SyncMessage[];
   calendarInvitations?: InboxCalendarInvitation[];
+  reconciliation?: InboxRemoteStateReconciliation;
   syncedAt: string;
 }
 
@@ -217,6 +224,7 @@ interface MessageRow {
   thread_id: string;
   external_message_id: string;
   provider_uid: string | null;
+  seen: number;
   direction: InboxMessageDirection;
   sender: string;
   recipients_json: string;
@@ -363,6 +371,13 @@ export class InboxService {
           this.upsertMessage(input.accountId, message, input.syncedAt),
         );
       }
+      if (input.reconciliation) {
+        this.reconcileRemoteState(
+          input.accountId,
+          input.reconciliation,
+          input.syncedAt,
+        );
+      }
       this.db
         .prepare(
           `UPDATE connector_accounts
@@ -428,6 +443,18 @@ export class InboxService {
     };
   }
 
+  listProviderUids(accountId: string): string[] {
+    this.requireAccount(accountId);
+    return this.db
+      .prepare(
+        `SELECT provider_uid FROM inbox_messages
+         WHERE account_id = ? AND provider_uid IS NOT NULL
+         ORDER BY provider_uid ASC`,
+      )
+      .pluck()
+      .all(accountId) as string[];
+  }
+
   getThread(id: string): InboxThreadDetail {
     const thread = this.findThread(id);
     if (!thread) throw new InboxThreadNotFoundError(id);
@@ -443,30 +470,43 @@ export class InboxService {
   }
 
   markThreadRead(id: string): InboxThread {
-    const changed = this.db
-      .prepare(
-        `UPDATE inbox_threads
-         SET unread_count = 0, updated_at = @updatedAt
-         WHERE id = @id AND unread_count <> 0`,
-      )
-      .run({ id, updatedAt: new Date().toISOString() });
-    const thread = this.findThread(id);
-    if (!thread) throw new InboxThreadNotFoundError(id);
-    if (changed.changes === 0) return thread;
-    return thread;
+    const updatedAt = new Date().toISOString();
+    return this.db.transaction(() => {
+      const thread = this.findThread(id);
+      if (!thread) throw new InboxThreadNotFoundError(id);
+      if (thread.unreadCount === 0) return thread;
+      this.db
+        .prepare(
+          "UPDATE inbox_messages SET seen = 1, updated_at = ? WHERE thread_id = ?",
+        )
+        .run(updatedAt, id);
+      this.db
+        .prepare(
+          `UPDATE inbox_threads SET unread_count = 0, updated_at = ? WHERE id = ?`,
+        )
+        .run(updatedAt, id);
+      const updated = this.findThread(id);
+      if (!updated) throw new InboxThreadNotFoundError(id);
+      return updated;
+    })();
   }
 
   markThreadUnread(id: string): InboxThread {
-    this.db
-      .prepare(
-        `UPDATE inbox_threads
-         SET unread_count = MAX(unread_count, 1), updated_at = @updatedAt
-         WHERE id = @id AND unread_count = 0`,
-      )
-      .run({ id, updatedAt: new Date().toISOString() });
-    const thread = this.findThread(id);
-    if (!thread) throw new InboxThreadNotFoundError(id);
-    return thread;
+    const updatedAt = new Date().toISOString();
+    return this.db.transaction(() => {
+      const thread = this.findThread(id);
+      if (!thread) throw new InboxThreadNotFoundError(id);
+      if (thread.unreadCount > 0) return thread;
+      this.db
+        .prepare(
+          "UPDATE inbox_messages SET seen = 0, updated_at = ? WHERE thread_id = ?",
+        )
+        .run(updatedAt, id);
+      this.recalculateThreadUnread(id, updatedAt);
+      const updated = this.findThread(id);
+      if (!updated) throw new InboxThreadNotFoundError(id);
+      return updated;
+    })();
   }
 
   deleteThread(id: string): void {
@@ -553,6 +593,7 @@ export class InboxService {
       threadId: thread.id,
       externalMessageId: input.externalMessageId,
       providerUid: input.providerUid ?? null,
+      seen: input.seen === false ? 0 : 1,
       direction: input.direction,
       sender: normalizeAddress(input.sender),
       recipientsJson: canonicalSetJson(input.recipients, normalizeAddress),
@@ -567,11 +608,11 @@ export class InboxService {
         .prepare(
           `INSERT INTO inbox_messages
            (id, account_id, thread_id, external_message_id, provider_uid, direction, sender,
-            recipients_json, body, body_format, sent_at, received_at,
+            recipients_json, body, body_format, sent_at, received_at, seen,
             attachments_json, untrusted_content, created_at, updated_at)
            VALUES (@id, @accountId, @threadId, @externalMessageId, @providerUid, @direction,
                    @sender, @recipientsJson, @body, @bodyFormat, @sentAt,
-                   @receivedAt, @attachmentsJson, 1, @createdAt, @updatedAt)`,
+                   @receivedAt, @seen, @attachmentsJson, 1, @createdAt, @updatedAt)`,
         )
         .run({
           id: randomUUID(),
@@ -584,6 +625,7 @@ export class InboxService {
     if (
       current.threadId === candidate.threadId &&
       current.providerUid === candidate.providerUid &&
+      current.seen === candidate.seen &&
       current.direction === candidate.direction &&
       current.sender === candidate.sender &&
       canonicalSetJson(current.recipients, normalizeAddress) ===
@@ -602,12 +644,75 @@ export class InboxService {
          SET thread_id = @threadId, provider_uid = @providerUid,
              direction = @direction, sender = @sender,
              recipients_json = @recipientsJson, body = @body, body_format = @bodyFormat,
-             sent_at = @sentAt, received_at = @receivedAt,
+             sent_at = @sentAt, received_at = @receivedAt, seen = @seen,
              attachments_json = @attachmentsJson, updated_at = @updatedAt
          WHERE id = @id`,
       )
       .run({ ...candidate, id: current.id, updatedAt: syncedAt });
     return "updated";
+  }
+
+  private reconcileRemoteState(
+    accountId: string,
+    reconciliation: InboxRemoteStateReconciliation,
+    syncedAt: string,
+  ): void {
+    const present = new Set(
+      reconciliation.states.map((state) => state.providerUid),
+    );
+    const affectedThreadIds = new Set<string>();
+    const findMessage = this.db.prepare(
+      `SELECT id, thread_id, seen FROM inbox_messages
+       WHERE account_id = ? AND provider_uid = ?`,
+    );
+    const deleteMessage = this.db.prepare(
+      "DELETE FROM inbox_messages WHERE id = ?",
+    );
+    const updateSeen = this.db.prepare(
+      "UPDATE inbox_messages SET seen = ?, updated_at = ? WHERE id = ?",
+    );
+
+    for (const providerUid of reconciliation.checkedProviderUids) {
+      const row = findMessage.get(accountId, providerUid) as
+        { id: string; thread_id: string; seen: number } | undefined;
+      if (!row || present.has(providerUid)) continue;
+      affectedThreadIds.add(row.thread_id);
+      deleteMessage.run(row.id);
+    }
+    for (const state of reconciliation.states) {
+      const row = findMessage.get(accountId, state.providerUid) as
+        { id: string; thread_id: string; seen: number } | undefined;
+      if (!row) continue;
+      affectedThreadIds.add(row.thread_id);
+      const seen = state.seen ? 1 : 0;
+      if (row.seen !== seen) updateSeen.run(seen, syncedAt, row.id);
+    }
+    for (const threadId of affectedThreadIds) {
+      const remaining = this.db
+        .prepare("SELECT count(*) FROM inbox_messages WHERE thread_id = ?")
+        .pluck()
+        .get(threadId) as number;
+      if (remaining === 0) {
+        this.db.prepare("DELETE FROM inbox_threads WHERE id = ?").run(threadId);
+      } else {
+        this.recalculateThreadUnread(threadId, syncedAt);
+      }
+    }
+  }
+
+  private recalculateThreadUnread(threadId: string, updatedAt: string): void {
+    this.db
+      .prepare(
+        `UPDATE inbox_threads
+         SET unread_count = (
+           SELECT CASE WHEN EXISTS (
+             SELECT 1 FROM inbox_messages
+             WHERE thread_id = @threadId AND seen = 0
+           ) THEN 1 ELSE 0 END
+         ), updated_at = @updatedAt
+         WHERE id = @threadId`,
+      )
+      .run({ threadId, updatedAt });
   }
 
   private resolveMessageThread(
@@ -664,13 +769,13 @@ export class InboxService {
   private findMessageByExternalId(
     accountId: string,
     externalMessageId: string,
-  ): InboxMessage | undefined {
+  ): (InboxMessage & { seen: number }) | undefined {
     const row = this.db
       .prepare(
         "SELECT * FROM inbox_messages WHERE account_id = ? AND external_message_id = ?",
       )
       .get(accountId, externalMessageId) as MessageRow | undefined;
-    return row ? messageFromRow(row) : undefined;
+    return row ? { ...messageFromRow(row), seen: row.seen } : undefined;
   }
 }
 
@@ -742,6 +847,25 @@ function validateBatch(input: ApplyInboxSyncBatch): void {
   if (!Array.isArray(input.threads) || !Array.isArray(input.messages)) {
     throw new InboxInvalidInputError("threads and messages must be arrays");
   }
+  if (input.reconciliation) {
+    validateTextList(
+      input.reconciliation.checkedProviderUids,
+      "reconciliation.checkedProviderUids",
+    );
+    if (!Array.isArray(input.reconciliation.states)) {
+      throw new InboxInvalidInputError(
+        "reconciliation.states must be an array",
+      );
+    }
+    for (const state of input.reconciliation.states) {
+      requireText(state.providerUid, "reconciliation.state.providerUid");
+      if (typeof state.seen !== "boolean") {
+        throw new InboxInvalidInputError(
+          "reconciliation.state.seen must be a boolean",
+        );
+      }
+    }
+  }
 }
 
 function validateThread(input: SyncThread): void {
@@ -762,6 +886,9 @@ function validateMessage(input: SyncMessage): void {
   requireText(input.externalMessageId, "externalMessageId");
   if (input.providerUid !== undefined)
     requireText(input.providerUid, "providerUid");
+  if (input.seen !== undefined && typeof input.seen !== "boolean") {
+    throw new InboxInvalidInputError("seen must be a boolean");
+  }
   if (!input.threadId && !input.threadExternalId) {
     throw new InboxInvalidInputError(
       "message requires threadId or threadExternalId",

@@ -173,6 +173,51 @@ function adapter(
 }
 
 describe("ImapSyncAdapter", () => {
+  it("reconciles flags and remotely deleted UIDs even when there are no new messages", async () => {
+    const fetchAll = vi
+      .fn()
+      .mockResolvedValue([message(5, new Set(["\\Seen"]))]);
+    const download = vi.fn();
+    const { client } = fakeClient({
+      mailbox: { uidValidity: 99n, uidNext: 6, exists: 1 },
+      fetchAll,
+      download,
+    });
+
+    const result = await adapter(client).adapter.sync({
+      account: {
+        ...account,
+        syncCursor: JSON.stringify({
+          version: 3,
+          uidValidity: "99",
+          lastUid: 5,
+        }),
+      },
+      configuration: { host: "mail.example.com", port: 993, secure: true },
+      knownProviderUids: ["imap:99:4", "imap:99:5"],
+    } as never);
+
+    expect(fetchAll).toHaveBeenCalledWith(
+      [4, 5],
+      { uid: true, flags: true },
+      { uid: true },
+    );
+    expect(download).not.toHaveBeenCalled();
+    expect(
+      (
+        result as typeof result & {
+          reconciliation: {
+            checkedProviderUids: string[];
+            states: Array<{ providerUid: string; seen: boolean }>;
+          };
+        }
+      ).reconciliation,
+    ).toEqual({
+      checkedProviderUids: ["imap:99:4", "imap:99:5"],
+      states: [{ providerUid: "imap:99:5", seen: true }],
+    });
+  });
+
   it("removes the Seen flag from every provider message in the thread", async () => {
     const messageFlagsRemove = vi.fn().mockResolvedValue(true);
     const { client } = fakeClient({ messageFlagsRemove } as never);

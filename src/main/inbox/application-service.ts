@@ -454,6 +454,7 @@ export class InboxApplicationService {
       const batch = await this.options.createAdapter(this.options.vault).sync({
         account,
         configuration,
+        knownProviderUids: this.inbox.listProviderUids(account.id),
       });
       stage = "persist_messages";
       const counts = this.inbox.applySyncBatch(batch);
