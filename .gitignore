@@ -8,6 +8,7 @@ dist-electron/
 out/
 output/playwright/
 release/
+build/icon.iconset/
 test-results/
 playwright-report/
 .playwright-cli/

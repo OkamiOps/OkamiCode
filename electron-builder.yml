@@ -1,0 +1,22 @@
+appId: com.okami.workbench
+productName: OkamiCode
+asar: true
+
+directories:
+  output: release
+  buildResources: build
+
+files:
+  - out/**/*
+  - package.json
+
+asarUnpack:
+  - "**/*.node"
+
+mac:
+  category: public.app-category.developer-tools
+  icon: build/icon.icns
+  target:
+    - target: dir
+      arch:
+        - arm64
