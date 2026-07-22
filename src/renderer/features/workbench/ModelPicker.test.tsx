@@ -23,6 +23,25 @@ const catalog = [
 afterEach(cleanup);
 
 describe("ModelPicker favorites provider", () => {
+  it("makes the provider rail keyboard-focusable so overflowing providers can scroll", () => {
+    render(
+      <ModelPicker
+        catalog={catalog}
+        favorites={[]}
+        isOpening={false}
+        onSelectModel={vi.fn()}
+        selectedLane={null}
+      />,
+    );
+
+    fireEvent.click(screen.getByRole("button", { name: "Selecionar modelo" }));
+
+    expect(screen.getByRole("tablist", { name: "Providers" })).toHaveAttribute(
+      "tabindex",
+      "0",
+    );
+  });
+
   it("groups persisted favorites and selects using their original runtime", () => {
     const onSelectModel = vi.fn();
     render(

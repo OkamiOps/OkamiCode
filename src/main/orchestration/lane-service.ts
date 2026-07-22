@@ -247,6 +247,14 @@ export class LaneService {
       runtimeKind: opened.runtimeKind,
       ...(effort ? { effort } : {}),
     });
+    // The opened projection is retained by the renderer between turns. Once
+    // its delta is accepted, keeping it here would replay an obsolete cursor
+    // on the next Enter press and correctly trigger a conflict in RunService.
+    if (opened.delta) {
+      opened.delta = null;
+      opened.pendingDeltaEvents = 0;
+      opened.temperature = "hot";
+    }
     const lane = this.dependencies.lanes.findById(opened.laneId);
     if (!lane) throw new Error(`Unknown lane ${opened.laneId}`);
     this.dependencies.audit.record({
@@ -346,7 +354,8 @@ export class LaneService {
       lane.runtimeKind === "cursor" ||
       lane.runtimeKind === "agy" ||
       lane.runtimeKind === "grok" ||
-      lane.runtimeKind === "mimo"
+      lane.runtimeKind === "mimo" ||
+      lane.runtimeKind === "minimax"
     ) {
       return {
         harness: "native",
@@ -360,7 +369,9 @@ export class LaneService {
               ? "Grok subscription"
               : lane.runtimeKind === "mimo"
                 ? "MiMo subscription"
-                : "Cursor subscription",
+                : lane.runtimeKind === "minimax"
+                  ? "MiniMax Token Plan"
+                  : "Cursor subscription",
       };
     }
     const gateway = this.dependencies.gateway;

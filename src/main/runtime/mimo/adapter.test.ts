@@ -33,6 +33,29 @@ describe("MimoAdapter", () => {
     });
   });
 
+  it("accepts help written to stderr by the installed MiMo CLI", async () => {
+    const execute = vi.fn(async (_command: string, args: string[]) =>
+      args[0] === "--version"
+        ? { stdout: "0.1.7\n", stderr: "" }
+        : {
+            stdout: "",
+            stderr:
+              "mimo run --format json --session id --model provider/model --dir path",
+          },
+    );
+    const adapter = new MimoAdapter({
+      execute,
+      taskIdForRun: async () =>
+        "11111111-1111-4111-8111-111111111111" as TaskId,
+    });
+
+    await expect(adapter.detect()).resolves.toMatchObject({
+      available: true,
+      protocolSupported: true,
+      version: "0.1.7",
+    });
+  });
+
   it("binds the native session from JSON output and completes the run", async () => {
     const messages = [
       {

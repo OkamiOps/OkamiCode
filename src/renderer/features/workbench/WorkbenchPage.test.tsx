@@ -301,9 +301,8 @@ describe("WorkbenchPage", () => {
 
     await user.type(
       screen.getByRole("textbox", { name: "Mensagem" }),
-      "Continue a implementação",
+      "Continue a implementação{Enter}",
     );
-    await user.click(screen.getByRole("button", { name: "Enviar" }));
     await waitFor(() =>
       expect(runtime.calls.laneSendTurn).toEqual([
         { laneId: codexLaneId, input: "Continue a implementação" },

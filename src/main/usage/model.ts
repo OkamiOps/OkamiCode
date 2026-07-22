@@ -1,5 +1,9 @@
 import type { Database } from "../db/connection";
-import type { ProviderKind, RuntimeKind } from "../../shared/contracts/lane";
+import type {
+  CatalogRuntimeKind,
+  ProviderKind,
+  RuntimeKind,
+} from "../../shared/contracts/lane";
 
 export enum UsageSourceKind {
   OfficialStructured = "official_structured",
@@ -37,7 +41,7 @@ export interface UsageSnapshot {
   freshness: UsageFreshness;
   plan: string | null;
   provider: ProviderKind;
-  runtime: RuntimeKind;
+  runtime: CatalogRuntimeKind;
   sessionContext?: SessionContext;
   source: UsageSource;
   validUntil: string | null;

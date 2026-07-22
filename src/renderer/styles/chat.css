@@ -1414,8 +1414,17 @@ textarea:focus-visible {
   gap: 2px;
   padding: 6px;
   min-width: 158px;
+  max-height: min(420px, 55vh);
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  scrollbar-gutter: stable;
   border-right: 1px solid var(--chat-border-soft);
   background: rgba(255, 255, 255, 0.015);
+}
+
+.model-picker__providers:focus-visible {
+  outline: 2px solid var(--ok-focus);
+  outline-offset: -2px;
 }
 
 .model-picker__provider {

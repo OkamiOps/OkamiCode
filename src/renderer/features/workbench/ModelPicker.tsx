@@ -142,6 +142,7 @@ export function ModelPicker({
                 aria-label="Providers"
                 className="model-picker__providers"
                 role="tablist"
+                tabIndex={0}
               >
                 <button
                   aria-selected={showingFavorites}

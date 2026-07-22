@@ -209,6 +209,7 @@ describe("Cursor model catalog", () => {
       agyBinary: null,
       grokBinary: null,
       minimaxCachePath: paths.minimax,
+      minimaxBinary: "/real/mmx",
       minimaxCodeBundlePath: minimaxBundlePath,
       mimoCachePath: paths.mimo,
       mimoBinary: "/real/mimo",
@@ -224,9 +225,8 @@ describe("Cursor model catalog", () => {
       service.list().find((entry) => entry.runtimeKind === "minimax"),
     ).toMatchObject({
       providerLabel: "MiniMax",
-      routeKind: "unavailable",
-      source:
-        "MiniMax Code instalado · sem CLI headless de assinatura · mmx usa API · 2026-07-22T09:00:00.000Z",
+      routeKind: "native",
+      source: "MiniMax Token Plan via mmx · 2026-07-22T09:00:00.000Z",
       models: [{ id: "MiniMax-M2.7" }, { id: "MiniMax-M3" }],
     });
     expect(

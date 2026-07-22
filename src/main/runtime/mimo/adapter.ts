@@ -74,8 +74,9 @@ export class MimoAdapter implements RuntimeAdapter {
       const version =
         versionResult.stdout.match(/\b\d+\.\d+\.\d+\b/u)?.[0] ?? null;
       const help = await execute(command, ["run", "--help"]);
+      const helpText = `${help.stdout}\n${help.stderr ?? ""}`;
       const required = ["--format", "json", "--session", "--model", "--dir"];
-      const missing = required.filter((token) => !help.stdout.includes(token));
+      const missing = required.filter((token) => !helpText.includes(token));
       return missing.length === 0
         ? { available: true, protocolSupported: true, version }
         : {

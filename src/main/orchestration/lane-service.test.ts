@@ -358,6 +358,19 @@ describe("LaneService", () => {
     expect(h.fx.lanes.findById(h.fx.laneId)?.lastEventCursor).toBe(2);
   });
 
+  it("reuses an opened lane for consecutive turns after its delta is accepted", async () => {
+    const h = createLaneHarness({ events: [1, 2] });
+    const opened = await h.openExisting();
+
+    await h.service.sendTurn(opened, "first");
+    await expect(h.service.sendTurn(opened, "second")).resolves.toBeDefined();
+
+    expect(h.fakeRuntime.sentTurns.map((turn) => turn.input)).toEqual([
+      expect.stringContaining("first"),
+      "second",
+    ]);
+  });
+
   it("switches lanes with an audit record and leaves the source open", async () => {
     const h = createLaneHarness({ nativeSession: "source-session" });
     const targetLaneId = h.addLane({ nativeSession: "target-session" });

@@ -50,7 +50,7 @@ const opaqueReferenceSchema = z
 
 export const runtimeHealthSchema = z
   .object({
-    runtime: runtimeKindSchema,
+    runtime: catalogRuntimeKindSchema,
     status: z.enum(["ready", "degraded", "unavailable"]),
     version: z.string().min(1).nullable(),
     detail: z.enum(["protocol_unsupported", "runtime_unavailable"]).nullable(),
@@ -858,7 +858,7 @@ export const usageSnapshotSchema = z
     freshness: usageFreshnessSchema,
     plan: z.string().min(1).nullable(),
     provider: providerKindSchema,
-    runtime: runtimeKindSchema,
+    runtime: catalogRuntimeKindSchema,
     source: usageSourceSchema,
     validUntil: z.iso.datetime({ offset: true }).nullable(),
     windows: z.array(usageWindowSchema),

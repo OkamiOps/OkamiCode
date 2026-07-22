@@ -7,11 +7,9 @@ export const runtimeKindSchema = z.enum([
   "agy",
   "grok",
   "mimo",
+  "minimax",
 ]);
-export const catalogRuntimeKindSchema = z.union([
-  runtimeKindSchema,
-  z.literal("minimax"),
-]);
+export const catalogRuntimeKindSchema = runtimeKindSchema;
 export const providerKindSchema = z.enum([
   "claude_max",
   "chatgpt",
@@ -19,6 +17,7 @@ export const providerKindSchema = z.enum([
   "antigravity",
   "grok",
   "mimo",
+  "minimax",
 ]);
 export const laneStatusSchema = z.enum([
   "ready",

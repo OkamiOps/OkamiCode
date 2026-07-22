@@ -249,6 +249,7 @@ export interface ModelCatalogServiceOptions {
   grokCachePath?: string;
   grokBinary?: string | null;
   minimaxCachePath?: string;
+  minimaxBinary?: string | null;
   minimaxCodeBundlePath?: string | null;
   mimoCachePath?: string;
   mimoBinary?: string | null;
@@ -708,6 +709,10 @@ export function createModelCatalogService(
   const minimaxCachePath =
     options.minimaxCachePath ??
     path.join(path.dirname(options.cachePath), "minimax-models.json");
+  const minimaxBinary =
+    options.minimaxBinary === undefined
+      ? locateLocalBinary("minimax")
+      : options.minimaxBinary;
   const minimaxCodeBundlePath =
     options.minimaxCodeBundlePath === undefined
       ? process.platform === "darwin"
@@ -948,11 +953,15 @@ export function createModelCatalogService(
         {
           runtimeKind: "minimax",
           providerLabel: "MiniMax",
-          routeKind: "unavailable",
+          routeKind: minimaxBinary ? "native" : "unavailable",
           source: minimax
-            ? `MiniMax Code instalado · sem CLI headless de assinatura · mmx usa API · ${minimax.fetchedAt}`
+            ? minimaxBinary
+              ? `MiniMax Token Plan via mmx · ${minimax.fetchedAt}`
+              : `MiniMax Code instalado · mmx não encontrado · ${minimax.fetchedAt}`
             : minimaxCodeBundlePath
-              ? "MiniMax Code instalado · sem CLI headless de assinatura · mmx usa API"
+              ? minimaxBinary
+                ? "MiniMax Token Plan via mmx"
+                : "MiniMax Code instalado · mmx não encontrado"
               : "MiniMax Code não encontrado",
           models: minimax?.models ?? [],
         },

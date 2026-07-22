@@ -1601,6 +1601,7 @@ function providerForRuntime(runtime: RuntimeKind): ProviderKind {
   if (runtime === "agy") return "antigravity";
   if (runtime === "grok") return "grok";
   if (runtime === "mimo") return "mimo";
+  if (runtime === "minimax") return "minimax";
   return "cursor";
 }
 

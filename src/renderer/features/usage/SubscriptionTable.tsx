@@ -229,6 +229,15 @@ function runtimePresentation(subscription: UsageSnapshot) {
   if (subscription.provider === "cursor") {
     return { glyph: "CU", tone: "cursor" } as const;
   }
+  if (subscription.provider === "antigravity") {
+    return { glyph: "AG", tone: "task" } as const;
+  }
+  if (subscription.provider === "grok") {
+    return { glyph: "GK", tone: "task" } as const;
+  }
+  if (subscription.provider === "mimo") {
+    return { glyph: "MI", tone: "task" } as const;
+  }
   return { glyph: "MX", tone: "task" } as const;
 }
 

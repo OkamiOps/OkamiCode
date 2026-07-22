@@ -281,6 +281,10 @@ async function bootstrap(): Promise<void> {
       taskIdForRun,
       command: locateLocalBinary("mimo") ?? "mimo",
     },
+    minimax: {
+      taskIdForRun,
+      command: locateLocalBinary("minimax") ?? "mmx",
+    },
   });
 
   const chatgptProfile = createGatewayProfile({
@@ -312,6 +316,7 @@ async function bootstrap(): Promise<void> {
     grokCachePath: path.join(app.getPath("userData"), "grok-models.json"),
     grokBinary: locateLocalBinary("grok"),
     minimaxCachePath: path.join(app.getPath("userData"), "minimax-models.json"),
+    minimaxBinary: locateLocalBinary("minimax"),
     mimoCachePath: path.join(app.getPath("userData"), "mimo-models.json"),
     mimoBinary: locateLocalBinary("mimo"),
   });

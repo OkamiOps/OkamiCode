@@ -3,6 +3,7 @@ import type { AppState } from "../ipc/app-state";
 import { UsageActivityService } from "./activity";
 import { ClaudeUsageCollector } from "./claude-collector";
 import { CodexUsageCollector } from "./codex-collector";
+import { MiniMaxUsageCollector } from "./minimax-collector";
 import {
   UsageSourceKind,
   UsageSnapshotRepository,
@@ -10,6 +11,69 @@ import {
   type UsageOverview,
   type UsageSnapshot,
 } from "./model";
+
+const SUBSCRIPTION_COVERAGE: Array<
+  Pick<
+    UsageSnapshot,
+    "accountLabel" | "accountRef" | "provider" | "runtime"
+  > & {
+    error: string;
+  }
+> = [
+  {
+    accountLabel: "ChatGPT",
+    accountRef: "chatgpt",
+    provider: "chatgpt",
+    runtime: "codex",
+    error: "O Codex ainda não informou uma leitura de quota.",
+  },
+  {
+    accountLabel: "Claude Max",
+    accountRef: "claude-max",
+    provider: "claude_max",
+    runtime: "claude",
+    error: "O Claude Code ainda não informou uma leitura de quota.",
+  },
+  {
+    accountLabel: "Cursor",
+    accountRef: "cursor",
+    provider: "cursor",
+    runtime: "cursor",
+    error:
+      "O Cursor CLI não expõe quota estruturada; a atividade local continua disponível.",
+  },
+  {
+    accountLabel: "Antigravity",
+    accountRef: "antigravity",
+    provider: "antigravity",
+    runtime: "agy",
+    error:
+      "O AGY não expõe quota estruturada; a atividade local continua disponível.",
+  },
+  {
+    accountLabel: "Grok",
+    accountRef: "grok",
+    provider: "grok",
+    runtime: "grok",
+    error:
+      "O Grok CLI não expõe quota estruturada; a atividade local continua disponível.",
+  },
+  {
+    accountLabel: "MiMo Code",
+    accountRef: "mimo",
+    provider: "mimo",
+    runtime: "mimo",
+    error:
+      "O MiMo Code não expõe quota estruturada; a atividade local continua disponível.",
+  },
+  {
+    accountLabel: "MiniMax",
+    accountRef: "minimax",
+    provider: "minimax",
+    runtime: "minimax",
+    error: "O MiniMax Token Plan ainda não informou uma leitura de quota.",
+  },
+];
 
 export interface UsageCommands {
   overview(reason: "overview" | "refresh"): Promise<UsageOverview>;
@@ -27,21 +91,25 @@ export function createUsageCommands(state: AppState): UsageCommands {
   const activity = new UsageActivityService(state.database);
   const codex = new CodexUsageCollector({ clock: state.clock });
   const claude = new ClaudeUsageCollector({ clock: state.clock });
+  const minimax = new MiniMaxUsageCollector({ clock: state.clock });
   return {
     async overview(reason) {
       const previous = snapshots.readLatest();
-      const [codexSnapshot, claudeSnapshot] = await Promise.all([
-        codex.collect({
-          previous: previous.find((entry) => entry.provider === "chatgpt"),
-          reason,
-        }),
-        claude.collect({
-          previous: previous.find((entry) => entry.provider === "claude_max"),
-          reason,
-        }),
-      ]);
+      const [codexSnapshot, claudeSnapshot, minimaxSnapshot] =
+        await Promise.all([
+          codex.collect({
+            previous: previous.find((entry) => entry.provider === "chatgpt"),
+            reason,
+          }),
+          claude.collect({
+            previous: previous.find((entry) => entry.provider === "claude_max"),
+            reason,
+          }),
+          minimax.collect(),
+        ]);
       snapshots.save(codexSnapshot);
       snapshots.save(claudeSnapshot);
+      snapshots.save(minimaxSnapshot);
       activity.rebuild();
       const latest = snapshots.readLatest();
       const localContext = activity.readSessionContext();
@@ -56,7 +124,10 @@ export function createUsageCommands(state: AppState): UsageCommands {
             ? nativeContext
             : localContext,
         generatedAt: state.clock().toISOString(),
-        subscriptions: latest.map(publicSnapshot),
+        subscriptions: completeUsageCoverage(
+          latest.map(publicSnapshot),
+          state.clock().toISOString(),
+        ),
       };
     },
     setAlert(request) {
@@ -77,6 +148,37 @@ export function createUsageCommands(state: AppState): UsageCommands {
       return alert;
     },
   };
+}
+
+export function completeUsageCoverage(
+  snapshots: UsageSnapshot[],
+  collectedAt: string,
+): UsageSnapshot[] {
+  const byProvider = new Map(
+    snapshots.map((snapshot) => [snapshot.provider, snapshot]),
+  );
+  return SUBSCRIPTION_COVERAGE.map((entry) => {
+    const snapshot = byProvider.get(entry.provider);
+    if (snapshot) return snapshot;
+    return {
+      accountLabel: entry.accountLabel,
+      accountRef: entry.accountRef,
+      collectedAt,
+      credits: null,
+      error: entry.error,
+      freshness: "unavailable",
+      plan: null,
+      provider: entry.provider,
+      runtime: entry.runtime,
+      source: {
+        adapterVersion: "coverage-v1",
+        kind: UsageSourceKind.Unavailable,
+        method: "provider does not expose structured subscription quota",
+      },
+      validUntil: null,
+      windows: [],
+    };
+  });
 }
 
 function publicSnapshot(snapshot: UsageSnapshot): UsageSnapshot {
