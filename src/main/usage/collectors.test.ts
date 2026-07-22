@@ -1,4 +1,6 @@
 import { readFileSync } from "node:fs";
+import { homedir } from "node:os";
+import path from "node:path";
 import { describe, expect, it, vi } from "vitest";
 import { createTestDatabase } from "../db/test-support";
 import { UsageActivityService } from "./activity";
@@ -8,6 +10,9 @@ import {
   runClaudeUsageScreen,
 } from "./claude-collector";
 import { collectCodexUsage } from "./codex-collector";
+import { parseCursorUsage } from "./cursor-collector";
+import { parseGrokUsage } from "./grok-collector";
+import { runNativeUsageScreen } from "./native-usage-screen";
 import { UsageSnapshotRepository, withFreshness } from "./model";
 import { PreflightService } from "./preflight";
 
@@ -91,6 +96,12 @@ describe("usage collectors", () => {
     expect(spawnUsageScreen).not.toHaveBeenCalled();
     await collector.collect({ previous: current, reason: "refresh" });
     expect(spawnUsageScreen).toHaveBeenCalledOnce();
+
+    await collector.collect({
+      previous: { ...current, freshness: "stale" },
+      reason: "overview",
+    });
+    expect(spawnUsageScreen).toHaveBeenCalledTimes(2);
   });
 
   it("preserves the prior Claude snapshot as stale on parser mismatch", async () => {
@@ -155,6 +166,146 @@ describe("usage collectors", () => {
     );
     expect(writes).toEqual(["/usage\r"]);
     expect(result.cliVersion).toBe("2.1.214");
+  });
+
+  it("resolves the installed Claude binary instead of relying on Finder PATH", async () => {
+    let emitData: ((data: string) => void) | undefined;
+    const spawnPty = vi.fn(() => ({
+      kill: vi.fn(),
+      onData(listener: (data: string) => void) {
+        emitData = listener;
+        queueMicrotask(() => listener("manual mode on · ? for shortcuts"));
+        return { dispose: vi.fn() };
+      },
+      onExit() {
+        return { dispose: vi.fn() };
+      },
+      write() {
+        queueMicrotask(() => emitData?.(readFixture("claude-usage.txt")));
+      },
+    }));
+
+    await runClaudeUsageScreen({
+      locateCommand: () => "/Users/test/.local/bin/claude",
+      spawnPty,
+      timeoutMs: 4_000,
+    });
+
+    expect(spawnPty).toHaveBeenCalledWith(
+      "/Users/test/.local/bin/claude",
+      [],
+      expect.objectContaining({ cwd: path.join(homedir(), "OkamiWorkspace") }),
+    );
+  });
+
+  it("confirms trust for the app-owned OkamiWorkspace before asking for usage", async () => {
+    const writes: string[] = [];
+    let emitData: ((data: string) => void) | undefined;
+    const spawnPty = vi.fn(() => ({
+      kill: vi.fn(),
+      onData(listener: (data: string) => void) {
+        emitData = listener;
+        queueMicrotask(() => listener("1. Yes, I trust this folder"));
+        return { dispose: vi.fn() };
+      },
+      onExit() {
+        return { dispose: vi.fn() };
+      },
+      write(value: string) {
+        writes.push(value);
+        if (writes.length === 1) {
+          queueMicrotask(() => emitData?.("manual mode on · ? for shortcuts"));
+        } else {
+          queueMicrotask(() => emitData?.(readFixture("claude-usage.txt")));
+        }
+      },
+    }));
+
+    await runClaudeUsageScreen({ spawnPty, timeoutMs: 4_000 });
+
+    expect(writes).toEqual(["\r", "/usage\r"]);
+  });
+
+  it("parses current Cursor plan categories from its native usage screen", () => {
+    const snapshot = parseCursorUsage(readFixture("cursor-usage.txt"), {
+      cliVersion: "2026.07.17-3e2a980",
+      collectedAt: "2026-07-22T10:00:00.000Z",
+    });
+
+    expect(snapshot.plan).toBe("Pro");
+    expect(snapshot.windows).toEqual([
+      expect.objectContaining({
+        label: "Mensal · Incluído",
+        modelGroup: null,
+        remainingPercent: 58,
+        usedPercent: 42,
+      }),
+      expect.objectContaining({
+        label: "Mensal · Auto",
+        modelGroup: "Auto",
+        remainingPercent: 67,
+        usedPercent: 33,
+      }),
+      expect.objectContaining({
+        label: "Mensal · API",
+        modelGroup: "API",
+        remainingPercent: 0,
+        usedPercent: 100,
+      }),
+    ]);
+  });
+
+  it("parses the Grok weekly limit without sending a model turn", () => {
+    const snapshot = parseGrokUsage(readFixture("grok-usage.txt"), {
+      cliVersion: "0.2.106",
+      collectedAt: "2026-07-22T10:00:00.000Z",
+    });
+
+    expect(snapshot.windows).toEqual([
+      expect.objectContaining({
+        kind: "weekly",
+        remainingPercent: 100,
+        usedPercent: 0,
+      }),
+    ]);
+    expect(snapshot.windows[0]?.resetsAt).toMatch(/^2026-07-28T/);
+  });
+
+  it("confirms Cursor slash completion before waiting for usage data", async () => {
+    vi.useFakeTimers();
+    try {
+      const writes: string[] = [];
+      let emitData: ((data: string) => void) | undefined;
+      const resultPromise = runNativeUsageScreen({
+        command: "cursor-stub",
+        completion: /On-DemandDisabled/u,
+        ready: /Plan,search,buildanything/u,
+        slashCommand: "/usage",
+        submitCount: 2,
+        spawnPty: () => ({
+          kill: vi.fn(),
+          onData(listener) {
+            emitData = listener;
+            queueMicrotask(() => listener("Plan, search, build anything"));
+            return { dispose: vi.fn() };
+          },
+          onExit() {
+            return { dispose: vi.fn() };
+          },
+          write(value) {
+            writes.push(value);
+            if (writes.length === 2) emitData?.("On-Demand Disabled");
+          },
+        }),
+      });
+
+      await vi.runAllTimersAsync();
+      await resultPromise;
+
+      expect(writes).toEqual(["/usage\r", "\r"]);
+    } finally {
+      vi.useRealTimers();
+    }
   });
 });
 

@@ -91,6 +91,7 @@ export class CodexUsageCollector {
     if (
       options.reason === "overview" &&
       options.previous &&
+      options.previous.freshness === "live" &&
       now.getTime() - Date.parse(options.previous.collectedAt) <= this.ttlMs
     ) {
       return options.previous;

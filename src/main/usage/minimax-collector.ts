@@ -39,14 +39,12 @@ export class MiniMaxUsageCollector {
         "--non-interactive",
       ]);
       const payload = JSON.parse(output) as MiniMaxQuota;
-      const general = payload.model_remains?.find(
-        (entry) => entry.model_name === "general",
+      const groups = (payload.model_remains ?? []).filter(
+        (entry) => typeof entry.model_name === "string",
       );
-      if (!general) {
-        return unavailable(collectedAt, "O mmx não retornou a quota geral.");
+      if (groups.length === 0) {
+        return unavailable(collectedAt, "O mmx não retornou quotas por grupo.");
       }
-      const interval = percent(general.current_interval_remaining_percent);
-      const weekly = percent(general.current_weekly_remaining_percent);
       return {
         accountLabel: "MiniMax",
         accountRef: "minimax",
@@ -65,26 +63,31 @@ export class MiniMaxUsageCollector {
         validUntil: new Date(
           Date.parse(collectedAt) + 5 * 60_000,
         ).toISOString(),
-        windows: [
-          {
-            durationMinutes: 300,
-            kind: "rolling",
-            label: "Janela atual",
-            modelGroup: "general",
-            remainingPercent: interval,
-            resetsAt: timestamp(general.end_time),
-            usedPercent: interval === null ? null : 100 - interval,
-          },
-          {
-            durationMinutes: 7 * 24 * 60,
-            kind: "weekly",
-            label: "Semanal",
-            modelGroup: "general",
-            remainingPercent: weekly,
-            resetsAt: timestamp(general.weekly_end_time),
-            usedPercent: weekly === null ? null : 100 - weekly,
-          },
-        ],
+        windows: groups.flatMap((group) => {
+          const name = String(group.model_name);
+          const interval = percent(group.current_interval_remaining_percent);
+          const weekly = percent(group.current_weekly_remaining_percent);
+          return [
+            {
+              durationMinutes: 300,
+              kind: "rolling",
+              label: `Janela atual · ${name}`,
+              modelGroup: name,
+              remainingPercent: interval,
+              resetsAt: timestamp(group.end_time),
+              usedPercent: interval === null ? null : 100 - interval,
+            },
+            {
+              durationMinutes: 7 * 24 * 60,
+              kind: "weekly",
+              label: `Semanal · ${name}`,
+              modelGroup: name,
+              remainingPercent: weekly,
+              resetsAt: timestamp(group.weekly_end_time),
+              usedPercent: weekly === null ? null : 100 - weekly,
+            },
+          ];
+        }),
       };
     } catch {
       return unavailable(

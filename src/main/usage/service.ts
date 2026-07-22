@@ -4,6 +4,9 @@ import { UsageActivityService } from "./activity";
 import { ClaudeUsageCollector } from "./claude-collector";
 import { CodexUsageCollector } from "./codex-collector";
 import { MiniMaxUsageCollector } from "./minimax-collector";
+import { CursorUsageCollector } from "./cursor-collector";
+import { GrokUsageCollector } from "./grok-collector";
+import { locateLocalBinary } from "../ecosystem/cli-capabilities";
 import {
   UsageSourceKind,
   UsageSnapshotRepository,
@@ -39,8 +42,7 @@ const SUBSCRIPTION_COVERAGE: Array<
     accountRef: "cursor",
     provider: "cursor",
     runtime: "cursor",
-    error:
-      "O Cursor CLI não expõe quota estruturada; a atividade local continua disponível.",
+    error: "O Cursor CLI ainda não informou uma leitura de quota.",
   },
   {
     accountLabel: "Antigravity",
@@ -55,8 +57,7 @@ const SUBSCRIPTION_COVERAGE: Array<
     accountRef: "grok",
     provider: "grok",
     runtime: "grok",
-    error:
-      "O Grok CLI não expõe quota estruturada; a atividade local continua disponível.",
+    error: "O Grok CLI ainda não informou uma leitura de quota.",
   },
   {
     accountLabel: "MiMo Code",
@@ -89,26 +90,49 @@ export function createUsageCommands(state: AppState): UsageCommands {
   }
   const snapshots = new UsageSnapshotRepository(state.database, state.createId);
   const activity = new UsageActivityService(state.database);
-  const codex = new CodexUsageCollector({ clock: state.clock });
-  const claude = new ClaudeUsageCollector({ clock: state.clock });
+  const codex = new CodexUsageCollector({
+    clock: state.clock,
+    command: locateLocalBinary("codex") ?? undefined,
+  });
+  const claude = new ClaudeUsageCollector({
+    clock: state.clock,
+    command: locateLocalBinary("claude") ?? undefined,
+  });
+  const cursor = new CursorUsageCollector({ clock: state.clock });
+  const grok = new GrokUsageCollector({ clock: state.clock });
   const minimax = new MiniMaxUsageCollector({ clock: state.clock });
   return {
     async overview(reason) {
       const previous = snapshots.readLatest();
-      const [codexSnapshot, claudeSnapshot, minimaxSnapshot] =
-        await Promise.all([
-          codex.collect({
-            previous: previous.find((entry) => entry.provider === "chatgpt"),
-            reason,
-          }),
-          claude.collect({
-            previous: previous.find((entry) => entry.provider === "claude_max"),
-            reason,
-          }),
-          minimax.collect(),
-        ]);
+      const [
+        codexSnapshot,
+        claudeSnapshot,
+        cursorSnapshot,
+        grokSnapshot,
+        minimaxSnapshot,
+      ] = await Promise.all([
+        codex.collect({
+          previous: previous.find((entry) => entry.provider === "chatgpt"),
+          reason,
+        }),
+        claude.collect({
+          previous: previous.find((entry) => entry.provider === "claude_max"),
+          reason,
+        }),
+        cursor.collect({
+          previous: previous.find((entry) => entry.provider === "cursor"),
+          reason,
+        }),
+        grok.collect({
+          previous: previous.find((entry) => entry.provider === "grok"),
+          reason,
+        }),
+        minimax.collect(),
+      ]);
       snapshots.save(codexSnapshot);
       snapshots.save(claudeSnapshot);
+      snapshots.save(cursorSnapshot);
+      snapshots.save(grokSnapshot);
       snapshots.save(minimaxSnapshot);
       activity.rebuild();
       const latest = snapshots.readLatest();

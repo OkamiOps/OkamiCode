@@ -1,0 +1,4 @@
+Grok Build 0.2.106
+
+Weekly limit: 0%
+Next reset: July 28, 13:53

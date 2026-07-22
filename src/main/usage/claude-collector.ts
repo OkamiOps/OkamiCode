@@ -1,4 +1,7 @@
 import { spawn as nativeSpawnPty } from "node-pty";
+import { homedir } from "node:os";
+import path from "node:path";
+import { locateLocalBinary } from "../ecosystem/cli-capabilities";
 import { claudeEnvironment } from "../runtime/claude/command";
 import { UsageSourceKind, type UsageSnapshot, type UsageWindow } from "./model";
 
@@ -145,6 +148,7 @@ export class ClaudeUsageCollector {
     if (
       options.reason === "overview" &&
       options.previous &&
+      options.previous.freshness === "live" &&
       now.getTime() - Date.parse(options.previous.collectedAt) <= this.ttlMs
     ) {
       return options.previous;
@@ -182,16 +186,23 @@ export function runClaudeUsageScreen(
     cwd?: string;
     env?: NodeJS.ProcessEnv;
     spawnPty?: SpawnUsagePty;
+    locateCommand?: () => string | null;
     timeoutMs?: number;
   } = {},
 ): Promise<ClaudeUsageScreenResult> {
   return new Promise((resolve) => {
     const terminal = (options.spawnPty ?? nativeSpawnPty)(
-      options.command ?? "claude",
+      options.command ??
+        options.locateCommand?.() ??
+        locateLocalBinary("claude") ??
+        "claude",
       [],
       {
         cols: 100,
-        cwd: options.cwd ?? process.cwd(),
+        // A packaged app launched by Finder does not inherit a project cwd.
+        // OkamiWorkspace is created by the app and is the neutral, trusted
+        // workspace used by the desktop shell when no project is selected.
+        cwd: options.cwd ?? path.join(homedir(), "OkamiWorkspace"),
         env: claudeEnvironment(options.env),
         name: "xterm-256color",
         rows: 40,
@@ -203,6 +214,7 @@ export function runClaudeUsageScreen(
     // trust) and only then shows a prompt, so the scrape is a small state
     // machine instead of a blind write.
     let stage: "boot" | "asked" | "done" = "boot";
+    let trustHandled = false;
     let quietTimer: ReturnType<typeof setTimeout> | undefined;
     const hardTimer = setTimeout(() => finish(0), options.timeoutMs ?? 45_000);
 
@@ -234,17 +246,24 @@ export function runClaudeUsageScreen(
       // against a whitespace-free copy of the screen.
       const compact = stripAnsi(output).replace(/\s+/gu, "");
       if (stage === "boot") {
-        if (/Notnow|trustthisfolder/iu.test(compact)) {
-          terminal.write("2\r");
+        if (!trustHandled && /Notnow|trustthisfolder/iu.test(compact)) {
+          trustHandled = true;
+          // OkamiWorkspace is created and owned by this app. Claude defaults
+          // to option 1 (trust); pressing Enter avoids the old bug where "2"
+          // selected "No, exit" and /usage was written to a dead PTY.
+          terminal.write("\r");
           setTimeout(ask, 900);
           return;
         }
         if (/forshortcuts|manualmodeon/iu.test(compact)) ask();
       }
-      if (stage === "asked" && /%used/u.test(compact)) {
+      if ((stage === "asked" || stage === "done") && /%used/u.test(compact)) {
         stage = "done";
         if (quietTimer) clearTimeout(quietTimer);
-        quietTimer = setTimeout(() => finish(0), 600);
+        // Claude paints session, weekly and per-model limits in separate
+        // redraws. Resetting this timer on every redraw avoids capturing only
+        // the first row and incorrectly preserving an older snapshot.
+        quietTimer = setTimeout(() => finish(0), 1_500);
       }
     });
     terminal.onExit(({ exitCode }) => finish(exitCode));
@@ -257,7 +276,7 @@ export function runClaudeUsageScreen(
 export function parseWindows(text: string): UsageWindow[] {
   const compact = text.replace(/\s+/gu, "");
   const pattern =
-    /Current(session|week)(?:\(([^)]{0,40})\))?[^%]{0,400}?(\d{1,3})%used(?:(?:Resets|Reinicia)([A-Za-zÀ-ÿ0-9:.,]{0,30}))?/giu;
+    /Current(session|week)(?:\(([^)]{0,40})\))?[^%]{0,2000}?(\d{1,3})%used(?:(?:Resets|Reinicia)([A-Za-zÀ-ÿ0-9:.,]{0,30}))?/giu;
   const seen = new Set<string>();
   const windows: UsageWindow[] = [];
   for (const match of compact.matchAll(pattern)) {
@@ -291,10 +310,10 @@ export function parseWindows(text: string): UsageWindow[] {
 function parseResetStamp(value: string | undefined): string | null {
   if (!value) return null;
   const now = new Date();
-  const full = /^([A-Za-z]{3})(\d{1,2})at(\d{1,2}):(\d{2})(am|pm)$/iu.exec(
+  const full = /^([A-Za-z]{3})(\d{1,2})at(\d{1,2})(?::(\d{2}))?(am|pm)$/iu.exec(
     value,
   );
-  const timeOnly = /^(\d{1,2}):(\d{2})(am|pm)$/iu.exec(value);
+  const timeOnly = /^(\d{1,2})(?::(\d{2}))?(am|pm)$/iu.exec(value);
   const toHour = (hour: number, suffix: string) => {
     const lower = suffix.toLowerCase();
     if (lower === "pm" && hour !== 12) return hour + 12;
@@ -309,7 +328,7 @@ function parseResetStamp(value: string | undefined): string | null {
       month,
       Number(full[2]),
       toHour(Number(full[3]), full[5]),
-      Number(full[4]),
+      Number(full[4] ?? 0),
     );
     return Number.isNaN(date.valueOf()) ? null : date.toISOString();
   }
@@ -331,7 +350,7 @@ function parseResetStamp(value: string | undefined): string | null {
     const date = new Date(now);
     date.setHours(
       toHour(Number(timeOnly[1]), timeOnly[3]),
-      Number(timeOnly[2]),
+      Number(timeOnly[2] ?? 0),
       0,
       0,
     );
