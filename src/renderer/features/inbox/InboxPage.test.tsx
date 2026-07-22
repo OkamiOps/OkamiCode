@@ -788,6 +788,7 @@ describe("InboxPage", () => {
     await screen.findByText("Projetos");
     await userEvent.click(screen.getByRole("button", { name: "Não lidos" }));
     expect(api.listThreads).toHaveBeenLastCalledWith({
+      flow: "inbox",
       unreadOnly: true,
       limit: 100,
     });
@@ -820,6 +821,42 @@ describe("InboxPage", () => {
         screen.getByText(label, { selector: ".inbox-eyebrow" }),
       ).toBeVisible();
     }
+  });
+
+  it("keeps the unread badge scoped to inbox while browsing spam", async () => {
+    const spamThreads = [
+      {
+        ...thread,
+        id: "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaa1",
+        folder: "spam" as const,
+      },
+      {
+        ...thread,
+        id: "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaa2",
+        folder: "spam" as const,
+      },
+    ];
+    const listThreads = vi.fn(
+      async (request: IpcRequest<"inbox:threads:list">) => ({
+        threads: request.flow === "spam" ? spamThreads : [thread],
+        nextCursor: null,
+      }),
+    );
+    renderInbox(makeApi({ listThreads }));
+
+    const unread = await screen.findByRole("button", { name: "Não lidos" });
+    expect(await within(unread).findByText("1")).toBeVisible();
+
+    await userEvent.click(screen.getByRole("button", { name: "Spam" }));
+    expect(
+      await screen.findByText("Spam", { selector: ".inbox-eyebrow" }),
+    ).toBeVisible();
+    expect(within(unread).getByText("1")).toBeVisible();
+    expect(listThreads).toHaveBeenCalledWith({
+      flow: "inbox",
+      unreadOnly: true,
+      limit: 100,
+    });
   });
 
   it("generates an approval-pending agent draft only after an explicit catalog choice", async () => {

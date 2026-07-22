@@ -231,17 +231,27 @@ export function InboxPage({ api = defaultApi }: { api?: InboxApi }) {
     refetchInterval: 15_000,
     refetchOnWindowFocus: true,
   });
+  const unreadThreadRequest = useMemo<IpcRequest<"inbox:threads:list">>(
+    () => ({ flow: "inbox", unreadOnly: true, limit: 100 }),
+    [],
+  );
   const threadRequest = useMemo<IpcRequest<"inbox:threads:list">>(() => {
-    if (filter === "unread") return { unreadOnly: true, limit: 100 };
+    if (filter === "unread") return unreadThreadRequest;
     if (filter === "all") return { limit: 100 };
     if (["mentions", "delegated", "spam", "trash"].includes(filter)) {
       return { flow: filter as InboxFlow, limit: 100 };
     }
     return { accountIds: [filter], limit: 100 };
-  }, [filter]);
+  }, [filter, unreadThreadRequest]);
   const threads = useQuery({
     queryKey: ["inbox", "threads", threadRequest],
     queryFn: () => api.listThreads(threadRequest),
+    refetchInterval: 15_000,
+    refetchOnWindowFocus: true,
+  });
+  const unreadInboxThreads = useQuery({
+    queryKey: ["inbox", "threads", unreadThreadRequest],
+    queryFn: () => api.listThreads(unreadThreadRequest),
     refetchInterval: 15_000,
     refetchOnWindowFocus: true,
   });
@@ -570,8 +580,8 @@ export function InboxPage({ api = defaultApi }: { api?: InboxApi }) {
     detail.data,
     replyFromAddresses,
   );
-  const visibleUnreadCount = visibleThreadPage?.threads.filter(
-    (thread) => thread.unreadCount > 0,
+  const inboxUnreadCount = unreadInboxThreads.data?.threads.filter(
+    (thread) => thread.unreadCount > 0 && !locallyReadThreadIds.has(thread.id),
   ).length;
   const markThreadRead = markRead.mutate;
   const triggerAccountSync = syncAccount.mutate;
@@ -763,7 +773,7 @@ export function InboxPage({ api = defaultApi }: { api?: InboxApi }) {
         removingAccountId={
           removeAccount.isPending ? removeAccount.variables?.accountId : null
         }
-        unreadCount={visibleUnreadCount}
+        unreadCount={inboxUnreadCount}
       />
       <ResizeHandle
         ariaLabel="Redimensionar contas e filtros"
