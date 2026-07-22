@@ -1,7 +1,7 @@
 import type { ProviderKind, RuntimeKind } from "../../../shared/contracts/lane";
 import type { WorkbenchLane } from "./api";
 
-export type RuntimeGlyph = "CL" | "GP" | "GK" | "CU" | "AG" | "MI";
+export type RuntimeGlyph = "CL" | "GP" | "GK" | "CU" | "AG" | "MI" | "MM";
 
 export function runtimeGlyph(runtime: RuntimeKind): RuntimeGlyph {
   if (runtime === "claude") return "CL";
@@ -9,6 +9,7 @@ export function runtimeGlyph(runtime: RuntimeKind): RuntimeGlyph {
   if (runtime === "agy") return "AG";
   if (runtime === "grok") return "GK";
   if (runtime === "mimo") return "MI";
+  if (runtime === "minimax") return "MM";
   return "CU";
 }
 
@@ -17,13 +18,16 @@ export function runtimePresentation(lane: WorkbenchLane) {
     return { glyph: "CU", tone: "cursor" } as const;
   }
   if (lane.runtimeKind === "agy") {
-    return { glyph: "AG", tone: "cursor" } as const;
+    return { glyph: "AG", tone: "agy" } as const;
   }
   if (lane.runtimeKind === "grok") {
     return { glyph: "GK", tone: "grok" } as const;
   }
   if (lane.runtimeKind === "mimo") {
-    return { glyph: "MI", tone: "cursor" } as const;
+    return { glyph: "MI", tone: "mimo" } as const;
+  }
+  if (lane.runtimeKind === "minimax") {
+    return { glyph: "MM", tone: "minimax" } as const;
   }
   const account = `${lane.providerAccountLabel} ${lane.model}`.toLowerCase();
   if (account.includes("grok")) return { glyph: "GK", tone: "grok" } as const;
@@ -48,6 +52,7 @@ export function laneDisplayName(lane: WorkbenchLane): string {
   if (lane.runtimeKind === "agy") return "Antigravity";
   if (lane.runtimeKind === "grok") return "Grok";
   if (lane.runtimeKind === "mimo") return "MiMo Code";
+  if (lane.runtimeKind === "minimax") return "MiniMax";
   return lane.providerAccountLabel === "ChatGPT" ||
     /^gpt|^o[134]/iu.test(lane.model)
     ? "Codex"

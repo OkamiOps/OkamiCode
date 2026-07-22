@@ -1,5 +1,11 @@
 import { Surface } from "@heroui/react";
-import { ChevronRight, MessageSquareText, Wrench } from "lucide-react";
+import {
+  Check,
+  ChevronRight,
+  MessageSquareText,
+  Sparkles,
+  Wrench,
+} from "lucide-react";
 import { useEffect, useRef, useState } from "react";
 import { canonicalEventSchema } from "../../../shared/contracts/event";
 import { MessageMarkdown } from "./MessageMarkdown";
@@ -331,8 +337,16 @@ export function Conversation({
       ? runningTool.payload.toolName
       : null;
   const isEmpty = timeline.length === 0;
-  // Tracks the last agent label while rendering the thread in order.
-  let lastSpeaker: string | null = null;
+  const liveOwner =
+    (lastAgent?.type === "agent" && laneById.get(lastAgent.laneId)) || lane;
+  const liveRuntime = runtimePresentation(liveOwner);
+  const liveProvider = liveOwner ? laneDisplayName(liveOwner) : "Agente";
+  const liveModel = liveOwner ? shortModel(liveOwner.model) : "Modelo ativo";
+  const liveActivity = runningToolName
+    ? `Executando ${runningToolName}`
+    : lastAgent?.type === "agent" && lastAgent.text.length > 0
+      ? "Escrevendo resposta"
+      : "Pensando";
 
   return (
     <div aria-label="Conversa da tarefa" className="conversation-scroll">
@@ -366,35 +380,46 @@ export function Conversation({
               const owner = laneById.get(item.laneId) ?? lane;
               const runtime = runtimePresentation(owner);
               const isLiveTail = isRunning && item.key === lastAgent?.key;
-              // The speaker line only appears when it changes: repeating it
-              // on every reply is the noise Claude and Codex avoid.
-              const speaker = owner
-                ? `${laneDisplayName(owner)} · ${shortModel(owner.model)}`
-                : "Agente";
-              const showSpeaker = speaker !== lastSpeaker;
-              lastSpeaker = speaker;
+              const provider = owner ? laneDisplayName(owner) : "Agente";
+              const model = owner ? shortModel(owner.model) : "Modelo ativo";
               return (
                 <article
                   className="message-group message-group--agent"
+                  data-live={isLiveTail || undefined}
                   data-tone={runtime.tone}
                   key={item.key}
                 >
-                  {showSpeaker && (
-                    <header className="message-agent-header">
-                      <span
-                        aria-hidden="true"
-                        className={`message-agent-glyph runtime-glyph--${runtime.tone}`}
-                      >
-                        {runtime.glyph}
-                      </span>
-                      <strong>{speaker}</strong>
-                    </header>
-                  )}
-                  <Surface className="message-bubble" variant="secondary">
-                    <MessageMarkdown>{item.text}</MessageMarkdown>
-                    {isLiveTail && (
-                      <span aria-hidden="true" className="stream-caret" />
-                    )}
+                  <header className="message-agent-header">
+                    <span
+                      aria-hidden="true"
+                      className={`message-agent-glyph runtime-glyph--${runtime.tone}`}
+                    >
+                      {runtime.glyph}
+                    </span>
+                    <span className="message-agent-identity">
+                      <strong>{provider}</strong>
+                      <span>{model}</span>
+                    </span>
+                    <span className="message-agent-state">
+                      {isLiveTail ? (
+                        <Sparkles aria-hidden="true" size={11} />
+                      ) : (
+                        <Check aria-hidden="true" size={11} />
+                      )}
+                      {isLiveTail ? "Respondendo" : "Concluído"}
+                    </span>
+                  </header>
+                  <Surface
+                    className="message-bubble message-bubble--agent"
+                    variant="secondary"
+                  >
+                    <span aria-hidden="true" className="message-accent-rail" />
+                    <div className="message-bubble__content">
+                      <MessageMarkdown>{item.text}</MessageMarkdown>
+                      {isLiveTail && (
+                        <span aria-hidden="true" className="stream-caret" />
+                      )}
+                    </div>
                   </Surface>
                 </article>
               );
@@ -413,13 +438,29 @@ export function Conversation({
             );
           })}
           {isRunning && (
-            <div className="chat-live" role="status">
-              <span aria-hidden="true" className="chat-live__orb" />
-              <span className="chat-live__text">
-                {runningToolName
-                  ? `Executando ${runningToolName}…`
-                  : "Pensando…"}
+            <div
+              className="chat-live"
+              data-tone={liveRuntime.tone}
+              role="status"
+            >
+              <span
+                aria-hidden="true"
+                className={`message-agent-glyph runtime-glyph--${liveRuntime.tone}`}
+              >
+                {liveRuntime.glyph}
               </span>
+              <span className="chat-live__copy">
+                <strong>{liveProvider} está trabalhando</strong>
+                <span>
+                  {liveModel} · {liveActivity}
+                </span>
+              </span>
+              <span aria-hidden="true" className="chat-live__dots">
+                <i />
+                <i />
+                <i />
+              </span>
+              <span aria-hidden="true" className="chat-live__rail" />
             </div>
           )}
           <div aria-hidden="true" ref={bottomRef} />

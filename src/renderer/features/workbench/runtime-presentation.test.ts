@@ -19,6 +19,12 @@ const agyLane = {
   model: "default",
 } as WorkbenchLane;
 
+const minimaxLane = {
+  runtimeKind: "minimax",
+  providerAccountLabel: "MiniMax",
+  model: "MiniMax M2.7",
+} as WorkbenchLane;
+
 describe("runtime presentation", () => {
   it("never presents Cursor as Claude, ChatGPT or Grok", () => {
     expect(runtimeGlyph("cursor")).toBe("CU");
@@ -31,11 +37,16 @@ describe("runtime presentation", () => {
 
   it("uses the Antigravity label without presenting it as another provider", () => {
     expect(runtimeGlyph("agy")).toBe("AG");
-    expect(runtimePresentation(agyLane)).toEqual({
-      glyph: "AG",
-      tone: "cursor",
-    });
+    expect(runtimePresentation(agyLane)).toEqual({ glyph: "AG", tone: "agy" });
     expect(laneDisplayName(agyLane)).toBe("Antigravity");
+  });
+
+  it("keeps MiniMax identity instead of falling through to Claude", () => {
+    expect(runtimePresentation(minimaxLane)).toEqual({
+      glyph: "MM",
+      tone: "minimax",
+    });
+    expect(laneDisplayName(minimaxLane)).toBe("MiniMax");
   });
 
   it("maps the selected lane to the subscription provider shown in quota", () => {
