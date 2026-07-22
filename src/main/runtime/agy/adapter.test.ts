@@ -516,4 +516,26 @@ describe("AgyAdapter", () => {
       },
     ]);
   });
+
+  it("accepts successful stdout without Stop only for a sandboxed plan session", async () => {
+    const deps = dependencies();
+    await deps.adapter.start({
+      laneId,
+      cwd: workspace,
+      permissionMode: "plan",
+    });
+    const handle = await deps.adapter.sendTurn({
+      runId,
+      laneId,
+      nativeSessionId: null,
+      input: "Summarize this email",
+    });
+
+    deps.process.finish({ exitCode: 0, stdout: "Final answer" });
+
+    await expect(collect(handle.events)).resolves.toMatchObject([
+      { kind: "message_completed", payload: { text: "Final answer" } },
+      { kind: "run_completed" },
+    ]);
+  });
 });

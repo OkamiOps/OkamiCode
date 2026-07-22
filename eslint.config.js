@@ -7,6 +7,7 @@ import tseslint from "typescript-eslint";
 export default defineConfig(
   globalIgnores([
     ".cache/**",
+    ".claude/skills/**",
     ".claude/worktrees/**",
     ".pnpm-store/**",
     ".worktrees/**",

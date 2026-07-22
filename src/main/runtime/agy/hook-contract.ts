@@ -286,6 +286,10 @@ export class AgyHookProjector {
     return this.syntheticEvent("run_failed", "failure", { reason });
   }
 
+  projectCompletion(reason: string): CanonicalEvent {
+    return this.syntheticEvent("run_completed", "completion", { reason });
+  }
+
   projectCancellation(): CanonicalEvent {
     return this.syntheticEvent("run_cancelled", "cancelled", {
       reason: "user_cancelled",

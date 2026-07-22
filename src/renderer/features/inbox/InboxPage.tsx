@@ -228,6 +228,7 @@ export function InboxPage({ api = defaultApi }: { api?: InboxApi }) {
   const [contextPanel, setContextPanel] = useState<InboxContextPanel | null>(
     null,
   );
+  const [assistantExpanded, setAssistantExpanded] = useState(false);
   const accounts = useQuery({
     queryKey: ["inbox", "accounts"],
     queryFn: api.listAccounts,
@@ -729,7 +730,11 @@ export function InboxPage({ api = defaultApi }: { api?: InboxApi }) {
     <section
       aria-label="Inbox"
       className="inbox-page"
-      data-context-open={contextPanel !== null || undefined}
+      data-assistant-expanded={
+        contextPanel === "assistant" && assistantExpanded ? "true" : undefined
+      }
+      data-context-open={contextPanel === "details" || undefined}
+      data-context-panel={contextPanel ?? undefined}
       style={
         {
           "--inbox-sidebar-width": `${sidebarPane.width}px`,
@@ -887,12 +892,14 @@ export function InboxPage({ api = defaultApi }: { api?: InboxApi }) {
       />
       {contextPanel && selectedThread && (
         <>
-          <ResizeHandle
-            ariaLabel="Redimensionar painel contextual"
-            className="inbox-resize-handle inbox-resize-handle--details"
-            edge="left"
-            pane={detailsPane}
-          />
+          {contextPanel === "details" && (
+            <ResizeHandle
+              ariaLabel="Redimensionar painel contextual"
+              className="inbox-resize-handle inbox-resize-handle--details"
+              edge="left"
+              pane={detailsPane}
+            />
+          )}
           <aside
             aria-label={
               contextPanel === "details"
@@ -919,7 +926,11 @@ export function InboxPage({ api = defaultApi }: { api?: InboxApi }) {
               listModels={api.listModels}
               onAnalyze={api.analyzeThread}
               onClose={() => setContextPanel(null)}
+              expanded={assistantExpanded}
               open={contextPanel === "assistant"}
+              onToggleExpanded={() =>
+                setAssistantExpanded((current) => !current)
+              }
               threadId={selectedThread.id}
             />
           </aside>
@@ -1313,23 +1324,25 @@ function ThreadList({
           </strong>
           <Button
             aria-label="Marcar selecionadas como lidas"
+            className="inbox-selection-toolbar__action"
             isDisabled={selectedCount === 0}
-            isIconOnly
             onPress={onMarkSelectedRead}
             size="sm"
             variant="ghost"
           >
             <MailCheck aria-hidden="true" size={15} />
+            <span>Lidas</span>
           </Button>
           <Button
             aria-label="Marcar selecionadas como não lidas"
+            className="inbox-selection-toolbar__action"
             isDisabled={selectedCount === 0}
-            isIconOnly
             onPress={onMarkSelectedUnread}
             size="sm"
             variant="ghost"
           >
             <MailOpen aria-hidden="true" size={15} />
+            <span>Não lidas</span>
           </Button>
           <BulkMoveAction
             action="spam"
@@ -1934,8 +1947,8 @@ function BulkMoveAction({
     <>
       <Button
         aria-label={label}
+        className={`inbox-selection-toolbar__action${isSpam ? "" : " inbox-selection-toolbar__action--danger"}`}
         isDisabled={count === 0}
-        isIconOnly
         onPress={dialog.open}
         size="sm"
         variant="ghost"
@@ -1945,6 +1958,7 @@ function BulkMoveAction({
         ) : (
           <Trash2 aria-hidden="true" size={15} />
         )}
+        <span>{isSpam ? "Spam" : "Lixeira"}</span>
       </Button>
       <Modal.Root state={dialog}>
         <Modal.Backdrop className="inbox-modal-backdrop">

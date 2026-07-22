@@ -70,6 +70,10 @@ export class AgyCompanionIngress {
     return this.projector.projectFailure(reason);
   }
 
+  projectCompletion(reason: string): CanonicalEvent {
+    return this.projector.projectCompletion(reason);
+  }
+
   projectCancellation(): CanonicalEvent {
     return this.projector.projectCancellation();
   }

@@ -464,9 +464,18 @@ export class AgyAdapter implements RuntimeAdapter {
           run.ingress.discardPendingTerminal();
           queue.pushTerminal(run.ingress.projectFailure(failure));
         } else if (!hasTerminal(finalEvents)) {
-          queue.pushTerminal(
-            run.ingress.projectFailure("agy_process_ended_without_stop"),
-          );
+          if (
+            run.session.permissionMode === "plan" &&
+            result.stdout.trim().length > 0
+          ) {
+            queue.pushTerminal(
+              run.ingress.projectCompletion("agy_plan_stdout_completed"),
+            );
+          } else {
+            queue.pushTerminal(
+              run.ingress.projectFailure("agy_process_ended_without_stop"),
+            );
+          }
         }
       }
     } catch {

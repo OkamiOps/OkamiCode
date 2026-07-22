@@ -7,7 +7,9 @@ import {
   Clipboard,
   Languages,
   ListChecks,
+  Maximize2,
   MessageSquareText,
+  Minimize2,
   Send,
   Sparkles,
   WandSparkles,
@@ -57,6 +59,8 @@ interface InboxAiActionsModalProps {
   listModels: () => Promise<ModelCatalog>;
   onAnalyze: (request: AnalyzeRequest) => Promise<AnalyzeResult>;
   onClose: () => void;
+  expanded: boolean;
+  onToggleExpanded: () => void;
 }
 
 interface Exchange {
@@ -79,6 +83,8 @@ export function InboxAiActionsModal({
   listModels,
   onAnalyze,
   onClose,
+  expanded,
+  onToggleExpanded,
 }: InboxAiActionsModalProps) {
   const [catalog, setCatalog] = useState<ModelCatalog>([]);
   const [provider, setProvider] = useState<RuntimeKind | "">("");
@@ -222,7 +228,11 @@ export function InboxAiActionsModal({
   if (!open) return null;
 
   return (
-    <div className="inbox-ai-assistant" data-provider={provider || undefined}>
+    <div
+      className="inbox-ai-assistant"
+      data-expanded={expanded || undefined}
+      data-provider={provider || undefined}
+    >
       <header className="inbox-ai-assistant__header">
         <span className="inbox-ai-assistant__mark">
           <Sparkles aria-hidden="true" size={17} />
@@ -231,16 +241,32 @@ export function InboxAiActionsModal({
           <h2>Assistente do e-mail</h2>
           <p>Analisa esta conversa sem responder ou alterar nada.</p>
         </div>
-        <Button
-          aria-label="Fechar assistente do e-mail"
-          className="inbox-ai-assistant__close"
-          isIconOnly
-          onPress={onClose}
-          size="sm"
-          variant="ghost"
-        >
-          <X aria-hidden="true" size={16} />
-        </Button>
+        <div className="inbox-ai-assistant__header-actions">
+          <Button
+            aria-label={expanded ? "Reduzir assistente" : "Expandir assistente"}
+            className="inbox-ai-assistant__expand"
+            isIconOnly
+            onPress={onToggleExpanded}
+            size="sm"
+            variant="ghost"
+          >
+            {expanded ? (
+              <Minimize2 aria-hidden="true" size={16} />
+            ) : (
+              <Maximize2 aria-hidden="true" size={16} />
+            )}
+          </Button>
+          <Button
+            aria-label="Fechar assistente do e-mail"
+            className="inbox-ai-assistant__close"
+            isIconOnly
+            onPress={onClose}
+            size="sm"
+            variant="ghost"
+          >
+            <X aria-hidden="true" size={16} />
+          </Button>
+        </div>
       </header>
 
       <div className="inbox-ai-assistant__scroll">
@@ -287,7 +313,10 @@ export function InboxAiActionsModal({
                 <p className="inbox-ai-assistant__prompt-bubble">
                   {exchange.prompt}
                 </p>
-                <div className="inbox-ai-assistant__answer">
+                <article
+                  aria-label="Resposta da IA"
+                  className="inbox-ai-assistant__answer"
+                >
                   <div className="inbox-ai-assistant__answer-meta">
                     <span>
                       <Check aria-hidden="true" size={14} /> Resposta gerada
@@ -315,7 +344,7 @@ export function InboxAiActionsModal({
                   <div className="message-markdown inbox-ai-assistant__markdown">
                     <MessageMarkdown>{exchange.result.content}</MessageMarkdown>
                   </div>
-                </div>
+                </article>
               </section>
             ))}
           </div>

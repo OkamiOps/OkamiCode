@@ -1,5 +1,6 @@
 docs/
 .cache/
+.claude/skills/
 .claude/worktrees/
 .pnpm-store/
 .worktrees/

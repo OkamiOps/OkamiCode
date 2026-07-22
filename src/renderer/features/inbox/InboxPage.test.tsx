@@ -370,6 +370,25 @@ describe("InboxPage", () => {
       screen.getByRole("checkbox", { name: "Selecionar Revisão do contrato" }),
     );
     expect(screen.getByText("2 selecionadas")).toBeVisible();
+    const bulkToolbar = screen.getByRole("toolbar", { name: "Ações em lote" });
+    expect(
+      within(bulkToolbar).getByRole("button", {
+        name: "Marcar selecionadas como lidas",
+      }),
+    ).toHaveTextContent("Lidas");
+    expect(
+      within(bulkToolbar).getByRole("button", {
+        name: "Marcar selecionadas como não lidas",
+      }),
+    ).toHaveTextContent("Não lidas");
+    expect(
+      within(bulkToolbar).getByRole("button", {
+        name: "Mover selecionadas para spam",
+      }),
+    ).toHaveTextContent("Spam");
+    expect(
+      within(bulkToolbar).getByRole("button", { name: "Excluir selecionadas" }),
+    ).toHaveTextContent("Lixeira");
 
     await userEvent.click(
       screen.getByRole("button", { name: "Excluir selecionadas" }),
@@ -961,6 +980,15 @@ describe("InboxPage", () => {
       screen.queryByRole("complementary", { name: "Detalhes da conversa" }),
     ).toBeNull();
     expect(screen.queryByRole("dialog")).toBeNull();
+    const inboxPage = assistant.closest(".inbox-page");
+    expect(inboxPage).toHaveAttribute("data-context-panel", "assistant");
+    await userEvent.click(
+      within(assistant).getByRole("button", { name: "Expandir assistente" }),
+    );
+    expect(inboxPage).toHaveAttribute("data-assistant-expanded", "true");
+    expect(
+      within(assistant).getByRole("button", { name: "Reduzir assistente" }),
+    ).toBeVisible();
     await vi.waitFor(() => expect(api.listModels).toHaveBeenCalled());
     const prompt = within(assistant).getByLabelText("O que você quer saber?");
     expect(prompt).toHaveValue("");
@@ -1008,6 +1036,9 @@ describe("InboxPage", () => {
       within(assistant).getByRole("button", { name: "Copiar resposta" }),
     ).toBeVisible();
     expect(within(assistant).getByText("Resposta gerada")).toBeVisible();
+    expect(
+      within(assistant).getByRole("article", { name: "Resposta da IA" }),
+    ).toBeVisible();
     expect(within(assistant).getAllByText("Antigravity")).not.toHaveLength(0);
     expect(within(assistant).getAllByText("Gemini 3.5 Flash")).not.toHaveLength(
       0,
