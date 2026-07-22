@@ -187,6 +187,50 @@ describe("Cursor model catalog", () => {
     ]);
   });
 
+  it("merges models enabled by the installed MiniMax Code profile", async () => {
+    const paths = cachePaths();
+    const bundlePath = path.join(path.dirname(paths.minimax), "app.asar");
+    const configPath = path.join(path.dirname(paths.minimax), "config.yaml");
+    writeFileSync(
+      bundlePath,
+      String.raw`\"minimax\": { \"MiniMax-M2.7\": {}, \"MiniMax-M2.7-highspeed\": {} }`,
+    );
+    writeFileSync(
+      configPath,
+      [
+        "provider:",
+        "  minimax:",
+        "    models:",
+        "      MiniMax-M3:",
+        "        reasoning: true",
+        "    whitelist:",
+        "      - MiniMax-M2.7",
+        "      - MiniMax-M2.7-highspeed",
+        "      - MiniMax-M3",
+      ].join("\n"),
+    );
+    const service = createModelCatalogService({
+      cachePath: paths.claude,
+      cursorBinary: null,
+      agyBinary: null,
+      grokBinary: null,
+      minimaxBinary: "/real/mmx",
+      minimaxCachePath: paths.minimax,
+      minimaxCodeBundlePath: bundlePath,
+      minimaxConfigPath: configPath,
+      mimoBinary: null,
+    });
+
+    await service.refreshMiniMax();
+
+    expect(
+      service
+        .list()
+        .find((entry) => entry.runtimeKind === "minimax")
+        ?.models.map((model) => model.id),
+    ).toEqual(["MiniMax-M2.7", "MiniMax-M2.7-highspeed", "MiniMax-M3"]);
+  });
+
   it("refreshes MiMo and MiniMax from their own installed products", async () => {
     const paths = cachePaths();
     const minimaxBundlePath = path.join(
@@ -211,6 +255,7 @@ describe("Cursor model catalog", () => {
       minimaxCachePath: paths.minimax,
       minimaxBinary: "/real/mmx",
       minimaxCodeBundlePath: minimaxBundlePath,
+      minimaxConfigPath: null,
       mimoCachePath: paths.mimo,
       mimoBinary: "/real/mimo",
       executeNative,

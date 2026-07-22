@@ -43,4 +43,18 @@ describe("JsonlProcess", () => {
       await proc.wait();
     }
   });
+
+  it("can close stdin for one-shot CLIs that wait for EOF", async () => {
+    const script = [
+      'let input = ""',
+      'process.stdin.on("data", (chunk) => { input += chunk })',
+      'process.stdin.on("end", () => console.log(JSON.stringify({ input })))',
+    ].join(";");
+    const proc = await JsonlProcess.spawn(process.execPath, ["-e", script], {
+      closeStdin: true,
+    });
+
+    expect(await proc.next()).toEqual({ input: "" });
+    await expect(proc.wait()).resolves.toEqual({ successOrCancelled: true });
+  });
 });

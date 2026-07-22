@@ -251,6 +251,7 @@ export interface ModelCatalogServiceOptions {
   minimaxCachePath?: string;
   minimaxBinary?: string | null;
   minimaxCodeBundlePath?: string | null;
+  minimaxConfigPath?: string | null;
   mimoCachePath?: string;
   mimoBinary?: string | null;
   executeNative?: CursorModelListExecutor;
@@ -616,6 +617,47 @@ export function parseMiniMaxModelsFromCodeBundle(
     }));
 }
 
+export function parseMiniMaxModelsFromConfig(config: string): CatalogModel[] {
+  const lines = config.split(/\r?\n/u);
+  const whitelistIndex = lines.findIndex((line) =>
+    /^\s*whitelist:\s*$/u.test(line),
+  );
+  if (whitelistIndex === -1) return [];
+  const whitelistIndent =
+    lines[whitelistIndex]?.match(/^\s*/u)?.[0].length ?? 0;
+  const seen = new Set<string>();
+  const models: CatalogModel[] = [];
+  for (const line of lines.slice(whitelistIndex + 1)) {
+    const indent = line.match(/^\s*/u)?.[0].length ?? 0;
+    if (line.trim() && indent <= whitelistIndent) break;
+    const id = /^\s*-\s*(MiniMax-M\d+(?:\.\d+)*(?:-highspeed)?)\s*$/u.exec(
+      line,
+    )?.[1];
+    if (!id || seen.has(id)) continue;
+    seen.add(id);
+    models.push(miniMaxCatalogModel(id));
+  }
+  return models;
+}
+
+function miniMaxCatalogModel(id: string): CatalogModel {
+  return {
+    id,
+    label: id
+      .replace("MiniMax-", "MiniMax ")
+      .replace("-highspeed", " Highspeed"),
+  };
+}
+
+function mergeCatalogModels(...catalogs: CatalogModel[][]): CatalogModel[] {
+  const models = new Map<string, CatalogModel>();
+  for (const catalog of catalogs) {
+    for (const model of catalog)
+      models.set(model.id, models.get(model.id) ?? model);
+  }
+  return [...models.values()];
+}
+
 function readOpaqueBundle(bundlePath: string): string {
   // Electron transparently mounts every *.asar path. Temporarily bypass that
   // virtual filesystem so an independently installed application's archive is
@@ -719,6 +761,10 @@ export function createModelCatalogService(
         ? "/Applications/MiniMax Code.app/Contents/Resources/app.asar"
         : null
       : options.minimaxCodeBundlePath;
+  const minimaxConfigPath =
+    options.minimaxConfigPath === undefined
+      ? path.join(homedir(), ".minimax", "config.yaml")
+      : options.minimaxConfigPath;
   const mimoCachePath =
     options.mimoCachePath ??
     path.join(path.dirname(options.cachePath), "mimo-models.json");
@@ -845,13 +891,31 @@ export function createModelCatalogService(
   const refreshMiniMax = async () => {
     refreshingMiniMax ??= (async () => {
       try {
-        if (!minimaxCodeBundlePath) return;
-        const models = parseMiniMaxModelsFromCodeBundle(
-          readMiniMaxCatalogSource(minimaxCodeBundlePath),
-        );
+        let bundleModels: CatalogModel[] = [];
+        let profileModels: CatalogModel[] = [];
+        try {
+          bundleModels = minimaxCodeBundlePath
+            ? parseMiniMaxModelsFromCodeBundle(
+                readMiniMaxCatalogSource(minimaxCodeBundlePath),
+              )
+            : [];
+        } catch {
+          // The installed profile below remains authoritative even when a
+          // desktop update moves its bundled provider registry.
+        }
+        try {
+          profileModels = minimaxConfigPath
+            ? parseMiniMaxModelsFromConfig(
+                readFileSync(minimaxConfigPath, "utf8"),
+              )
+            : [];
+        } catch {
+          // A missing profile must not discard a valid bundled catalog.
+        }
+        const models = mergeCatalogModels(bundleModels, profileModels);
         if (models.length === 0) return;
         minimax = {
-          cliPath: minimaxCodeBundlePath,
+          cliPath: minimaxBinary ?? minimaxCodeBundlePath ?? "minimax-profile",
           fetchedAt: now().toISOString(),
           models,
         };

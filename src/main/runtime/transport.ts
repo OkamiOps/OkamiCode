@@ -8,6 +8,7 @@ export const MAX_BUFFERED = 256;
 export interface JsonlProcessOptions {
   cwd?: string;
   env?: NodeJS.ProcessEnv;
+  closeStdin?: boolean;
 }
 
 export interface ProcessWaitResult {
@@ -61,6 +62,8 @@ export class JsonlProcess<T = JsonEnvelope> {
       child.once("spawn", onSpawn);
       child.once("error", onError);
     });
+
+    if (options?.closeStdin) child.stdin.end();
 
     return process;
   }

@@ -23,6 +23,37 @@ const catalog = [
 afterEach(cleanup);
 
 describe("ModelPicker favorites provider", () => {
+  it("selects an available MiniMax model through its native runtime", () => {
+    const onSelectModel = vi.fn();
+    const minimaxCatalog = [
+      ...catalog,
+      {
+        runtimeKind: "minimax",
+        providerLabel: "MiniMax",
+        routeKind: "native",
+        source: "fixture",
+        models: [{ id: "MiniMax-M3", label: "MiniMax M3" }],
+      },
+    ] satisfies ModelCatalog;
+    render(
+      <ModelPicker
+        catalog={minimaxCatalog}
+        favorites={[]}
+        isOpening={false}
+        onSelectModel={onSelectModel}
+        selectedLane={null}
+      />,
+    );
+
+    fireEvent.click(screen.getByRole("button", { name: "Selecionar modelo" }));
+    fireEvent.click(screen.getByRole("tab", { name: /MiniMax/u }));
+    const model = screen.getByRole("option", { name: /MiniMax M3/u });
+
+    expect(model).toBeEnabled();
+    fireEvent.click(model);
+    expect(onSelectModel).toHaveBeenCalledWith("minimax", "MiniMax-M3");
+  });
+
   it("makes the provider rail keyboard-focusable so overflowing providers can scroll", () => {
     render(
       <ModelPicker

@@ -44,7 +44,11 @@ export interface MimoAdapterDependencies {
     options?: JsonlProcessOptions,
   ) => Promise<MimoProcess>;
   createEventId?: (sequence: number) => string;
+  firstEventTimeoutMs?: number;
 }
+
+const DEFAULT_FIRST_EVENT_TIMEOUT_MS = 60_000;
+const FIRST_EVENT_TIMEOUT = Symbol("mimo-first-event-timeout");
 
 interface MimoSessionState {
   laneId: NativeSession["laneId"];
@@ -161,8 +165,8 @@ export class MimoAdapter implements RuntimeAdapter {
         effort: request.effort,
       }),
       session.env
-        ? { cwd: session.cwd, env: session.env }
-        : { cwd: session.cwd },
+        ? { cwd: session.cwd, env: session.env, closeStdin: true }
+        : { cwd: session.cwd, closeStdin: true },
     );
     const run = { process, cancelled: false };
     this.active.set(request.runId, run);
@@ -214,9 +218,27 @@ export class MimoAdapter implements RuntimeAdapter {
     projector: MimoProjector,
   ) {
     try {
+      let receivedEvent = false;
       for (;;) {
-        const message = await run.process.next();
+        const message = receivedEvent
+          ? await run.process.next()
+          : await withTimeout(
+              run.process.next(),
+              this.dependencies.firstEventTimeoutMs ??
+                DEFAULT_FIRST_EVENT_TIMEOUT_MS,
+            );
+        if (message === FIRST_EVENT_TIMEOUT) {
+          try {
+            await run.process.cancel();
+          } catch {
+            // The terminal failure still has to reach the renderer even when
+            // the already-unhealthy child cannot acknowledge termination.
+          }
+          yield projector.failed("mimo_first_event_timeout");
+          return;
+        }
         if (!message) break;
+        receivedEvent = true;
         for (const event of projector.project(message)) {
           if (
             (event.kind === "session_started" ||
@@ -236,6 +258,25 @@ export class MimoAdapter implements RuntimeAdapter {
       this.active.delete(request.runId);
     }
   }
+}
+
+function withTimeout<T>(
+  operation: Promise<T>,
+  timeoutMs: number,
+): Promise<T | typeof FIRST_EVENT_TIMEOUT> {
+  return new Promise((resolve, reject) => {
+    const timer = setTimeout(() => resolve(FIRST_EVENT_TIMEOUT), timeoutMs);
+    operation.then(
+      (value) => {
+        clearTimeout(timer);
+        resolve(value);
+      },
+      (error: unknown) => {
+        clearTimeout(timer);
+        reject(error);
+      },
+    );
+  });
 }
 
 function executeFile(

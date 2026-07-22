@@ -74,6 +74,10 @@ export class MimoProjector {
     );
   }
 
+  failed(reason: string): CanonicalEvent {
+    return this.event("run_failed", {}, { reason });
+  }
+
   cancelled(): CanonicalEvent {
     return this.event("run_cancelled", {}, { reason: "user_cancelled" });
   }
