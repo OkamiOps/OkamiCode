@@ -21,6 +21,7 @@ import {
 import { NavLink, useNavigate } from "react-router-dom";
 import type { ButtonHTMLAttributes } from "react";
 import { workbenchClient } from "../../lib/ipc/client";
+import okamiLogo from "../../assets/okami-logo.png";
 
 interface NavigationItem {
   icon: LucideIcon;
@@ -92,11 +93,11 @@ export function NavigationRail({
       className={`navigation-rail${collapsed ? " navigation-rail--collapsed" : " navigation-rail--expanded"}`}
     >
       <header className="navigation-rail__header">
-        <div className="navigation-rail__brand" aria-label="Okami">
-          <span aria-hidden="true" className="navigation-rail__brand-mark">
-            O
+        <div className="navigation-rail__brand">
+          <span className="navigation-rail__brand-mark">
+            <img alt="OkamiCode" src={okamiLogo} />
           </span>
-          {!collapsed && <strong>Okami</strong>}
+          {!collapsed && <strong>OkamiCode</strong>}
         </div>
         <Tooltip.Root closeDelay={0} delay={300}>
           <Tooltip.Trigger<"button">

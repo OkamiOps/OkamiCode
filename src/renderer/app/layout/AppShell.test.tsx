@@ -31,9 +31,14 @@ describe("AppShell", () => {
   it("separates global quick chat from the Code project history", async () => {
     renderApp("/workbench");
 
+    const navigation = await screen.findByRole("navigation", {
+      name: "Navegação principal",
+    });
+    expect(navigation).toBeVisible();
     expect(
-      await screen.findByRole("navigation", { name: "Navegação principal" }),
+      within(navigation).getByRole("img", { name: "OkamiCode" }),
     ).toBeVisible();
+    expect(within(navigation).getByText("OkamiCode")).toBeVisible();
     expect(screen.getByRole("link", { name: "Code" })).toBeVisible();
     expect(screen.getByRole("button", { name: "Nova conversa" })).toBeVisible();
     expect(

@@ -16,7 +16,7 @@ export function App() {
     // hide the failure, so state it plainly instead.
     return (
       <main className="boot-shell">
-        <p className="eyebrow">Okami Workbench</p>
+        <p className="eyebrow">OkamiCode</p>
         <h1>Ponte do núcleo indisponível</h1>
         <p>
           O preload não carregou, então a interface não consegue falar com o
