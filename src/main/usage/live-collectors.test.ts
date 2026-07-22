@@ -1,4 +1,5 @@
 import { describe, expect, it } from "vitest";
+import { AgyUsageCollector } from "./agy-collector";
 import { ClaudeUsageCollector } from "./claude-collector";
 import { CodexUsageCollector } from "./codex-collector";
 import { CursorUsageCollector } from "./cursor-collector";
@@ -16,6 +17,9 @@ describe.runIf(runLive)("installed usage CLIs", () => {
     );
     snapshots.push(
       await new ClaudeUsageCollector({ clock }).collect({ reason: "refresh" }),
+    );
+    snapshots.push(
+      await new AgyUsageCollector({ clock }).collect({ reason: "refresh" }),
     );
     snapshots.push(
       await new CursorUsageCollector({ clock }).collect({ reason: "refresh" }),
@@ -53,9 +57,18 @@ describe.runIf(runLive)("installed usage CLIs", () => {
       })),
     ).toEqual(
       expect.arrayContaining(
-        ["chatgpt", "claude_max", "cursor", "grok", "minimax"].map(
-          (provider) => ({ provider, freshness: "live", hasWindows: true }),
-        ),
+        [
+          "chatgpt",
+          "claude_max",
+          "antigravity",
+          "cursor",
+          "grok",
+          "minimax",
+        ].map((provider) => ({
+          provider,
+          freshness: "live",
+          hasWindows: true,
+        })),
       ),
     );
   }, 180_000);

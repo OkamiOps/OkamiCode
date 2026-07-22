@@ -1,6 +1,7 @@
 import type { IpcRequest } from "../../shared/contracts/ipc";
 import type { AppState } from "../ipc/app-state";
 import { UsageActivityService } from "./activity";
+import { AgyUsageCollector } from "./agy-collector";
 import { ClaudeUsageCollector } from "./claude-collector";
 import { CodexUsageCollector } from "./codex-collector";
 import { MiniMaxUsageCollector } from "./minimax-collector";
@@ -49,8 +50,7 @@ const SUBSCRIPTION_COVERAGE: Array<
     accountRef: "antigravity",
     provider: "antigravity",
     runtime: "agy",
-    error:
-      "O AGY não expõe quota estruturada; a atividade local continua disponível.",
+    error: "O Antigravity CLI ainda não informou uma leitura de quota.",
   },
   {
     accountLabel: "Grok",
@@ -65,7 +65,7 @@ const SUBSCRIPTION_COVERAGE: Array<
     provider: "mimo",
     runtime: "mimo",
     error:
-      "O MiMo Code não expõe quota estruturada; a atividade local continua disponível.",
+      "O MiMo Token Plan informa a quota apenas no console web; não há coletor oficial por CLI ou API.",
   },
   {
     accountLabel: "MiniMax",
@@ -98,6 +98,7 @@ export function createUsageCommands(state: AppState): UsageCommands {
     clock: state.clock,
     command: locateLocalBinary("claude") ?? undefined,
   });
+  const agy = new AgyUsageCollector({ clock: state.clock });
   const cursor = new CursorUsageCollector({ clock: state.clock });
   const grok = new GrokUsageCollector({ clock: state.clock });
   const minimax = new MiniMaxUsageCollector({ clock: state.clock });
@@ -107,6 +108,7 @@ export function createUsageCommands(state: AppState): UsageCommands {
       const [
         codexSnapshot,
         claudeSnapshot,
+        agySnapshot,
         cursorSnapshot,
         grokSnapshot,
         minimaxSnapshot,
@@ -117,6 +119,10 @@ export function createUsageCommands(state: AppState): UsageCommands {
         }),
         claude.collect({
           previous: previous.find((entry) => entry.provider === "claude_max"),
+          reason,
+        }),
+        agy.collect({
+          previous: previous.find((entry) => entry.provider === "antigravity"),
           reason,
         }),
         cursor.collect({
@@ -131,6 +137,7 @@ export function createUsageCommands(state: AppState): UsageCommands {
       ]);
       snapshots.save(codexSnapshot);
       snapshots.save(claudeSnapshot);
+      snapshots.save(agySnapshot);
       snapshots.save(cursorSnapshot);
       snapshots.save(grokSnapshot);
       snapshots.save(minimaxSnapshot);

@@ -10,6 +10,11 @@ import {
   runClaudeUsageScreen,
 } from "./claude-collector";
 import { collectCodexUsage } from "./codex-collector";
+import {
+  AgyUsageCollector,
+  parseAgyUsage,
+  runAgyUsageScreen,
+} from "./agy-collector";
 import { parseCursorUsage } from "./cursor-collector";
 import { parseGrokUsage } from "./grok-collector";
 import { runNativeUsageScreen } from "./native-usage-screen";
@@ -269,6 +274,106 @@ describe("usage collectors", () => {
       }),
     ]);
     expect(snapshot.windows[0]?.resetsAt).toMatch(/^2026-07-28T/);
+  });
+
+  it("parses all Antigravity quota groups as remaining capacity", () => {
+    const snapshot = parseAgyUsage(readFixture("agy-quota.txt"), {
+      cliVersion: "1.1.5",
+      collectedAt: "2026-07-22T11:15:00.000Z",
+    });
+
+    expect(snapshot.accountRef).toBe("msant262@gmail.com");
+    expect(snapshot.plan).toBe("Google AI Pro");
+    expect(snapshot.windows).toEqual([
+      expect.objectContaining({
+        kind: "weekly",
+        label: "Semanal · Gemini",
+        modelGroup: "Gemini",
+        remainingPercent: 100,
+        usedPercent: 0,
+      }),
+      expect.objectContaining({
+        kind: "rolling",
+        label: "Sessão (5h) · Gemini",
+        modelGroup: "Gemini",
+        remainingPercent: 100,
+        usedPercent: 0,
+      }),
+      expect.objectContaining({
+        kind: "weekly",
+        label: "Semanal · Claude e GPT",
+        modelGroup: "Claude e GPT",
+        remainingPercent: 100,
+        usedPercent: 0,
+      }),
+      expect.objectContaining({
+        kind: "rolling",
+        label: "Sessão (5h) · Claude e GPT",
+        modelGroup: "Claude e GPT",
+        remainingPercent: 100,
+        usedPercent: 0,
+      }),
+    ]);
+  });
+
+  it("reuses fresh Antigravity quota and refreshes it on demand", async () => {
+    const previous = parseAgyUsage(readFixture("agy-quota.txt"), {
+      cliVersion: "1.1.5",
+      collectedAt: "2026-07-22T11:10:00.000Z",
+    });
+    const readScreen = vi.fn(async () => ({
+      cliVersion: "1.1.5",
+      exitCode: 0,
+      output: readFixture("agy-quota.txt"),
+    }));
+    const collector = new AgyUsageCollector({
+      clock: () => new Date("2026-07-22T11:15:00.000Z"),
+      readScreen,
+    });
+
+    expect(await collector.collect({ previous, reason: "overview" })).toBe(
+      previous,
+    );
+    expect(readScreen).not.toHaveBeenCalled();
+    await collector.collect({ previous, reason: "refresh" });
+    expect(readScreen).toHaveBeenCalledOnce();
+  });
+
+  it("confirms the app workspace before opening Antigravity quota", async () => {
+    vi.useFakeTimers();
+    try {
+      const writes: string[] = [];
+      let emitData: ((data: string) => void) | undefined;
+      const resultPromise = runAgyUsageScreen({
+        command: "agy-stub",
+        spawnPty: () => ({
+          kill: vi.fn(),
+          onData(listener) {
+            emitData = listener;
+            queueMicrotask(() => listener("Yes, I trust this folder"));
+            return { dispose: vi.fn() };
+          },
+          onExit() {
+            return { dispose: vi.fn() };
+          },
+          write(value) {
+            writes.push(value);
+            if (writes.length === 1)
+              queueMicrotask(() => emitData?.("? for shortcuts"));
+            if (writes.length === 2)
+              queueMicrotask(() => emitData?.(readFixture("agy-quota.txt")));
+          },
+        }),
+        timeoutMs: 4_000,
+      });
+
+      await vi.runAllTimersAsync();
+      await resultPromise;
+
+      expect(writes).toEqual(["\r", "/quota\r"]);
+    } finally {
+      vi.useRealTimers();
+    }
   });
 
   it("confirms Cursor slash completion before waiting for usage data", async () => {
