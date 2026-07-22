@@ -2,7 +2,6 @@ import {
   AlertDialog,
   Badge,
   Button,
-  Drawer,
   Modal,
   Spinner,
   useOverlayState,
@@ -17,12 +16,13 @@ import {
   Mail,
   MailCheck,
   MailOpen,
-  MoreHorizontal,
+  PanelRightOpen,
   Paperclip,
   RefreshCw,
   Send,
   ShieldAlert,
   ShieldCheck,
+  Sparkles,
   Trash,
   Tag,
   Trash2,
@@ -183,6 +183,7 @@ const defaultApi: InboxApi = {
 
 type InboxFlow = NonNullable<IpcRequest<"inbox:threads:list">["flow"]>;
 type AccountFilter = "all" | "unread" | InboxFlow | string;
+type InboxContextPanel = "details" | "assistant";
 
 export function InboxPage({ api = defaultApi }: { api?: InboxApi }) {
   const queryClient = useQueryClient();
@@ -224,7 +225,9 @@ export function InboxPage({ api = defaultApi }: { api?: InboxApi }) {
   const failedRead = useRef(new Set<string>());
   const automaticallySyncedAccounts = useRef(new Set<string>());
   const syncableAccountIds = useRef<string[]>([]);
-  const detailsDrawer = useOverlayState();
+  const [contextPanel, setContextPanel] = useState<InboxContextPanel | null>(
+    null,
+  );
   const accounts = useQuery({
     queryKey: ["inbox", "accounts"],
     queryFn: api.listAccounts,
@@ -303,7 +306,7 @@ export function InboxPage({ api = defaultApi }: { api?: InboxApi }) {
           });
         }
         setSelectedThreadId(null);
-        detailsDrawer.close();
+        setContextPanel(null);
       }
       refresh();
     },
@@ -393,7 +396,7 @@ export function InboxPage({ api = defaultApi }: { api?: InboxApi }) {
       failedRead.current.delete(updated.id);
       if (updated.id === selectedThreadId) {
         setSelectedThreadId(null);
-        detailsDrawer.close();
+        setContextPanel(null);
       }
       void queryClient.invalidateQueries({ queryKey: ["inbox", "threads"] });
     },
@@ -663,7 +666,7 @@ export function InboxPage({ api = defaultApi }: { api?: InboxApi }) {
     );
     if (selectedThreadId && moved.has(selectedThreadId)) {
       setSelectedThreadId(null);
-      detailsDrawer.close();
+      setContextPanel(null);
     }
     return { previous, previousSelectedThreadId, queryKey };
   }
@@ -704,7 +707,7 @@ export function InboxPage({ api = defaultApi }: { api?: InboxApi }) {
     forgetLocallyReadThreads([result.threadId]);
     if (selectedThreadId === result.threadId) {
       setSelectedThreadId(null);
-      detailsDrawer.close();
+      setContextPanel(null);
     }
   }
 
@@ -726,6 +729,7 @@ export function InboxPage({ api = defaultApi }: { api?: InboxApi }) {
     <section
       aria-label="Inbox"
       className="inbox-page"
+      data-context-open={contextPanel !== null || undefined}
       style={
         {
           "--inbox-sidebar-width": `${sidebarPane.width}px`,
@@ -852,7 +856,17 @@ export function InboxPage({ api = defaultApi }: { api?: InboxApi }) {
         onGenerateReplyDraft={(request) =>
           generateReplyDraft.mutateAsync(request)
         }
-        onOpenDetails={detailsDrawer.open}
+        activeContextPanel={contextPanel}
+        onToggleAssistant={() =>
+          setContextPanel((current) =>
+            current === "assistant" ? null : "assistant",
+          )
+        }
+        onToggleDetails={() =>
+          setContextPanel((current) =>
+            current === "details" ? null : "details",
+          )
+        }
         onMoveToSpam={(threadId) =>
           moveToSpam.mutateAsync({
             threadId,
@@ -870,25 +884,47 @@ export function InboxPage({ api = defaultApi }: { api?: InboxApi }) {
         taskCreated={taskCreatedForThreadId === detail.data?.thread.id}
         listLanes={api.listLanes}
         listModels={api.listModels}
-        onAnalyze={api.analyzeThread}
       />
-      <ResizeHandle
-        ariaLabel="Redimensionar detalhes da conversa"
-        className="inbox-resize-handle inbox-resize-handle--details"
-        edge="left"
-        pane={detailsPane}
-      />
-      <aside className="inbox-details-region" aria-label="Detalhes da conversa">
-        <InboxDetails
-          account={accountForThread(accounts.data ?? [], selectedThread)}
-          thread={selectedThread}
-        />
-      </aside>
-      <DetailsDrawer
-        account={accountForThread(accounts.data ?? [], selectedThread)}
-        state={detailsDrawer}
-        thread={selectedThread}
-      />
+      {contextPanel && selectedThread && (
+        <>
+          <ResizeHandle
+            ariaLabel="Redimensionar painel contextual"
+            className="inbox-resize-handle inbox-resize-handle--details"
+            edge="left"
+            pane={detailsPane}
+          />
+          <aside
+            aria-label={
+              contextPanel === "details"
+                ? "Detalhes da conversa"
+                : "Assistente do e-mail"
+            }
+            className="inbox-context-region"
+          >
+            {contextPanel === "details" && (
+              <ContextPanelHeader
+                icon={<PanelRightOpen aria-hidden="true" size={16} />}
+                onClose={() => setContextPanel(null)}
+                title="Detalhes"
+              />
+            )}
+            {contextPanel === "details" && (
+              <InboxDetails
+                account={accountForThread(accounts.data ?? [], selectedThread)}
+                thread={selectedThread}
+              />
+            )}
+            <InboxAiActionsModal
+              key={selectedThread.id}
+              listModels={api.listModels}
+              onAnalyze={api.analyzeThread}
+              onClose={() => setContextPanel(null)}
+              open={contextPanel === "assistant"}
+              threadId={selectedThread.id}
+            />
+          </aside>
+        </>
+      )}
       {contextMenu && (
         <ThreadContextMenu
           menu={contextMenu}
@@ -1431,6 +1467,7 @@ function ListState({
 }
 
 function Conversation({
+  activeContextPanel,
   detail,
   defaultFromAddress,
   error,
@@ -1447,14 +1484,14 @@ function Conversation({
   moveThreadError,
   listLanes,
   listModels,
-  onAnalyze,
   onApproveReply,
   onDiscardReply,
   onCreateReplyDraft,
   onCreateForwardDraft,
   onGenerateReplyDraft,
   onCreateTask,
-  onOpenDetails,
+  onToggleAssistant,
+  onToggleDetails,
   onMoveToSpam,
   onMoveToTrash,
   onMarkUnread,
@@ -1462,6 +1499,7 @@ function Conversation({
   replyActionsError,
   taskCreated,
 }: {
+  activeContextPanel: InboxContextPanel | null;
   detail: InboxThreadDetail | undefined;
   defaultFromAddress: string;
   error: string | null;
@@ -1478,7 +1516,6 @@ function Conversation({
   moveThreadError: string | null;
   listLanes: InboxApi["listLanes"];
   listModels: InboxApi["listModels"];
-  onAnalyze: InboxApi["analyzeThread"];
   onApproveReply: (
     outboxId: string,
     threadId: string,
@@ -1493,7 +1530,8 @@ function Conversation({
   ) => Promise<unknown>;
   onGenerateReplyDraft: InboxApi["generateReplyDraft"];
   onCreateTask: InboxApi["createTask"];
-  onOpenDetails: () => void;
+  onToggleAssistant: () => void;
+  onToggleDetails: () => void;
   onMoveToSpam: (threadId: string) => Promise<unknown>;
   onMoveToTrash: (threadId: string) => Promise<unknown>;
   onMarkUnread: (threadId: string) => Promise<unknown>;
@@ -1526,12 +1564,16 @@ function Conversation({
         <div className="inbox-conversation__header-actions">
           {detail && (
             <>
-              <InboxAiActionsModal
-                key={detail.thread.id}
-                listModels={listModels}
-                onAnalyze={onAnalyze}
-                threadId={detail.thread.id}
-              />
+              <button
+                aria-pressed={activeContextPanel === "assistant"}
+                className="inbox-ai-actions-trigger"
+                data-active={activeContextPanel === "assistant" || undefined}
+                onClick={onToggleAssistant}
+                type="button"
+              >
+                <Sparkles aria-hidden="true" size={14} />
+                Ações com IA
+              </button>
               <Button
                 aria-label="Marcar conversa como não lida"
                 className="inbox-thread-action"
@@ -1561,13 +1603,14 @@ function Conversation({
           )}
           <Button
             aria-label="Abrir detalhes"
+            aria-pressed={activeContextPanel === "details"}
             className="inbox-details-drawer-trigger"
             isIconOnly
-            onPress={onOpenDetails}
+            onPress={onToggleDetails}
             size="sm"
             variant="ghost"
           >
-            <MoreHorizontal aria-hidden="true" size={16} />
+            <PanelRightOpen aria-hidden="true" size={16} />
           </Button>
         </div>
       </header>
@@ -2073,7 +2116,6 @@ function InboxDetails({
   return (
     <div className="inbox-details">
       <header>
-        <p className="inbox-eyebrow">Detalhes</p>
         <p className="inbox-details__subject">
           {thread.subject || "Sem assunto"}
         </p>
@@ -2121,6 +2163,33 @@ function InboxDetails({
   );
 }
 
+function ContextPanelHeader({
+  icon,
+  onClose,
+  title,
+}: {
+  icon: React.ReactNode;
+  onClose: () => void;
+  title: string;
+}) {
+  return (
+    <header className="inbox-context-header">
+      <span className="inbox-context-header__icon">{icon}</span>
+      <h2>{title}</h2>
+      <Button
+        aria-label={`Fechar ${title.toLowerCase()}`}
+        className="inbox-context-header__close"
+        isIconOnly
+        onPress={onClose}
+        size="sm"
+        variant="ghost"
+      >
+        <X aria-hidden="true" size={16} />
+      </Button>
+    </header>
+  );
+}
+
 function DetailsGroup({
   icon,
   rows,
@@ -2143,39 +2212,6 @@ function DetailsGroup({
         </div>
       ))}
     </section>
-  );
-}
-
-function DetailsDrawer({
-  account,
-  state,
-  thread,
-}: {
-  account: InboxAccount | undefined;
-  state: ReturnType<typeof useOverlayState>;
-  thread: InboxThread | undefined;
-}) {
-  return (
-    <Drawer.Root state={state}>
-      <Drawer.Backdrop className="inbox-details-backdrop">
-        <Drawer.Content className="inbox-details-drawer" placement="right">
-          <Drawer.Dialog className="inbox-details-drawer__dialog">
-            <Drawer.Header className="inbox-details-drawer__header">
-              <Drawer.Heading className="inbox-details-drawer__heading">
-                Detalhes
-              </Drawer.Heading>
-              <Drawer.CloseTrigger
-                aria-label="Fechar detalhes"
-                className="inbox-details-drawer__close"
-              />
-            </Drawer.Header>
-            <Drawer.Body className="inbox-details-drawer__body">
-              <InboxDetails account={account} thread={thread} />
-            </Drawer.Body>
-          </Drawer.Dialog>
-        </Drawer.Content>
-      </Drawer.Backdrop>
-    </Drawer.Root>
   );
 }
 

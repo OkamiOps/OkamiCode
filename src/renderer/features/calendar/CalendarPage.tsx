@@ -11,6 +11,10 @@ import {
   MapPin,
   Plus,
   Radio,
+  RotateCcw,
+  Users,
+  Video,
+  XCircle,
 } from "lucide-react";
 import {
   useEffect,
@@ -50,6 +54,9 @@ export interface CalendarApi {
   createEvent(
     request: IpcRequest<"calendar:event:createLocal">,
   ): Promise<IpcResponse<"calendar:event:createLocal">>;
+  openExternal(
+    request: IpcRequest<"system:openExternal">,
+  ): Promise<IpcResponse<"system:openExternal">>;
 }
 
 const defaultApi: CalendarApi = {
@@ -59,6 +66,7 @@ const defaultApi: CalendarApi = {
   createLinkedSource: workbenchClient.calendarSourceCreateLinked,
   listEvents: workbenchClient.calendarEventsList,
   createEvent: workbenchClient.calendarEventCreateLocal,
+  openExternal: workbenchClient.systemOpenExternal,
 };
 
 export function CalendarPage({
@@ -495,6 +503,7 @@ export function CalendarPage({
         {selectedEvent ? (
           <EventInspector
             event={selectedEvent}
+            onOpenExternal={api.openExternal}
             source={sourceById.get(selectedEvent.sourceId)}
           />
         ) : (
@@ -862,61 +871,234 @@ function NowLine({ displayTimezone }: { displayTimezone: string }) {
 
 function EventInspector({
   event,
+  onOpenExternal,
   source,
 }: {
   event: CalendarEvent;
+  onOpenExternal: CalendarApi["openExternal"];
   source?: CalendarSource;
 }) {
+  const [linkError, setLinkError] = useState<string | null>(null);
+  const presentation = calendarEventPresentation(event);
+
+  function openUrl(url: string) {
+    setLinkError(null);
+    void onOpenExternal({ url }).catch(() => {
+      setLinkError(
+        "Não foi possível abrir este link. Copie o endereço e tente no navegador.",
+      );
+    });
+  }
+
   return (
     <div className="calendar-inspector__content">
-      <span className="calendar-eyebrow">DETALHES</span>
-      <h2>{event.title}</h2>
-      <p className="calendar-inspector__status">{event.status}</p>
-      <dl>
+      <header className="calendar-inspector__header">
+        <span className="calendar-eyebrow">Detalhes do evento</span>
+        <h2>{event.title}</h2>
+        <p className="calendar-inspector__status">
+          {calendarEventStatus(event.status)}
+        </p>
+      </header>
+
+      {presentation.meetingUrl && (
+        <button
+          aria-label="Entrar na reunião"
+          className="calendar-meeting-action"
+          onClick={() => openUrl(presentation.meetingUrl!)}
+          type="button"
+        >
+          <span className="calendar-meeting-action__icon">
+            <Video aria-hidden="true" size={17} />
+          </span>
+          <span>
+            <strong>Entrar na reunião</strong>
+            <small>{presentation.locationLabel} · abre no navegador</small>
+          </span>
+          <ExternalLink aria-hidden="true" size={15} />
+        </button>
+      )}
+
+      <section className="calendar-inspector__schedule" aria-label="Horário">
+        <Clock3 aria-hidden="true" size={17} />
+        <span>
+          <strong>{eventDateLabel(event)}</strong>
+          <small>{event.timezone}</small>
+        </span>
+      </section>
+
+      <dl className="calendar-inspector__facts">
         <div>
           <dt>
-            <Clock3 aria-hidden="true" size={14} /> Quando
+            <Radio aria-hidden="true" size={14} /> Agenda
           </dt>
-          <dd>
-            {event.allDay
-              ? `${event.startDate} — ${event.endDate}`
-              : timeRange(event, event.timezone)}
-          </dd>
-        </div>
-        <div>
-          <dt>
-            <Radio aria-hidden="true" size={14} /> Fuso horário
-          </dt>
-          <dd>{event.timezone}</dd>
-        </div>
-        <div>
-          <dt>Agenda</dt>
           <dd>{source?.displayName ?? "Agenda local"}</dd>
         </div>
-        {event.location && (
+        {presentation.locationLabel && (
           <div>
             <dt>
               <MapPin aria-hidden="true" size={14} /> Local
             </dt>
-            <dd>{event.location}</dd>
+            <dd>{presentation.locationLabel}</dd>
           </div>
         )}
       </dl>
-      {event.joinUrl && (
-        <a
-          className="calendar-join-link"
-          href={event.joinUrl}
-          rel="noreferrer"
-          target="_blank"
-        >
-          Abrir chamada <ExternalLink aria-hidden="true" size={14} />
-        </a>
+
+      {presentation.attendees.length > 0 && (
+        <section className="calendar-inspector__attendees">
+          <h3>
+            <Users aria-hidden="true" size={14} /> Participantes
+          </h3>
+          <div>
+            {presentation.attendees.map((attendee) => (
+              <span key={attendee}>{attendee}</span>
+            ))}
+          </div>
+        </section>
       )}
-      {event.description && (
-        <p className="calendar-inspector__description">{event.description}</p>
+
+      {(presentation.rescheduleUrl || presentation.cancelUrl) && (
+        <div className="calendar-inspector__secondary-actions">
+          {presentation.rescheduleUrl && (
+            <button
+              aria-label="Reagendar evento"
+              onClick={() => openUrl(presentation.rescheduleUrl!)}
+              type="button"
+            >
+              <RotateCcw aria-hidden="true" size={14} /> Reagendar
+            </button>
+          )}
+          {presentation.cancelUrl && (
+            <button
+              aria-label="Cancelar evento"
+              className="calendar-inspector__cancel"
+              onClick={() => openUrl(presentation.cancelUrl!)}
+              type="button"
+            >
+              <XCircle aria-hidden="true" size={14} /> Cancelar
+            </button>
+          )}
+        </div>
+      )}
+
+      {presentation.descriptionParagraphs.length > 0 && (
+        <section className="calendar-inspector__description">
+          <h3>Sobre este evento</h3>
+          {presentation.descriptionParagraphs.map((paragraph, index) => (
+            <p key={`${paragraph}-${index}`}>{paragraph}</p>
+          ))}
+        </section>
+      )}
+      {linkError && (
+        <p className="calendar-inspector__link-error" role="alert">
+          {linkError}
+        </p>
       )}
     </div>
   );
+}
+
+function calendarEventPresentation(event: CalendarEvent) {
+  const description = event.description ?? "";
+  const urls = extractHttpUrls(description);
+  const descriptionAttendees = extractDescriptionAttendees(description);
+  const meetingUrl =
+    event.joinUrl ?? urls.find((url) => isMeetingUrl(url)) ?? null;
+  const rescheduleUrl = urls.find((url) => /reschedul/i.test(url)) ?? null;
+  const cancelUrl =
+    urls.find((url) => /cancell?ations?|cancel/i.test(url)) ?? null;
+  const withoutUrls = urls.reduce(
+    (current, url) => current.replaceAll(url, ""),
+    description,
+  );
+  const cleaned = withoutUrls
+    .replace(
+      /Event Name:.*?(?=Additional Guests:|Date & Time:|Location:|Need to make changes|$)/gisu,
+      "",
+    )
+    .replace(
+      /Additional Guests:.*?(?=Date & Time:|Location:|Need to make changes|$)/gisu,
+      "",
+    )
+    .replace(/Date & Time:.*?(?=Location:|Need to make changes|$)/gisu, "")
+    .replace(/Location:.*?(?=Need to make changes|$)/gisu, "")
+    .replace(/Need to make changes to this event\??/giu, "")
+    .replace(/\b(?:Cancel|Reschedule):/giu, "")
+    .replace(/[ \t]+\n/gu, "\n")
+    .replace(/[ \t]{2,}/gu, " ")
+    .trim();
+  return {
+    meetingUrl,
+    rescheduleUrl,
+    cancelUrl,
+    attendees: [...new Set([...event.attendees, ...descriptionAttendees])],
+    locationLabel: meetingUrl
+      ? meetingProviderLabel(meetingUrl)
+      : cleanLocation(event.location),
+    descriptionParagraphs: cleaned
+      ? cleaned.split(/\n{2,}/u).map((paragraph) => paragraph.trim())
+      : [],
+  };
+}
+
+function extractDescriptionAttendees(description: string): string[] {
+  const block = description.match(
+    /Additional Guests:\s*(.*?)(?=Date & Time:|Location:|Need to make changes|$)/isu,
+  )?.[1];
+  if (!block) return [];
+  return block.match(/[\w.!#$%&'*+/=?^`{|}~-]+@[\w.-]+\.[a-z]{2,}/giu) ?? [];
+}
+
+function extractHttpUrls(value: string): string[] {
+  return (value.match(/https?:\/\/[^\s<>"']+/giu) ?? []).map((url) =>
+    url.replace(/[),.;!?]+$/u, ""),
+  );
+}
+
+function isMeetingUrl(url: string): boolean {
+  return /(meet\.google\.com|zoom\.(?:us|com)\/j|teams\.microsoft\.com|webex\.com|google_meet)/iu.test(
+    url,
+  );
+}
+
+function meetingProviderLabel(url: string): string {
+  if (/meet\.google\.com|google_meet/iu.test(url)) return "Google Meet";
+  if (/zoom\./iu.test(url)) return "Zoom";
+  if (/teams\.microsoft\.com/iu.test(url)) return "Microsoft Teams";
+  if (/webex\.com/iu.test(url)) return "Webex";
+  return "Reunião online";
+}
+
+function cleanLocation(location: string | null): string | null {
+  if (!location) return null;
+  if (/google meet/iu.test(location)) return "Google Meet";
+  return location;
+}
+
+function calendarEventStatus(status: CalendarEvent["status"]): string {
+  if (status === "confirmed") return "Confirmado";
+  if (status === "tentative") return "Talvez";
+  return "Cancelado";
+}
+
+function eventDateLabel(event: CalendarEvent): string {
+  if (event.allDay) {
+    return new Intl.DateTimeFormat("pt-BR", {
+      weekday: "short",
+      day: "numeric",
+      month: "short",
+      year: "numeric",
+      timeZone: event.timezone,
+    }).format(
+      new Date(zonedDateTimeToIso(event.startDate, "12:00", event.timezone)),
+    );
+  }
+  const date = new Intl.DateTimeFormat("pt-BR", {
+    weekday: "short",
+    day: "numeric",
+    month: "short",
+    timeZone: event.timezone,
+  }).format(new Date(event.startsAt));
+  return `${date} · ${timeRange(event, event.timezone)}`;
 }
 
 function SourceModal({

@@ -630,7 +630,7 @@ describe("InboxPage", () => {
     );
   });
 
-  it("restores persisted column widths and exposes three resize handles", () => {
+  it("restores persisted column widths and keeps the contextual panel closed by default", async () => {
     localStorage.setItem("okami.inbox.sidebarWidth", "280");
     localStorage.setItem("okami.inbox.threadListWidth", "360");
     localStorage.setItem("okami.inbox.detailsWidth", "320");
@@ -642,6 +642,21 @@ describe("InboxPage", () => {
       "--inbox-thread-list-width": "360px",
       "--inbox-details-width": "320px",
     });
+    expect(screen.getAllByRole("slider")).toHaveLength(2);
+    expect(
+      screen.queryByRole("complementary", { name: "Detalhes da conversa" }),
+    ).toBeNull();
+
+    await userEvent.click(
+      await screen.findByRole("button", { name: /Proposta para landing page/ }),
+    );
+    await userEvent.click(
+      screen.getByRole("button", { name: "Abrir detalhes" }),
+    );
+
+    expect(
+      screen.getByRole("complementary", { name: "Detalhes da conversa" }),
+    ).toBeVisible();
     expect(screen.getAllByRole("slider")).toHaveLength(3);
   });
 
@@ -942,6 +957,9 @@ describe("InboxPage", () => {
     const assistant = await screen.findByRole("complementary", {
       name: "Assistente do e-mail",
     });
+    expect(
+      screen.queryByRole("complementary", { name: "Detalhes da conversa" }),
+    ).toBeNull();
     expect(screen.queryByRole("dialog")).toBeNull();
     await vi.waitFor(() => expect(api.listModels).toHaveBeenCalled());
     expect(
@@ -988,6 +1006,18 @@ describe("InboxPage", () => {
       within(assistant).getByRole("button", { name: "Copiar resposta" }),
     ).toBeVisible();
     expect(api.createReplyDraft).not.toHaveBeenCalled();
+
+    await userEvent.click(
+      screen.getByRole("button", { name: "Abrir detalhes" }),
+    );
+    expect(
+      await screen.findByRole("complementary", {
+        name: "Detalhes da conversa",
+      }),
+    ).toBeVisible();
+    expect(
+      screen.queryByRole("complementary", { name: "Assistente do e-mail" }),
+    ).toBeNull();
   });
 
   it("requires drafting instructions and sends them with compact agent and model choices", async () => {

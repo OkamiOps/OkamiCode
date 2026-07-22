@@ -87,14 +87,23 @@ const events = [
     sourceId: personalSourceId,
     externalId: eventId,
     title: "Planejamento semanal",
-    description: "Prioridades da semana",
-    location: "Sala Atlas",
+    description: `Event Name: Planejamento semanal
+Additional Guests:
+- marcos@example.com
+- equipe@example.com
+Date & Time: 21 de julho, 14:00
+Location: This is a Google Meet web conference. You can join this meeting from your computer.
+https://meet.google.com/abc-defg-hij
+Need to make changes to this event?
+Cancel: https://calendly.com/cancellations/event-1
+Reschedule: https://calendly.com/reschedulings/event-1`,
+    location: "Google Meet (instructions in description)",
     organizer: null,
-    joinUrl: "https://meet.example.com/planejamento",
+    joinUrl: null,
     sourceUrl: null,
     etag: null,
     providerUpdatedAt: null,
-    attendees: ["marcos@example.com"],
+    attendees: [],
     status: "confirmed" as const,
     allDay: false as const,
     timezone: "America/Sao_Paulo",
@@ -175,6 +184,7 @@ function makeApi(overrides: Partial<CalendarApi> = {}): CalendarApi {
     createLinkedSource: vi.fn().mockResolvedValue(remoteSource),
     listEvents: vi.fn().mockResolvedValue(events),
     createEvent: vi.fn().mockResolvedValue(events[0]),
+    openExternal: vi.fn().mockResolvedValue({ opened: true }),
     ...overrides,
   };
 }
@@ -225,7 +235,7 @@ describe("CalendarPage", () => {
   });
 
   it("renders local timed and all-day events, filters sources and opens the inspector", async () => {
-    renderCalendar();
+    const { api } = renderCalendar();
     expect(
       await screen.findByRole("button", { name: /Planejamento semanal/ }),
     ).toBeVisible();
@@ -240,11 +250,22 @@ describe("CalendarPage", () => {
       await screen.findByRole("heading", { name: "Planejamento semanal" }),
     ).toBeVisible();
     expect(screen.getByText("America/Sao_Paulo")).toBeVisible();
-    expect(screen.getByText("Sala Atlas")).toBeVisible();
-    expect(screen.getByRole("link", { name: "Abrir chamada" })).toHaveAttribute(
-      "href",
-      "https://meet.example.com/planejamento",
+    expect(screen.getByText("Google Meet")).toBeVisible();
+    await userEvent.click(
+      screen.getByRole("button", { name: "Entrar na reunião" }),
     );
+    expect(api.openExternal).toHaveBeenCalledWith({
+      url: "https://meet.google.com/abc-defg-hij",
+    });
+    expect(
+      screen.getByRole("button", { name: "Reagendar evento" }),
+    ).toBeVisible();
+    expect(
+      screen.getByRole("button", { name: "Cancelar evento" }),
+    ).toBeVisible();
+    expect(screen.getByText("marcos@example.com")).toBeVisible();
+    expect(screen.getByText("equipe@example.com")).toBeVisible();
+    expect(screen.queryByText(/Event Name:/)).toBeNull();
     expect(document.querySelector(".calendar-inspector--drawer")).toBeTruthy();
   });
 
