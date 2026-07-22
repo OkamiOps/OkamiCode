@@ -271,8 +271,49 @@ export function InboxPage({ api = defaultApi }: { api?: InboxApi }) {
   });
   const markRead = useMutation({
     mutationFn: api.markThreadRead,
-    onError: (_error, request) => {
-      markedRead.current.delete(request.threadId);
+    onMutate: async (request) => {
+      const listKey = ["inbox", "threads", threadRequest] as const;
+      const detailKey = ["inbox", "thread", request.threadId] as const;
+      await queryClient.cancelQueries({ queryKey: listKey });
+      const previousList =
+        queryClient.getQueryData<IpcResponse<"inbox:threads:list">>(listKey);
+      const previousDetail =
+        queryClient.getQueryData<IpcResponse<"inbox:thread:get">>(detailKey);
+      queryClient.setQueryData<IpcResponse<"inbox:threads:list">>(
+        listKey,
+        (current) =>
+          current
+            ? {
+                ...current,
+                threads: threadRequest.unreadOnly
+                  ? current.threads.filter(
+                      (thread) => thread.id !== request.threadId,
+                    )
+                  : current.threads.map((thread) =>
+                      thread.id === request.threadId
+                        ? { ...thread, unreadCount: 0 }
+                        : thread,
+                    ),
+              }
+            : current,
+      );
+      queryClient.setQueryData<IpcResponse<"inbox:thread:get">>(
+        detailKey,
+        (current) =>
+          current
+            ? { ...current, thread: { ...current.thread, unreadCount: 0 } }
+            : current,
+      );
+      return { detailKey, listKey, previousDetail, previousList };
+    },
+    onError: (_error, _request, context) => {
+      if (!context) return;
+      if (context.previousList) {
+        queryClient.setQueryData(context.listKey, context.previousList);
+      }
+      if (context.previousDetail) {
+        queryClient.setQueryData(context.detailKey, context.previousDetail);
+      }
     },
     onSuccess: (updated) => {
       queryClient.setQueryData<IpcResponse<"inbox:threads:list">>(
@@ -521,6 +562,7 @@ export function InboxPage({ api = defaultApi }: { api?: InboxApi }) {
   }, [markThreadRead, selectedThread, selectedThreadId]);
 
   function selectThread(thread: InboxThread) {
+    if (thread.id !== selectedThreadId) markedRead.current.delete(thread.id);
     setSelectedThreadId(thread.id);
   }
 

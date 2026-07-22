@@ -526,6 +526,39 @@ describe("InboxPage", () => {
     expect(await screen.findByText("Selecione uma conversa")).toBeVisible();
   });
 
+  it("marks a conversation read immediately while the remote update is pending", async () => {
+    const pendingMarkRead = new Promise<IpcResponse<"inbox:thread:markRead">>(
+      () => undefined,
+    );
+    const markThreadRead = vi.fn().mockReturnValue(pendingMarkRead);
+    const api = makeApi({
+      listThreads: vi.fn().mockResolvedValue({
+        threads: [thread, secondThread],
+        nextCursor: null,
+      }),
+      getThread: vi.fn().mockImplementation(({ threadId: requestedId }) =>
+        Promise.resolve({
+          thread: requestedId === threadId ? thread : secondThread,
+          messages: [],
+        }),
+      ),
+      markThreadRead,
+    });
+    renderInbox(api);
+
+    await userEvent.click(
+      await screen.findByRole("button", { name: /Proposta para landing page/ }),
+    );
+    await vi.waitFor(() => expect(markThreadRead).toHaveBeenCalledTimes(1));
+    await userEvent.click(
+      screen.getByRole("button", { name: /Revisão do contrato/ }),
+    );
+
+    expect(
+      screen.getByRole("button", { name: /Proposta para landing page/ }),
+    ).not.toHaveAttribute("data-unread");
+  });
+
   it("restores persisted column widths and exposes three resize handles", () => {
     localStorage.setItem("okami.inbox.sidebarWidth", "280");
     localStorage.setItem("okami.inbox.threadListWidth", "360");
