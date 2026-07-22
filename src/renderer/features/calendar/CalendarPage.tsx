@@ -3,6 +3,7 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import {
   ArrowLeft,
   ArrowRight,
+  AlignLeft,
   CalendarDays,
   Check,
   Clock3,
@@ -900,22 +901,30 @@ function EventInspector({
         </p>
       </header>
 
-      {presentation.meetingUrl && (
+      {presentation.primaryAction && (
         <button
-          aria-label="Entrar na reunião"
+          aria-label={presentation.primaryAction.label}
           className="calendar-meeting-action"
-          onClick={() => openUrl(presentation.meetingUrl!)}
+          data-fallback={presentation.primaryAction.fallback || undefined}
+          onClick={() => openUrl(presentation.primaryAction!.url)}
           type="button"
         >
           <span className="calendar-meeting-action__icon">
             <Video aria-hidden="true" size={17} />
           </span>
           <span>
-            <strong>Entrar na reunião</strong>
-            <small>{presentation.locationLabel} · abre no navegador</small>
+            <strong>{presentation.primaryAction.label}</strong>
+            <small>{presentation.primaryAction.detail}</small>
           </span>
           <ExternalLink aria-hidden="true" size={15} />
         </button>
+      )}
+
+      {presentation.missingDirectLink && (
+        <p className="calendar-inspector__link-hint">
+          O convite não trouxe o link direto da chamada. Abra o evento na agenda
+          para entrar.
+        </p>
       )}
 
       <section className="calendar-inspector__schedule" aria-label="Horário">
@@ -982,10 +991,14 @@ function EventInspector({
 
       {presentation.descriptionParagraphs.length > 0 && (
         <section className="calendar-inspector__description">
-          <h3>Sobre este evento</h3>
-          {presentation.descriptionParagraphs.map((paragraph, index) => (
-            <p key={`${paragraph}-${index}`}>{paragraph}</p>
-          ))}
+          <h3>
+            <AlignLeft aria-hidden="true" size={14} /> Notas do convite
+          </h3>
+          <div className="calendar-inspector__notes">
+            {presentation.descriptionParagraphs.map((paragraph, index) => (
+              <p key={`${paragraph}-${index}`}>{paragraph}</p>
+            ))}
+          </div>
         </section>
       )}
       {linkError && (
@@ -1000,9 +1013,21 @@ function EventInspector({
 function calendarEventPresentation(event: CalendarEvent) {
   const description = event.description ?? "";
   const urls = extractHttpUrls(description);
+  const locationUrls = extractHttpUrls(event.location ?? "");
   const descriptionAttendees = extractDescriptionAttendees(description);
-  const meetingUrl =
-    event.joinUrl ?? urls.find((url) => isMeetingUrl(url)) ?? null;
+  const meetingUrl = firstHttpUrl([
+    event.joinUrl,
+    urls.find((url) => isMeetingUrl(url)),
+    locationUrls.find((url) => isMeetingUrl(url)),
+  ]);
+  const locationUrl = locationUrls[0] ?? null;
+  const sourceUrl = safeHttpUrl(event.sourceUrl);
+  const primaryUrl = meetingUrl ?? locationUrl ?? sourceUrl;
+  const missingDirectLink =
+    !meetingUrl &&
+    !locationUrl &&
+    Boolean(sourceUrl) &&
+    isOnlineLocation(event.location);
   const rescheduleUrl = urls.find((url) => /reschedul/i.test(url)) ?? null;
   const cancelUrl =
     urls.find((url) => /cancell?ations?|cancel/i.test(url)) ?? null;
@@ -1028,16 +1053,94 @@ function calendarEventPresentation(event: CalendarEvent) {
     .trim();
   return {
     meetingUrl,
+    primaryAction: primaryUrl
+      ? eventAction(primaryUrl, {
+          direct: Boolean(meetingUrl || locationUrl),
+          location: event.location,
+        })
+      : null,
+    missingDirectLink,
     rescheduleUrl,
     cancelUrl,
     attendees: [...new Set([...event.attendees, ...descriptionAttendees])],
-    locationLabel: meetingUrl
-      ? meetingProviderLabel(meetingUrl)
-      : cleanLocation(event.location),
-    descriptionParagraphs: cleaned
-      ? cleaned.split(/\n{2,}/u).map((paragraph) => paragraph.trim())
-      : [],
+    locationLabel:
+      meetingUrl || locationUrl
+        ? meetingProviderLabel(meetingUrl ?? locationUrl!)
+        : cleanLocation(event.location),
+    descriptionParagraphs: descriptionNotes(cleaned),
   };
+}
+
+function firstHttpUrl(values: Array<string | null | undefined>): string | null {
+  for (const value of values) {
+    const url = safeHttpUrl(value);
+    if (url) return url;
+  }
+  return null;
+}
+
+function safeHttpUrl(value: string | null | undefined): string | null {
+  if (!value) return null;
+  try {
+    const url = new URL(value);
+    return url.protocol === "http:" || url.protocol === "https:"
+      ? url.toString()
+      : null;
+  } catch {
+    return null;
+  }
+}
+
+function eventAction(
+  url: string,
+  context: { direct: boolean; location: string | null },
+) {
+  if (/riverside\.(?:fm|com)/iu.test(url)) {
+    return {
+      url,
+      label: "Entrar na Riverside",
+      detail: "Estúdio de gravação · abre no navegador",
+      fallback: false,
+    };
+  }
+  if (context.direct && isMeetingUrl(url)) {
+    return {
+      url,
+      label: "Entrar na reunião",
+      detail: `${meetingProviderLabel(url)} · abre no navegador`,
+      fallback: false,
+    };
+  }
+  if (/calendar\.google\.com/iu.test(url)) {
+    return {
+      url,
+      label: "Abrir no Google Agenda",
+      detail: "Confira o link original do convite",
+      fallback: true,
+    };
+  }
+  return {
+    url,
+    label: context.direct ? "Abrir local do evento" : "Abrir evento na agenda",
+    detail: context.direct
+      ? "Link informado pelo organizador"
+      : "Confira os detalhes no calendário de origem",
+    fallback: !context.direct,
+  };
+}
+
+function descriptionNotes(value: string): string[] {
+  if (!value) return [];
+  return value
+    .split(/\n{2,}|(?<=[.!?])\s+(?=[A-ZÀ-Ü])/u)
+    .map((paragraph) => paragraph.replace(/^[-•]\s*/u, "").trim())
+    .filter(Boolean)
+    .filter(
+      (paragraph) =>
+        !/^there'?s no software to download,? just click the link below\.?$/iu.test(
+          paragraph,
+        ),
+    );
 }
 
 function extractDescriptionAttendees(description: string): string[] {
@@ -1055,7 +1158,7 @@ function extractHttpUrls(value: string): string[] {
 }
 
 function isMeetingUrl(url: string): boolean {
-  return /(meet\.google\.com|zoom\.(?:us|com)\/j|teams\.microsoft\.com|webex\.com|google_meet)/iu.test(
+  return /(meet\.google\.com|zoom\.(?:us|com)\/j|teams\.microsoft\.com|webex\.com|google_meet|riverside\.(?:fm|com))/iu.test(
     url,
   );
 }
@@ -1065,13 +1168,23 @@ function meetingProviderLabel(url: string): string {
   if (/zoom\./iu.test(url)) return "Zoom";
   if (/teams\.microsoft\.com/iu.test(url)) return "Microsoft Teams";
   if (/webex\.com/iu.test(url)) return "Webex";
+  if (/riverside\.(?:fm|com)/iu.test(url)) return "Riverside";
   return "Reunião online";
 }
 
 function cleanLocation(location: string | null): string | null {
   if (!location) return null;
   if (/google meet/iu.test(location)) return "Google Meet";
+  if (extractHttpUrls(location).length > 0)
+    return meetingProviderLabel(location);
   return location;
+}
+
+function isOnlineLocation(location: string | null): boolean {
+  return Boolean(
+    location &&
+    /google meet|online|videoconfer|web conference|reunião/iu.test(location),
+  );
 }
 
 function calendarEventStatus(status: CalendarEvent["status"]): string {

@@ -163,6 +163,56 @@ Reschedule: https://calendly.com/reschedulings/event-1`,
     createdAt: now,
     updatedAt: now,
   },
+  {
+    id: "66666666-6666-4666-8666-666666666666",
+    sourceId: personalSourceId,
+    externalId: "66666666-6666-4666-8666-666666666666",
+    title: "DevSecOps Podcast & Lisi Hocke",
+    description:
+      "The session will be hosted on Riverside, an online recording studio. There's no software to download, just click the link below.",
+    location:
+      "https://riverside.com/studio/cssio-batista-pereiras-studio?token=event-token",
+    organizer: null,
+    joinUrl: null,
+    sourceUrl: "https://calendar.google.com/calendar/event?eid=riverside",
+    etag: null,
+    providerUpdatedAt: null,
+    attendees: ["msant262@gmail.com"],
+    status: "confirmed" as const,
+    allDay: false as const,
+    timezone: "Europe/Warsaw",
+    startsAt: "2026-07-22T11:00:00.000Z",
+    endsAt: "2026-07-22T12:00:00.000Z",
+    startDate: null,
+    endDate: null,
+    deletedAt: null,
+    createdAt: now,
+    updatedAt: now,
+  },
+  {
+    id: "77777777-7777-4777-8777-777777777777",
+    sourceId: workSourceId,
+    externalId: "77777777-7777-4777-8777-777777777777",
+    title: "DreamSquad <> Vantion",
+    description: "Reunião de acompanhamento com o time.",
+    location: "Google Meet",
+    organizer: null,
+    joinUrl: null,
+    sourceUrl: "https://calendar.google.com/calendar/event?eid=meet-fallback",
+    etag: null,
+    providerUpdatedAt: null,
+    attendees: ["benhur@vantion.com.br", "bruna.matassa@dreamsquad.com.br"],
+    status: "confirmed" as const,
+    allDay: false as const,
+    timezone: "America/Araguaina",
+    startsAt: "2026-07-23T12:00:00.000Z",
+    endsAt: "2026-07-23T13:00:00.000Z",
+    startDate: null,
+    endDate: null,
+    deletedAt: null,
+    createdAt: now,
+    updatedAt: now,
+  },
 ] satisfies IpcResponse<"calendar:events:list">;
 
 function localDay() {
@@ -267,6 +317,36 @@ describe("CalendarPage", () => {
     expect(screen.getByText("equipe@example.com")).toBeVisible();
     expect(screen.queryByText(/Event Name:/)).toBeNull();
     expect(document.querySelector(".calendar-inspector--drawer")).toBeTruthy();
+  });
+
+  it("turns location and source links into explicit event actions without exposing raw URLs", async () => {
+    const { api } = renderCalendar();
+
+    await userEvent.click(
+      await screen.findByRole("button", {
+        name: /DevSecOps Podcast & Lisi Hocke/,
+      }),
+    );
+    expect(screen.getByText("Riverside")).toBeVisible();
+    expect(screen.queryByText(/riverside\.com\/studio/)).toBeNull();
+    await userEvent.click(
+      screen.getByRole("button", { name: "Entrar na Riverside" }),
+    );
+    expect(api.openExternal).toHaveBeenCalledWith({
+      url: "https://riverside.com/studio/cssio-batista-pereiras-studio?token=event-token",
+    });
+
+    await userEvent.click(
+      screen.getByRole("button", { name: /DreamSquad <> Vantion/ }),
+    );
+    expect(screen.getByText("Google Meet")).toBeVisible();
+    expect(screen.getByText(/convite não trouxe o link direto/i)).toBeVisible();
+    await userEvent.click(
+      screen.getByRole("button", { name: "Abrir no Google Agenda" }),
+    );
+    expect(api.openExternal).toHaveBeenCalledWith({
+      url: "https://calendar.google.com/calendar/event?eid=meet-fallback",
+    });
   });
 
   it("offers a linked calendar from Inbox accounts before the local agenda fallback", async () => {

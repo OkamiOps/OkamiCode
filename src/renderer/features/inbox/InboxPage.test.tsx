@@ -962,14 +962,10 @@ describe("InboxPage", () => {
     ).toBeNull();
     expect(screen.queryByRole("dialog")).toBeNull();
     await vi.waitFor(() => expect(api.listModels).toHaveBeenCalled());
-    expect(
-      within(assistant).getByLabelText("O que você quer saber?"),
-    ).toHaveValue(
-      "Resuma este email em português do Brasil, com objetividade.",
-    );
-    expect(within(assistant).getByLabelText("Provider")).toHaveTextContent(
-      "Antigravity",
-    );
+    const prompt = within(assistant).getByLabelText("O que você quer saber?");
+    expect(prompt).toHaveValue("");
+    expect(within(assistant).getByLabelText("Provider")).toHaveValue("codex");
+    expect(within(assistant).getByLabelText("Modelo")).toHaveValue("gpt-5.6");
     expect(within(assistant).getByLabelText("Provider")).toHaveTextContent(
       "Grok",
     );
@@ -978,6 +974,12 @@ describe("InboxPage", () => {
     );
     expect(within(assistant).getByLabelText("Provider")).toHaveTextContent(
       "MiniMax",
+    );
+    await userEvent.click(
+      within(assistant).getByRole("button", { name: "Resumir" }),
+    );
+    expect(prompt).toHaveValue(
+      "Resuma este email em português do Brasil, com objetividade.",
     );
     await userEvent.selectOptions(
       within(assistant).getByLabelText("Provider"),
@@ -1018,6 +1020,36 @@ describe("InboxPage", () => {
     expect(
       screen.queryByRole("complementary", { name: "Assistente do e-mail" }),
     ).toBeNull();
+  });
+
+  it("identifies the selected provider and model when email analysis fails", async () => {
+    const analyzeThread = vi
+      .fn<InboxApi["analyzeThread"]>()
+      .mockRejectedValue(new Error("runtime indisponível"));
+    renderInbox(makeApi({ analyzeThread }));
+
+    await userEvent.click(
+      await screen.findByRole("button", { name: /Proposta para landing page/ }),
+    );
+    await userEvent.click(screen.getByRole("button", { name: "Ações com IA" }));
+    const assistant = await screen.findByRole("complementary", {
+      name: "Assistente do e-mail",
+    });
+    await vi.waitFor(() =>
+      expect(within(assistant).getByLabelText("Provider")).toHaveValue("codex"),
+    );
+
+    await userEvent.type(
+      within(assistant).getByLabelText("O que você quer saber?"),
+      "Resuma os próximos passos.",
+    );
+    await userEvent.click(
+      within(assistant).getByRole("button", { name: "Enviar para análise" }),
+    );
+
+    const error = await within(assistant).findByRole("alert");
+    expect(error).toHaveTextContent(/ChatGPT Plus.*GPT-5\.6/i);
+    expect(error).toHaveTextContent(/troque.*provider.*modelo/i);
   });
 
   it("requires drafting instructions and sends them with compact agent and model choices", async () => {

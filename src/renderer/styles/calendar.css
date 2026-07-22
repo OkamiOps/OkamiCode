@@ -696,6 +696,26 @@
   color: var(--ok-cyan);
 }
 
+.calendar-meeting-action[data-fallback="true"] {
+  border-color: color-mix(in srgb, var(--ok-orange) 52%, var(--ok-border));
+  background: color-mix(in srgb, var(--ok-orange) 9%, var(--ok-surface-2));
+}
+
+.calendar-meeting-action[data-fallback="true"] .calendar-meeting-action__icon {
+  background: var(--ok-orange);
+}
+
+.calendar-meeting-action[data-fallback="true"] > svg {
+  color: var(--ok-orange);
+}
+
+.calendar-inspector__link-hint {
+  margin: -8px 2px 0;
+  color: var(--ok-text-muted);
+  font-size: 10px;
+  line-height: 1.5;
+}
+
 .calendar-inspector__schedule {
   display: grid;
   grid-template-columns: 28px minmax(0, 1fr);
@@ -804,12 +824,42 @@
   border-top: 1px solid var(--ok-border);
 }
 
-.calendar-inspector__description p {
+.calendar-inspector__description h3 svg {
+  color: var(--ok-cyan);
+}
+
+.calendar-inspector__notes {
+  display: grid;
+  gap: 0;
+  overflow: hidden;
+  border: 1px solid var(--ok-border);
+  border-radius: 9px;
+  background: color-mix(in srgb, var(--ok-surface-2) 72%, transparent);
+}
+
+.calendar-inspector__notes p {
+  position: relative;
   margin: 0;
-  color: var(--ok-text-muted);
+  padding: 10px 11px 10px 23px;
+  color: var(--ok-text-secondary);
   font-size: 11px;
-  line-height: 1.65;
+  line-height: 1.58;
   overflow-wrap: anywhere;
+}
+
+.calendar-inspector__notes p::before {
+  position: absolute;
+  top: 16px;
+  left: 11px;
+  width: 4px;
+  height: 4px;
+  border-radius: 999px;
+  background: var(--ok-cyan);
+  content: "";
+}
+
+.calendar-inspector__notes p + p {
+  border-top: 1px solid var(--ok-border);
 }
 
 .calendar-inspector__link-error {

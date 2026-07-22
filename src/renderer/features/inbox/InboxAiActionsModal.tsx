@@ -73,10 +73,8 @@ export function InboxAiActionsModal({
   const [provider, setProvider] = useState<RuntimeKind | "">("");
   const [model, setModel] = useState("");
   const [effort, setEffort] = useState("");
-  const [action, setAction] = useState<AnalyzeRequest["action"]>("summary");
-  const [instructions, setInstructions] = useState<string>(
-    presets[0].instructions,
-  );
+  const [action, setAction] = useState<AnalyzeRequest["action"]>("custom");
+  const [instructions, setInstructions] = useState("");
   const [history, setHistory] = useState<Exchange[]>([]);
   const [error, setError] = useState<string | null>(null);
   const [analyzing, setAnalyzing] = useState(false);
@@ -110,15 +108,10 @@ export function InboxAiActionsModal({
             entry.routeKind !== "unavailable" && entry.models.length > 0,
         );
         const preferred =
-          available.find(
-            (entry) =>
-              entry.runtimeKind === "agy" &&
-              entry.models.some((candidate) => /flash/i.test(candidate.label)),
-          ) ?? available[0];
-        const preferredModel =
-          preferred?.models.find((candidate) =>
-            /flash/i.test(candidate.label),
-          ) ?? preferred?.models[0];
+          available.find((entry) => entry.runtimeKind === "codex") ??
+          available.find((entry) => entry.runtimeKind === "claude") ??
+          available[0];
+        const preferredModel = preferred?.models[0];
         if (preferred && preferredModel) {
           setProvider(preferred.runtimeKind);
           setModel(preferredModel.id);
@@ -174,8 +167,10 @@ export function InboxAiActionsModal({
       setAction("custom");
       setInstructions("");
     } catch {
+      const providerName = selectedProvider?.providerLabel ?? provider;
+      const modelName = selectedModel.label;
       setError(
-        "Não foi possível concluir a análise. O e-mail não foi alterado.",
+        `Falha ao analisar com ${providerName} · ${modelName}. Troque o provider ou modelo e tente novamente. O e-mail não foi alterado.`,
       );
     } finally {
       setAnalyzing(false);
