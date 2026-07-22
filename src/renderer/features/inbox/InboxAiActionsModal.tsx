@@ -1,5 +1,7 @@
 import { Button, Spinner } from "@heroui/react";
 import {
+  AlertTriangle,
+  Bot,
   Check,
   ChevronDown,
   Clipboard,
@@ -8,6 +10,7 @@ import {
   MessageSquareText,
   Send,
   Sparkles,
+  WandSparkles,
   X,
 } from "lucide-react";
 import {
@@ -60,6 +63,14 @@ interface Exchange {
   id: string;
   prompt: string;
   result: AnalyzeResult;
+  providerLabel: string;
+  modelLabel: string;
+}
+
+interface AnalysisError {
+  providerLabel: string;
+  modelLabel: string;
+  detail: string;
 }
 
 export function InboxAiActionsModal({
@@ -76,7 +87,7 @@ export function InboxAiActionsModal({
   const [action, setAction] = useState<AnalyzeRequest["action"]>("custom");
   const [instructions, setInstructions] = useState("");
   const [history, setHistory] = useState<Exchange[]>([]);
-  const [error, setError] = useState<string | null>(null);
+  const [error, setError] = useState<AnalysisError | null>(null);
   const [analyzing, setAnalyzing] = useState(false);
   const [copiedId, setCopiedId] = useState<string | null>(null);
 
@@ -121,7 +132,13 @@ export function InboxAiActionsModal({
         }
       })
       .catch(() => {
-        if (active) setError("Não foi possível carregar seus modelos.");
+        if (active) {
+          setError({
+            providerLabel: "Catálogo local",
+            modelLabel: "Modelos",
+            detail: "Não foi possível carregar seus modelos.",
+          });
+        }
       });
     return () => {
       active = false;
@@ -146,7 +163,13 @@ export function InboxAiActionsModal({
 
   async function submit(event?: FormEvent) {
     event?.preventDefault();
-    if (!provider || !selectedModel || !instructions.trim() || analyzing)
+    if (
+      !provider ||
+      !selectedProvider ||
+      !selectedModel ||
+      !instructions.trim() ||
+      analyzing
+    )
       return;
     const prompt = instructions.trim();
     setAnalyzing(true);
@@ -162,16 +185,24 @@ export function InboxAiActionsModal({
       });
       setHistory((current) => [
         ...current,
-        { id: result.generatedAt, prompt, result },
+        {
+          id: result.generatedAt,
+          prompt,
+          result,
+          providerLabel: selectedProvider.providerLabel,
+          modelLabel: selectedModel.label,
+        },
       ]);
       setAction("custom");
       setInstructions("");
-    } catch {
+    } catch (cause) {
       const providerName = selectedProvider?.providerLabel ?? provider;
       const modelName = selectedModel.label;
-      setError(
-        `Falha ao analisar com ${providerName} · ${modelName}. Troque o provider ou modelo e tente novamente. O e-mail não foi alterado.`,
-      );
+      setError({
+        providerLabel: providerName,
+        modelLabel: modelName,
+        detail: analysisErrorDetail(cause),
+      });
     } finally {
       setAnalyzing(false);
     }
@@ -191,7 +222,7 @@ export function InboxAiActionsModal({
   if (!open) return null;
 
   return (
-    <div className="inbox-ai-assistant">
+    <div className="inbox-ai-assistant" data-provider={provider || undefined}>
       <header className="inbox-ai-assistant__header">
         <span className="inbox-ai-assistant__mark">
           <Sparkles aria-hidden="true" size={17} />
@@ -215,13 +246,22 @@ export function InboxAiActionsModal({
       <div className="inbox-ai-assistant__scroll">
         {history.length === 0 ? (
           <div className="inbox-ai-assistant__welcome">
-            <Sparkles aria-hidden="true" size={20} />
+            <span className="inbox-ai-assistant__welcome-mark">
+              <WandSparkles aria-hidden="true" size={22} />
+            </span>
+            <span className="inbox-ai-assistant__eyebrow">
+              Leitura inteligente
+            </span>
             <h3>O que você quer entender?</h3>
             <p>
               Peça um resumo, uma tradução ou faça qualquer pergunta sobre este
               e-mail.
             </p>
-            <div aria-label="Ações rápidas" role="group">
+            <div
+              className="inbox-ai-assistant__presets"
+              aria-label="Ações rápidas"
+              role="group"
+            >
               {presets.map((preset) => {
                 const Icon = preset.icon;
                 return (
@@ -231,7 +271,10 @@ export function InboxAiActionsModal({
                     onClick={() => choosePreset(preset)}
                     type="button"
                   >
-                    <Icon aria-hidden="true" size={14} /> {preset.label}
+                    <span>
+                      <Icon aria-hidden="true" size={15} />
+                    </span>
+                    <strong>{preset.label}</strong>
                   </button>
                 );
               })}
@@ -247,7 +290,7 @@ export function InboxAiActionsModal({
                 <div className="inbox-ai-assistant__answer">
                   <div className="inbox-ai-assistant__answer-meta">
                     <span>
-                      <Check aria-hidden="true" size={14} /> Resposta
+                      <Check aria-hidden="true" size={14} /> Resposta gerada
                     </span>
                     <button
                       aria-label="Copiar resposta"
@@ -262,6 +305,12 @@ export function InboxAiActionsModal({
                       <Clipboard aria-hidden="true" size={13} />
                       {copiedId === exchange.id ? "Copiado" : "Copiar"}
                     </button>
+                  </div>
+                  <div className="inbox-ai-assistant__runtime-chip">
+                    <Bot aria-hidden="true" size={13} />
+                    <span>{exchange.providerLabel}</span>
+                    <span aria-hidden="true">·</span>
+                    <strong>{exchange.modelLabel}</strong>
                   </div>
                   <div className="message-markdown inbox-ai-assistant__markdown">
                     <MessageMarkdown>{exchange.result.content}</MessageMarkdown>
@@ -278,9 +327,28 @@ export function InboxAiActionsModal({
           </div>
         )}
         {error && (
-          <p className="inbox-ai-assistant__error" role="alert">
-            {error}
-          </p>
+          <section className="inbox-ai-assistant__error" role="alert">
+            <span className="inbox-ai-assistant__error-icon">
+              <AlertTriangle aria-hidden="true" size={18} />
+            </span>
+            <div>
+              <span className="inbox-ai-assistant__error-kicker">
+                Execução interrompida
+              </span>
+              <h3>Este provider não respondeu</h3>
+              <p>{error.detail}</p>
+              <div className="inbox-ai-assistant__error-runtime">
+                <span>{error.providerLabel}</span>
+                <span>{error.modelLabel}</span>
+              </div>
+              {providers.some((entry) => entry.runtimeKind === "codex") &&
+                provider !== "codex" && (
+                  <button onClick={() => chooseProvider("codex")} type="button">
+                    Usar ChatGPT recomendado
+                  </button>
+                )}
+            </div>
+          </section>
         )}
       </div>
 
@@ -383,6 +451,29 @@ function defaultEffort(
   if (!efforts?.length) return "";
   if (preferred && efforts.includes(preferred)) return preferred;
   return efforts.includes("medium") ? "medium" : efforts[0]!;
+}
+
+function analysisErrorDetail(cause: unknown): string {
+  const message = cause instanceof Error ? cause.message.toLowerCase() : "";
+  if (
+    message.includes("not supported model") ||
+    message.includes("model is not supported") ||
+    message.includes("not supported by this plan") ||
+    message.includes("model is unavailable")
+  ) {
+    return "O plano conectado não aceitou este modelo. Escolha outro modelo do mesmo provider ou tente o automático.";
+  }
+  if (
+    message.includes("quota") ||
+    message.includes("limit") ||
+    message.includes("capacity")
+  ) {
+    return "A cota deste provider está indisponível ou atingiu o limite atual. Nenhuma ação foi feita no e-mail.";
+  }
+  if (message.includes("protocol") || message.includes("capabilit")) {
+    return "A versão instalada do CLI não confirmou o protocolo necessário. Atualize o provider ou escolha outro modelo.";
+  }
+  return "A execução terminou antes de entregar uma resposta válida. Tente novamente ou escolha outro provider. O e-mail não foi alterado.";
 }
 
 async function copyText(text: string): Promise<void> {

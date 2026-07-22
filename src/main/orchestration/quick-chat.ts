@@ -7,7 +7,7 @@ import type { RunHandle } from "../runtime/adapter";
 import type { TaskRecord, TaskRepository } from "../db/repositories/tasks";
 import type { LaneService } from "./lane-service";
 
-type QuickChatRuntime = Exclude<RuntimeKind, "cursor">;
+type QuickChatRuntime = RuntimeKind;
 
 interface QuickChatCreateRequest {
   runtime: QuickChatRuntime;
@@ -525,7 +525,14 @@ interface QuickChatRow {
   taskId: string;
   laneId: string;
   runtimeKind: QuickChatRuntime;
-  providerKind: "claude_max" | "chatgpt";
+  providerKind:
+    | "claude_max"
+    | "chatgpt"
+    | "cursor"
+    | "antigravity"
+    | "grok"
+    | "mimo"
+    | "minimax";
   model: string;
   workspacePath: string | null;
 }
@@ -569,9 +576,16 @@ function bodyFromContent(contentJson: string): string {
 }
 
 function providerForRuntime(runtime: QuickChatRuntime) {
-  if (runtime === "codex") return "chatgpt" as const;
-  if (runtime === "agy") return "antigravity" as const;
-  return "claude_max" as const;
+  const providers = {
+    claude: "claude_max",
+    codex: "chatgpt",
+    cursor: "cursor",
+    agy: "antigravity",
+    grok: "grok",
+    mimo: "mimo",
+    minimax: "minimax",
+  } as const;
+  return providers[runtime];
 }
 
 function unique(values: string[]): string[] {

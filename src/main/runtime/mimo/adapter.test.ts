@@ -97,6 +97,7 @@ describe("MimoAdapter", () => {
     expect((await collect(handle.events)).map((event) => event.kind)).toEqual([
       "session_started",
       "message_delta",
+      "message_completed",
       "run_completed",
     ]);
     expect(spawn).toHaveBeenCalledWith(

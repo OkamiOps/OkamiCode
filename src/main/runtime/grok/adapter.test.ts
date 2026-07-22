@@ -48,8 +48,10 @@ it("detects and runs the documented Grok streaming protocol", async () => {
   expect(events.map((event) => event.kind)).toEqual([
     "session_resumed",
     "message_delta",
+    "message_completed",
     "run_completed",
   ]);
+  expect(events[2]?.payload).toMatchObject({ text: "Feito" });
   expect(spawn).toHaveBeenCalledWith(
     "grok",
     expect.arrayContaining([

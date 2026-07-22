@@ -68,6 +68,19 @@ describe("Claude command contract", () => {
     expect(degraded).toMatchObject({ mode: "degraded", supported: false });
   });
 
+  it("accepts the currently installed Claude Code capability contract", () => {
+    const current = assessClaudeCapabilities(
+      "2.1.217 (Claude Code)",
+      `${claudeArgs({ settingsPath, sessionId }).join(" ")} --resume --model --verbose`,
+    );
+
+    expect(current).toMatchObject({
+      mode: "ready",
+      supported: true,
+      version: "2.1.217",
+    });
+  });
+
   it("uses environment-only hook credentials and fail-closed degraded settings", () => {
     const settings = createClaudeSettings({
       allowedWorkspaces: ["/workspace/allowed"],

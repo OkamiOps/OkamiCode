@@ -324,7 +324,12 @@ it("detects Grok as a native runtime and MiniMax as a Token Plan launcher", asyn
     capabilities: ["usage", "launcher"],
   });
   expect(localBinaryCandidates("minimax")).toEqual(
-    expect.arrayContaining([expect.stringMatching(/\/mmx$/u)]),
+    expect.arrayContaining([
+      expect.stringMatching(/\/mmx$/u),
+      expect.stringMatching(
+        /\.nvm\/(?:current|versions\/node\/[^/]+)\/bin\/mmx$/u,
+      ),
+    ]),
   );
 });
 

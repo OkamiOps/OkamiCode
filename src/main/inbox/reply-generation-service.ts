@@ -313,7 +313,7 @@ async function collectCompletedText(
       invalidReason ??= "Inbox analysis must not use tools";
     }
     if (event.kind === "run_failed") {
-      invalidReason ??= "Inbox analysis failed";
+      invalidReason ??= analysisFailureReason(event.payload.reason);
       terminal = true;
     }
     if (event.kind === "run_completed") {
@@ -331,6 +331,31 @@ function validAnalysisText(value: unknown): string | undefined {
   if (typeof value !== "string") return undefined;
   const text = value.trim();
   return text && text.length <= 40_000 ? text : undefined;
+}
+
+function analysisFailureReason(value: unknown): string {
+  const reason = typeof value === "string" ? value.toLowerCase() : "";
+  if (
+    reason.includes("not supported") ||
+    reason.includes("unsupported model")
+  ) {
+    return "Inbox analysis failed because the selected model is not supported by this plan";
+  }
+  if (
+    reason.includes("quota") ||
+    reason.includes("limit") ||
+    reason.includes("capacity")
+  ) {
+    return "Inbox analysis failed because this provider has no available quota";
+  }
+  if (
+    reason.includes("capabilit") ||
+    reason.includes("protocol") ||
+    reason.includes("missing required")
+  ) {
+    return "Inbox analysis failed because the provider protocol is incompatible";
+  }
+  return "Inbox analysis failed";
 }
 
 function validReplyText(value: unknown): string | undefined {
@@ -372,7 +397,7 @@ function buildAnalysisPrompt(
     "\\u002d",
   );
   const prefix = [
-    `Analyze this email. Requested action: ${action}. Return only the requested result, with clear formatting.`,
+    `Analyze this email. Requested action: ${action}. Return only the requested result as concise GitHub-flavored Markdown. Use short headings, lists, bold labels, and tables only when they materially improve scanning. Never return raw HTML.`,
     "--- BEGIN REQUESTER_INSTRUCTIONS ---",
     requesterInstructions,
     "--- END REQUESTER_INSTRUCTIONS ---",

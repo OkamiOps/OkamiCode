@@ -251,9 +251,13 @@ export class MimoAdapter implements RuntimeAdapter {
         }
       }
       const result = await run.process.wait();
-      yield run.cancelled
-        ? projector.cancelled()
-        : projector.completed(result.successOrCancelled);
+      if (run.cancelled) {
+        yield projector.cancelled();
+      } else {
+        for (const event of projector.completed(result.successOrCancelled)) {
+          yield event;
+        }
+      }
     } finally {
       this.active.delete(request.runId);
     }

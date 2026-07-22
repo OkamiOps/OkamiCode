@@ -239,6 +239,11 @@ export class MiniMaxAdapter implements RuntimeAdapter {
         messageAnchor: "assistant-0",
         native: payload,
       });
+      yield build("message_completed", {
+        text,
+        messageAnchor: "assistant-0",
+        native: payload,
+      });
       if (payload.usage && typeof payload.usage === "object") {
         yield build("usage_reported", { native: payload.usage });
       }

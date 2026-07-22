@@ -20,9 +20,9 @@ it("projects Grok streaming-json without inventing tool events", () => {
     payload: { runtime: "grok", delta: "Olá" },
   });
   expect(projector.project({ type: "thought", data: "hidden" })).toEqual([]);
-  expect(projector.project({ type: "end", sessionId })[0]?.kind).toBe(
-    "run_completed",
-  );
+  expect(
+    projector.project({ type: "end", sessionId }).map((event) => event.kind),
+  ).toEqual(["message_completed", "run_completed"]);
 });
 
 it("anchors every text delta to one assistant message", () => {

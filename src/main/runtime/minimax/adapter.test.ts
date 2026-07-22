@@ -45,10 +45,12 @@ it("runs MiniMax Token Plan chat through the installed mmx CLI", async () => {
   expect(events.map((event) => event.kind)).toEqual([
     "session_resumed",
     "message_delta",
+    "message_completed",
     "usage_reported",
     "run_completed",
   ]);
   expect(events[1]?.payload).toMatchObject({ delta: "Resposta MiniMax" });
+  expect(events[2]?.payload).toMatchObject({ text: "Resposta MiniMax" });
   expect(run).toHaveBeenCalledWith(
     "mmx",
     expect.arrayContaining([

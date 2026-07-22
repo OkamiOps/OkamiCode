@@ -456,7 +456,7 @@ describe("Cursor model catalog", () => {
     ).toEqual({
       runtimeKind: "cursor",
       providerLabel: "Cursor",
-      routeKind: "native",
+      routeKind: "unavailable",
       source: "Cursor CLI não encontrado",
       models: [],
     });

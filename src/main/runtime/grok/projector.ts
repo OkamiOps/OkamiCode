@@ -9,6 +9,7 @@ type NativeRecord = Record<string, unknown>;
 
 export class GrokProjector {
   private sequence = 0;
+  private readonly assistantText: string[] = [];
   constructor(
     private readonly context: {
       taskId: TaskId;
@@ -34,6 +35,7 @@ export class GrokProjector {
     const native = record(value);
     if (!native || typeof native.type !== "string") return [];
     if (native.type === "text" && typeof native.data === "string") {
+      this.assistantText.push(native.data);
       return [
         this.event("message_delta", native, {
           delta: native.data,
@@ -47,7 +49,19 @@ export class GrokProjector {
       if (sessionId && sessionId !== this.context.nativeSessionId) {
         throw new Error("Grok end event returned a different session id");
       }
-      return [this.event("run_completed", native, { native })];
+      const text = this.assistantText.join("");
+      return [
+        ...(text
+          ? [
+              this.event("message_completed", native, {
+                text,
+                messageAnchor: "assistant-0",
+                native,
+              }),
+            ]
+          : []),
+        this.event("run_completed", native, { native }),
+      ];
     }
     if (native.type === "error") {
       return [

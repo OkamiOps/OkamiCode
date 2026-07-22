@@ -35,6 +35,7 @@ describe("CursorProjector", () => {
       "message_delta",
       "tool_call_started",
       "tool_call_completed",
+      "message_completed",
       "run_completed",
     ]);
     expect(new Set(projected.map((event) => event.nativeEventId)).size).toBe(

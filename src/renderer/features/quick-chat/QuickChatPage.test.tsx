@@ -42,7 +42,7 @@ function renderQuickChat({
 }) {
   const calls = {
     quickChatCreate: [] as Array<{
-      runtime: Exclude<RuntimeKind, "cursor">;
+      runtime: RuntimeKind;
       model: string;
     }>,
     quickChatSend: [] as Array<{
@@ -224,10 +224,17 @@ describe("QuickChatPage", () => {
     ).toHaveValue("high");
   });
 
-  it("offers every workspace-free native provider and useful starters", async () => {
+  it("offers every native provider and useful starters", async () => {
     renderQuickChat({
       chips: [],
       models: [
+        {
+          runtimeKind: "cursor",
+          providerLabel: "Cursor",
+          routeKind: "native",
+          source: "fixture",
+          models: [{ id: "composer-2.5", label: "Composer 2.5" }],
+        },
         {
           runtimeKind: "minimax",
           providerLabel: "MiniMax",
@@ -262,6 +269,7 @@ describe("QuickChatPage", () => {
     const provider = screen.getByRole("combobox", { name: "Provider do chat" });
     expect(provider).toContainHTML("MiniMax");
     expect(provider).toContainHTML("MiMo Code");
+    expect(provider).toContainHTML("Cursor");
   });
 
   it("removes a context chip before sending", async () => {

@@ -271,6 +271,34 @@ describe("InboxReplyGenerationService", () => {
     });
   });
 
+  it("preserves a safe actionable reason when a provider rejects the model", async () => {
+    const { threadId, service, onEvent } = harness({
+      events: ({ taskId, laneId, runId }) => [
+        event({
+          taskId,
+          laneId,
+          runId,
+          kind: "run_failed",
+          payload: { reason: "Not supported model mimo-v2.5-pro-ultraspeed" },
+        }),
+      ],
+    });
+
+    await expect(
+      service.analyzeThread(
+        {
+          threadId,
+          runtimeKind: "codex",
+          model: "gpt-test",
+          effort: "low",
+          action: "summary",
+          instructions: "Resuma.",
+        },
+        { onEvent },
+      ),
+    ).rejects.toThrow(/model is not supported by this plan/i);
+  });
+
   it("rejects invalid runtime/model/effort before creating records or opening a runtime", async () => {
     const { fixture, threadId, service, laneService, onEvent } = harness();
 

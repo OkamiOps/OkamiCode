@@ -11,6 +11,7 @@ export class MimoProjector {
   private sequence = 0;
   private sessionId: string | undefined;
   private emittedSession = false;
+  private readonly assistantText: string[] = [];
 
   constructor(
     private readonly context: {
@@ -53,6 +54,7 @@ export class MimoProjector {
     }
     const text = textDelta(native);
     if (text !== undefined) {
+      this.assistantText.push(text);
       events.push(
         this.event("message_delta", native, {
           delta: text,
@@ -64,14 +66,29 @@ export class MimoProjector {
     return events;
   }
 
-  completed(success: boolean): CanonicalEvent {
-    return this.event(
-      success ? "run_completed" : "run_failed",
-      {},
-      {
-        ...(success ? {} : { reason: "mimo_process_failed" }),
-      },
-    );
+  completed(success: boolean): CanonicalEvent[] {
+    const text = this.assistantText.join("");
+    return [
+      ...(success && text
+        ? [
+            this.event(
+              "message_completed",
+              {},
+              {
+                text,
+                messageAnchor: "assistant-0",
+              },
+            ),
+          ]
+        : []),
+      this.event(
+        success ? "run_completed" : "run_failed",
+        {},
+        {
+          ...(success ? {} : { reason: "mimo_process_failed" }),
+        },
+      ),
+    ];
   }
 
   failed(reason: string): CanonicalEvent {

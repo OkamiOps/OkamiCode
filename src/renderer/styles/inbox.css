@@ -3117,13 +3117,42 @@
 }
 
 .inbox-ai-assistant {
+  --inbox-ai-accent: var(--ok-cyan);
   display: grid;
   width: 100%;
   min-width: 0;
   min-height: 0;
   grid-template-rows: auto minmax(0, 1fr) auto;
-  background: var(--ok-surface-1);
+  background:
+    radial-gradient(
+      circle at 88% -8%,
+      color-mix(in srgb, var(--inbox-ai-accent) 10%, transparent),
+      transparent 34%
+    ),
+    var(--ok-surface-1);
   animation: inbox-ai-panel-enter 180ms cubic-bezier(0.22, 1, 0.36, 1);
+}
+
+.inbox-ai-assistant[data-provider="codex"] {
+  --inbox-ai-accent: var(--ok-green);
+}
+.inbox-ai-assistant[data-provider="claude"] {
+  --inbox-ai-accent: var(--ok-orange);
+}
+.inbox-ai-assistant[data-provider="agy"] {
+  --inbox-ai-accent: var(--ok-cyan);
+}
+.inbox-ai-assistant[data-provider="grok"] {
+  --inbox-ai-accent: #b9c1ff;
+}
+.inbox-ai-assistant[data-provider="cursor"] {
+  --inbox-ai-accent: #d5a9ff;
+}
+.inbox-ai-assistant[data-provider="mimo"] {
+  --inbox-ai-accent: #ff9d70;
+}
+.inbox-ai-assistant[data-provider="minimax"] {
+  --inbox-ai-accent: var(--ok-yellow);
 }
 
 .inbox-ai-assistant__header {
@@ -3159,10 +3188,15 @@
   width: 36px;
   height: 36px;
   place-items: center;
-  border: 1px solid color-mix(in srgb, var(--ok-cyan) 45%, var(--ok-border));
+  border: 1px solid
+    color-mix(in srgb, var(--inbox-ai-accent) 45%, var(--ok-border));
   border-radius: 10px;
-  background: color-mix(in srgb, var(--ok-cyan) 12%, var(--ok-surface-2));
-  color: var(--ok-cyan);
+  background: color-mix(
+    in srgb,
+    var(--inbox-ai-accent) 12%,
+    var(--ok-surface-2)
+  );
+  color: var(--inbox-ai-accent);
 }
 
 .inbox-ai-assistant__close {
@@ -3186,9 +3220,31 @@
   text-align: center;
 }
 
-.inbox-ai-assistant__welcome > svg {
+.inbox-ai-assistant__welcome-mark {
+  display: grid;
+  width: 52px;
+  height: 52px;
   margin-bottom: 14px;
-  color: var(--ok-cyan);
+  place-items: center;
+  border: 1px solid
+    color-mix(in srgb, var(--inbox-ai-accent) 46%, var(--ok-border));
+  border-radius: 16px;
+  background: linear-gradient(
+    145deg,
+    color-mix(in srgb, var(--inbox-ai-accent) 19%, var(--ok-surface-2)),
+    var(--ok-surface-2)
+  );
+  box-shadow: 0 12px 34px
+    color-mix(in srgb, var(--inbox-ai-accent) 9%, transparent);
+  color: var(--inbox-ai-accent);
+}
+
+.inbox-ai-assistant__eyebrow {
+  margin-bottom: 7px;
+  color: var(--inbox-ai-accent);
+  font: 700 9px/1 var(--ok-font-mono);
+  letter-spacing: 0.13em;
+  text-transform: uppercase;
 }
 
 .inbox-ai-assistant__welcome h3,
@@ -3208,25 +3264,48 @@
   line-height: 1.6;
 }
 
-.inbox-ai-assistant__welcome > div {
-  display: flex;
+.inbox-ai-assistant__presets {
+  display: grid;
+  width: min(100%, 294px);
   margin-top: 18px;
-  flex-wrap: wrap;
-  justify-content: center;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
   gap: 7px;
 }
 
 .inbox-ai-assistant__welcome button {
-  display: inline-flex;
+  display: grid;
+  min-width: 0;
   align-items: center;
-  gap: 6px;
-  min-height: 32px;
-  padding: 0 10px;
+  justify-items: center;
+  gap: 7px;
+  min-height: 70px;
+  padding: 10px 6px;
   border: 1px solid var(--ok-border);
   border-radius: 8px;
   background: var(--ok-surface-2);
   color: var(--ok-text-muted);
-  font-size: 11px;
+  font-size: 10.5px;
+}
+
+.inbox-ai-assistant__welcome button span {
+  display: grid;
+  width: 28px;
+  height: 28px;
+  place-items: center;
+  border-radius: 8px;
+  background: color-mix(
+    in srgb,
+    var(--inbox-ai-accent) 10%,
+    var(--ok-surface-3)
+  );
+  color: var(--inbox-ai-accent);
+}
+
+.inbox-ai-assistant__welcome button strong {
+  overflow: hidden;
+  max-width: 100%;
+  font-weight: 650;
+  text-overflow: ellipsis;
 }
 
 .inbox-ai-assistant__welcome button:hover,
@@ -3263,6 +3342,11 @@
 
 .inbox-ai-assistant__answer {
   min-width: 0;
+  padding: 14px;
+  border: 1px solid
+    color-mix(in srgb, var(--inbox-ai-accent) 25%, var(--ok-border));
+  border-radius: 14px;
+  background: color-mix(in srgb, var(--inbox-ai-accent) 4%, var(--ok-bg));
 }
 
 .inbox-ai-assistant__answer-meta {
@@ -3270,9 +3354,38 @@
   justify-content: space-between;
   align-items: center;
   margin-bottom: 10px;
-  color: var(--ok-cyan);
+  color: var(--inbox-ai-accent);
   font-size: 11px;
   font-weight: 700;
+}
+
+.inbox-ai-assistant__runtime-chip {
+  display: inline-flex;
+  max-width: 100%;
+  align-items: center;
+  gap: 5px;
+  margin-bottom: 13px;
+  padding: 5px 8px;
+  border-radius: 999px;
+  background: color-mix(
+    in srgb,
+    var(--inbox-ai-accent) 10%,
+    var(--ok-surface-2)
+  );
+  color: var(--ok-text-muted);
+  font-size: 9.5px;
+}
+
+.inbox-ai-assistant__runtime-chip svg,
+.inbox-ai-assistant__runtime-chip strong {
+  color: var(--inbox-ai-accent);
+}
+
+.inbox-ai-assistant__runtime-chip span,
+.inbox-ai-assistant__runtime-chip strong {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .inbox-ai-assistant__answer-meta span,
@@ -3296,6 +3409,30 @@
   user-select: text;
 }
 
+.inbox-ai-assistant__markdown h1,
+.inbox-ai-assistant__markdown h2,
+.inbox-ai-assistant__markdown h3 {
+  color: var(--ok-text);
+  letter-spacing: -0.015em;
+}
+
+.inbox-ai-assistant__markdown h2,
+.inbox-ai-assistant__markdown h3 {
+  margin-top: 1.4em;
+  padding-bottom: 0.45em;
+  border-bottom: 1px solid var(--ok-border);
+}
+
+.inbox-ai-assistant__markdown strong {
+  color: color-mix(in srgb, var(--inbox-ai-accent) 72%, white);
+}
+.inbox-ai-assistant__markdown li::marker {
+  color: var(--inbox-ai-accent);
+}
+.inbox-ai-assistant__markdown a {
+  color: var(--ok-cyan);
+}
+
 .inbox-ai-assistant__markdown > :first-child {
   margin-top: 0;
 }
@@ -3310,16 +3447,96 @@
 }
 
 .inbox-ai-assistant__error {
-  margin: 16px 0 0;
-  color: var(--ok-danger);
-  font-size: 12px;
-  line-height: 1.5;
+  display: grid;
+  grid-template-columns: 34px minmax(0, 1fr);
+  gap: 11px;
+  margin: 18px 0 0;
+  padding: 14px;
+  border: 1px solid color-mix(in srgb, var(--ok-red) 36%, var(--ok-border));
+  border-radius: 13px;
+  background: linear-gradient(
+    135deg,
+    color-mix(in srgb, var(--ok-red) 9%, var(--ok-surface-2)),
+    var(--ok-surface-2)
+  );
+  box-shadow: 0 14px 36px color-mix(in srgb, var(--ok-red) 5%, transparent);
+}
+
+.inbox-ai-assistant__error-icon {
+  display: grid;
+  width: 34px;
+  height: 34px;
+  place-items: center;
+  border-radius: 9px;
+  background: color-mix(in srgb, var(--ok-red) 14%, var(--ok-surface-3));
+  color: var(--ok-red);
+}
+
+.inbox-ai-assistant__error-kicker {
+  color: var(--ok-red);
+  font: 700 9px/1.2 var(--ok-font-mono);
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+}
+
+.inbox-ai-assistant__error h3 {
+  margin: 5px 0 0;
+  color: var(--ok-text);
+  font-size: 13px;
+}
+
+.inbox-ai-assistant__error p {
+  margin: 7px 0 0;
+  color: var(--ok-text-muted);
+  font-size: 11px;
+  line-height: 1.55;
+}
+
+.inbox-ai-assistant__error-runtime {
+  display: flex;
+  min-width: 0;
+  margin-top: 10px;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.inbox-ai-assistant__error-runtime span {
+  overflow: hidden;
+  padding: 4px 7px;
+  border: 1px solid var(--ok-border);
+  border-radius: 6px;
+  background: var(--ok-bg);
+  color: var(--ok-text-muted);
+  font: 9px/1.2 var(--ok-font-mono);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.inbox-ai-assistant__error button {
+  margin-top: 12px;
+  padding: 7px 9px;
+  border: 1px solid color-mix(in srgb, var(--ok-green) 42%, var(--ok-border));
+  border-radius: 7px;
+  background: color-mix(in srgb, var(--ok-green) 10%, var(--ok-surface-3));
+  color: var(--ok-green);
+  font-size: 10.5px;
+  font-weight: 650;
+}
+
+.inbox-ai-assistant__error button:hover,
+.inbox-ai-assistant__error button:focus-visible {
+  background: color-mix(in srgb, var(--ok-green) 17%, var(--ok-surface-3));
+  outline: none;
 }
 
 .inbox-ai-assistant__composer {
   padding: 12px 14px 10px;
   border-top: 1px solid var(--ok-border);
-  background: color-mix(in srgb, var(--ok-surface-1) 96%, var(--ok-bg));
+  background: color-mix(
+    in srgb,
+    var(--inbox-ai-accent) 2%,
+    var(--ok-surface-1)
+  );
 }
 
 .inbox-ai-assistant__composer textarea {
@@ -3337,7 +3554,7 @@
 }
 
 .inbox-ai-assistant__composer textarea:focus {
-  border-color: var(--ok-cyan);
+  border-color: var(--inbox-ai-accent);
   outline: none;
 }
 
@@ -3396,7 +3613,7 @@
   width: 32px;
   height: 32px;
   min-width: 32px;
-  background: var(--ok-cyan);
+  background: var(--inbox-ai-accent);
   color: var(--ok-bg);
 }
 

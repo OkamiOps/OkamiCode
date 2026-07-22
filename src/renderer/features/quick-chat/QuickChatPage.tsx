@@ -889,17 +889,15 @@ interface ModelOption {
 
 function availableModels(catalog: IpcResponse<"models:list">): ModelOption[] {
   const options = catalog.flatMap((provider) =>
-    provider.runtimeKind === "cursor"
-      ? []
-      : provider.models.map((item) => ({
-          key: `${provider.runtimeKind}:${item.id}`,
-          runtime: provider.runtimeKind,
-          id: item.id,
-          label: item.label,
-          providerLabel: provider.providerLabel,
-          efforts: item.efforts,
-          defaultEffort: item.defaultEffort,
-        })),
+    provider.models.map((item) => ({
+      key: `${provider.runtimeKind}:${item.id}`,
+      runtime: provider.runtimeKind,
+      id: item.id,
+      label: item.label,
+      providerLabel: provider.providerLabel,
+      efforts: item.efforts,
+      defaultEffort: item.defaultEffort,
+    })),
   ) as ModelOption[];
   for (const fallback of [
     {
@@ -1199,4 +1197,4 @@ function createQuickChatStore(
 function firstError(...errors: unknown[]): Error | null {
   return errors.find((error): error is Error => error instanceof Error) ?? null;
 }
-type QuickChatRuntime = Exclude<RuntimeKind, "cursor">;
+type QuickChatRuntime = RuntimeKind;

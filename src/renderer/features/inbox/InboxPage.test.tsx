@@ -1007,6 +1007,11 @@ describe("InboxPage", () => {
     expect(
       within(assistant).getByRole("button", { name: "Copiar resposta" }),
     ).toBeVisible();
+    expect(within(assistant).getByText("Resposta gerada")).toBeVisible();
+    expect(within(assistant).getAllByText("Antigravity")).not.toHaveLength(0);
+    expect(within(assistant).getAllByText("Gemini 3.5 Flash")).not.toHaveLength(
+      0,
+    );
     expect(api.createReplyDraft).not.toHaveBeenCalled();
 
     await userEvent.click(
@@ -1049,7 +1054,8 @@ describe("InboxPage", () => {
 
     const error = await within(assistant).findByRole("alert");
     expect(error).toHaveTextContent(/ChatGPT Plus.*GPT-5\.6/i);
-    expect(error).toHaveTextContent(/troque.*provider.*modelo/i);
+    expect(error).toHaveTextContent(/este provider não respondeu/i);
+    expect(error).toHaveTextContent(/tente novamente.*outro provider/i);
   });
 
   it("requires drafting instructions and sends them with compact agent and model choices", async () => {

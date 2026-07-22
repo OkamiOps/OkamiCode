@@ -23,7 +23,7 @@ const REQUIRED_FLAGS = [
   "--model",
   "--verbose",
 ] as const;
-const SUPPORTED_VERSIONS = new Set(["2.1.212", "2.1.214"]);
+const SUPPORTED_VERSIONS = new Set(["2.1.212", "2.1.214", "2.1.217"]);
 const GATEWAY_CONFIG_DIRECTORY_PREFIX = "okami-claude-gateway-";
 const DEGRADED_DENY = [
   "Bash",

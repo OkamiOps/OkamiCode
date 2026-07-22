@@ -31,6 +31,7 @@ export function cursorSessionIdFromInit(message: unknown): string | undefined {
 export class CursorProjector {
   private sequence = 0;
   private assistantMessageOrdinal = 0;
+  private readonly assistantText: string[] = [];
   private readonly now: () => string;
 
   constructor(private readonly context: CursorProjectionContext) {
@@ -88,6 +89,7 @@ export class CursorProjector {
       if (typeof block.text !== "string") {
         throw new Error("Cursor assistant text block requires text");
       }
+      this.assistantText.push(block.text);
       return [
         this.event("message_delta", native, {
           delta: block.text,
@@ -142,7 +144,17 @@ export class CursorProjector {
     if (typeof native.is_error !== "boolean") {
       throw new Error("Cursor result requires is_error");
     }
+    const text = this.assistantText.join("");
     return [
+      ...(!native.is_error && text
+        ? [
+            this.event("message_completed", native, {
+              text,
+              messageAnchor: "assistant-0",
+              native,
+            }),
+          ]
+        : []),
       this.event(native.is_error ? "run_failed" : "run_completed", native, {
         result: native.result,
         nativeStatus: native.subtype,

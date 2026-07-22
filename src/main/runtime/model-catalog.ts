@@ -984,7 +984,7 @@ export function createModelCatalogService(
         {
           runtimeKind: "cursor",
           providerLabel: "Cursor",
-          routeKind: "native",
+          routeKind: cursorBinary ? "native" : "unavailable",
           source: cursor
             ? `cursor-agent models · ${cursor.fetchedAt}`
             : cursorBinary
@@ -995,7 +995,7 @@ export function createModelCatalogService(
         {
           runtimeKind: "agy",
           providerLabel: "Antigravity",
-          routeKind: "native",
+          routeKind: agyBinary ? "native" : "unavailable",
           source: agy
             ? `agy models · ${agy.fetchedAt}`
             : agyBinary
@@ -1006,7 +1006,7 @@ export function createModelCatalogService(
         {
           runtimeKind: "grok",
           providerLabel: "Grok",
-          routeKind: "native",
+          routeKind: grokBinary ? "native" : "unavailable",
           source: grok
             ? `grok models · ${grok.fetchedAt}`
             : grokBinary
@@ -1032,7 +1032,7 @@ export function createModelCatalogService(
         {
           runtimeKind: "mimo",
           providerLabel: "MiMo Code",
-          routeKind: "native",
+          routeKind: mimoBinary ? "native" : "unavailable",
           source: mimo
             ? `mimo models · ${mimo.fetchedAt}`
             : mimoBinary

@@ -1,5 +1,5 @@
 import { execFile } from "node:child_process";
-import { existsSync, realpathSync, statSync } from "node:fs";
+import { existsSync, readdirSync, realpathSync, statSync } from "node:fs";
 import { homedir } from "node:os";
 import path from "node:path";
 import { promisify } from "node:util";
@@ -134,6 +134,7 @@ export function localBinaryCandidates(client: CliClient): string[] {
       : [];
   const mimoCandidates =
     client === "mimo" ? [path.join(homedir(), ".mimocode", "bin", "mimo")] : [];
+  const nvmCandidates = client === "minimax" ? nvmBinaryCandidates(binary) : [];
 
   return [
     ...fromPath,
@@ -141,11 +142,31 @@ export function localBinaryCandidates(client: CliClient): string[] {
     path.join(homedir(), ".cargo", "bin", binary),
     ...cursorCandidates,
     ...mimoCandidates,
+    ...nvmCandidates,
     ...appResources,
     path.join(path.dirname(process.execPath), binary),
     `/opt/homebrew/bin/${binary}`,
     `/usr/local/bin/${binary}`,
     `/usr/bin/${binary}`,
+  ];
+}
+
+function nvmBinaryCandidates(binary: string): string[] {
+  const root = path.join(homedir(), ".nvm", "versions", "node");
+  let versions: string[] = [];
+  try {
+    versions = readdirSync(root, { withFileTypes: true })
+      .filter((entry) => entry.isDirectory())
+      .map((entry) => entry.name)
+      .sort((left, right) =>
+        right.localeCompare(left, undefined, { numeric: true }),
+      );
+  } catch {
+    // NVM is optional; the regular PATH candidates remain authoritative.
+  }
+  return [
+    path.join(homedir(), ".nvm", "current", "bin", binary),
+    ...versions.map((version) => path.join(root, version, "bin", binary)),
   ];
 }
 

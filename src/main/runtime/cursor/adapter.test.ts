@@ -174,6 +174,7 @@ describe("CursorAdapter", () => {
     expect(events.map((event) => event.kind)).toEqual([
       "session_resumed",
       "message_delta",
+      "message_completed",
       "run_completed",
     ]);
     expect(deps.spawn).toHaveBeenCalledWith(
