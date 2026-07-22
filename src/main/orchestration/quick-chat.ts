@@ -158,8 +158,10 @@ export class QuickChatService {
     const completed = this.dependencies.db
       .prepare(
         `SELECT e.id, e.payload_json AS payloadJson,
-                e.occurred_at AS createdAt
+                e.occurred_at AS createdAt,
+                l.runtime_kind AS runtimeKind, l.model
          FROM events e
+         JOIN runtime_lanes l ON l.id = e.lane_id
          WHERE e.task_id = ? AND e.kind = 'message_completed'
          ORDER BY e.occurred_at, e.run_id, e.sequence`,
       )
@@ -180,6 +182,8 @@ export class QuickChatService {
                 role: "assistant" as const,
                 body: payload.text,
                 createdAt: event.createdAt,
+                providerLabel: providerDisplay(event.runtimeKind),
+                modelLabel: event.model,
               },
             ]
           : [];
@@ -566,6 +570,21 @@ interface CompletedMessageRow {
   id: string;
   payloadJson: string;
   createdAt: string;
+  runtimeKind: QuickChatRuntime;
+  model: string;
+}
+
+function providerDisplay(runtime: QuickChatRuntime): string {
+  const labels: Record<QuickChatRuntime, string> = {
+    claude: "Claude",
+    codex: "ChatGPT",
+    cursor: "Cursor",
+    agy: "Antigravity",
+    grok: "Grok",
+    mimo: "MiMo Code",
+    minimax: "MiniMax",
+  };
+  return labels[runtime];
 }
 
 function bodyFromContent(contentJson: string): string {

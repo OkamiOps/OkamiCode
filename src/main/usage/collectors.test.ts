@@ -449,6 +449,104 @@ describe("local activity", () => {
       expect.arrayContaining(["usedPercent", "remainingPercent"]),
     );
   });
+
+  it("uses Claude modelUsage for identity without double-counting its token totals", () => {
+    const fixture = createTestDatabase();
+    fixture.events.append(
+      fixture.event({
+        kind: "usage_reported",
+        occurredAt: "2026-07-18T09:42:00.000Z",
+        payload: {
+          runtime: "claude",
+          usage: {
+            input_tokens: 999,
+            cache_read_input_tokens: 90,
+            cache_creation_input_tokens: 9,
+            output_tokens: 99,
+          },
+          modelUsage: {
+            "claude-sonnet-4-6": {
+              inputTokens: 120,
+              cacheReadInputTokens: 30,
+              cacheCreationInputTokens: 10,
+              outputTokens: 50,
+            },
+          },
+        },
+      }),
+    );
+    const activity = new UsageActivityService(fixture.db);
+
+    activity.rebuild();
+    const buckets = activity.readBuckets();
+
+    expect(buckets).toHaveLength(1);
+    expect(buckets[0]).toMatchObject({
+      model: "claude-sonnet-4-6",
+      inputTokens: 999,
+      cachedInputTokens: 99,
+      outputTokens: 99,
+    });
+  });
+
+  it("recovers the native model from the Claude session event", () => {
+    const fixture = createTestDatabase();
+    fixture.events.append(
+      fixture.event({
+        sequence: 0,
+        kind: "session_started",
+        payload: { runtime: "claude", model: "claude-opus-4-8" },
+      }),
+    );
+    fixture.events.append(
+      fixture.event({
+        sequence: 1,
+        kind: "usage_reported",
+        payload: {
+          runtime: "claude",
+          usage: { input_tokens: 500, output_tokens: 50 },
+          modelUsage: {},
+        },
+      }),
+    );
+    const activity = new UsageActivityService(fixture.db);
+
+    activity.rebuild();
+
+    expect(activity.readBuckets()[0]).toMatchObject({
+      model: "claude-opus-4-8",
+      inputTokens: 500,
+      outputTokens: 50,
+    });
+  });
+
+  it("keeps completed Antigravity work visible with an explicit local estimate", () => {
+    const fixture = createTestDatabase();
+    fixture.db
+      .prepare(
+        "UPDATE runtime_lanes SET runtime_kind = 'agy', provider_kind = 'antigravity', model = 'gemini-3.6-flash-low'",
+      )
+      .run();
+    fixture.events.append(
+      fixture.event({
+        kind: "message_completed",
+        occurredAt: "2026-07-18T09:42:00.000Z",
+        payload: { text: "Resposta concluída pelo Antigravity." },
+      }),
+    );
+    const activity = new UsageActivityService(fixture.db);
+
+    const bucket = activity.readBuckets()[0];
+
+    expect(bucket).toMatchObject({
+      runtime: "agy",
+      model: "gemini-3.6-flash-low",
+      inputTokens: 0,
+      messages: 1,
+      modelCalls: 1,
+    });
+    expect(bucket?.outputTokens).toBeGreaterThan(0);
+  });
 });
 
 describe("usage snapshots", () => {

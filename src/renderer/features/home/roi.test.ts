@@ -17,7 +17,7 @@ describe("calculateRoi", () => {
     expect(openai.apiEquivalentUsd).toBeCloseTo(7.4905, 3);
     expect(openai.coveragePercent).toBe(100);
     expect(openai.verdict).toBe("api");
-    expect(result.subscriptionTotalUsd).toBe(370);
+    expect(result.subscriptionTotalUsd).toBe(410);
   });
 
   it("reports unavailable telemetry and unmatched models instead of inventing zero cost", () => {
@@ -35,6 +35,184 @@ describe("calculateRoi", () => {
     expect(anthropic.verdict).toBe("insufficient");
     expect(grok.apiEquivalentUsd).toBeNull();
     expect(grok.coveragePercent).toBeNull();
+  });
+
+  it("includes Antigravity and prices only its observed model telemetry", () => {
+    const result = calculateRoi(
+      [
+        activity({
+          model: "gemini-3.6-flash",
+          provider: "antigravity",
+          runtime: "agy",
+        }),
+      ],
+      {
+        ...catalog(),
+        models: [
+          {
+            id: "google/gemini-3.6-flash",
+            name: "Gemini 3.6 Flash",
+            promptPerToken: 0.000001,
+            completionPerToken: 0.000004,
+            cacheReadPerToken: 0.0000001,
+            reasoningPerToken: null,
+            requestCost: null,
+          },
+        ],
+      },
+      defaultSubscriptionPrices(),
+      new Date("2026-07-21T22:00:00.000Z"),
+    );
+
+    const antigravity = result.rows.find((row) => row.id === "antigravity")!;
+    expect(antigravity).toMatchObject({
+      inputTokens: 1_000_000,
+      cachedInputTokens: 1_000_000,
+      outputTokens: 1_000_000,
+      observedTokens: 3_000_000,
+      coveragePercent: 100,
+    });
+    expect(antigravity.apiEquivalentUsd).toBeCloseTo(5.3805, 6);
+  });
+
+  it("maps Antigravity effort suffixes to the priced Gemini model", () => {
+    const result = calculateRoi(
+      [
+        activity({
+          cachedInputTokens: 0,
+          inputTokens: 0,
+          model: "gemini-3.6-flash-low",
+          outputTokens: 1_000,
+          provider: "antigravity",
+          runtime: "agy",
+        }),
+      ],
+      {
+        ...catalog(),
+        models: [
+          {
+            id: "google/gemini-3.6-flash",
+            name: "Gemini 3.6 Flash",
+            promptPerToken: 0.000001,
+            completionPerToken: 0.000004,
+            cacheReadPerToken: null,
+            reasoningPerToken: null,
+            requestCost: null,
+          },
+        ],
+      },
+      defaultSubscriptionPrices(),
+      new Date("2026-07-21T22:00:00.000Z"),
+    );
+
+    const antigravity = result.rows.find((row) => row.id === "antigravity")!;
+    expect(antigravity.coveragePercent).toBe(100);
+    expect(antigravity.apiEquivalentUsd).toBeGreaterThan(0);
+  });
+
+  it("prices Claude aliases against the provider latest model", () => {
+    const result = calculateRoi(
+      [activity({ model: "sonnet", runtime: "claude" })],
+      {
+        ...catalog(),
+        models: [
+          {
+            id: "~anthropic/claude-sonnet-latest",
+            name: "Anthropic Claude Sonnet Latest",
+            promptPerToken: 0.000002,
+            completionPerToken: 0.00001,
+            cacheReadPerToken: 0.0000002,
+            reasoningPerToken: null,
+            requestCost: null,
+          },
+        ],
+      },
+      defaultSubscriptionPrices(),
+      new Date("2026-07-21T22:00:00.000Z"),
+    );
+
+    const anthropic = result.rows.find((row) => row.id === "anthropic")!;
+    expect(anthropic.coveragePercent).toBe(100);
+    expect(anthropic.apiEquivalentUsd).toBeCloseTo(12.871, 3);
+  });
+
+  it("prices decorated Claude context-window model ids against their base model", () => {
+    const result = calculateRoi(
+      [activity({ model: "claude-fable-5[1m]", runtime: "claude" })],
+      {
+        ...catalog(),
+        models: [
+          {
+            id: "anthropic/claude-fable-5",
+            name: "Anthropic Claude Fable 5",
+            promptPerToken: 0.000003,
+            completionPerToken: 0.000015,
+            cacheReadPerToken: 0.0000003,
+            reasoningPerToken: null,
+            requestCost: null,
+          },
+        ],
+      },
+      defaultSubscriptionPrices(),
+      new Date("2026-07-21T22:00:00.000Z"),
+    );
+
+    const anthropic = result.rows.find((row) => row.id === "anthropic")!;
+    expect(anthropic.coveragePercent).toBe(100);
+    expect(anthropic.apiEquivalentUsd).toBeCloseTo(19.3065, 3);
+  });
+
+  it("uses the newest priced Opus version and exposes fresh input, cache and output separately", () => {
+    const result = calculateRoi(
+      [
+        activity({
+          cachedInputTokens: 200_000,
+          inputTokens: 4_000_000,
+          model: "opus[1m]",
+          outputTokens: 70_200,
+          runtime: "claude",
+        }),
+      ],
+      {
+        ...catalog(),
+        models: [
+          {
+            id: "anthropic/claude-opus-4.1",
+            name: "Claude Opus 4.1",
+            promptPerToken: 0.000003,
+            completionPerToken: 0.000015,
+            cacheReadPerToken: 0.0000003,
+            reasoningPerToken: null,
+            requestCost: null,
+          },
+          {
+            id: "anthropic/claude-opus-4.8",
+            name: "Claude Opus 4.8",
+            promptPerToken: 0.000005,
+            completionPerToken: 0.000025,
+            cacheReadPerToken: 0.0000005,
+            reasoningPerToken: null,
+            requestCost: null,
+          },
+        ],
+      },
+      defaultSubscriptionPrices(),
+      new Date("2026-07-21T22:00:00.000Z"),
+    );
+
+    const anthropic = result.rows.find((row) => row.id === "anthropic")!;
+    expect(anthropic.inputTokens).toBe(4_000_000);
+    expect(anthropic.cachedInputTokens).toBe(200_000);
+    expect(anthropic.outputTokens).toBe(70_200);
+    expect(anthropic.models[0]).toMatchObject({
+      activityModel: "opus[1m]",
+      pricingModel: "anthropic/claude-opus-4.8",
+      inputTokens: 4_000_000,
+      cachedInputTokens: 200_000,
+      outputTokens: 70_200,
+      costUsd: 21.855,
+    });
+    expect(anthropic.apiEquivalentUsd).toBeCloseTo(23.057025, 6);
   });
 });
 

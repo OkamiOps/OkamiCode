@@ -1,4 +1,5 @@
 import { cleanup, render, screen } from "@testing-library/react";
+import userEvent from "@testing-library/user-event";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { afterEach, beforeEach, expect, it } from "vitest";
 import { installOkamiMock } from "../../test/okami-mock";
@@ -89,7 +90,8 @@ beforeEach(() => {
   });
 });
 
-it("shows all client states without offering a false runtime selector", async () => {
+it("shows verified CLI health and exposes an honest diagnostic", async () => {
+  const user = userEvent.setup();
   const queryClient = new QueryClient({
     defaultOptions: { queries: { retry: false } },
   });
@@ -102,15 +104,28 @@ it("shows all client states without offering a false runtime selector", async ()
   );
 
   expect(
-    await screen.findByRole("heading", { name: "Clientes e capacidades" }),
+    await screen.findByRole("heading", { name: "CLIs e adapters" }),
   ).toBeVisible();
-  expect((await screen.findAllByText("CLI encontrado")).length).toBe(3);
-  expect(screen.getByText("CLI ausente")).toBeVisible();
-  expect(screen.getAllByText("Integração pronta")).toHaveLength(2);
-  expect(screen.getByText("Integração pendente")).toBeVisible();
-  expect(screen.getAllByText("mcp")).toHaveLength(2);
-  expect(screen.getAllByText("plugins")).toHaveLength(2);
-  expect(screen.getByText(/instalado.*integrado/i)).toBeVisible();
+  expect(await screen.findByText("/bin/codex")).toBeVisible();
+  expect(
+    screen.getByText((_, element) => element?.textContent === "2 de 4"),
+  ).toBeVisible();
+  expect(screen.getByText("1", { selector: "strong" })).toBeVisible();
+  expect(screen.getAllByText("Operacional")).toHaveLength(2);
+  expect(screen.getByText("Não encontrado")).toBeVisible();
+  expect(screen.getByText("Adapter incompleto")).toBeVisible();
+
+  await user.click(screen.getAllByRole("button", { name: "Ver detalhes" })[0]);
+  expect(
+    screen.getByRole("complementary", { name: "Diagnóstico de Codex" }),
+  ).toBeVisible();
+  expect(screen.getAllByText("codex-cli 1.0.0")).toHaveLength(2);
+  expect(screen.getByText("app_server")).toBeVisible();
+  expect(screen.getByRole("button", { name: "Atualizar CLI" })).toBeDisabled();
+  expect(
+    screen.getByText(/não declarou uma atualização necessária/i),
+  ).toBeVisible();
+
   expect(screen.queryByRole("combobox")).not.toBeInTheDocument();
   expect(screen.queryByRole("radio")).not.toBeInTheDocument();
 });

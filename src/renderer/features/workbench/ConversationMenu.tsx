@@ -1,6 +1,7 @@
 import {
   Archive,
   Download,
+  FileDiff,
   Files,
   GitBranch,
   Globe,
@@ -89,6 +90,9 @@ export function ConversationMenu({
       </button>
       {open && (
         <div className="conv-menu__list" role="menu">
+          {item("Alterações", FileDiff, () => onTogglePanel("changes"), {
+            checked: activePanels.includes("changes"),
+          })}
           {item("Arquivos", Files, () => onTogglePanel("files"), {
             checked: activePanels.includes("files"),
           })}

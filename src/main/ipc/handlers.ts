@@ -74,6 +74,10 @@ import { InboxOutgoingSettingsService } from "../inbox/outgoing-settings-service
 import { ReplyDispatchService } from "../inbox/reply-dispatch-service";
 import type { CalendarApplicationService } from "../calendar/application-service";
 import type { GoogleInboxOAuthService } from "../inbox/google-oauth-service";
+import {
+  readWorkspaceChanges,
+  readWorkspaceDiff,
+} from "../workspace/git-worktree";
 
 export type { ModelCatalogEntry };
 
@@ -362,6 +366,17 @@ async function dispatch(
       return deleteTask(state, request as IpcRequest<"task:delete">);
     case "file:pick":
       return pickFiles(request as IpcRequest<"file:pick">);
+    case "workspace:changes": {
+      const target = request as IpcRequest<"workspace:changes">;
+      return readWorkspaceChanges(resolveWorkspaceRoot(state, target.taskId));
+    }
+    case "workspace:diff": {
+      const target = request as IpcRequest<"workspace:diff">;
+      return readWorkspaceDiff(
+        resolveWorkspaceRoot(state, target.taskId),
+        target.file,
+      );
+    }
     case "fs:list":
       return listWorkspaceDir(state, request as IpcRequest<"fs:list">);
     case "fs:read":
@@ -567,6 +582,8 @@ async function dispatch(
       return getMemoryService().configure(
         (request as IpcRequest<"memory:configure">).paths,
       );
+    case "memory:status":
+      return getMemoryService().status();
     case "memory:list":
       return getMemoryService().listSources();
     case "memory:search":
@@ -1337,6 +1354,14 @@ const FS_IGNORED = new Set([
 ]);
 const FS_READ_LIMIT = 256 * 1024;
 
+function resolveWorkspaceRoot(state: AppState, taskId: string): string {
+  const row = state.database
+    .prepare(`SELECT workspace_path FROM tasks WHERE id = ?`)
+    .get(taskId) as { workspace_path: string | null } | undefined;
+  if (!row?.workspace_path) throw new Error("Tarefa sem pasta de trabalho");
+  return realpathSync(row.workspace_path);
+}
+
 // Every fs access resolves inside the task's workspace; anything that
 // escapes it (symlinks included) is refused.
 function resolveInsideWorkspace(
@@ -1344,11 +1369,7 @@ function resolveInsideWorkspace(
   taskId: string,
   relative: string,
 ): string {
-  const row = state.database
-    .prepare(`SELECT workspace_path FROM tasks WHERE id = ?`)
-    .get(taskId) as { workspace_path: string | null } | undefined;
-  if (!row?.workspace_path) throw new Error("Tarefa sem pasta de trabalho");
-  const root = realpathSync(row.workspace_path);
+  const root = resolveWorkspaceRoot(state, taskId);
   const target = nodePath.resolve(root, relative);
   const real = realpathSync(target);
   if (real !== root && !real.startsWith(`${root}${nodePath.sep}`)) {

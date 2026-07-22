@@ -1,7 +1,9 @@
-import { Surface } from "@heroui/react";
 import {
+  Activity,
   Check,
   ChevronRight,
+  Clock3,
+  Coins,
   MessageSquareText,
   Sparkles,
   Wrench,
@@ -100,6 +102,7 @@ interface TimelineAgentItem {
   type: "agent";
   at: string;
   key: string;
+  runId: string;
   laneId: string;
   text: string;
 }
@@ -108,6 +111,7 @@ interface TimelineToolsItem {
   type: "tools";
   at: string;
   key: string;
+  runId: string;
   events: EventCardEvent[];
 }
 
@@ -120,6 +124,73 @@ interface TimelineCardItem {
 
 type TimelineItem =
   TimelineUserItem | TimelineAgentItem | TimelineToolsItem | TimelineCardItem;
+
+interface RunTelemetry {
+  durationMs: number | null;
+  inputTokens: number;
+  cacheReadTokens: number;
+  outputTokens: number;
+  totalTokens: number;
+}
+
+function finiteToken(value: unknown): number {
+  return typeof value === "number" && Number.isFinite(value) && value >= 0
+    ? value
+    : 0;
+}
+
+function telemetryForRun(
+  allEvents: EventCardEvent[],
+  runId: string,
+  startedAt: string,
+): RunTelemetry {
+  const runEvents = allEvents.filter((event) => event.runId === runId);
+  const usageEvent = runEvents
+    .filter((event) => event.kind === "usage_reported")
+    .at(-1);
+  const usage =
+    usageEvent?.payload.usage &&
+    typeof usageEvent.payload.usage === "object" &&
+    !Array.isArray(usageEvent.payload.usage)
+      ? (usageEvent.payload.usage as Record<string, unknown>)
+      : null;
+  const inputTokens = finiteToken(usage?.input_tokens);
+  const cacheReadTokens = finiteToken(usage?.cache_read_input_tokens);
+  const outputTokens = finiteToken(usage?.output_tokens);
+  const terminal = runEvents
+    .filter((event) =>
+      ["run_completed", "run_failed", "run_cancelled"].includes(event.kind),
+    )
+    .at(-1);
+  const start = Date.parse(startedAt);
+  const end = terminal?.occurredAt ? Date.parse(terminal.occurredAt) : NaN;
+  const durationMs =
+    Number.isFinite(start) && Number.isFinite(end) && end >= start
+      ? end - start
+      : null;
+  return {
+    durationMs,
+    inputTokens,
+    cacheReadTokens,
+    outputTokens,
+    totalTokens: inputTokens + cacheReadTokens + outputTokens,
+  };
+}
+
+function formatDuration(durationMs: number): string {
+  const seconds = Math.max(0, Math.round(durationMs / 1_000));
+  if (seconds < 60) return `${seconds}s`;
+  const minutes = Math.floor(seconds / 60);
+  if (minutes < 60) return `${minutes}m ${seconds % 60}s`;
+  return `${Math.floor(minutes / 60)}h ${minutes % 60}m`;
+}
+
+function formatTokens(tokens: number): string {
+  if (tokens < 1_000) return String(tokens);
+  if (tokens < 1_000_000)
+    return `${(tokens / 1_000).toFixed(tokens < 10_000 ? 1 : 0)}k`;
+  return `${(tokens / 1_000_000).toFixed(tokens < 10_000_000 ? 1 : 0)} mi`;
+}
 
 // Claude and Codex summarise a burst of tools in plain language ("Criado um
 // arquivo, executado 2 comandos") rather than listing tool names.
@@ -160,9 +231,21 @@ function toolGroupLabel(events: EventCardEvent[]): string {
   return running ? `${sentence}…` : sentence;
 }
 
-function ToolGroup({ events }: { events: EventCardEvent[] }) {
+function ToolGroup({
+  events,
+  telemetry,
+}: {
+  events: EventCardEvent[];
+  telemetry: RunTelemetry | null;
+}) {
   const [open, setOpen] = useState(false);
   const running = events.some((event) => event.kind === "tool_call_started");
+  const actionCount = events.length;
+  const summary = telemetry?.durationMs
+    ? `Trabalhou por ${formatDuration(telemetry.durationMs)} · ${actionCount} ${actionCount === 1 ? "ação" : "ações"}`
+    : running
+      ? `${actionCount} ${actionCount === 1 ? "ação em andamento" : "ações em andamento"}`
+      : `${actionCount} ${actionCount === 1 ? "ação realizada" : "ações realizadas"}`;
   return (
     <div className="chat-toolgroup" data-open={open || undefined}>
       <button
@@ -173,7 +256,10 @@ function ToolGroup({ events }: { events: EventCardEvent[] }) {
         type="button"
       >
         <Wrench aria-hidden="true" size={12} />
-        {toolGroupLabel(events)}
+        <span className="chat-toolgroup__copy">
+          <strong>{summary}</strong>
+          <span>{toolGroupLabel(events)}</span>
+        </span>
         <ChevronRight
           aria-hidden="true"
           className="chat-toolgroup__chevron"
@@ -183,10 +269,13 @@ function ToolGroup({ events }: { events: EventCardEvent[] }) {
       {open && (
         <div className="chat-toolgroup__items">
           {events.map((event, index) => (
-            <EventCardRegistry
-              event={event}
+            <div
+              className="chat-toolgroup__item"
               key={event.id ?? `${event.kind}-${index}`}
-            />
+            >
+              <strong>{toolGroupLabel([event])}</strong>
+              <EventCardRegistry event={event} />
+            </div>
           ))}
         </div>
       )}
@@ -207,6 +296,8 @@ function eventForCard(raw: unknown): EventCardEvent {
       typeof record.kind === "string" ? record.kind : "invalid_renderer_event",
     occurredAt:
       typeof record.occurredAt === "string" ? record.occurredAt : undefined,
+    laneId: typeof record.laneId === "string" ? record.laneId : undefined,
+    runId: typeof record.runId === "string" ? record.runId : undefined,
     payload:
       record.payload &&
       typeof record.payload === "object" &&
@@ -229,15 +320,14 @@ export function Conversation({
 }) {
   const sentMessages = useWorkbenchStore((state) => state.sentMessages);
   const streams = useWorkbenchStore((state) => state.streams);
-  const [events, setEvents] = useState<EventCardEvent[]>(() =>
-    initialEvents.filter(isVisibleEvent),
-  );
+  // Keep lifecycle and usage events internally. They are not conversation
+  // cards, but they are the source of truth for elapsed time and token usage.
+  const [events, setEvents] = useState<EventCardEvent[]>(() => initialEvents);
 
   useEffect(() => {
     if (!window.okami?.onEvent) return;
     return window.okami.onEvent((raw) => {
       const event = eventForCard(raw);
-      if (!isVisibleEvent(event)) return;
       setEvents((current) => {
         if (event.id && current.some((item) => item.id === event.id)) {
           return current;
@@ -263,13 +353,22 @@ export function Conversation({
       type: "agent",
       at: entry.at,
       key,
+      runId: key.split(":", 1)[0] ?? key,
       laneId: entry.laneId,
       text: entry.text,
     });
   }
-  const visibleEvents = mergeToolLifecycle(events);
+  const visibleEvents = mergeToolLifecycle(events.filter(isVisibleEvent));
+  const toolEventsByRun = new Map<string, EventCardEvent[]>();
   for (const event of visibleEvents) {
     const key = event.id ?? `${event.kind}-${event.occurredAt}`;
+    if (TOOL_EVENT_KINDS.has(event.kind)) {
+      const runId = event.runId ?? "unscoped";
+      const group = toolEventsByRun.get(runId) ?? [];
+      group.push(event);
+      toolEventsByRun.set(runId, group);
+      continue;
+    }
     items.push({
       type: "card",
       at: event.occurredAt ?? "",
@@ -277,25 +376,18 @@ export function Conversation({
       event,
     });
   }
-  items.sort((left, right) => left.at.localeCompare(right.at));
-  const timeline: TimelineItem[] = [];
-  for (const item of items) {
-    const last = timeline.at(-1);
-    if (item.type === "card" && TOOL_EVENT_KINDS.has(item.event.kind)) {
-      if (last?.type === "tools") {
-        last.events.push(item.event);
-        continue;
-      }
-      timeline.push({
-        type: "tools",
-        at: item.at,
-        key: item.key,
-        events: [item.event],
-      });
-      continue;
-    }
-    timeline.push(item);
+  for (const [runId, runEvents] of toolEventsByRun) {
+    const first = runEvents[0];
+    items.push({
+      type: "tools",
+      at: first?.occurredAt ?? "",
+      key: `tools:${runId}`,
+      runId,
+      events: runEvents,
+    });
   }
+  items.sort((left, right) => left.at.localeCompare(right.at));
+  const timeline = items;
 
   // Follow the conversation: stick to the bottom while the user is there,
   // release when they scroll up to read, re-stick when they return.
@@ -347,6 +439,33 @@ export function Conversation({
     : lastAgent?.type === "agent" && lastAgent.text.length > 0
       ? "Escrevendo resposta"
       : "Pensando";
+  const runStartById = new Map<string, string>();
+  const lastAgentKeyByRun = new Map<string, string>();
+  for (const item of items) {
+    if (item.type !== "agent") continue;
+    if (!runStartById.has(item.runId)) {
+      runStartById.set(item.runId, item.at);
+    }
+    lastAgentKeyByRun.set(item.runId, item.key);
+  }
+  const completedRuns = new Map(
+    [...runStartById.entries()].map(([runId, startedAt]) => [
+      runId,
+      telemetryForRun(events, runId, startedAt),
+    ]),
+  );
+  const observedTokens = [...completedRuns.values()].reduce(
+    (sum, value) => sum + value.totalTokens,
+    0,
+  );
+  const sessionStart = items.at(0)?.at ? Date.parse(items[0].at) : NaN;
+  const sessionEnd = items.at(-1)?.at ? Date.parse(items.at(-1)!.at) : NaN;
+  const sessionDuration =
+    Number.isFinite(sessionStart) &&
+    Number.isFinite(sessionEnd) &&
+    sessionEnd >= sessionStart
+      ? sessionEnd - sessionStart
+      : null;
 
   return (
     <div aria-label="Conversa da tarefa" className="conversation-scroll">
@@ -363,6 +482,25 @@ export function Conversation({
         </div>
       ) : (
         <div className="conversation-thread" aria-live="polite">
+          <div className="conversation-session" aria-label="Resumo da conversa">
+            <span>
+              <Activity aria-hidden="true" size={12} />
+              {completedRuns.size}{" "}
+              {completedRuns.size === 1 ? "turno" : "turnos"}
+            </span>
+            {sessionDuration !== null && sessionDuration > 0 && (
+              <span>
+                <Clock3 aria-hidden="true" size={12} />
+                {formatDuration(sessionDuration)} de atividade
+              </span>
+            )}
+            {observedTokens > 0 && (
+              <span title="Entrada nova + cache lido + saída reportados pelos runtimes">
+                <Coins aria-hidden="true" size={12} />
+                {formatTokens(observedTokens)} tokens observados
+              </span>
+            )}
+          </div>
           {timeline.map((item) => {
             if (item.type === "user") {
               return (
@@ -370,9 +508,9 @@ export function Conversation({
                   className="message-group message-group--user"
                   key={item.key}
                 >
-                  <Surface className="message-bubble" variant="secondary">
+                  <div className="message-bubble message-bubble--user">
                     <MessageMarkdown>{item.body}</MessageMarkdown>
-                  </Surface>
+                  </div>
                 </article>
               );
             }
@@ -382,6 +520,15 @@ export function Conversation({
               const isLiveTail = isRunning && item.key === lastAgent?.key;
               const provider = owner ? laneDisplayName(owner) : "Agente";
               const model = owner ? shortModel(owner.model) : "Modelo ativo";
+              const telemetry = completedRuns.get(item.runId) ?? {
+                durationMs: null,
+                inputTokens: 0,
+                cacheReadTokens: 0,
+                outputTokens: 0,
+                totalTokens: 0,
+              };
+              const showsRunTelemetry =
+                lastAgentKeyByRun.get(item.runId) === item.key;
               return (
                 <article
                   className="message-group message-group--agent"
@@ -409,10 +556,27 @@ export function Conversation({
                       {isLiveTail ? "Respondendo" : "Concluído"}
                     </span>
                   </header>
-                  <Surface
-                    className="message-bubble message-bubble--agent"
-                    variant="secondary"
-                  >
+                  {showsRunTelemetry &&
+                    (telemetry.durationMs !== null ||
+                      telemetry.totalTokens > 0) && (
+                      <div className="message-turn-meta">
+                        {telemetry.durationMs !== null && (
+                          <span>
+                            <Clock3 aria-hidden="true" size={11} />
+                            Trabalhou por {formatDuration(telemetry.durationMs)}
+                          </span>
+                        )}
+                        {telemetry.totalTokens > 0 && (
+                          <span
+                            title={`Entrada ${formatTokens(telemetry.inputTokens)} · cache ${formatTokens(telemetry.cacheReadTokens)} · saída ${formatTokens(telemetry.outputTokens)}`}
+                          >
+                            <Coins aria-hidden="true" size={11} />
+                            {formatTokens(telemetry.totalTokens)} tokens
+                          </span>
+                        )}
+                      </div>
+                    )}
+                  <div className="message-bubble message-bubble--agent">
                     <span aria-hidden="true" className="message-accent-rail" />
                     <div className="message-bubble__content">
                       <MessageMarkdown>{item.text}</MessageMarkdown>
@@ -420,14 +584,17 @@ export function Conversation({
                         <span aria-hidden="true" className="stream-caret" />
                       )}
                     </div>
-                  </Surface>
+                  </div>
                 </article>
               );
             }
             if (item.type === "tools") {
               return (
                 <article className="conversation-event" key={item.key}>
-                  <ToolGroup events={item.events} />
+                  <ToolGroup
+                    events={item.events}
+                    telemetry={completedRuns.get(item.runId) ?? null}
+                  />
                 </article>
               );
             }

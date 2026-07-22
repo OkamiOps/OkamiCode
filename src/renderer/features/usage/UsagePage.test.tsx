@@ -132,7 +132,7 @@ describe("UsagePage", () => {
   it("shows source and freshness beside values and never fabricates unavailable quota", () => {
     renderUsageFixture();
 
-    expect(screen.getByText("72% restante")).toBeVisible();
+    expect(screen.getAllByText("72% restante").length).toBeGreaterThan(0);
     expect(
       screen.getAllByText(/official_structured · live/i).length,
     ).toBeGreaterThan(0);
@@ -156,7 +156,7 @@ describe("UsagePage", () => {
     );
     expect(screen.getByText("1.600")).toBeVisible();
     expect(screen.getByText("1 sessão")).toBeVisible();
-    expect(screen.getByText("claude-sonnet-4-6")).toBeVisible();
+    expect(screen.getAllByText("claude-sonnet-4-6").length).toBeGreaterThan(0);
   });
 
   it("renders the annual calendar heatmap through Recharts", () => {
@@ -165,5 +165,22 @@ describe("UsagePage", () => {
     expect(
       screen.getByRole("img", { name: "Heatmap de atividade local" }),
     ).toBeVisible();
+  });
+
+  it("shows all providers and labels unavailable quota honestly", async () => {
+    renderUsageFixture();
+
+    expect(screen.getAllByText("Antigravity").length).toBeGreaterThan(0);
+    expect(screen.getAllByText("MiMo").length).toBeGreaterThan(0);
+    expect(screen.getAllByText("MiniMax").length).toBeGreaterThan(0);
+    expect(screen.getAllByText("Sem leitura").length).toBeGreaterThan(0);
+    expect(screen.getAllByText("72% restante").length).toBeGreaterThan(0);
+
+    await userEvent.click(
+      screen.getByRole("button", { name: /Claude.*Sem leitura/i }),
+    );
+    expect(
+      screen.getByRole("button", { name: /Claude.*Sem leitura/i }),
+    ).toHaveAttribute("aria-pressed", "true");
   });
 });

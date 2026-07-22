@@ -105,6 +105,44 @@ describe("QuickChatService", () => {
     expect(history.messages[0]).not.toHaveProperty("chatId");
   });
 
+  it("preserves the provider and model that produced a completed answer", () => {
+    const h = createQuickChatHarness();
+    const chat = h.create("agy");
+    const runId = randomUUID();
+    h.fx.db
+      .prepare(
+        `INSERT INTO runs (id, task_id, lane_id, status, started_at, finished_at, error_json)
+         VALUES (?, ?, ?, 'completed', ?, ?, NULL)`,
+      )
+      .run(
+        runId,
+        chat.taskId,
+        chat.laneId,
+        "2026-07-18T12:00:00.000Z",
+        "2026-07-18T12:00:01.000Z",
+      );
+    h.fx.events.append({
+      schemaVersion: 1,
+      id: randomUUID(),
+      taskId: chat.taskId,
+      laneId: chat.laneId,
+      runId,
+      sequence: 1,
+      occurredAt: "2026-07-18T12:00:01.000Z",
+      kind: "message_completed",
+      nativeEventId: null,
+      payload: { text: "Resposta do Gemini" },
+    });
+
+    expect(h.service.history(chat.id).messages).toContainEqual(
+      expect.objectContaining({
+        role: "assistant",
+        providerLabel: "Antigravity",
+        modelLabel: "gemini-3.5-flash",
+      }),
+    );
+  });
+
   it("switches a quick chat to Gemini without attaching a workspace", () => {
     const h = createQuickChatHarness();
     const chat = h.create("codex");

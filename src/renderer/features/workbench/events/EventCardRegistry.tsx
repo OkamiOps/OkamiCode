@@ -14,6 +14,8 @@ export interface EventCardEvent {
   id?: string;
   kind: string;
   occurredAt?: string;
+  laneId?: string;
+  runId?: string;
   payload: Record<string, unknown>;
 }
 

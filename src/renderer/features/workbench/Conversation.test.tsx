@@ -1,7 +1,9 @@
-import { render, screen } from "@testing-library/react";
+import { fireEvent, render, screen } from "@testing-library/react";
 import { afterEach, describe, expect, it } from "vitest";
 import type { WorkbenchLane } from "./api";
 import { Conversation } from "./Conversation";
+import { MessageMarkdown } from "./MessageMarkdown";
+import type { EventCardEvent } from "./events/EventCardRegistry";
 import { createWorkbenchStore, WorkbenchStoreContext } from "./store";
 
 const agyLane = {
@@ -15,9 +17,23 @@ afterEach(() => {
   document.body.innerHTML = "";
 });
 
-function renderConversation(isRunning = false) {
+function renderConversation(
+  isRunning = false,
+  initialEvents: EventCardEvent[] = [],
+  userMessage?: string,
+) {
   const store = createWorkbenchStore();
   store.setState({
+    sentMessages: userMessage
+      ? [
+          {
+            id: "user-1",
+            laneId: agyLane.laneId,
+            at: "2026-07-22T16:56:58.000Z",
+            body: userMessage,
+          },
+        ]
+      : [],
     streams: {
       "run-1:assistant-0": {
         laneId: agyLane.laneId,
@@ -28,7 +44,12 @@ function renderConversation(isRunning = false) {
   });
   return render(
     <WorkbenchStoreContext.Provider value={store}>
-      <Conversation isRunning={isRunning} lane={agyLane} lanes={[agyLane]} />
+      <Conversation
+        initialEvents={initialEvents}
+        isRunning={isRunning}
+        lane={agyLane}
+        lanes={[agyLane]}
+      />
     </WorkbenchStoreContext.Provider>,
   );
 }
@@ -42,6 +63,15 @@ describe("Conversation", () => {
     expect(screen.getByText("CODE_AGY_LIVE_OK")).toBeVisible();
   });
 
+  it("renders a user turn in a stable native bubble without splitting short words", () => {
+    const { container } = renderConversation(false, [], "continue");
+
+    const bubble = container.querySelector(".message-bubble--user");
+    expect(bubble).toBeVisible();
+    expect(bubble).toHaveTextContent("continue");
+    expect(bubble?.tagName).toBe("DIV");
+  });
+
   it("shows an animated, provider-specific working state", () => {
     renderConversation(true);
 
@@ -51,5 +81,112 @@ describe("Conversation", () => {
     expect(screen.getByRole("status")).toHaveTextContent(
       "Gemini 3.6 Flash Low",
     );
+  });
+
+  it("shows run duration and observed token usage beside the response", () => {
+    renderConversation(false, [
+      {
+        id: "usage-1",
+        kind: "usage_reported",
+        laneId: agyLane.laneId,
+        runId: "run-1",
+        occurredAt: "2026-07-22T16:57:20.000Z",
+        payload: {
+          usage: {
+            input_tokens: 120,
+            cache_read_input_tokens: 1_000,
+            output_tokens: 80,
+          },
+        },
+      },
+      {
+        id: "completed-1",
+        kind: "run_completed",
+        laneId: agyLane.laneId,
+        runId: "run-1",
+        occurredAt: "2026-07-22T16:57:41.000Z",
+        payload: {},
+      },
+    ]);
+
+    expect(screen.getByText("Trabalhou por 42s")).toBeVisible();
+    expect(screen.getByText("1.2k tokens")).toBeVisible();
+    expect(screen.getByText("1 turno")).toBeVisible();
+  });
+
+  it("reduces completed tool activity to one expandable run summary", () => {
+    renderConversation(false, [
+      {
+        id: "tool-1-start",
+        kind: "tool_call_started",
+        laneId: agyLane.laneId,
+        runId: "run-1",
+        occurredAt: "2026-07-22T16:57:01.000Z",
+        payload: { toolName: "Read", toolUseId: "tool-1" },
+      },
+      {
+        id: "approval-1",
+        kind: "approval_requested",
+        laneId: agyLane.laneId,
+        runId: "run-1",
+        occurredAt: "2026-07-22T16:57:02.000Z",
+        payload: {},
+      },
+      {
+        id: "tool-1-complete",
+        kind: "tool_call_completed",
+        laneId: agyLane.laneId,
+        runId: "run-1",
+        occurredAt: "2026-07-22T16:57:03.000Z",
+        payload: { toolName: "Read", toolUseId: "tool-1" },
+      },
+      {
+        id: "tool-2-start",
+        kind: "tool_call_started",
+        laneId: agyLane.laneId,
+        runId: "run-1",
+        occurredAt: "2026-07-22T16:57:04.000Z",
+        payload: { toolName: "Bash", toolUseId: "tool-2" },
+      },
+      {
+        id: "tool-2-complete",
+        kind: "tool_call_completed",
+        laneId: agyLane.laneId,
+        runId: "run-1",
+        occurredAt: "2026-07-22T16:57:05.000Z",
+        payload: { toolName: "Bash", toolUseId: "tool-2" },
+      },
+      {
+        id: "completed-1",
+        kind: "run_completed",
+        laneId: agyLane.laneId,
+        runId: "run-1",
+        occurredAt: "2026-07-22T16:57:09.000Z",
+        payload: {},
+      },
+    ]);
+
+    const summary = screen.getByRole("button", {
+      name: /trabalhou por 10s.*2 ações/i,
+    });
+    expect(summary).toHaveAttribute("aria-expanded", "false");
+    expect(screen.queryByText("Lido um arquivo")).not.toBeInTheDocument();
+
+    fireEvent.click(summary);
+    expect(screen.getByText("Lido um arquivo")).toBeVisible();
+    expect(screen.getByText("Executado um comando")).toBeVisible();
+  });
+
+  it("treats a soft newline as prose instead of forcing a visual break", () => {
+    const { container } = render(
+      <MessageMarkdown>
+        {"Uma frase que\ncontinua normalmente."}
+      </MessageMarkdown>,
+    );
+
+    expect(container.querySelector("br")).not.toBeInTheDocument();
+    expect(
+      screen.getByText(/uma frase que\s+continua normalmente/i),
+    ).toBeVisible();
   });
 });

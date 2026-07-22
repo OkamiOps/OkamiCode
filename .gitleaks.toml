@@ -1,0 +1,13 @@
+[extend]
+useDefault = true
+
+[[allowlists]]
+description = "Deterministic UUID used as an idempotency-key test fixture"
+regexes = [
+  '''e30fd1c7-60de-4338-9980-a3c9c2f2fbe2''',
+  '''f1db4f0c-a4ff-4fd2-9966-7fa6315d160d''',
+]
+
+[[allowlists]]
+description = "Synthetic credential-shaped values used to verify audit-log redaction"
+paths = ['''(^|/)src-tauri/tests/audit_redaction\.rs$''']

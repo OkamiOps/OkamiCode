@@ -26,10 +26,18 @@ import {
   Send,
   ShieldCheck,
   Sparkles,
+  LoaderCircle,
   Trash2,
   X,
 } from "lucide-react";
-import { useEffect, useMemo, useRef, useState, type FormEvent } from "react";
+import {
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+  type FormEvent,
+  type KeyboardEvent,
+} from "react";
 import { useNavigate, useSearchParams } from "react-router-dom";
 import { useStore } from "zustand";
 import { createStore, type StoreApi } from "zustand/vanilla";
@@ -51,6 +59,8 @@ export interface QuickChatMessage {
   role: "user" | "assistant";
   body: string;
   createdAt?: string;
+  providerLabel?: string;
+  modelLabel?: string;
 }
 
 type QuickChatCreateResult = IpcResponse<"quickChat:create">;
@@ -118,7 +128,12 @@ interface QuickChatUiState {
   removeChip: (ref: string) => void;
   setInput: (input: string) => void;
   toggleMessage: (id: string) => void;
-  upsertAssistant: (id: string, text: string, replace?: boolean) => void;
+  upsertAssistant: (
+    id: string,
+    text: string,
+    replace?: boolean,
+    attribution?: { providerLabel: string; modelLabel: string },
+  ) => void;
 }
 
 const defaultQuickChatApi: QuickChatApi = {
@@ -207,6 +222,14 @@ function QuickChatContent({
   const [runtime, setRuntime] = useState<QuickChatRuntime>(DEFAULT_RUNTIME);
   const [model, setModel] = useState(DEFAULT_MODEL);
   const [effort, setEffort] = useState<string | null>(DEFAULT_EFFORT);
+  const [activeRun, setActiveRun] = useState<{
+    id: string;
+    providerLabel: string;
+    modelLabel: string;
+  } | null>(null);
+  const activeRunRef = useRef<typeof activeRun>(null);
+  const [runtimeError, setRuntimeError] = useState<Error | null>(null);
+  const messagesEndRef = useRef<HTMLDivElement>(null);
   const chatsQuery = useQuery({
     queryKey: ["quick-chat", "list"],
     queryFn: api.list,
@@ -258,6 +281,7 @@ function QuickChatContent({
   });
   const send = useMutation({
     mutationFn: api.send,
+    onMutate: () => setRuntimeError(null),
     onSuccess: (result, request) => {
       store.getState().addMessage({
         id: result.messageId,
@@ -265,6 +289,14 @@ function QuickChatContent({
         body: request.input,
       });
       store.getState().setInput("");
+      const running = {
+        id: result.runId,
+        providerLabel:
+          selectedDefinition?.providerLabel ?? providerDisplay(activeRuntime),
+        modelLabel: selectedDefinition?.label ?? modelDisplay(activeModel),
+      };
+      activeRunRef.current = running;
+      setActiveRun(running);
       void queryClient.invalidateQueries({ queryKey: ["quick-chat", "list"] });
     },
   });
@@ -284,7 +316,14 @@ function QuickChatContent({
       if (event.kind === "message_delta") {
         const delta = event.payload.delta;
         if (typeof delta === "string") {
-          store.getState().upsertAssistant(`assistant:${event.runId}`, delta);
+          store
+            .getState()
+            .upsertAssistant(
+              `assistant:${event.runId}`,
+              delta,
+              false,
+              activeRunRef.current ?? undefined,
+            );
         }
       }
       if (event.kind === "message_completed") {
@@ -292,7 +331,12 @@ function QuickChatContent({
         if (typeof text === "string" && text.trim()) {
           store
             .getState()
-            .upsertAssistant(`assistant:${event.runId}`, text, true);
+            .upsertAssistant(
+              `assistant:${event.runId}`,
+              text,
+              true,
+              activeRunRef.current ?? undefined,
+            );
         }
         void queryClient.invalidateQueries({
           queryKey: ["quick-chat", "history", chatId],
@@ -300,6 +344,30 @@ function QuickChatContent({
         void queryClient.invalidateQueries({
           queryKey: ["quick-chat", "list"],
         });
+      }
+      if (
+        event.runId === activeRunRef.current?.id &&
+        [
+          "message_completed",
+          "run_completed",
+          "run_failed",
+          "run_cancelled",
+        ].includes(event.kind)
+      ) {
+        if (event.kind === "run_failed" || event.kind === "run_cancelled") {
+          const detail = event.payload.message;
+          setRuntimeError(
+            new Error(
+              typeof detail === "string" && detail.trim()
+                ? detail
+                : event.kind === "run_cancelled"
+                  ? "A resposta foi interrompida."
+                  : "O provider encerrou a execução sem resposta.",
+            ),
+          );
+        }
+        activeRunRef.current = null;
+        setActiveRun(null);
       }
     });
   }, [
@@ -310,6 +378,13 @@ function QuickChatContent({
     queryClient,
     store,
   ]);
+
+  useEffect(() => {
+    const target = messagesEndRef.current;
+    if (target && typeof target.scrollIntoView === "function") {
+      target.scrollIntoView({ block: "end", behavior: "smooth" });
+    }
+  }, [activeRun, messages]);
 
   const chat = historyQuery.data ?? createChat.data;
   const modelOptions = useMemo(
@@ -352,7 +427,7 @@ function QuickChatContent({
   async function handleSubmit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
     const trimmed = input.trim();
-    if (!trimmed || createChat.isPending || send.isPending) return;
+    if (!trimmed || createChat.isPending || send.isPending || activeRun) return;
     const targetChat =
       chat ??
       (await createChat.mutateAsync({
@@ -363,12 +438,23 @@ function QuickChatContent({
       chatId: targetChat.id,
       input: trimmed,
       contextRefs: chips.map((chip) => chip.ref),
-      ...(activeRuntime === "codex" && effort ? { effort } : {}),
+      ...(effort ? { effort } : {}),
     });
     if (!chat) {
       setSearchParams({ chat: targetChat.id }, { replace: true });
       void queryClient.invalidateQueries({ queryKey: ["quick-chat", "list"] });
     }
+  }
+
+  function handleComposerKeyDown(event: KeyboardEvent<HTMLTextAreaElement>) {
+    if (
+      event.key !== "Enter" ||
+      event.shiftKey ||
+      event.nativeEvent.isComposing
+    )
+      return;
+    event.preventDefault();
+    event.currentTarget.form?.requestSubmit();
   }
 
   async function handlePromote() {
@@ -394,6 +480,7 @@ function QuickChatContent({
     deleteChat.error,
     send.error,
     promote.error,
+    runtimeError,
   );
   const selectedCount = Object.keys(selectedMessageIds).length;
   const term = filter.trim().toLowerCase();
@@ -427,21 +514,37 @@ function QuickChatContent({
         colors={conversationColors}
         preferences={historyPreferences}
         onFilter={setFilter}
-        onNew={() => setSearchParams({ new: crypto.randomUUID() })}
-        onSelect={(id) => setSearchParams({ chat: id })}
+        onNew={() => {
+          createChat.reset();
+          activeRunRef.current = null;
+          setActiveRun(null);
+          store.getState().hydrate([]);
+          setSearchParams({ new: crypto.randomUUID() });
+        }}
+        onSelect={(id) => {
+          createChat.reset();
+          activeRunRef.current = null;
+          setActiveRun(null);
+          setSearchParams({ chat: id });
+        }}
         onManage={setEditingChat}
         onSort={(sort) =>
           saveHistoryPreferences({ ...historyPreferences, sort })
         }
       />
 
-      <div className="quick-chat-main">
+      <div className="quick-chat-main" data-provider={activeRuntime}>
         <header className="quick-chat-header">
-          <div>
-            <p className="pane-kicker">Conversa independente</p>
-            <h1 id="quick-chat-heading">
-              {historyQuery.data?.title ?? "Chat rápido"}
-            </h1>
+          <div className="quick-chat-header__identity">
+            <span className="quick-chat-header__mark" aria-hidden="true">
+              <MessageSquareText size={16} />
+            </span>
+            <div>
+              <p className="pane-kicker">Chat livre</p>
+              <h1 id="quick-chat-heading">
+                {historyQuery.data?.title ?? "Chat rápido"}
+              </h1>
+            </div>
           </div>
           <div className="quick-chat-header__badges">
             <span className="quick-chat-runtime-badge">
@@ -458,14 +561,47 @@ function QuickChatContent({
         <div className="quick-chat-messages">
           {messages.length === 0 ? (
             <div className="quick-chat-empty">
-              <span>
-                <MessageSquareText aria-hidden="true" size={20} />
-              </span>
-              <h2>Pode perguntar direto</h2>
-              <p>
-                Este chat não carrega pasta, projeto ou memória automaticamente.
-                Contexto é opcional — digite normalmente para começar.
-              </p>
+              <div className="quick-chat-empty__hero">
+                <span className="quick-chat-empty__mark">
+                  <Sparkles aria-hidden="true" size={22} />
+                </span>
+                <p className="quick-chat-empty__kicker">Conversa sem projeto</p>
+                <h2>O que você quer resolver agora?</h2>
+                <p>
+                  Pergunte, pesquise ou escreva sem carregar uma pasta inteira.
+                  Contexto e memória só entram quando você escolher.
+                </p>
+                <div className="quick-chat-empty__privacy">
+                  <ShieldCheck aria-hidden="true" size={13} />
+                  Sessão limpa · nenhuma ação automática
+                </div>
+              </div>
+              <div
+                className="quick-chat-empty__route"
+                aria-label="Rota atual do chat"
+              >
+                <span>
+                  <small>Provider</small>
+                  <strong>
+                    {selectedDefinition?.providerLabel ??
+                      providerDisplay(activeRuntime)}
+                  </strong>
+                </span>
+                <span>
+                  <small>Modelo</small>
+                  <strong>
+                    {selectedDefinition?.label ?? modelDisplay(activeModel)}
+                  </strong>
+                </span>
+                <span>
+                  <small>Contexto</small>
+                  <strong>
+                    {chips.length === 0
+                      ? "Sob demanda"
+                      : `${chips.length} fontes`}
+                  </strong>
+                </span>
+              </div>
               <div className="quick-chat-empty__actions">
                 {quickChatStarters.map(({ icon: Icon, label, prompt }) => (
                   <button
@@ -508,24 +644,83 @@ function QuickChatContent({
                       </Checkbox.Control>
                     </Checkbox.Content>
                   </Checkbox>
-                  <div className="quick-chat-message__body">
-                    <MessageMarkdown>{message.body}</MessageMarkdown>
+                  <div className="quick-chat-message__content">
+                    <header className="quick-chat-message__meta">
+                      <span
+                        className="quick-chat-message__avatar"
+                        aria-hidden="true"
+                      >
+                        {message.role === "assistant" ? (
+                          <Sparkles size={13} />
+                        ) : (
+                          "M"
+                        )}
+                      </span>
+                      <span>
+                        <strong>
+                          {message.role === "assistant"
+                            ? (message.providerLabel ??
+                              selectedDefinition?.providerLabel ??
+                              providerDisplay(activeRuntime))
+                            : "Você"}
+                        </strong>
+                        <small>
+                          {message.role === "assistant"
+                            ? message.modelLabel
+                              ? message.modelLabel
+                              : `Rota atual · ${selectedDefinition?.label ?? modelDisplay(activeModel)}`
+                            : formatMessageTime(message.createdAt)}
+                        </small>
+                      </span>
+                    </header>
+                    <div className="quick-chat-message__body">
+                      <MessageMarkdown>{message.body}</MessageMarkdown>
+                    </div>
                   </div>
                 </Surface>
               ))}
+              {activeRun && (
+                <div
+                  aria-label={`${activeRun.providerLabel} está respondendo`}
+                  aria-live="polite"
+                  className="quick-chat-running"
+                  role="status"
+                >
+                  <span className="quick-chat-running__mark">
+                    <LoaderCircle aria-hidden="true" size={15} />
+                  </span>
+                  <span>
+                    <strong>{activeRun.providerLabel}</strong>
+                    <small>{activeRun.modelLabel} está respondendo</small>
+                  </span>
+                  <i aria-hidden="true" />
+                  <i aria-hidden="true" />
+                  <i aria-hidden="true" />
+                </div>
+              )}
+              <div ref={messagesEndRef} />
             </div>
           )}
         </div>
 
         <form
           className="quick-chat-composer"
+          data-provider={activeRuntime}
           onSubmit={(event) => void handleSubmit(event)}
         >
           <div className="quick-chat-composer__context">
-            <ContextChips
-              chips={chips}
-              onRemove={(ref) => store.getState().removeChip(ref)}
-            />
+            <div className="quick-chat-context-summary">
+              <span>
+                <Paperclip aria-hidden="true" size={12} />
+                {chips.length === 0
+                  ? "Sem contexto anexado"
+                  : `${chips.length} ${chips.length === 1 ? "fonte" : "fontes"}`}
+              </span>
+              <ContextChips
+                chips={chips}
+                onRemove={(ref) => store.getState().removeChip(ref)}
+              />
+            </div>
             <div>
               <QuickChatAddMenu
                 onAttach={async () => {
@@ -556,13 +751,26 @@ function QuickChatContent({
             </div>
           </div>
           <div className="quick-chat-composer__box">
+            <div className="quick-chat-composer__lead">
+              <Sparkles aria-hidden="true" size={12} />
+              <span>
+                {activeRun
+                  ? `${activeRun.providerLabel} está trabalhando`
+                  : "Nova mensagem"}
+              </span>
+            </div>
             <textarea
               aria-label="Mensagem rápida"
-              disabled={send.isPending}
+              disabled={send.isPending || Boolean(activeRun)}
               onChange={(event) =>
                 store.getState().setInput(event.target.value)
               }
-              placeholder="Pergunte qualquer coisa…"
+              placeholder={
+                activeRun
+                  ? "Aguarde a resposta atual…"
+                  : "Pergunte qualquer coisa…"
+              }
+              onKeyDown={handleComposerKeyDown}
               rows={2}
               value={input}
             />
@@ -634,7 +842,10 @@ function QuickChatContent({
                 aria-label="Enviar"
                 className="quick-chat-send"
                 disabled={
-                  !input.trim() || createChat.isPending || send.isPending
+                  !input.trim() ||
+                  createChat.isPending ||
+                  send.isPending ||
+                  Boolean(activeRun)
                 }
                 type="submit"
               >
@@ -649,6 +860,9 @@ function QuickChatContent({
                 : "Enviando sua mensagem…"}
             </p>
           )}
+          <p className="quick-chat-composer__hint">
+            Enter envia · Shift + Enter cria uma nova linha
+          </p>
           {error && (
             <div className="quick-chat-error" role="alert">
               <span>{error.message}</span>
@@ -725,8 +939,13 @@ function QuickChatHistory({
   return (
     <aside aria-label="Histórico de chats" className="quick-chat-history">
       <header>
-        <span className="pane-kicker">Chat</span>
-        <h2>Conversas</h2>
+        <span className="quick-chat-history__mark" aria-hidden="true">
+          <MessageSquareText size={15} />
+        </span>
+        <span>
+          <span className="pane-kicker">Chat livre</span>
+          <h2>Conversas</h2>
+        </span>
       </header>
       <button className="quick-chat-history__new" onClick={onNew} type="button">
         <Plus aria-hidden="true" size={15} /> Nova conversa
@@ -1010,6 +1229,15 @@ function ConversationDialog({
   const [selectedColor, setSelectedColor] = useState(color);
   const [isPinned, setIsPinned] = useState(pinned);
   const [confirmDelete, setConfirmDelete] = useState(false);
+  const titleInputRef = useRef<HTMLInputElement>(null);
+  useEffect(() => titleInputRef.current?.focus(), []);
+  useEffect(() => {
+    const closeOnEscape = (event: globalThis.KeyboardEvent) => {
+      if (event.key === "Escape") onClose();
+    };
+    window.addEventListener("keydown", closeOnEscape);
+    return () => window.removeEventListener("keydown", closeOnEscape);
+  }, [onClose]);
   return (
     <div className="ok-modal-backdrop" role="presentation">
       <section
@@ -1059,6 +1287,12 @@ function ConversationDialog({
               <input
                 maxLength={240}
                 onChange={(event) => setTitle(event.target.value)}
+                onKeyDown={(event) => {
+                  if (event.key === "Enter" && title.trim() && !renaming) {
+                    void onSave(title, selectedColor, isPinned);
+                  }
+                }}
+                ref={titleInputRef}
                 value={title}
               />
             </label>
@@ -1175,13 +1409,15 @@ function createQuickChatStore(
         else selectedMessageIds[id] = true;
         return { selectedMessageIds };
       }),
-    upsertAssistant: (id, text, replace = false) =>
+    upsertAssistant: (id, text, replace = false, attribution) =>
       set((state) => {
         const current = state.messages.find((message) => message.id === id);
         const next = {
           id,
           role: "assistant" as const,
           body: replace ? text : `${current?.body ?? ""}${text}`,
+          providerLabel: attribution?.providerLabel ?? current?.providerLabel,
+          modelLabel: attribution?.modelLabel ?? current?.modelLabel,
         };
         return {
           messages: current
@@ -1198,3 +1434,29 @@ function firstError(...errors: unknown[]): Error | null {
   return errors.find((error): error is Error => error instanceof Error) ?? null;
 }
 type QuickChatRuntime = RuntimeKind;
+
+function providerDisplay(runtime: QuickChatRuntime): string {
+  return (
+    (
+      {
+        claude: "Claude",
+        codex: "ChatGPT",
+        cursor: "Cursor",
+        agy: "Antigravity",
+        grok: "Grok",
+        mimo: "MiMo Code",
+        minimax: "MiniMax",
+      } as Partial<Record<QuickChatRuntime, string>>
+    )[runtime] ?? runtime
+  );
+}
+
+function formatMessageTime(value?: string): string {
+  if (!value) return "Agora";
+  const parsed = new Date(value);
+  if (Number.isNaN(parsed.getTime())) return "";
+  return new Intl.DateTimeFormat("pt-BR", {
+    hour: "2-digit",
+    minute: "2-digit",
+  }).format(parsed);
+}

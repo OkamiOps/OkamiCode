@@ -1566,13 +1566,27 @@ describe("InboxPage", () => {
       screen.getByRole("radio", { name: /Delegar acompanhamento/ }),
     );
 
-    const laneSelect = await screen.findByRole("combobox", {
-      name: "Agente e workspace",
+    const providerSelect = await screen.findByRole("combobox", {
+      name: "Provider da tarefa",
     });
-    expect(laneSelect).toHaveTextContent("Claude Sonnet 4.5");
-    expect(laneSelect).toHaveTextContent("Anthropic Max");
-    expect(laneSelect).toHaveTextContent("Projetos/landing");
-    await userEvent.selectOptions(laneSelect, workspaceLane.laneId);
+    expect(providerSelect).toHaveTextContent("Anthropic Max");
+    await userEvent.selectOptions(
+      providerSelect,
+      `${workspaceLane.runtimeKind}:${workspaceLane.providerAccountLabel}`,
+    );
+    const modelSelect = screen.getByRole("combobox", {
+      name: "Modelo da tarefa",
+    });
+    expect(modelSelect).toHaveTextContent("Claude Sonnet 4.5");
+    await userEvent.selectOptions(modelSelect, workspaceLane.model);
+    const workspaceSelect = screen.getByRole("combobox", {
+      name: "Projeto da tarefa",
+    });
+    expect(workspaceSelect).toHaveTextContent("Projetos/landing");
+    await userEvent.selectOptions(
+      workspaceSelect,
+      workspaceLane.workspacePath ?? "",
+    );
     await userEvent.type(
       screen.getByLabelText("Instrução da tarefa"),
       "Revisar o pedido e preparar uma resposta para aprovação.",

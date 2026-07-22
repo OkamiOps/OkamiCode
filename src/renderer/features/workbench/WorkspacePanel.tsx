@@ -1,8 +1,16 @@
 import { useQuery } from "@tanstack/react-query";
+import { html as renderDiff } from "diff2html";
+import { ColorSchemeType } from "diff2html/lib/types";
+import "diff2html/bundles/css/diff2html.min.css";
 import {
+  Check,
   ChevronDown,
   ChevronRight,
+  Code2,
+  Copy,
+  Eye,
   FileCode2,
+  FileDiff,
   Folder,
   Globe,
   GripVertical,
@@ -17,14 +25,182 @@ import { workbenchClient } from "../../lib/ipc/client";
 import { MessageMarkdown } from "./MessageMarkdown";
 import { TerminalPane } from "./TerminalPane";
 
-export type WorkspacePanelMode = "files" | "browser" | "terminal" | "tasks";
+export type WorkspacePanelMode =
+  "changes" | "files" | "browser" | "terminal" | "tasks";
 
 export const PANEL_TITLES: Record<WorkspacePanelMode, string> = {
+  changes: "Alterações",
   files: "Arquivos",
   terminal: "Terminal",
   browser: "Navegador",
   tasks: "Tarefas em segundo plano",
 };
+
+const CHANGE_LABELS = {
+  modified: "Modificado",
+  added: "Adicionado",
+  deleted: "Excluído",
+  renamed: "Renomeado",
+  copied: "Copiado",
+  untracked: "Novo",
+  conflicted: "Conflito",
+} as const;
+
+function WorktreePane({ taskId }: { taskId: string }) {
+  const [selectedFile, setSelectedFile] = useState<string | null>(null);
+  const changes = useQuery({
+    queryKey: ["workspace-changes", taskId],
+    queryFn: () => workbenchClient.workspaceChanges({ taskId }),
+    refetchInterval: 1_500,
+  });
+  const currentFile =
+    changes.data?.files.find((entry) => entry.path === selectedFile)?.path ??
+    changes.data?.files[0]?.path ??
+    null;
+  const diff = useQuery({
+    queryKey: ["workspace-diff", taskId, currentFile],
+    queryFn: () =>
+      workbenchClient.workspaceDiff({ taskId, file: currentFile ?? "" }),
+    enabled: currentFile !== null,
+    refetchInterval: 1_500,
+  });
+  const diffHtml = diff.data?.patch
+    ? renderDiff(diff.data.patch, {
+        colorScheme: ColorSchemeType.DARK,
+        drawFileList: false,
+        matching: "lines",
+        outputFormat: "line-by-line",
+      })
+    : "";
+
+  if (changes.isLoading) {
+    return <p className="fs-empty">Lendo o worktree…</p>;
+  }
+  if (changes.isError) {
+    return <p className="fs-empty">Não foi possível ler as alterações Git.</p>;
+  }
+  if (!changes.data?.isRepo) {
+    return (
+      <div className="worktree-empty">
+        <FileDiff aria-hidden="true" size={22} />
+        <strong>Esta pasta não é um repositório Git</strong>
+        <span>
+          O explorador de arquivos continua disponível na aba Arquivos.
+        </span>
+      </div>
+    );
+  }
+
+  if (changes.data.files.length === 0) {
+    return (
+      <div className="worktree-clean-state">
+        <span className="worktree-clean-state__icon">
+          <Check aria-hidden="true" size={18} />
+        </span>
+        <div>
+          <strong>Nenhuma mudança pendente</strong>
+          <span>
+            O painel acompanha o Git automaticamente e abre o diff assim que um
+            arquivo for criado, alterado ou removido.
+          </span>
+        </div>
+        <span className="worktree-clean-state__branch">
+          {changes.data.branch}
+        </span>
+        <button
+          aria-label="Atualizar alterações"
+          onClick={() => void changes.refetch()}
+          title="Atualizar agora"
+          type="button"
+        >
+          <RotateCw aria-hidden="true" size={14} />
+        </button>
+      </div>
+    );
+  }
+
+  return (
+    <div className="worktree-pane">
+      <aside className="worktree-pane__changes">
+        <div className="worktree-summary">
+          <span className="worktree-summary__branch">
+            {changes.data.branch}
+          </span>
+          <strong>{changes.data.files.length}</strong>
+          <span>
+            {changes.data.files.length === 1 ? "alteração" : "alterações"}
+          </span>
+          <button
+            aria-label="Atualizar alterações"
+            onClick={() => void changes.refetch()}
+            title="Atualizar agora"
+            type="button"
+          >
+            <RotateCw aria-hidden="true" size={13} />
+          </button>
+        </div>
+        <div className="worktree-file-list">
+          {changes.data.files.map((file) => (
+            <button
+              className="worktree-file"
+              data-active={currentFile === file.path || undefined}
+              data-status={file.status}
+              key={`${file.path}:${file.previousPath ?? ""}`}
+              onClick={() => setSelectedFile(file.path)}
+              type="button"
+            >
+              <span className="worktree-file__status" aria-hidden="true">
+                {file.status === "untracked"
+                  ? "U"
+                  : file.status[0]?.toUpperCase()}
+              </span>
+              <span className="worktree-file__identity">
+                <strong>{file.path.split("/").at(-1)}</strong>
+                <small>
+                  {file.path.includes("/")
+                    ? file.path.slice(0, file.path.lastIndexOf("/"))
+                    : "raiz"}
+                </small>
+              </span>
+              <span className="worktree-file__label">
+                {CHANGE_LABELS[file.status]}
+              </span>
+              {file.staged && <i title="Preparado para commit">S</i>}
+            </button>
+          ))}
+        </div>
+      </aside>
+      <section className="worktree-pane__diff" aria-label="Diff do arquivo">
+        {currentFile ? (
+          <>
+            <header className="worktree-diff__header">
+              <FileDiff aria-hidden="true" size={14} />
+              <strong>{currentFile}</strong>
+              <span>Atualização automática</span>
+            </header>
+            {diff.isLoading ? (
+              <p className="fs-empty">Montando o diff…</p>
+            ) : diffHtml ? (
+              <div
+                className="worktree-diff__content"
+                // diff2html escapes source content and provides accessible line structure.
+                dangerouslySetInnerHTML={{ __html: diffHtml }}
+              />
+            ) : (
+              <div className="worktree-empty">
+                <FileDiff aria-hidden="true" size={20} />
+                <strong>Sem diff textual</strong>
+                <span>
+                  O arquivo pode ser binário ou a alteração já foi consolidada.
+                </span>
+              </div>
+            )}
+          </>
+        ) : null}
+      </section>
+    </div>
+  );
+}
 
 const LANGUAGE_BY_EXTENSION: Record<string, string> = {
   ts: "typescript",
@@ -131,6 +307,12 @@ function DirNode({
 }
 
 function FileView({ taskId, file }: { taskId: string; file: string }) {
+  const extension = file.split(".").at(-1)?.toLowerCase() ?? "";
+  const isMarkdown = extension === "md" || extension === "mdx";
+  const [view, setView] = useState<"preview" | "source">(
+    isMarkdown ? "preview" : "source",
+  );
+  const [copied, setCopied] = useState(false);
   const content = useQuery({
     queryKey: ["workspace-file", taskId, file],
     queryFn: () => workbenchClient.fsRead({ taskId, file }),
@@ -142,14 +324,67 @@ function FileView({ taskId, file }: { taskId: string; file: string }) {
   if (content.data.binary) {
     return <p className="fs-empty">Arquivo binário — sem visualização.</p>;
   }
-  const extension = file.split(".").at(-1)?.toLowerCase() ?? "";
   const language = LANGUAGE_BY_EXTENSION[extension] ?? "";
   const fence = "````";
+
+  function copyFile() {
+    void navigator.clipboard.writeText(content.data!.content).then(() => {
+      setCopied(true);
+      window.setTimeout(() => setCopied(false), 1_400);
+    });
+  }
+
   return (
-    <div className="fs-file">
-      <MessageMarkdown>
-        {`${fence}${language}\n${content.data.content}\n${fence}`}
-      </MessageMarkdown>
+    <div
+      className="fs-file"
+      data-format={isMarkdown && view === "preview" ? "markdown" : "source"}
+    >
+      <div className="fs-file__toolbar">
+        <span className="fs-file__kind">
+          {isMarkdown && view === "preview" ? "Leitura" : language || "Texto"}
+        </span>
+        {isMarkdown && (
+          <span
+            className="fs-file__view-switch"
+            role="group"
+            aria-label="Modo de visualização"
+          >
+            <button
+              aria-pressed={view === "preview"}
+              onClick={() => setView("preview")}
+              type="button"
+            >
+              <Eye aria-hidden="true" size={12} />
+              Formatado
+            </button>
+            <button
+              aria-pressed={view === "source"}
+              onClick={() => setView("source")}
+              type="button"
+            >
+              <Code2 aria-hidden="true" size={12} />
+              Fonte
+            </button>
+          </span>
+        )}
+        <button className="fs-file__copy" onClick={copyFile} type="button">
+          {copied ? (
+            <Check aria-hidden="true" size={12} />
+          ) : (
+            <Copy aria-hidden="true" size={12} />
+          )}
+          {copied ? "Copiado" : "Copiar"}
+        </button>
+      </div>
+      <div className="fs-file__content">
+        {isMarkdown && view === "preview" ? (
+          <MessageMarkdown>{content.data.content}</MessageMarkdown>
+        ) : (
+          <MessageMarkdown>
+            {`${fence}${language}\n${content.data.content}\n${fence}`}
+          </MessageMarkdown>
+        )}
+      </div>
       {content.data.truncated && (
         <p className="fs-empty">
           Arquivo grande — mostrando os primeiros 256 KB.
@@ -356,7 +591,9 @@ function TasksPane({ taskId }: { taskId: string }) {
 
 function BrowserPane({ initialUrl }: { initialUrl: string | null }) {
   const [address, setAddress] = useState(initialUrl ?? "http://localhost:5173");
-  const [target, setTarget] = useState<string | null>(initialUrl);
+  const [target, setTarget] = useState<string | null>(
+    initialUrl ?? "http://localhost:5173",
+  );
   const [reloadNonce, setReloadNonce] = useState(0);
 
   function navigate() {
@@ -513,14 +750,16 @@ export function WorkspacePanel({
         </button>
       </header>
       <div className="workspace-panel__body">
-        {mode === "tasks" ? (
+        {mode === "changes" ? (
+          <WorktreePane taskId={taskId} />
+        ) : mode === "tasks" ? (
           <TasksPane taskId={taskId} />
         ) : mode === "terminal" ? (
           <TerminalPane taskId={taskId} />
         ) : mode === "browser" ? (
           <BrowserPane initialUrl={initialUrl} key={initialUrl ?? "blank"} />
         ) : openFile ? (
-          <FileView file={openFile} taskId={taskId} />
+          <FileView file={openFile} key={openFile} taskId={taskId} />
         ) : (
           <>
             <label className="fs-filter">

@@ -76,6 +76,10 @@ export const workbenchClient = {
     invokeCommand("task:delete", request),
   filePick: (request: IpcRequest<"file:pick">) =>
     invokeCommand("file:pick", request),
+  workspaceChanges: (request: IpcRequest<"workspace:changes">) =>
+    invokeCommand("workspace:changes", request),
+  workspaceDiff: (request: IpcRequest<"workspace:diff">) =>
+    invokeCommand("workspace:diff", request),
   fsList: (request: IpcRequest<"fs:list">) => invokeCommand("fs:list", request),
   fsRead: (request: IpcRequest<"fs:read">) => invokeCommand("fs:read", request),
   fsSearch: (request: IpcRequest<"fs:search">) =>
@@ -150,6 +154,7 @@ export const workbenchClient = {
     invokeCommand("usage:alertSet", request),
   memoryConfigure: (request: IpcRequest<"memory:configure">) =>
     invokeCommand("memory:configure", request),
+  memoryStatus: () => invokeCommand("memory:status", {}),
   memoryList: () => invokeCommand("memory:list", {}),
   memorySearch: (request: IpcRequest<"memory:search">) =>
     invokeCommand("memory:search", request),

@@ -5,6 +5,7 @@ import {
   render,
   screen,
   waitFor,
+  within,
 } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
@@ -230,6 +231,68 @@ function messageDelta(delta: string): CanonicalEvent {
 }
 
 describe("WorkbenchPage", () => {
+  it("keeps provider and model in the conversation instead of duplicating them in the topbar", async () => {
+    const { container } = renderWorkbenchFixture({
+      lanes: [claudeLane],
+      history: {
+        userMessages: [
+          {
+            id: "message-runtime",
+            laneId: claudeLaneId,
+            body: "Mostre a identidade da resposta",
+            at: "2026-07-18T12:00:00.000Z",
+          },
+        ],
+        events: [],
+      },
+    });
+
+    await screen.findByText("Mostre a identidade da resposta");
+    expect(container.querySelector(".chat-topbar__runtime")).toBeNull();
+    expect(container.querySelector(".chat-topbar__token-report")).toBeNull();
+  });
+
+  it("keeps workspace tools available while showing one focused inspector", async () => {
+    localStorage.setItem(
+      "okami.panelLayout",
+      JSON.stringify({
+        panels: ["changes", "files", "terminal", "browser", "tasks"],
+        active: "changes",
+      }),
+    );
+
+    renderWorkbenchFixture({
+      lanes: [claudeLane],
+      history: {
+        userMessages: [
+          {
+            id: "message-inspector",
+            laneId: claudeLaneId,
+            body: "Inspecionar worktree",
+            at: "2026-07-18T12:00:00.000Z",
+          },
+        ],
+        events: [],
+      },
+    });
+
+    expect(
+      await screen.findByRole("region", { name: "Alterações" }),
+    ).toBeVisible();
+    expect(screen.queryByTestId("terminal-pane")).toBeNull();
+
+    fireEvent.click(screen.getByTitle("Terminal"));
+    expect(await screen.findByTestId("terminal-pane")).toBeVisible();
+    expect(screen.queryByRole("region", { name: "Alterações" })).toBeNull();
+
+    expect(
+      JSON.parse(localStorage.getItem("okami.panelLayout") ?? "null"),
+    ).toMatchObject({
+      panels: ["changes", "files", "terminal", "browser", "tasks"],
+      active: "terminal",
+    });
+  });
+
   it("keeps every workspace panel closed after navigating away and back", async () => {
     localStorage.setItem(
       "okami.panelLayout",
@@ -254,11 +317,18 @@ describe("WorkbenchPage", () => {
     await screen.findByRole("complementary", { name: "Painel de trabalho" });
 
     for (let remaining = 4; remaining > 0; remaining -= 1) {
-      const closeButtons = screen.getAllByRole("button", {
+      const closeButton = screen.getByRole("button", {
         name: "Fechar painel",
       });
-      expect(closeButtons).toHaveLength(remaining);
-      fireEvent.click(closeButtons[0]);
+      const rail = screen.getByRole("complementary", {
+        name: "Painel de trabalho",
+      });
+      expect(
+        within(rail).getAllByRole("button", {
+          name: /^(Arquivos|Terminal|Navegador|Tarefas em segundo plano)$/,
+        }),
+      ).toHaveLength(remaining);
+      fireEvent.click(closeButton);
     }
 
     expect(
@@ -266,7 +336,7 @@ describe("WorkbenchPage", () => {
     ).toBeNull();
     expect(
       JSON.parse(localStorage.getItem("okami.panelLayout") ?? "null"),
-    ).toEqual({ panels: [], columns: 2 });
+    ).toEqual({ panels: [], active: null });
 
     await userEvent.click(screen.getByRole("link", { name: "Configurações" }));
     await userEvent.click(
@@ -482,4 +552,47 @@ it("does not duplicate a response that was already streamed as deltas", () => {
 
   expect(Object.values(next.streams)).toHaveLength(1);
   expect(Object.values(next.streams)[0]?.text).toBe("Já transmitida");
+});
+
+it("keeps the latest usage report instead of a stale session peak", () => {
+  const base = {
+    appliedEventIds: {},
+    lastUsageByLane: {},
+  } as WorkbenchState;
+  const first: CanonicalEvent = {
+    ...messageDelta(""),
+    id: "usage-high",
+    kind: "usage_reported",
+    payload: {
+      usage: {
+        input_tokens: 12,
+        cache_read_input_tokens: 820_000,
+        output_tokens: 42_000,
+      },
+      modelUsage: { "claude-fable-5": { contextWindow: 1_000_000 } },
+    },
+  };
+  const second: CanonicalEvent = {
+    ...first,
+    id: "usage-latest",
+    sequence: 3,
+    payload: {
+      usage: {
+        input_tokens: 8,
+        cache_read_input_tokens: 40_000,
+        output_tokens: 2_000,
+      },
+      modelUsage: { "claude-fable-5": { contextWindow: 1_000_000 } },
+    },
+  };
+
+  const high = reduceCanonicalEvent(base, first);
+  const latest = reduceCanonicalEvent(high, second);
+
+  expect(latest.lastUsageByLane[claudeLaneId]).toMatchObject({
+    inputTokens: 8,
+    cacheReadTokens: 40_000,
+    outputTokens: 2_000,
+    contextTokens: null,
+  });
 });

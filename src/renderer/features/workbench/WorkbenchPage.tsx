@@ -1,12 +1,13 @@
 import { useMutation, useQuery } from "@tanstack/react-query";
 import {
+  FileDiff,
   FolderTree,
   Globe,
   ListChecks,
   SquareTerminal,
   Sparkle,
 } from "lucide-react";
-import { useEffect, useRef, useState, type CSSProperties } from "react";
+import { useEffect, useRef, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { useShallow } from "zustand/react/shallow";
 import { Composer } from "./Composer";
@@ -25,6 +26,7 @@ import {
 } from "./WorkspacePanel";
 import { useWorkbenchStore, type WorkbenchState } from "./store";
 import { providerKindForLane } from "./runtime-presentation";
+import { describeSessionContext } from "./context-usage";
 
 interface WorkbenchPageProps {
   api?: WorkbenchApi;
@@ -37,39 +39,49 @@ const LAYOUT_KEY = "okami.panelLayout";
 // The arrangement belongs to the user, so it survives reloads.
 function loadLayout(): {
   panels: WorkspacePanelMode[];
-  columns: number | null;
+  active: WorkspacePanelMode | null;
 } {
   try {
     const raw = localStorage.getItem(LAYOUT_KEY);
     const parsed: unknown = raw ? JSON.parse(raw) : null;
     if (!parsed || typeof parsed !== "object") {
-      return { panels: [], columns: null };
+      return { panels: [], active: null };
     }
-    const value = parsed as { panels?: unknown; columns?: unknown };
+    const value = parsed as { panels?: unknown; active?: unknown };
+    const allowed = new Set<WorkspacePanelMode>([
+      "changes",
+      "files",
+      "browser",
+      "terminal",
+      "tasks",
+    ]);
+    const panels = Array.isArray(value.panels)
+      ? (value.panels.filter((panel): panel is WorkspacePanelMode =>
+          allowed.has(panel as WorkspacePanelMode),
+        ) as WorkspacePanelMode[])
+      : [];
     return {
-      panels: Array.isArray(value.panels)
-        ? (value.panels as WorkspacePanelMode[])
-        : [],
-      columns: typeof value.columns === "number" ? value.columns : null,
+      panels,
+      active:
+        typeof value.active === "string" &&
+        panels.includes(value.active as WorkspacePanelMode)
+          ? (value.active as WorkspacePanelMode)
+          : (panels[0] ?? null),
     };
   } catch {
-    return { panels: [], columns: null };
+    return { panels: [], active: null };
   }
 }
 
 function persistLayout(
   panels: WorkspacePanelMode[],
-  columns: number | null,
+  active: WorkspacePanelMode | null,
 ): void {
   try {
-    localStorage.setItem(LAYOUT_KEY, JSON.stringify({ panels, columns }));
+    localStorage.setItem(LAYOUT_KEY, JSON.stringify({ panels, active }));
   } catch {
     // Layout persistence is a convenience, never a hard requirement.
   }
-}
-
-function setBodySelectable(selectable: boolean): void {
-  document.body.style.userSelect = selectable ? "" : "none";
 }
 
 export function WorkbenchPage({ api = workbenchApi }: WorkbenchPageProps) {
@@ -95,77 +107,35 @@ export function WorkbenchPage({ api = workbenchApi }: WorkbenchPageProps) {
   // queued state updater when this route unmounts, but closing a panel must be
   // persisted before the user can leave the conversation.
   const openPanelsRef = useRef<WorkspacePanelMode[]>(initialLayout.panels);
+  const [activePanel, setActivePanel] = useState<WorkspacePanelMode | null>(
+    initialLayout.active,
+  );
+  const activePanelRef = useRef<WorkspacePanelMode | null>(
+    initialLayout.active,
+  );
   const [panelFile, setPanelFile] = useState<string | null>(null);
   const [previewUrl, setPreviewUrl] = useState<string | null>(null);
-  const [maximizedPanel, setMaximizedPanel] =
-    useState<WorkspacePanelMode | null>(null);
-  // null = balanced automatically; a number pins the column count so panels
-  // can stack in rows instead of always sitting side by side.
-  const [panelColumns, setPanelColumns] = useState<number | null>(
-    initialLayout.columns,
-  );
-  const [dropTarget, setDropTarget] = useState<WorkspacePanelMode | null>(null);
-
-  useEffect(
-    () => () => {
-      setBodySelectable(true);
-    },
-    [],
-  );
-  // Kept in a ref so the persist helpers always see the current choice.
-  const panelColumnsRef = useRef<number | null>(initialLayout.columns);
-  const updateOpenPanels = (
-    update: (current: WorkspacePanelMode[]) => WorkspacePanelMode[],
-  ) => {
-    const current = openPanelsRef.current;
-    const next = update(current);
-    if (next === current) return;
-
+  const focusPanel = (mode: WorkspacePanelMode) => {
+    const next = openPanelsRef.current.includes(mode)
+      ? openPanelsRef.current
+      : [...openPanelsRef.current, mode];
     openPanelsRef.current = next;
-    persistLayout(next, panelColumnsRef.current);
+    activePanelRef.current = mode;
     setOpenPanels(next);
+    setActivePanel(mode);
+    persistLayout(next, mode);
   };
-  const togglePanel = (mode: WorkspacePanelMode) =>
-    updateOpenPanels((current) =>
-      current.includes(mode)
-        ? current.filter((entry) => entry !== mode)
-        : [...current, mode],
-    );
-
-  // Dragging a panel header onto another panel swaps their slots, so the
-  // arrangement is the user's rather than the order things were opened in.
-  const beginPanelDrag = (source: WorkspacePanelMode) => {
-    const panelUnder = (event: MouseEvent): WorkspacePanelMode | null => {
-      const element = document
-        .elementFromPoint(event.clientX, event.clientY)
-        ?.closest("[data-panel]");
-      const value = element?.getAttribute("data-panel");
-      return (value as WorkspacePanelMode | null) ?? null;
-    };
-    const move = (event: MouseEvent) => {
-      const target = panelUnder(event);
-      setDropTarget(target && target !== source ? target : null);
-    };
-    const up = (event: MouseEvent) => {
-      window.removeEventListener("mousemove", move);
-      window.removeEventListener("mouseup", up);
-      setBodySelectable(true);
-      setDropTarget(null);
-      const target = panelUnder(event);
-      if (!target || target === source) return;
-      updateOpenPanels((current) => {
-        const next = [...current];
-        const from = next.indexOf(source);
-        const to = next.indexOf(target);
-        if (from === -1 || to === -1) return current;
-        next[from] = target;
-        next[to] = source;
-        return next;
-      });
-    };
-    setBodySelectable(false);
-    window.addEventListener("mousemove", move);
-    window.addEventListener("mouseup", up);
+  const closePanel = (mode: WorkspacePanelMode) => {
+    const next = openPanelsRef.current.filter((entry) => entry !== mode);
+    const active =
+      activePanelRef.current === mode
+        ? (next.at(-1) ?? null)
+        : activePanelRef.current;
+    openPanelsRef.current = next;
+    activePanelRef.current = active;
+    setOpenPanels(next);
+    setActivePanel(active);
+    persistLayout(next, active);
   };
   const panelPane = useResizablePane({
     storageKey: "okami.width.panel",
@@ -242,9 +212,11 @@ export function WorkbenchPage({ api = workbenchApi }: WorkbenchPageProps) {
       (efforts.length > 0 ? efforts[Math.min(2, efforts.length - 1)] : null))
     : null;
   const context = selectedLane
-    ? sessionContext(lastUsageByLane[selectedLane.laneId], selectedLane.model)
+    ? describeSessionContext(
+        lastUsageByLane[selectedLane.laneId],
+        selectedLane.model,
+      )
     : null;
-
   const openLane = useMutation({
     mutationFn: api.openLane,
     onSuccess: (lane) => {
@@ -348,11 +320,7 @@ export function WorkbenchPage({ api = workbenchApi }: WorkbenchPageProps) {
       taskId={effectiveTaskId}
       skills={skillsQuery.data ?? []}
       suggestions={suggestedUrls}
-      onOpenPanel={(mode) =>
-        updateOpenPanels((current) =>
-          current.includes(mode) ? current : [...current, mode],
-        )
-      }
+      onOpenPanel={focusPanel}
       onSelectPermissionMode={(mode) => {
         if (!selectedLane) return;
         void workbenchClient
@@ -364,9 +332,7 @@ export function WorkbenchPage({ api = workbenchApi }: WorkbenchPageProps) {
       }}
       onOpenUrl={(url) => {
         setPreviewUrl(url);
-        updateOpenPanels((current) =>
-          current.includes("browser") ? current : [...current, "browser"],
-        );
+        focusPanel("browser");
       }}
       onNavigate={navigate}
       slashCommands={
@@ -432,21 +398,21 @@ export function WorkbenchPage({ api = workbenchApi }: WorkbenchPageProps) {
     workspacePath: selectedTask?.workspacePath ?? null,
     open: (relative: string) => {
       setPanelFile(relative);
-      updateOpenPanels((current) =>
-        current.includes("files") ? current : [...current, "files"],
-      );
+      focusPanel("files");
     },
   };
 
   const panelToggle = (mode: WorkspacePanelMode) => (
     <button
       className="chat-topbar__tool"
-      data-active={openPanels.includes(mode) || undefined}
-      onClick={() => togglePanel(mode)}
+      data-active={activePanel === mode || undefined}
+      onClick={() => focusPanel(mode)}
       title={PANEL_TITLES[mode]}
       type="button"
     >
-      {mode === "files" ? (
+      {mode === "changes" ? (
+        <FileDiff aria-hidden="true" size={14} />
+      ) : mode === "files" ? (
         <FolderTree aria-hidden="true" size={14} />
       ) : mode === "browser" ? (
         <Globe aria-hidden="true" size={14} />
@@ -464,27 +430,21 @@ export function WorkbenchPage({ api = workbenchApi }: WorkbenchPageProps) {
       className="chat-view"
     >
       <div className="chat-topbar">
-        <strong>{selectedTask?.title ?? "Conversa"}</strong>
-        {selectedTask?.workspacePath && (
-          <span className="chat-topbar__path">
-            {selectedTask.workspacePath}
-          </span>
-        )}
-        {selectedLane && (
-          <>
-            <span
-              aria-hidden="true"
-              className={`route-dot route-dot--${selectedLane.routeKind}`}
-            />
-            <span>{modelLabel(selectedLane)}</span>
-          </>
-        )}
+        <span className="chat-topbar__identity">
+          <strong>{selectedTask?.title ?? "Conversa"}</strong>
+          {selectedTask?.workspacePath && (
+            <span className="chat-topbar__path">
+              {selectedTask.workspacePath}
+            </span>
+          )}
+        </span>
         <span className="chat-topbar__spacer" />
         <UsagePopover
           activeProvider={
             selectedLane ? providerKindForLane(selectedLane) : null
           }
         />
+        {panelToggle("changes")}
         {panelToggle("files")}
         {panelToggle("terminal")}
         {panelToggle("browser")}
@@ -543,7 +503,7 @@ export function WorkbenchPage({ api = workbenchApi }: WorkbenchPageProps) {
                 window.location.reload();
               });
           }}
-          onTogglePanel={togglePanel}
+          onTogglePanel={focusPanel}
         />
       </div>
       <div className="chat-split">
@@ -563,159 +523,48 @@ export function WorkbenchPage({ api = workbenchApi }: WorkbenchPageProps) {
           </div>
           <div className="chat-composer-dock">{composer}</div>
         </div>
-        {openPanels.length > 0 && effectiveTaskId && (
+        {activePanel && effectiveTaskId && (
           <ResizeHandle
             ariaLabel="Redimensionar o painel de trabalho"
             edge="left"
             pane={panelPane}
           />
         )}
-        {openPanels.length > 0 && effectiveTaskId && (
+        {activePanel && effectiveTaskId && (
           <aside
             aria-label="Painel de trabalho"
             className="workspace-rail"
-            data-solo={maximizedPanel ? "true" : undefined}
-            style={
-              {
-                width: panelPane.width,
-                // Balanced by default (4 panels → 2×2), overridable below.
-                "--rail-columns": maximizedPanel
-                  ? 1
-                  : (panelColumns ??
-                    Math.min(
-                      Math.max(1, Math.floor(panelPane.width / 320)),
-                      Math.ceil(Math.sqrt(openPanels.length)),
-                    )),
-              } as CSSProperties
-            }
+            style={{ width: panelPane.width }}
           >
-            <div className="workspace-rail__bar">
-              <span>Colunas</span>
-              {[1, 2, 3].map((count) => (
+            <nav
+              aria-label="Ferramentas abertas"
+              className="workspace-rail__tabs"
+            >
+              {openPanels.map((mode) => (
                 <button
-                  data-active={panelColumns === count || undefined}
-                  key={count}
-                  onClick={() =>
-                    setPanelColumns((current) => {
-                      const next = current === count ? null : count;
-                      panelColumnsRef.current = next;
-                      persistLayout(openPanels, next);
-                      return next;
-                    })
-                  }
-                  title={`${count} coluna${count > 1 ? "s" : ""}`}
+                  data-active={activePanel === mode || undefined}
+                  key={mode}
+                  onClick={() => focusPanel(mode)}
                   type="button"
                 >
-                  {count}
+                  {PANEL_TITLES[mode]}
                 </button>
               ))}
-              <button
-                data-active={panelColumns === null || undefined}
-                onClick={() => {
-                  panelColumnsRef.current = null;
-                  setPanelColumns(null);
-                  persistLayout(openPanels, null);
-                }}
-                title="Automático"
-                type="button"
-              >
-                auto
-              </button>
-            </div>
-            <div className="workspace-rail__grid">
-              {(maximizedPanel
-                ? openPanels.filter((mode) => mode === maximizedPanel)
-                : openPanels
-              ).map((mode) => (
-                <WorkspacePanel
-                  key={mode}
-                  initialUrl={previewUrl}
-                  isMaximized={maximizedPanel === mode}
-                  mode={mode}
-                  onToggleMaximize={() =>
-                    setMaximizedPanel((current) =>
-                      current === mode ? null : mode,
-                    )
-                  }
-                  onClose={() => togglePanel(mode)}
-                  isDropTarget={dropTarget === mode}
-                  onDragStart={() => beginPanelDrag(mode)}
-                  onMoveByKeyboard={(offset) =>
-                    updateOpenPanels((current) => {
-                      const next = [...current];
-                      const from = next.indexOf(mode);
-                      const to = from + offset;
-                      if (from === -1 || to < 0 || to >= next.length) {
-                        return current;
-                      }
-                      next[from] = next[to];
-                      next[to] = mode;
-                      return next;
-                    })
-                  }
-                  onOpenFile={setPanelFile}
-                  openFile={panelFile}
-                  taskId={effectiveTaskId}
-                  workspacePath={selectedTask?.workspacePath ?? null}
-                />
-              ))}
-            </div>
+            </nav>
+            <WorkspacePanel
+              initialUrl={previewUrl}
+              mode={activePanel}
+              onClose={() => closePanel(activePanel)}
+              onOpenFile={setPanelFile}
+              openFile={panelFile}
+              taskId={effectiveTaskId}
+              workspacePath={selectedTask?.workspacePath ?? null}
+            />
           </aside>
         )}
       </div>
     </section>
   );
-}
-
-function sessionContext(
-  usage:
-    | {
-        inputTokens: number;
-        cacheReadTokens: number;
-        outputTokens: number;
-        contextWindow: number | null;
-      }
-    | undefined,
-  model: string,
-): {
-  label: string;
-  percent: number | null;
-  breakdown: Array<{ label: string; value: string; tone: string }>;
-} | null {
-  if (!usage) return null;
-  const used = usage.inputTokens + usage.cacheReadTokens + usage.outputTokens;
-  if (used === 0) return null;
-  const window = usage.contextWindow
-    ? usage.contextWindow
-    : model.includes("[1m]")
-      ? 1_000_000
-      : /claude|opus|sonnet|haiku|default/iu.test(model)
-        ? 200_000
-        : null;
-  const compact = (value: number) =>
-    value >= 1000 ? `${Math.round(value / 1000)}k` : `${value}`;
-  const breakdown = [
-    { label: "Entrada", value: compact(usage.inputTokens), tone: "input" },
-    {
-      label: "Cache lido",
-      value: compact(usage.cacheReadTokens),
-      tone: "cache",
-    },
-    { label: "Saída", value: compact(usage.outputTokens), tone: "output" },
-  ];
-  if (!window) {
-    return {
-      label: `contexto ~${compact(used)} tokens`,
-      percent: null,
-      breakdown,
-    };
-  }
-  const percent = Math.min(100, Math.round((used / window) * 100));
-  return {
-    label: `${compact(used)}/${compact(window)} tokens`,
-    percent,
-    breakdown,
-  };
 }
 
 function workbenchActions(state: WorkbenchState) {

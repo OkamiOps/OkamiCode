@@ -8,6 +8,7 @@ type UsageWindow = UsageSnapshot["windows"][number];
 
 interface SubscriptionTableProps {
   activity?: UsageActivityBucketContract[];
+  selectedProvider?: UsageSnapshot["provider"];
   subscriptions: UsageSnapshot[];
 }
 
@@ -27,9 +28,9 @@ export function SourceFreshness({
 
 // Mirrors how Claude and Codex report quota: every window as a labelled bar
 // of what was consumed, with its reset, instead of one "remaining" number.
-function usageTone(used: number): "ok" | "warn" | "high" {
-  if (used >= 85) return "high";
-  if (used >= 60) return "warn";
+function remainingTone(remaining: number): "ok" | "warn" | "high" {
+  if (remaining <= 15) return "high";
+  if (remaining <= 40) return "warn";
   return "ok";
 }
 
@@ -48,7 +49,10 @@ function countdown(resetsAt: string | null): string {
   return `reinicia ${formatReset(resetsAt)}`;
 }
 
-export function SubscriptionCards({ subscriptions }: SubscriptionTableProps) {
+export function SubscriptionCards({
+  selectedProvider,
+  subscriptions,
+}: SubscriptionTableProps) {
   return (
     <div className="usage-cards">
       {subscriptions.map((subscription) => {
@@ -57,7 +61,14 @@ export function SubscriptionCards({ subscriptions }: SubscriptionTableProps) {
           (left, right) => (right.usedPercent ?? 0) - (left.usedPercent ?? 0),
         );
         return (
-          <article className="usage-card" key={subscription.accountRef}>
+          <article
+            className="usage-card"
+            data-provider={subscription.provider}
+            data-selected={
+              subscription.provider === selectedProvider || undefined
+            }
+            key={subscription.accountRef}
+          >
             <header>
               <span
                 aria-hidden="true"
@@ -82,7 +93,7 @@ export function SubscriptionCards({ subscriptions }: SubscriptionTableProps) {
             ) : (
               <ul className="usage-meters">
                 {windows.map((window) => {
-                  const used = window.usedPercent;
+                  const remaining = window.remainingPercent;
                   return (
                     <li className="usage-meter" key={window.label}>
                       <div className="usage-meter__head">
@@ -90,15 +101,23 @@ export function SubscriptionCards({ subscriptions }: SubscriptionTableProps) {
                           {window.label}
                         </span>
                         <strong className="usage-meter__value">
-                          {used === null ? "—" : `${formatNumber(used)}% usado`}
+                          {remaining === null
+                            ? "—"
+                            : `${formatNumber(remaining)}% restante`}
                         </strong>
                       </div>
                       <div
                         aria-hidden="true"
                         className="usage-meter__track"
-                        data-tone={used === null ? "ok" : usageTone(used)}
+                        data-tone={
+                          remaining === null
+                            ? "unknown"
+                            : remainingTone(remaining)
+                        }
                       >
-                        <i style={{ width: `${Math.max(0, used ?? 0)}%` }} />
+                        <i
+                          style={{ width: `${Math.max(0, remaining ?? 0)}%` }}
+                        />
                       </div>
                       <span className="usage-meter__reset">
                         {countdown(window.resetsAt)}
@@ -182,7 +201,7 @@ function SubscriptionRow({
   const calls = local.reduce((total, bucket) => total + bucket.modelCalls, 0);
 
   return (
-    <tr>
+    <tr data-provider={subscription.provider}>
       <td>
         <strong>{subscription.accountLabel}</strong>
         <span className="usage-table__subline">
@@ -196,8 +215,8 @@ function SubscriptionRow({
         <div className="usage-table__quota">
           <span className="usage-progress" aria-hidden="true">
             <i
-              className={`usage-progress__fill usage-progress__fill--${subscription.provider === "claude_max" ? "orange" : "cyan"}`}
-              style={{ width: `${window?.usedPercent ?? 0}%` }}
+              className="usage-progress__fill"
+              style={{ width: `${window?.remainingPercent ?? 0}%` }}
             />
           </span>
           <strong className="usage-table__mono">{quotaLabel(window)}</strong>

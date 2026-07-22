@@ -6,7 +6,9 @@ import {
   Bot,
   CalendarDays,
   CheckCircle2,
+  ChevronDown,
   CircleDollarSign,
+  Cpu,
   ExternalLink,
   Inbox,
   MessageSquareText,
@@ -15,7 +17,7 @@ import {
   TriangleAlert,
   Zap,
 } from "lucide-react";
-import { useState } from "react";
+import { Fragment, useState } from "react";
 import { Link } from "react-router-dom";
 import type { IpcResponse } from "../../../shared/contracts/ipc";
 import { workbenchClient } from "../../lib/ipc/client";
@@ -186,6 +188,8 @@ export function HomePage() {
           />
         </div>
 
+        <RuntimeFleet doctor={data?.doctor ?? null} />
+
         <RoiPanel
           catalogError={pricingCatalog.isError}
           catalogFetchedAt={pricingCatalog.data?.fetchedAt ?? null}
@@ -281,6 +285,102 @@ export function HomePage() {
   );
 }
 
+function RuntimeFleet({ doctor }: { doctor: SystemDoctor | null }) {
+  const runtimes = doctor?.clients ?? [];
+  return (
+    <section
+      className="home-runtime-fleet"
+      aria-labelledby="runtime-fleet-heading"
+    >
+      <header className="home-runtime-fleet__header">
+        <div>
+          <span className="pane-kicker">Capacidade local detectada</span>
+          <h2 id="runtime-fleet-heading">Runtimes e integrações</h2>
+        </div>
+        <Link to="/models">
+          Explorar modelos <ArrowRight aria-hidden="true" size={13} />
+        </Link>
+      </header>
+      {runtimes.length ? (
+        <div className="home-runtime-fleet__grid">
+          {runtimes.map((client) => {
+            const health = doctor?.runtimes.find(
+              (entry) => entry.runtime === client.client,
+            );
+            return (
+              <article
+                className="home-runtime"
+                data-provider={client.client}
+                key={client.client}
+              >
+                <span className="home-runtime__glyph" aria-hidden="true">
+                  {runtimeGlyph(client.client)}
+                </span>
+                <span className="home-runtime__identity">
+                  <strong>{client.label}</strong>
+                  <small>{client.version ?? "versão indisponível"}</small>
+                </span>
+                <span
+                  className="home-runtime__state"
+                  data-status={client.integrationStatus}
+                >
+                  {client.integrationStatus === "ready" ? (
+                    <CheckCircle2 aria-hidden="true" size={12} />
+                  ) : (
+                    <TriangleAlert aria-hidden="true" size={12} />
+                  )}
+                  {runtimeStatus(client.integrationStatus)}
+                </span>
+                <span className="home-runtime__detail">
+                  <Cpu aria-hidden="true" size={12} />
+                  {health?.status === "ready"
+                    ? "execução saudável"
+                    : health?.status === "degraded"
+                      ? "execução degradada"
+                      : health?.status === "unavailable"
+                        ? "runtime indisponível"
+                        : "saúde não informada"}
+                </span>
+              </article>
+            );
+          })}
+        </div>
+      ) : (
+        <p className="home-runtime-fleet__empty">
+          {doctor
+            ? "Nenhum CLI foi detectado nesta máquina."
+            : "Diagnóstico dos CLIs indisponível. Atualize para tentar novamente."}
+        </p>
+      )}
+    </section>
+  );
+}
+
+function runtimeGlyph(runtime: string): string {
+  return (
+    (
+      {
+        claude: "CL",
+        codex: "GP",
+        cursor: "CU",
+        agy: "AG",
+        grok: "GK",
+        mimo: "MI",
+        minimax: "MX",
+      } as Record<string, string>
+    )[runtime] ?? "AI"
+  );
+}
+
+function runtimeStatus(
+  status: SystemDoctor["clients"][number]["integrationStatus"],
+): string {
+  if (status === "ready") return "Pronto";
+  if (status === "needs_adapter") return "Adapter pendente";
+  if (status === "update_required") return "Atualização necessária";
+  return "Não encontrado";
+}
+
 function RoiPanel({
   catalogError,
   catalogFetchedAt,
@@ -294,6 +394,19 @@ function RoiPanel({
   onConfigure: () => void;
   roi: RoiSummary;
 }) {
+  const [expandedProviders, setExpandedProviders] = useState<Set<string>>(
+    () => new Set(),
+  );
+
+  function toggleProvider(providerId: string) {
+    setExpandedProviders((current) => {
+      const next = new Set(current);
+      if (next.has(providerId)) next.delete(providerId);
+      else next.add(providerId);
+      return next;
+    });
+  }
+
   return (
     <section className="home-roi" aria-labelledby="roi-heading">
       <header className="home-roi__header">
@@ -315,33 +428,116 @@ function RoiPanel({
         aria-label="Comparação de custo"
       >
         <div className="home-roi__row home-roi__row--head" role="row">
-          <span>Fornecedor</span>
+          <span>Provider / modelo</span>
           <span>Assinatura</span>
+          <span>Entrada nova</span>
+          <span>Cache lido</span>
+          <span>Saída</span>
           <span>API equivalente</span>
-          <span>Cobertura</span>
           <span>Leitura</span>
         </div>
-        {roi.rows.map((row) => (
-          <div className="home-roi__row" key={row.id} role="row">
-            <strong>{row.label}</strong>
-            <span>{usd(row.subscriptionUsd)}/mês</span>
-            <span>
-              {row.apiEquivalentUsd === null
-                ? "—"
-                : usdEquivalent(row.apiEquivalentUsd)}
-            </span>
-            <span>
-              {row.coveragePercent === null
-                ? "Sem telemetria"
-                : `${row.coveragePercent}%`}
-            </span>
-            <span
-              className={`home-roi__verdict home-roi__verdict--${row.verdict}`}
-            >
-              {verdictLabel(row.verdict)}
-            </span>
-          </div>
-        ))}
+        {roi.rows.map((row) => {
+          const expanded = expandedProviders.has(row.id);
+          const detailsId = `roi-models-${row.id}`;
+          return (
+            <Fragment key={row.id}>
+              <div
+                className="home-roi__row home-roi__row--provider"
+                data-provider={row.id}
+                role="row"
+              >
+                <button
+                  aria-controls={detailsId}
+                  aria-expanded={expanded}
+                  className="home-roi__provider-toggle"
+                  disabled={row.models.length === 0}
+                  onClick={() => toggleProvider(row.id)}
+                  type="button"
+                >
+                  <ChevronDown aria-hidden="true" size={14} />
+                  <span>
+                    <strong>{row.label}</strong>
+                    <small>
+                      {row.models.length === 0
+                        ? "Sem atividade por modelo"
+                        : `${row.models.length} ${row.models.length === 1 ? "modelo" : "modelos"}`}
+                    </small>
+                  </span>
+                </button>
+                <span>{usd(row.subscriptionUsd)}/mês</span>
+                <span>
+                  {row.observedTokens ? compact(row.inputTokens) : "—"}
+                </span>
+                <span>
+                  {row.observedTokens ? compact(row.cachedInputTokens) : "—"}
+                </span>
+                <span>
+                  {row.observedTokens ? compact(row.outputTokens) : "—"}
+                </span>
+                <span>
+                  {row.apiEquivalentUsd === null
+                    ? "—"
+                    : `${row.id === "antigravity" ? "≈ " : ""}${usdEquivalent(row.apiEquivalentUsd)}`}
+                </span>
+                <span
+                  className={`home-roi__verdict home-roi__verdict--${row.verdict}`}
+                >
+                  {row.coveragePercent === null
+                    ? "Sem telemetria"
+                    : `${row.coveragePercent}% · ${verdictLabel(row.verdict)}`}
+                </span>
+              </div>
+              {expanded && row.models.length > 0 && (
+                <div
+                  className="home-roi__model-group"
+                  id={detailsId}
+                  role="rowgroup"
+                >
+                  {row.models.map((model) => (
+                    <div
+                      className="home-roi__row home-roi__row--model"
+                      data-provider={row.id}
+                      key={`${row.id}:${model.activityModel}`}
+                      role="row"
+                    >
+                      <span>
+                        <strong>{model.activityModel}</strong>
+                        <small>
+                          {model.pricingModel ?? "sem de-para de preço"}
+                        </small>
+                      </span>
+                      <span className="home-roi__unit-price">preço por 1M</span>
+                      <span>
+                        {compact(model.inputTokens)}
+                        <small>{moneyPerMillion(model.promptPerMillion)}</small>
+                      </span>
+                      <span>
+                        {compact(model.cachedInputTokens)}
+                        <small>
+                          {moneyPerMillion(model.cacheReadPerMillion)}
+                        </small>
+                      </span>
+                      <span>
+                        {compact(model.outputTokens + model.reasoningTokens)}
+                        <small>
+                          {moneyPerMillion(model.completionPerMillion)}
+                        </small>
+                      </span>
+                      <span>
+                        {model.costUsd === null
+                          ? "—"
+                          : usdEquivalent(model.costUsd)}
+                      </span>
+                      <span className="home-roi__formula">
+                        antes da taxa de 5,5%
+                      </span>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </Fragment>
+          );
+        })}
       </div>
       <footer className="home-roi__footer">
         <span>
@@ -364,6 +560,10 @@ function RoiPanel({
       </footer>
     </section>
   );
+}
+
+function moneyPerMillion(value: number | null): string {
+  return value === null ? "sem preço" : `${usdEquivalent(value)} / 1M`;
 }
 
 async function loadDashboardSnapshot(): Promise<DashboardSnapshot> {

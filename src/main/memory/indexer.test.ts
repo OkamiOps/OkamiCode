@@ -21,6 +21,33 @@ function createMemoryHarness() {
 }
 
 describe("MemoryService", () => {
+  it("reports the real local index, Obsidian sources and GBrain probe", () => {
+    const fx = createTestDatabase();
+    const root = mkdtempSync(path.join(tmpdir(), "okami-memory-"));
+    writeFileSync(path.join(root, "note.md"), "# Note\nlocal memory");
+    const service = new MemoryService({
+      db: fx.db,
+      watch: false,
+      gbrainProbe: () => ({
+        installed: true,
+        binaryPath: "/opt/homebrew/bin/gbrain",
+        version: "gbrain 1.2.3",
+      }),
+    });
+
+    service.configure([root]);
+
+    expect(service.status()).toMatchObject({
+      fts5: { available: true, documents: 1 },
+      obsidian: { configured: true, sources: 1 },
+      gbrain: {
+        installed: true,
+        binaryPath: "/opt/homebrew/bin/gbrain",
+        version: "gbrain 1.2.3",
+      },
+    });
+  });
+
   it("indexes only explicitly allowed markdown and returns provenance", () => {
     const { service } = createMemoryHarness();
     const [source] = service.configure([

@@ -59,6 +59,12 @@ import { InboxSyncScheduler } from "./inbox/sync-scheduler";
 
 const execFileAsync = promisify(execFile);
 
+// Visual/E2E runs use an isolated profile so validation never touches the
+// user's real inbox, calendar, credentials, favorites, or local database.
+if (process.env.OKAMI_USER_DATA_DIR) {
+  app.setPath("userData", process.env.OKAMI_USER_DATA_DIR);
+}
+
 const GPT_BACKEND_MODEL = "gpt-5.6-sol";
 const LEASED_CAPABILITIES: Capability[] = [
   "workspace.read",

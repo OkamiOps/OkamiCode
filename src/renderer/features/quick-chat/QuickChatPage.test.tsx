@@ -1,4 +1,10 @@
-import { cleanup, render, screen, waitFor } from "@testing-library/react";
+import {
+  cleanup,
+  render,
+  screen,
+  waitFor,
+  within,
+} from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { MemoryRouter, Route, Routes } from "react-router-dom";
@@ -11,6 +17,7 @@ import {
 } from "./QuickChatPage";
 import type { ContextChipItem } from "./ContextChips";
 import type { RuntimeKind } from "../../../shared/contracts/lane";
+import type { CanonicalEvent } from "../../../shared/contracts/event";
 
 const chatId = "5e20d53c-6fc7-4a95-923f-c244d74aa2f0";
 const taskId = "e7bbb2ef-dd6e-4039-bdd1-b2e93038e884";
@@ -40,6 +47,7 @@ function renderQuickChat({
   messages?: QuickChatMessage[];
   models?: Awaited<ReturnType<QuickChatApi["models"]>>;
 }) {
+  const eventListeners = new Set<(event: CanonicalEvent) => void>();
   const calls = {
     quickChatCreate: [] as Array<{
       runtime: RuntimeKind;
@@ -59,6 +67,9 @@ function renderQuickChat({
     }>,
     quickChatRename: [] as Array<{ taskId: string; title: string }>,
     quickChatDelete: [] as Array<{ taskId: string }>,
+    emit: (event: CanonicalEvent) => {
+      for (const listener of eventListeners) listener(event);
+    },
   };
   const api: QuickChatApi = {
     rename: async (request) => {
@@ -77,6 +88,10 @@ function renderQuickChat({
     delete: async (request) => {
       calls.quickChatDelete.push(request);
       return { taskId: request.taskId, deleted: true };
+    },
+    subscribe: (listener) => {
+      eventListeners.add(listener);
+      return () => eventListeners.delete(listener);
     },
     create: vi.fn(async (request) => {
       calls.quickChatCreate.push(request);
@@ -222,6 +237,79 @@ describe("QuickChatPage", () => {
     expect(
       screen.getByRole("combobox", { name: "Nível de esforço" }),
     ).toHaveValue("high");
+  });
+
+  it("sends with Enter and keeps Shift+Enter as a new line", async () => {
+    const runtime = renderQuickChat({ chips: [] });
+    const composer = screen.getByRole("textbox", { name: "Mensagem rápida" });
+    const user = userEvent.setup();
+
+    await user.type(composer, "linha um{shift>}{enter}{/shift}linha dois");
+    expect(composer).toHaveValue("linha um\nlinha dois");
+    await user.type(composer, "{enter}");
+
+    await waitFor(() =>
+      expect(runtime.calls.quickChatSend[0]?.input).toBe(
+        "linha um\nlinha dois",
+      ),
+    );
+  });
+
+  it("identifies the provider and model on assistant responses", async () => {
+    renderQuickChat({
+      chips: [],
+      messages: [
+        {
+          id: "message-ai",
+          role: "assistant",
+          body: "Resposta em **Markdown**",
+        },
+      ],
+    });
+
+    const response = await screen.findByText("Resposta em");
+    const message = response.closest<HTMLElement>(".quick-chat-message")!;
+    expect(within(message).getByText("Codex")).toBeVisible();
+    expect(within(message).getByText(/GPT-5\.6 Luna/u)).toBeVisible();
+    expect(within(message).getByText("Markdown")).toBeVisible();
+  });
+
+  it("shows a live running state until the runtime completes", async () => {
+    const runtime = renderQuickChat({
+      chips: [],
+      messages: [{ id: "message-1", role: "user", body: "Responda" }],
+    });
+    const user = userEvent.setup();
+
+    await user.type(
+      screen.getByRole("textbox", { name: "Mensagem rápida" }),
+      "Continue",
+    );
+    await user.click(screen.getByRole("button", { name: "Enviar" }));
+
+    expect(
+      await screen.findByRole("status", { name: "Codex está respondendo" }),
+    ).toBeVisible();
+
+    runtime.calls.emit({
+      schemaVersion: 1,
+      id: "event-completed",
+      taskId,
+      laneId,
+      runId,
+      sequence: 1,
+      occurredAt: "2026-07-18T12:00:03.000Z",
+      kind: "message_completed",
+      nativeEventId: null,
+      payload: { text: "Pronto" },
+    });
+
+    await waitFor(() =>
+      expect(
+        screen.queryByRole("status", { name: "Codex está respondendo" }),
+      ).not.toBeInTheDocument(),
+    );
+    expect(await screen.findByText("Pronto")).toBeVisible();
   });
 
   it("offers every native provider and useful starters", async () => {

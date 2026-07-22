@@ -897,8 +897,9 @@ export function Composer({
               ))}
             </ul>
             <p className="context-pop__note">
-              Do último relatório de uso do harness: entrada, cache lido e
-              saída. O harness não decompõe além disso.
+              {contextPercent === null
+                ? "O harness informou tokens faturados agregados, mas não uma leitura da janela ativa. Eles não são somados como contexto."
+                : "Leitura dedicada da janela ativa. Os valores abaixo são telemetria de faturamento."}
             </p>
           </div>
         )}

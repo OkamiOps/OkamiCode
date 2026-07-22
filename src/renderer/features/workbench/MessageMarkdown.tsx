@@ -4,7 +4,6 @@ import ReactMarkdown from "react-markdown";
 import rehypeHighlight from "rehype-highlight";
 import rehypeRaw from "rehype-raw";
 import rehypeSanitize, { defaultSchema } from "rehype-sanitize";
-import remarkBreaks from "remark-breaks";
 import remarkGfm from "remark-gfm";
 import { toWorkspaceRelative, useFileOpener } from "./file-open";
 
@@ -93,26 +92,29 @@ function InlineCode({ children, ...props }: ComponentProps<"code">) {
 
 export function MessageMarkdown({ children }: { children: string }) {
   return (
-    <ReactMarkdown
-      components={{
-        code: InlineCode,
-        pre: CodeBlock,
-        a: ({ children, ...props }) => (
-          <a {...props} rel="noreferrer noopener" target="_blank">
-            {children}
-          </a>
-        ),
-      }}
-      rehypePlugins={[
-        rehypeRaw,
-        [rehypeSanitize, sanitizeSchema],
-        rehypeHighlight,
-      ]}
-      // remark-breaks keeps single newlines as line breaks — models answer
-      // "one per line" and chat UIs are expected to honor it.
-      remarkPlugins={[remarkGfm, remarkBreaks]}
-    >
-      {children}
-    </ReactMarkdown>
+    <div className="message-markdown">
+      <ReactMarkdown
+        components={{
+          code: InlineCode,
+          pre: CodeBlock,
+          a: ({ children, ...props }) => (
+            <a {...props} rel="noreferrer noopener" target="_blank">
+              {children}
+            </a>
+          ),
+        }}
+        rehypePlugins={[
+          rehypeRaw,
+          [rehypeSanitize, sanitizeSchema],
+          rehypeHighlight,
+        ]}
+        // Markdown soft-wraps stay prose. Lists, paragraphs and explicit HTML
+        // breaks still render normally without turning provider line wrapping
+        // into a wall of artificial visual breaks.
+        remarkPlugins={[remarkGfm]}
+      >
+        {children}
+      </ReactMarkdown>
+    </div>
   );
 }

@@ -43,7 +43,6 @@ const systemShowItemInFolderResultSchema = z
 // Workspace-free chat and delegated email generation still have dedicated
 // lifecycle tests only for the two original runtimes. Cursor is exposed first
 // in Workbench and fails closed here until those flows gain equivalent tests.
-const delegatedRuntimeKindSchema = z.enum(["claude", "codex"]);
 const opaqueReferenceSchema = z
   .string()
   .regex(/^[a-z][a-zA-Z0-9_-]*:[a-zA-Z0-9._~-]+$/u);
@@ -332,6 +331,45 @@ export const filePickRequestSchema = z
 
 export const filePickSchema = z
   .object({ paths: z.array(z.string().min(1)) })
+  .strict();
+
+export const workspaceChangesRequestSchema = z
+  .object({ taskId: entityIdSchema })
+  .strict();
+export const workspaceChangeSchema = z
+  .object({
+    path: z.string().min(1),
+    previousPath: z.string().min(1).nullable(),
+    status: z.enum([
+      "modified",
+      "added",
+      "deleted",
+      "renamed",
+      "copied",
+      "untracked",
+      "conflicted",
+    ]),
+    staged: z.boolean(),
+    unstaged: z.boolean(),
+  })
+  .strict();
+export const workspaceChangesSchema = z
+  .object({
+    isRepo: z.boolean(),
+    branch: z.string().min(1).nullable(),
+    files: z.array(workspaceChangeSchema),
+    updatedAt: z.iso.datetime(),
+  })
+  .strict();
+export const workspaceDiffRequestSchema = z
+  .object({ taskId: entityIdSchema, file: z.string().min(1).max(4_096) })
+  .strict();
+export const workspaceDiffSchema = z
+  .object({
+    file: z.string().min(1),
+    patch: z.string(),
+    truncated: z.boolean(),
+  })
   .strict();
 
 export const fsListRequestSchema = z
@@ -780,6 +818,8 @@ export const quickChatMessageSchema = z
     role: z.enum(["user", "assistant"]),
     body: z.string(),
     createdAt: z.iso.datetime({ offset: true }),
+    providerLabel: z.string().min(1).optional(),
+    modelLabel: z.string().min(1).optional(),
   })
   .strict();
 
@@ -963,6 +1003,31 @@ export const memorySourceSchema = z
     accessMode: z.enum(["read", "excluded"]),
     createdAt: z.iso.datetime({ offset: true }),
     updatedAt: z.iso.datetime({ offset: true }),
+  })
+  .strict();
+
+export const memoryStatusSchema = z
+  .object({
+    fts5: z
+      .object({
+        available: z.boolean(),
+        documents: z.number().int().nonnegative(),
+        lastIndexedAt: z.iso.datetime({ offset: true }).nullable(),
+      })
+      .strict(),
+    obsidian: z
+      .object({
+        configured: z.boolean(),
+        sources: z.number().int().nonnegative(),
+      })
+      .strict(),
+    gbrain: z
+      .object({
+        installed: z.boolean(),
+        binaryPath: z.string().min(1).nullable(),
+        version: z.string().min(1).nullable(),
+      })
+      .strict(),
   })
   .strict();
 
@@ -1401,7 +1466,7 @@ const inboxThreadCreateForwardDraftRequestSchema = z
 const inboxThreadGenerateReplyDraftRequestSchema = z
   .object({
     threadId: entityIdSchema,
-    runtimeKind: delegatedRuntimeKindSchema,
+    runtimeKind: runtimeKindSchema,
     model: z.string().trim().min(1).max(120),
     effort: z.string().trim().min(1).max(20).optional(),
     fromAddress: z.email().trim().max(320).optional(),
@@ -1686,6 +1751,8 @@ export const ipcRequestSchemas = {
   "task:delete": taskDeleteRequestSchema,
   "workspace:pick": workspacePickRequestSchema,
   "file:pick": filePickRequestSchema,
+  "workspace:changes": workspaceChangesRequestSchema,
+  "workspace:diff": workspaceDiffRequestSchema,
   "fs:list": fsListRequestSchema,
   "fs:read": fsReadRequestSchema,
   "fs:search": fsSearchRequestSchema,
@@ -1731,6 +1798,7 @@ export const ipcRequestSchemas = {
   "usage:refresh": emptyRequestSchema,
   "usage:alertSet": usageAlertSetRequestSchema,
   "memory:configure": memoryConfigureRequestSchema,
+  "memory:status": emptyRequestSchema,
   "memory:list": emptyRequestSchema,
   "memory:search": memorySearchRequestSchema,
   "memory:reindex": memoryReindexRequestSchema,
@@ -1778,6 +1846,8 @@ export const ipcResponseSchemas = {
   "task:delete": taskDeleteResultSchema,
   "workspace:pick": workspacePickSchema,
   "file:pick": filePickSchema,
+  "workspace:changes": workspaceChangesSchema,
+  "workspace:diff": workspaceDiffSchema,
   "fs:list": fsListSchema,
   "fs:read": fsReadSchema,
   "fs:search": fsSearchSchema,
@@ -1823,6 +1893,7 @@ export const ipcResponseSchemas = {
   "usage:refresh": usageOverviewSchema,
   "usage:alertSet": usageAlertSchema,
   "memory:configure": z.array(memorySourceSchema),
+  "memory:status": memoryStatusSchema,
   "memory:list": z.array(memorySourceSchema),
   "memory:search": z.array(memorySearchResultSchema),
   "memory:reindex": z

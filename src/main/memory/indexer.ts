@@ -1,4 +1,6 @@
 import path from "node:path";
+import { execFileSync } from "node:child_process";
+import { existsSync } from "node:fs";
 import type { Database } from "../db/connection";
 import {
   assertSourceIntact,
@@ -20,6 +22,20 @@ export type MemoryStartReport = {
   failed: Array<{ sourceId: string; message: string }>;
 };
 
+export type MemoryStatus = {
+  fts5: {
+    available: boolean;
+    documents: number;
+    lastIndexedAt: string | null;
+  };
+  obsidian: { configured: boolean; sources: number };
+  gbrain: {
+    installed: boolean;
+    binaryPath: string | null;
+    version: string | null;
+  };
+};
+
 export class MemoryService {
   private readonly watchers = new Map<string, MemoryWatcher>();
 
@@ -32,8 +48,33 @@ export class MemoryService {
         source: MemorySource,
         onChange: (event: MemoryWatchEvent) => void,
       ) => MemoryWatcher;
+      gbrainProbe?: () => MemoryStatus["gbrain"];
     },
   ) {}
+
+  status(): MemoryStatus {
+    const sourceCount = this.listSources().length;
+    const documents = this.dependencies.db
+      .prepare(
+        "SELECT count(*) AS count, max(indexed_at) AS last_indexed_at FROM memory_documents",
+      )
+      .get() as { count: number; last_indexed_at: string | null };
+    let fts5Available = true;
+    try {
+      this.dependencies.db.prepare("SELECT count(*) FROM memory_fts").get();
+    } catch {
+      fts5Available = false;
+    }
+    return {
+      fts5: {
+        available: fts5Available,
+        documents: documents.count,
+        lastIndexedAt: documents.last_indexed_at,
+      },
+      obsidian: { configured: sourceCount > 0, sources: sourceCount },
+      gbrain: (this.dependencies.gbrainProbe ?? probeGbrain)(),
+    };
+  }
 
   configure(paths: string[]): MemorySource[] {
     const sources = configureSources(
@@ -228,6 +269,33 @@ export class MemoryService {
         modifiedAt: document.modifiedAt,
         indexedAt,
       });
+  }
+}
+
+function probeGbrain(): MemoryStatus["gbrain"] {
+  const candidates = [
+    process.env.GBRAIN_BIN,
+    process.env.HOME ? path.join(process.env.HOME, ".bun/bin/gbrain") : null,
+    "/opt/homebrew/bin/gbrain",
+    "/usr/local/bin/gbrain",
+  ].filter((candidate): candidate is string => Boolean(candidate));
+  const binaryPath = candidates.find((candidate) => existsSync(candidate));
+  if (!binaryPath) {
+    return { installed: false, binaryPath: null, version: null };
+  }
+  try {
+    const version = execFileSync(binaryPath, ["--version"], {
+      encoding: "utf8",
+      timeout: 2_000,
+      stdio: ["ignore", "pipe", "ignore"],
+    }).trim();
+    return {
+      installed: true,
+      binaryPath,
+      version: version || "versão não informada",
+    };
+  } catch {
+    return { installed: true, binaryPath, version: null };
   }
 }
 

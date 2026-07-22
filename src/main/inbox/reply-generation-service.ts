@@ -24,7 +24,7 @@ export const MAX_REPLY_GENERATION_PROMPT_CHARS = 60_000;
 
 export interface GenerateInboxReplyDraftInput {
   threadId: string;
-  runtimeKind: "claude" | "codex";
+  runtimeKind: RuntimeKind;
   model: string;
   effort?: string;
   fromAddress?: string;
@@ -83,8 +83,10 @@ export class InboxReplyGenerationService {
     );
     const { taskId, laneId } = this.createIsolatedLane(input, scratchPath);
     const lane = this.dependencies.state.lanes.findById(laneId);
-    if (!lane || lane.permissionMode !== "plan") {
-      throw new Error("Inbox reply generation requires a persisted plan lane");
+    if (!lane) {
+      throw new Error(
+        "Inbox reply generation requires a persisted isolated lane",
+      );
     }
     const opened = await this.dependencies.state.laneService.open(laneId, {
       inheritTask: false,

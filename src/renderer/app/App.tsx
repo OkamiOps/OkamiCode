@@ -7,6 +7,9 @@ import "../styles/chat.css";
 import "../styles/inbox.css";
 import "../styles/calendar.css";
 import "../styles/home.css";
+import "../styles/ecosystem-control.css";
+import "../styles/memory.css";
+import "../styles/models.css";
 import { AppProviders } from "./providers";
 import { AppRouter } from "./router";
 

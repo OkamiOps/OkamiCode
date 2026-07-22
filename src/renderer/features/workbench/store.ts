@@ -24,6 +24,8 @@ export interface SessionUsage {
   inputTokens: number;
   cacheReadTokens: number;
   outputTokens: number;
+  /** Occupancy from a dedicated runtime reading, never aggregate billing. */
+  contextTokens: number | null;
   contextWindow: number | null;
 }
 
@@ -139,39 +141,24 @@ export function reduceCanonicalEvent(
         typeof value === "number" && Number.isFinite(value) ? value : 0;
       const modelUsage = event.payload.modelUsage as
         Record<string, { contextWindow?: unknown }> | undefined;
-      const contextWindow = modelUsage
-        ? Object.values(modelUsage)
-            .map((entry) =>
-              typeof entry?.contextWindow === "number"
-                ? entry.contextWindow
-                : 0,
-            )
-            .reduce((max, value) => Math.max(max, value), 0) || null
-        : null;
-      const previous = state.lastUsageByLane[event.laneId];
-      const measured =
-        toCount(usage.input_tokens) +
-        toCount(usage.cache_read_input_tokens) +
-        toCount(usage.output_tokens);
-      const previousTotal = previous
-        ? previous.inputTokens +
-          previous.cacheReadTokens +
-          previous.outputTokens
-        : 0;
-      // Turn-level usage fluctuates with caching; the session's occupancy is
-      // the peak, which is why the meter used to jump back down every turn.
-      const keepPrevious = measured < previousTotal;
+      const dedicatedContext = dedicatedContextReading(event.payload);
+      const contextWindow =
+        dedicatedContext?.window ??
+        (modelUsage
+          ? Object.values(modelUsage)
+              .map((entry) =>
+                typeof entry?.contextWindow === "number"
+                  ? entry.contextWindow
+                  : 0,
+              )
+              .reduce((max, value) => Math.max(max, value), 0) || null
+          : null);
       const merged = {
-        inputTokens: keepPrevious
-          ? previous!.inputTokens
-          : toCount(usage.input_tokens),
-        cacheReadTokens: keepPrevious
-          ? previous!.cacheReadTokens
-          : toCount(usage.cache_read_input_tokens),
-        outputTokens: keepPrevious
-          ? previous!.outputTokens
-          : toCount(usage.output_tokens),
-        contextWindow: contextWindow ?? previous?.contextWindow ?? null,
+        inputTokens: toCount(usage.input_tokens),
+        cacheReadTokens: toCount(usage.cache_read_input_tokens),
+        outputTokens: toCount(usage.output_tokens),
+        contextTokens: dedicatedContext?.used ?? null,
+        contextWindow,
       };
       next.lastUsageByLane = {
         ...state.lastUsageByLane,
@@ -181,6 +168,36 @@ export function reduceCanonicalEvent(
     }
   }
   return next;
+}
+
+function dedicatedContextReading(
+  payload: Record<string, unknown>,
+): { used: number; window: number } | null {
+  // Claude result usage aggregates billing across model calls and subagents.
+  // Only Codex's dedicated tokenUsage notification describes one live window.
+  if (payload.nativeMethod !== "thread/tokenUsage/updated") return null;
+  const usage = asRecord(payload.usage);
+  const tokenUsage = asRecord(usage?.tokenUsage) ?? usage;
+  const total = asRecord(tokenUsage?.total);
+  const used = finiteCount(total?.totalTokens ?? tokenUsage?.totalTokens);
+  const window = finiteCount(
+    tokenUsage?.modelContextWindow ?? usage?.modelContextWindow,
+  );
+  return used !== null && window !== null && window > 0
+    ? { used, window }
+    : null;
+}
+
+function asRecord(value: unknown): Record<string, unknown> | null {
+  return value !== null && typeof value === "object" && !Array.isArray(value)
+    ? (value as Record<string, unknown>)
+    : null;
+}
+
+function finiteCount(value: unknown): number | null {
+  return typeof value === "number" && Number.isFinite(value) && value >= 0
+    ? value
+    : null;
 }
 
 const EFFORT_STORAGE_KEY = "okami.effortByLane";

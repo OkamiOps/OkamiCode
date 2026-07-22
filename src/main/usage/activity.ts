@@ -37,7 +37,16 @@ export class UsageActivityService {
   rebuild(): void {
     const events = this.db
       .prepare(
-        `SELECT e.lane_id, e.occurred_at, e.payload_json, l.model
+        `SELECT e.lane_id, e.occurred_at, e.payload_json,
+                COALESCE(
+                  (SELECT json_extract(session.payload_json, '$.model')
+                   FROM events session
+                   WHERE session.run_id = e.run_id
+                     AND session.kind IN ('session_started', 'session_resumed')
+                   ORDER BY session.sequence
+                   LIMIT 1),
+                  l.model
+                ) AS model
          FROM events e JOIN runtime_lanes l ON l.id = e.lane_id
          WHERE e.kind = 'usage_reported'
          ORDER BY e.occurred_at, e.sequence`,
@@ -59,18 +68,25 @@ export class UsageActivityService {
       );
       for (const event of events) {
         const payload = parse(event.payload_json);
-        const model = text(payload, ["model"]) ?? event.model;
         const bucketStart = hourStart(event.occurred_at);
+        const sample = usageSample(payload, event.model);
         insert.run(
-          `${event.lane_id}:${bucketStart}:${model}`,
+          `${event.lane_id}:${bucketStart}:${sample.model}`,
           event.lane_id,
           bucketStart,
-          model,
-          numeric(payload, ["input_tokens", "inputTokens"]),
-          numeric(payload, ["cache_read_input_tokens", "cachedInputTokens"]) +
-            numeric(payload, ["cache_creation_input_tokens"]),
-          numeric(payload, ["output_tokens", "outputTokens"]),
-          numeric(payload, ["reasoning_tokens", "reasoningTokens"]),
+          sample.model,
+          numeric(sample.usage, ["input_tokens", "inputTokens"]),
+          numeric(sample.usage, [
+            "cache_read_input_tokens",
+            "cacheReadInputTokens",
+            "cachedInputTokens",
+          ]) +
+            numeric(sample.usage, [
+              "cache_creation_input_tokens",
+              "cacheCreationInputTokens",
+            ]),
+          numeric(sample.usage, ["output_tokens", "outputTokens"]),
+          numeric(sample.usage, ["reasoning_tokens", "reasoningTokens"]),
         );
       }
     })();
@@ -183,7 +199,17 @@ function mergeEvent(
     activity.get(key) ?? project({ ...row, bucket_start: bucketStart });
   if (row.kind === "session_started" || row.kind === "session_resumed")
     current.sessions++;
-  if (row.kind === "message_completed") current.messages++;
+  if (row.kind === "message_completed") {
+    current.messages++;
+    // AGY exposes quota windows but not native per-turn token counters. Keep
+    // completed work visible in ROI with a conservative local text estimate;
+    // the UI labels this source as estimated instead of presenting fake exact
+    // telemetry. Other runtimes continue to use their native usage events.
+    if (row.runtime_kind === "agy" && current.outputTokens === 0) {
+      current.outputTokens += estimatedTextTokens(parse(row.payload_json));
+      current.modelCalls++;
+    }
+  }
   if (row.kind === "tool_call_completed") current.toolCalls++;
   if (row.kind === "run_completed") {
     current.durationMs += numeric(parse(row.payload_json), [
@@ -219,9 +245,34 @@ function numeric(value: unknown, keys: string[]): number {
     : 0;
 }
 
-function text(value: unknown, keys: string[]): string | null {
-  const found = find(value, new Set(keys));
-  return typeof found === "string" ? found : null;
+function estimatedTextTokens(payload: unknown): number {
+  const text = find(payload, new Set(["text", "content", "message"]));
+  if (typeof text !== "string" || text.trim().length === 0) return 0;
+  // UTF-8 bytes / 4 is intentionally conservative and deterministic. It is
+  // not called an exact provider reading anywhere in the product.
+  return Math.max(1, Math.ceil(Buffer.byteLength(text, "utf8") / 4));
+}
+
+function usageSample(
+  payload: unknown,
+  fallbackModel: string,
+): { model: string; usage: unknown } {
+  const root = record(payload);
+  const modelUsage = record(root?.modelUsage ?? root?.model_usage);
+  const nativeModels = modelUsage ? Object.keys(modelUsage) : [];
+  return {
+    model:
+      (typeof root?.model === "string" ? root.model : null) ??
+      (nativeModels.length === 1 ? nativeModels[0] : null) ??
+      fallbackModel,
+    usage: root?.usage ?? payload,
+  };
+}
+
+function record(value: unknown): Record<string, unknown> | null {
+  return value !== null && typeof value === "object" && !Array.isArray(value)
+    ? (value as Record<string, unknown>)
+    : null;
 }
 
 function find(value: unknown, keys: Set<string>): unknown {

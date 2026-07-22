@@ -87,9 +87,19 @@ describe("HomePage", () => {
 
     expect(await screen.findByText("1,5 mi")).toBeVisible();
     expect(await screen.findAllByText(/US\$\s*4,22/u)).not.toHaveLength(0);
-    expect(screen.getByText(/US\$\s*370,00\/mês/u)).toBeVisible();
+    expect(screen.getByText(/US\$\s*410,00\/mês/u)).toBeVisible();
+    expect(screen.queryByText("openai/gpt-5.6-luna")).not.toBeInTheDocument();
+    expect(screen.getByText("Entrada nova")).toBeVisible();
+    expect(screen.getByText("Cache lido")).toBeVisible();
+    expect(screen.getByText("Saída")).toBeVisible();
 
     const user = userEvent.setup();
+    await user.click(
+      screen.getByRole("button", { name: /OpenAI.*1 modelo/iu }),
+    );
+    expect(screen.getByText("openai/gpt-5.6-luna")).toBeVisible();
+    expect(screen.getAllByText("1 mi").length).toBeGreaterThan(0);
+    expect(screen.getAllByText("500 mil").length).toBeGreaterThan(0);
     await user.click(
       screen.getByRole("button", { name: /API equivalente · 30 dias/u }),
     );
@@ -103,8 +113,55 @@ describe("HomePage", () => {
     );
 
     await waitFor(() =>
-      expect(screen.getByText(/US\$\s*320,00\/mês/u)).toBeVisible(),
+      expect(screen.getByText(/US\$\s*360,00\/mês/u)).toBeVisible(),
     );
     expect(screen.getByText(/incluindo a taxa.*5,5%/iu)).toBeVisible();
+  });
+
+  it("shows every runtime returned by the system doctor without a fixed total", async () => {
+    api.usageOverview.mockRejectedValue(new Error("usage unavailable"));
+    api.usageOpenRouterPricing.mockRejectedValue(
+      new Error("pricing unavailable"),
+    );
+    api.inboxAccountsList.mockResolvedValue([]);
+    api.calendarSourcesList.mockResolvedValue([]);
+    api.taskList.mockResolvedValue([]);
+    api.systemDoctor.mockResolvedValue({
+      database: "ok",
+      runtimes: [],
+      clients: [
+        "Codex",
+        "Claude Code",
+        "Cursor",
+        "Antigravity",
+        "Grok",
+        "MiniMax mmx",
+        "MiMo Code",
+      ].map((label, index) => ({
+        binaryPath: `/cli/${index}`,
+        capabilities: [],
+        client: ["codex", "claude", "cursor", "agy", "grok", "minimax", "mimo"][
+          index
+        ],
+        detail: "Detectado localmente",
+        integrationStatus: index === 3 ? "needs_adapter" : "ready",
+        label,
+        role: index === 5 ? "launcher" : "runtime",
+        version: "1.0.0",
+      })),
+    });
+
+    render(
+      <QueryClientProvider client={new QueryClient()}>
+        <MemoryRouter>
+          <HomePage />
+        </MemoryRouter>
+      </QueryClientProvider>,
+    );
+
+    expect(await screen.findByText("MiMo Code")).toBeVisible();
+    expect(screen.getAllByText("Antigravity").length).toBeGreaterThan(0);
+    expect(screen.getByText("MiniMax mmx")).toBeVisible();
+    expect(screen.getByText("6/7")).toBeVisible();
   });
 });

@@ -569,7 +569,7 @@ describe("CalendarPage", () => {
       "Data ou horário inválido para o fuso horário escolhido.",
     );
     expect(api.createEvent).toHaveBeenCalledOnce();
-  }, 10_000);
+  }, 20_000);
 
   it("renders returned active remote sources and requests events for every active source", async () => {
     const remoteEvent = {

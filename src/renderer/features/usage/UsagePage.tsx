@@ -9,6 +9,7 @@ import {
 import { AlertTriangle, RefreshCw, ShieldCheck } from "lucide-react";
 import { useState, type FormEvent } from "react";
 import type { IpcRequest, IpcResponse } from "../../../shared/contracts/ipc";
+import type { ProviderKind } from "../../../shared/contracts/lane";
 import { workbenchClient } from "../../lib/ipc/client";
 import { ActivityDashboard } from "./ActivityDashboard";
 import {
@@ -139,6 +140,17 @@ function UsageContent({
   overview: UsageOverview;
 }) {
   const context = overview.context;
+  const [focusedProvider, setFocusedProvider] = useState<ProviderKind>(
+    overview.subscriptions[0]?.provider ?? "chatgpt",
+  );
+  const orderedSubscriptions = [...overview.subscriptions].sort(
+    (left, right) =>
+      left.provider === focusedProvider
+        ? -1
+        : right.provider === focusedProvider
+          ? 1
+          : 0,
+  );
   return (
     <section className="usage-page" aria-labelledby="usage-heading">
       <header className="usage-page__header">
@@ -163,21 +175,31 @@ function UsageContent({
       </header>
 
       <div className="usage-page__content">
+        <UsageProviderStrip
+          focusedProvider={focusedProvider}
+          onFocus={setFocusedProvider}
+          subscriptions={overview.subscriptions}
+        />
         <section
           className="usage-section"
           aria-labelledby="subscription-heading"
         >
           <MeasureHeading
-            description="Percentuais do provider permanecem separados dos contadores locais."
+            description="A barra e o percentual mostram o que ainda resta. Ausência de leitura nunca vira 0%."
             id="subscription-heading"
             title="Quota da assinatura"
           />
-          <SubscriptionCards subscriptions={overview.subscriptions} />
+          <SubscriptionCards
+            selectedProvider={focusedProvider}
+            subscriptions={orderedSubscriptions}
+          />
           <SubscriptionTable
             activity={overview.activity}
-            subscriptions={overview.subscriptions}
+            subscriptions={orderedSubscriptions}
           />
         </section>
+
+        <ModelUsageBoard activity={overview.activity} />
 
         <section className="usage-section" aria-labelledby="context-heading">
           <MeasureHeading
@@ -216,6 +238,176 @@ function UsageContent({
           overview={overview}
         />
         <ActivityDashboard activity={overview.activity} />
+      </div>
+    </section>
+  );
+}
+
+function ModelUsageBoard({
+  activity,
+}: {
+  activity: UsageOverview["activity"];
+}) {
+  const rows = Object.values(
+    activity.reduce<
+      Record<
+        string,
+        {
+          provider: ProviderKind;
+          model: string;
+          input: number;
+          cache: number;
+          output: number;
+          calls: number;
+        }
+      >
+    >((accumulator, bucket) => {
+      const key = `${bucket.provider}:${bucket.model}`;
+      const row = accumulator[key] ?? {
+        provider: bucket.provider,
+        model: bucket.model,
+        input: 0,
+        cache: 0,
+        output: 0,
+        calls: 0,
+      };
+      row.input += bucket.inputTokens;
+      row.cache += bucket.cachedInputTokens;
+      row.output += bucket.outputTokens + bucket.reasoningTokens;
+      row.calls += bucket.modelCalls;
+      accumulator[key] = row;
+      return accumulator;
+    }, {}),
+  ).sort(
+    (left, right) =>
+      right.input +
+      right.cache +
+      right.output -
+      (left.input + left.cache + left.output),
+  );
+  if (rows.length === 0) return null;
+  return (
+    <section
+      className="usage-model-board"
+      aria-labelledby="model-usage-heading"
+    >
+      <MeasureHeading
+        description="Telemetria local separada por modelo. Entrada nova, cache e saída nunca são misturados."
+        id="model-usage-heading"
+        title="Consumo por modelo"
+      />
+      <div className="usage-model-board__grid">
+        {rows.map((row) => (
+          <article
+            className="usage-model-row"
+            data-provider={row.provider}
+            key={`${row.provider}:${row.model}`}
+          >
+            <span className="usage-model-row__provider">
+              {usageProviders.find((item) => item.provider === row.provider)
+                ?.glyph ?? "AI"}
+            </span>
+            <div className="usage-model-row__identity">
+              <strong>{row.model}</strong>
+              <small>
+                {usageProviders.find((item) => item.provider === row.provider)
+                  ?.label ?? row.provider}{" "}
+                · {format(row.calls)} chamadas
+              </small>
+            </div>
+            <TokenMeasure label="Entrada nova" tone="input" value={row.input} />
+            <TokenMeasure label="Cache lido" tone="cache" value={row.cache} />
+            <TokenMeasure label="Saída" tone="output" value={row.output} />
+          </article>
+        ))}
+      </div>
+    </section>
+  );
+}
+
+function TokenMeasure({
+  label,
+  tone,
+  value,
+}: {
+  label: string;
+  tone: "input" | "cache" | "output";
+  value: number;
+}) {
+  return (
+    <div className="usage-model-row__measure" data-tone={tone}>
+      <span>{label}</span>
+      <strong>{format(value)}</strong>
+    </div>
+  );
+}
+
+const usageProviders: {
+  provider: ProviderKind;
+  label: string;
+  glyph: string;
+}[] = [
+  { provider: "chatgpt", label: "ChatGPT", glyph: "GP" },
+  { provider: "claude_max", label: "Claude", glyph: "CL" },
+  { provider: "cursor", label: "Cursor", glyph: "CU" },
+  { provider: "antigravity", label: "Antigravity", glyph: "AG" },
+  { provider: "grok", label: "Grok", glyph: "GK" },
+  { provider: "mimo", label: "MiMo", glyph: "MI" },
+  { provider: "minimax", label: "MiniMax", glyph: "MX" },
+];
+
+function UsageProviderStrip({
+  focusedProvider,
+  onFocus,
+  subscriptions,
+}: {
+  focusedProvider: ProviderKind;
+  onFocus: (provider: ProviderKind) => void;
+  subscriptions: UsageOverview["subscriptions"];
+}) {
+  return (
+    <section
+      className="usage-provider-strip"
+      aria-labelledby="usage-provider-heading"
+    >
+      <header>
+        <div>
+          <h2 id="usage-provider-heading">Providers</h2>
+          <p>
+            Selecione um provider para colocá-lo em foco. Todos permanecem
+            visíveis abaixo.
+          </p>
+        </div>
+        <span>Restante, não consumido</span>
+      </header>
+      <div className="usage-provider-strip__rail">
+        {usageProviders.map((meta) => {
+          const snapshot = subscriptions.find(
+            (entry) => entry.provider === meta.provider,
+          );
+          const remaining = snapshot?.windows
+            .flatMap((window) =>
+              window.remainingPercent === null ? [] : [window.remainingPercent],
+            )
+            .sort((left, right) => left - right)[0];
+          return (
+            <button
+              aria-pressed={focusedProvider === meta.provider}
+              data-provider={meta.provider}
+              key={meta.provider}
+              onClick={() => onFocus(meta.provider)}
+              type="button"
+            >
+              <span aria-hidden="true">{meta.glyph}</span>
+              <strong>{meta.label}</strong>
+              <small>
+                {remaining === undefined
+                  ? "Sem leitura"
+                  : `${format(remaining)}% restante`}
+              </small>
+            </button>
+          );
+        })}
       </div>
     </section>
   );
