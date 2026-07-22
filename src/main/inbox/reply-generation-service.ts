@@ -6,6 +6,11 @@ import {
   type CanonicalEvent,
 } from "../../shared/contracts/event";
 import type { ModelCatalogEntry } from "../runtime/model-catalog";
+import {
+  permissionModesForRuntime,
+  type ProviderKind,
+  type RuntimeKind,
+} from "../../shared/contracts/lane";
 import type { AppState } from "../ipc/app-state";
 import {
   InboxReplyDraftService,
@@ -28,7 +33,7 @@ export interface GenerateInboxReplyDraftInput {
 
 export interface AnalyzeInboxThreadInput {
   threadId: string;
-  runtimeKind: "claude" | "codex";
+  runtimeKind: RuntimeKind;
   model: string;
   effort?: string;
   action: "summary" | "key_points" | "translate" | "custom";
@@ -163,8 +168,8 @@ export class InboxReplyGenerationService {
       objective: "Analyze an email without producing or sending a draft.",
     });
     const lane = this.dependencies.state.lanes.findById(laneId);
-    if (!lane || lane.permissionMode !== "plan") {
-      throw new Error("Inbox analysis requires a persisted plan lane");
+    if (!lane) {
+      throw new Error("Inbox analysis requires a persisted isolated lane");
     }
     const opened = await this.dependencies.state.laneService.open(laneId, {
       inheritTask: false,
@@ -238,15 +243,20 @@ export class InboxReplyGenerationService {
         createdAt: now,
         updatedAt: now,
       });
+      const permissionMode = permissionModesForRuntime(
+        input.runtimeKind,
+      ).includes("plan")
+        ? "plan"
+        : "manual";
       this.dependencies.state.lanes.insert({
         id: laneId,
         taskId,
         runtimeKind: input.runtimeKind,
-        providerKind: input.runtimeKind === "claude" ? "claude_max" : "chatgpt",
+        providerKind: providerKindForRuntime(input.runtimeKind),
         model: input.model,
         status: "ready",
         workspacePath: scratchPath,
-        permissionMode: "plan",
+        permissionMode,
         lastEventCursor: 0,
         createdAt: now,
         updatedAt: now,
@@ -254,6 +264,19 @@ export class InboxReplyGenerationService {
     })();
     return { taskId, laneId };
   }
+}
+
+function providerKindForRuntime(runtimeKind: RuntimeKind): ProviderKind {
+  const providers: Record<RuntimeKind, ProviderKind> = {
+    claude: "claude_max",
+    codex: "chatgpt",
+    cursor: "cursor",
+    agy: "antigravity",
+    grok: "grok",
+    mimo: "mimo",
+    minimax: "minimax",
+  };
+  return providers[runtimeKind];
 }
 
 async function collectCompletedText(

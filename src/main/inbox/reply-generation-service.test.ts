@@ -178,6 +178,19 @@ function harness(
         source: "test",
         models: [{ id: "gpt-test", label: "Test", efforts: ["low"] }],
       },
+      {
+        runtimeKind: "agy",
+        providerLabel: "Antigravity",
+        routeKind: "native",
+        source: "test",
+        models: [
+          {
+            id: "gemini-3.5-flash",
+            label: "Gemini 3.5 Flash",
+            efforts: ["high"],
+          },
+        ],
+      },
     ],
     scratchRoot: "/tmp",
   });
@@ -224,6 +237,38 @@ describe("InboxReplyGenerationService", () => {
     expect(prompt).toContain("Requested action: summary");
     expect(prompt).toContain("Resuma em português");
     expect(prompt).toContain("untrusted external data");
+  });
+
+  it("routes email analysis through a non-Claude subscription runtime", async () => {
+    const { state, threadId, service, onEvent } = harness();
+
+    await service.analyzeThread(
+      {
+        threadId,
+        runtimeKind: "agy",
+        model: "gemini-3.5-flash",
+        effort: "high",
+        action: "summary",
+        instructions: "Resuma em português.",
+      },
+      { onEvent },
+    );
+
+    const lane = state.lanes.findById(
+      (
+        state.database
+          .prepare(
+            "SELECT id FROM runtime_lanes WHERE runtime_kind = 'agy' ORDER BY created_at DESC LIMIT 1",
+          )
+          .get() as { id: string }
+      ).id,
+    )!;
+    expect(lane).toMatchObject({
+      runtimeKind: "agy",
+      providerKind: "antigravity",
+      model: "gemini-3.5-flash",
+      permissionMode: "plan",
+    });
   });
 
   it("rejects invalid runtime/model/effort before creating records or opening a runtime", async () => {

@@ -1400,7 +1400,7 @@ const inboxThreadGenerateReplyDraftRequestSchema = z
 const inboxThreadAnalyzeRequestSchema = z
   .object({
     threadId: entityIdSchema,
-    runtimeKind: delegatedRuntimeKindSchema,
+    runtimeKind: runtimeKindSchema,
     model: z.string().trim().min(1).max(120),
     effort: z.string().trim().min(1).max(20).optional(),
     action: z.enum(["summary", "key_points", "translate", "custom"]),

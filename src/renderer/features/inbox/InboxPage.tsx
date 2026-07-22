@@ -1527,6 +1527,7 @@ function Conversation({
           {detail && (
             <>
               <InboxAiActionsModal
+                key={detail.thread.id}
                 listModels={listModels}
                 onAnalyze={onAnalyze}
                 threadId={detail.thread.id}

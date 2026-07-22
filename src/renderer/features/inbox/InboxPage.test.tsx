@@ -143,6 +143,41 @@ const replyModels = [
     ],
   },
   {
+    runtimeKind: "agy" as const,
+    providerLabel: "Antigravity",
+    routeKind: "native" as const,
+    source: "subscription",
+    models: [
+      {
+        id: "gemini-3.5-flash",
+        label: "Gemini 3.5 Flash",
+        efforts: ["low", "high"],
+        defaultEffort: "high",
+      },
+    ],
+  },
+  {
+    runtimeKind: "grok" as const,
+    providerLabel: "Grok",
+    routeKind: "native" as const,
+    source: "subscription",
+    models: [{ id: "grok-4.5", label: "Grok 4.5" }],
+  },
+  {
+    runtimeKind: "mimo" as const,
+    providerLabel: "MiMo",
+    routeKind: "native" as const,
+    source: "subscription",
+    models: [{ id: "mimo-v2.5-pro", label: "MiMo V2.5 Pro" }],
+  },
+  {
+    runtimeKind: "minimax" as const,
+    providerLabel: "MiniMax",
+    routeKind: "native" as const,
+    source: "subscription",
+    models: [{ id: "minimax-m2.7", label: "MiniMax M2.7" }],
+  },
+  {
     runtimeKind: "claude" as const,
     providerLabel: "Claude Max",
     routeKind: "unavailable" as const,
@@ -898,34 +933,59 @@ describe("InboxPage", () => {
     expect(await screen.findByText("Aguardando sua aprovação")).toBeVisible();
   });
 
-  it("runs a prompted email action and shows a copyable result without creating a reply", async () => {
+  it("opens a roomy email assistant, exposes every runnable provider, and analyzes beside the message", async () => {
     const { api } = renderInbox();
     await userEvent.click(
       await screen.findByRole("button", { name: /Proposta para landing page/ }),
     );
     await userEvent.click(screen.getByRole("button", { name: "Ações com IA" }));
-    const dialog = await screen.findByRole("dialog");
+    const assistant = await screen.findByRole("complementary", {
+      name: "Assistente do e-mail",
+    });
+    expect(screen.queryByRole("dialog")).toBeNull();
     await vi.waitFor(() => expect(api.listModels).toHaveBeenCalled());
-    expect(within(dialog).getByLabelText("O que você quer saber?")).toHaveValue(
+    expect(
+      within(assistant).getByLabelText("O que você quer saber?"),
+    ).toHaveValue(
       "Resuma este email em português do Brasil, com objetividade.",
     );
+    expect(within(assistant).getByLabelText("Provider")).toHaveTextContent(
+      "Antigravity",
+    );
+    expect(within(assistant).getByLabelText("Provider")).toHaveTextContent(
+      "Grok",
+    );
+    expect(within(assistant).getByLabelText("Provider")).toHaveTextContent(
+      "MiMo",
+    );
+    expect(within(assistant).getByLabelText("Provider")).toHaveTextContent(
+      "MiniMax",
+    );
+    await userEvent.selectOptions(
+      within(assistant).getByLabelText("Provider"),
+      "agy",
+    );
+    await userEvent.selectOptions(
+      within(assistant).getByLabelText("Modelo"),
+      "gemini-3.5-flash",
+    );
     await userEvent.click(
-      within(dialog).getByRole("button", { name: "Executar ação" }),
+      within(assistant).getByRole("button", { name: "Enviar para análise" }),
     );
 
     await vi.waitFor(() => expect(api.analyzeThread).toHaveBeenCalledOnce());
     expect(vi.mocked(api.analyzeThread).mock.calls[0]?.[0]).toMatchObject({
       threadId,
-      runtimeKind: "codex",
-      model: "gpt-5.6",
-      effort: "medium",
+      runtimeKind: "agy",
+      model: "gemini-3.5-flash",
+      effort: "high",
       action: "summary",
     });
     expect(
-      await within(dialog).findByText("Resumo claro da conversa."),
+      await within(assistant).findByText("Resumo claro da conversa."),
     ).toBeVisible();
     expect(
-      within(dialog).getByRole("button", { name: "Copiar" }),
+      within(assistant).getByRole("button", { name: "Copiar resposta" }),
     ).toBeVisible();
     expect(api.createReplyDraft).not.toHaveBeenCalled();
   });

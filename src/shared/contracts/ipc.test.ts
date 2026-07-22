@@ -176,9 +176,9 @@ it("exposes strict Inbox contracts in both IPC maps", () => {
   expect(
     ipcRequestSchemas["inbox:thread:analyze"].safeParse({
       threadId: accountId,
-      runtimeKind: "codex",
-      model: "gpt-5.6-sol",
-      effort: "medium",
+      runtimeKind: "agy",
+      model: "gemini-3.5-flash",
+      effort: "high",
       action: "summary",
       instructions: "Resuma em português.",
     }).success,

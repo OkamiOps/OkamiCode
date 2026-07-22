@@ -1,4 +1,4 @@
-import { Button, Modal, Spinner, useOverlayState } from "@heroui/react";
+import { Button, Spinner } from "@heroui/react";
 import {
   Check,
   ChevronDown,
@@ -6,11 +6,14 @@ import {
   Languages,
   ListChecks,
   MessageSquareText,
+  Send,
   Sparkles,
   X,
 } from "lucide-react";
-import { useMemo, useState, type FormEvent } from "react";
+import { useMemo, useState, type FormEvent, type KeyboardEvent } from "react";
 import type { IpcRequest, IpcResponse } from "../../../shared/contracts/ipc";
+import type { RuntimeKind } from "../../../shared/contracts/lane";
+import { MessageMarkdown } from "../workbench/MessageMarkdown";
 
 type AnalyzeRequest = IpcRequest<"inbox:thread:analyze">;
 type AnalyzeResult = IpcResponse<"inbox:thread:analyze">;
@@ -45,66 +48,73 @@ interface InboxAiActionsModalProps {
   onAnalyze: (request: AnalyzeRequest) => Promise<AnalyzeResult>;
 }
 
+interface Exchange {
+  id: string;
+  prompt: string;
+  result: AnalyzeResult;
+}
+
 export function InboxAiActionsModal({
   threadId,
   listModels,
   onAnalyze,
 }: InboxAiActionsModalProps) {
+  const [open, setOpen] = useState(false);
   const [catalog, setCatalog] = useState<ModelCatalog>([]);
-  const [route, setRoute] = useState("");
+  const [provider, setProvider] = useState<RuntimeKind | "">("");
+  const [model, setModel] = useState("");
   const [effort, setEffort] = useState("");
   const [action, setAction] = useState<AnalyzeRequest["action"]>("summary");
   const [instructions, setInstructions] = useState<string>(
     presets[0].instructions,
   );
-  const [result, setResult] = useState<AnalyzeResult | null>(null);
+  const [history, setHistory] = useState<Exchange[]>([]);
   const [error, setError] = useState<string | null>(null);
   const [loadingCatalog, setLoadingCatalog] = useState(false);
   const [analyzing, setAnalyzing] = useState(false);
-  const [copied, setCopied] = useState(false);
-  const state = useOverlayState({
-    onOpenChange: (open) => {
-      if (!open || catalog.length > 0 || loadingCatalog) return;
-      void loadCatalog();
-    },
-  });
-  const routes = useMemo(
+  const [copiedId, setCopiedId] = useState<string | null>(null);
+
+  const providers = useMemo(
     () =>
-      catalog.flatMap((provider) =>
-        provider.runtimeKind === "claude" || provider.runtimeKind === "codex"
-          ? provider.models.map((model) => ({
-              runtimeKind:
-                provider.runtimeKind as AnalyzeRequest["runtimeKind"],
-              providerLabel: provider.providerLabel,
-              model,
-              value: `${provider.runtimeKind}:${model.id}`,
-            }))
-          : [],
+      catalog.filter(
+        (entry) => entry.routeKind !== "unavailable" && entry.models.length > 0,
       ),
     [catalog],
   );
-  const selected = routes.find((candidate) => candidate.value === route);
-  const efforts = selected?.model.efforts ?? [];
+  const selectedProvider = providers.find(
+    (entry) => entry.runtimeKind === provider,
+  );
+  const selectedModel = selectedProvider?.models.find(
+    (entry) => entry.id === model,
+  );
+  const efforts = selectedModel?.efforts ?? [];
 
-  async function loadCatalog() {
+  async function showAssistant() {
+    setOpen(true);
+    if (catalog.length > 0 || loadingCatalog) return;
     setLoadingCatalog(true);
     setError(null);
     try {
       const next = await listModels();
       setCatalog(next);
-      const first = next
-        .filter(
-          (provider) =>
-            provider.routeKind !== "unavailable" &&
-            (provider.runtimeKind === "claude" ||
-              provider.runtimeKind === "codex"),
-        )
-        .flatMap((provider) =>
-          provider.models.map((model) => ({ provider, model })),
-        )[0];
-      if (first) {
-        setRoute(`${first.provider.runtimeKind}:${first.model.id}`);
-        setEffort(defaultEffort(first.model.efforts));
+      const available = next.filter(
+        (entry) => entry.routeKind !== "unavailable" && entry.models.length > 0,
+      );
+      const preferred =
+        available.find(
+          (entry) =>
+            entry.runtimeKind === "agy" &&
+            entry.models.some((candidate) => /flash/i.test(candidate.label)),
+        ) ?? available[0];
+      const preferredModel =
+        preferred?.models.find((candidate) => /flash/i.test(candidate.label)) ??
+        preferred?.models[0];
+      if (preferred && preferredModel) {
+        setProvider(preferred.runtimeKind);
+        setModel(preferredModel.id);
+        setEffort(
+          defaultEffort(preferredModel.efforts, preferredModel.defaultEffort),
+        );
       }
     } catch {
       setError("Não foi possível carregar seus modelos.");
@@ -116,71 +126,103 @@ export function InboxAiActionsModal({
   function choosePreset(next: (typeof presets)[number]) {
     setAction(next.action);
     setInstructions(next.instructions);
-    setResult(null);
     setError(null);
   }
 
-  async function submit(event: FormEvent) {
-    event.preventDefault();
-    if (!selected || !instructions.trim() || analyzing) return;
+  function chooseProvider(runtimeKind: RuntimeKind) {
+    const nextProvider = providers.find(
+      (entry) => entry.runtimeKind === runtimeKind,
+    );
+    const nextModel = nextProvider?.models[0];
+    setProvider(runtimeKind);
+    setModel(nextModel?.id ?? "");
+    setEffort(defaultEffort(nextModel?.efforts, nextModel?.defaultEffort));
+  }
+
+  async function submit(event?: FormEvent) {
+    event?.preventDefault();
+    if (!provider || !selectedModel || !instructions.trim() || analyzing)
+      return;
+    const prompt = instructions.trim();
     setAnalyzing(true);
-    setResult(null);
     setError(null);
     try {
-      setResult(
-        await onAnalyze({
-          threadId,
-          runtimeKind: selected.runtimeKind,
-          model: selected.model.id,
-          action,
-          instructions: instructions.trim(),
-          ...(effort ? { effort } : {}),
-        }),
-      );
+      const result = await onAnalyze({
+        threadId,
+        runtimeKind: provider,
+        model: selectedModel.id,
+        action,
+        instructions: prompt,
+        ...(effort ? { effort } : {}),
+      });
+      setHistory((current) => [
+        ...current,
+        { id: result.generatedAt, prompt, result },
+      ]);
+      setAction("custom");
+      setInstructions("");
     } catch {
       setError(
-        "Não foi possível concluir a ação. Sua mensagem não foi alterada.",
+        "Não foi possível concluir a análise. O e-mail não foi alterado.",
       );
     } finally {
       setAnalyzing(false);
     }
   }
 
+  function handlePromptKeyDown(event: KeyboardEvent<HTMLTextAreaElement>) {
+    if (
+      event.key !== "Enter" ||
+      event.shiftKey ||
+      event.nativeEvent.isComposing
+    )
+      return;
+    event.preventDefault();
+    void submit();
+  }
+
   return (
-    <Modal.Root state={state}>
-      <Modal.Trigger className="inbox-ai-actions-trigger">
+    <>
+      <button
+        className="inbox-ai-actions-trigger"
+        onClick={() => void showAssistant()}
+        type="button"
+      >
         <Sparkles aria-hidden="true" size={14} />
         Ações com IA
-      </Modal.Trigger>
-      <Modal.Backdrop className="inbox-modal-backdrop">
-        <Modal.Container className="inbox-ai-actions-modal" placement="center">
-          <Modal.Dialog>
-            <form onSubmit={submit}>
-              <Modal.Header className="inbox-ai-actions-modal__header">
-                <span className="inbox-ai-actions-modal__mark">
-                  <Sparkles aria-hidden="true" size={16} />
-                </span>
-                <div>
-                  <Modal.Heading>Ações com IA</Modal.Heading>
-                  <p>Analise a conversa sem responder ou alterar o email.</p>
-                </div>
-                <Button
-                  aria-label="Fechar ações com IA"
-                  className="inbox-modal-close"
-                  isIconOnly
-                  onPress={state.close}
-                  size="sm"
-                  variant="ghost"
-                >
-                  <X aria-hidden="true" size={15} />
-                </Button>
-              </Modal.Header>
-              <Modal.Body className="inbox-ai-actions-modal__body">
-                <div
-                  className="inbox-ai-actions-modal__presets"
-                  role="group"
-                  aria-label="Ações rápidas"
-                >
+      </button>
+      {open && (
+        <aside aria-label="Assistente do e-mail" className="inbox-ai-assistant">
+          <header className="inbox-ai-assistant__header">
+            <span className="inbox-ai-assistant__mark">
+              <Sparkles aria-hidden="true" size={17} />
+            </span>
+            <div>
+              <h2>Assistente do e-mail</h2>
+              <p>Analisa esta conversa sem responder ou alterar nada.</p>
+            </div>
+            <Button
+              aria-label="Fechar assistente do e-mail"
+              className="inbox-ai-assistant__close"
+              isIconOnly
+              onPress={() => setOpen(false)}
+              size="sm"
+              variant="ghost"
+            >
+              <X aria-hidden="true" size={16} />
+            </Button>
+          </header>
+
+          <div className="inbox-ai-assistant__scroll">
+            {history.length === 0 ? (
+              <div className="inbox-ai-assistant__welcome">
+                <Sparkles aria-hidden="true" size={20} />
+                <h3>O que você quer entender?</h3>
+                <p>
+                  Peça um resumo, uma tradução ou faça qualquer pergunta sobre
+                  este e-mail.
+                </p>
+                <div aria-label="Ações rápidas" role="group">
                   {presets.map((preset) => {
                     const Icon = preset.icon;
                     return (
@@ -190,141 +232,163 @@ export function InboxAiActionsModal({
                         onClick={() => choosePreset(preset)}
                         type="button"
                       >
-                        <Icon aria-hidden="true" size={14} />
-                        {preset.label}
+                        <Icon aria-hidden="true" size={14} /> {preset.label}
                       </button>
                     );
                   })}
-                  <button
-                    data-selected={action === "custom" || undefined}
-                    onClick={() => {
-                      setAction("custom");
-                      setInstructions("");
-                      setResult(null);
-                    }}
-                    type="button"
-                  >
-                    <Sparkles aria-hidden="true" size={14} /> Personalizada
-                  </button>
                 </div>
-                <label className="inbox-ai-actions-modal__prompt">
-                  <span>O que você quer saber?</span>
-                  <textarea
-                    aria-label="O que você quer saber?"
-                    maxLength={4_000}
-                    onChange={(event) => {
-                      setInstructions(event.target.value);
-                      setError(null);
-                    }}
-                    placeholder="Ex.: identifique riscos e sugira os próximos passos."
-                    value={instructions}
-                  />
-                </label>
-                <div className="inbox-ai-actions-modal__runtime">
-                  <label>
-                    <span>Modelo</span>
-                    <div>
-                      <select
-                        aria-label="Modelo para ação de IA"
-                        disabled={loadingCatalog}
-                        onChange={(event) => {
-                          const next = routes.find(
-                            (candidate) =>
-                              candidate.value === event.target.value,
-                          );
-                          setRoute(event.target.value);
-                          setEffort(defaultEffort(next?.model.efforts));
-                        }}
-                        value={route}
-                      >
-                        <option value="">Selecione um modelo</option>
-                        {routes.map((candidate) => (
-                          <option key={candidate.value} value={candidate.value}>
-                            {candidate.providerLabel} · {candidate.model.label}
-                          </option>
-                        ))}
-                      </select>
-                      <ChevronDown aria-hidden="true" size={14} />
-                    </div>
-                  </label>
-                  {efforts.length > 0 && (
-                    <label>
-                      <span>Effort</span>
-                      <div>
-                        <select
-                          aria-label="Effort para ação de IA"
-                          onChange={(event) => setEffort(event.target.value)}
-                          value={effort}
+              </div>
+            ) : (
+              <div className="inbox-ai-assistant__history" aria-live="polite">
+                {history.map((exchange) => (
+                  <section key={exchange.id}>
+                    <p className="inbox-ai-assistant__prompt-bubble">
+                      {exchange.prompt}
+                    </p>
+                    <div className="inbox-ai-assistant__answer">
+                      <div className="inbox-ai-assistant__answer-meta">
+                        <span>
+                          <Check aria-hidden="true" size={14} /> Resposta
+                        </span>
+                        <button
+                          aria-label="Copiar resposta"
+                          onClick={() => {
+                            void copyText(exchange.result.content).then(() => {
+                              setCopiedId(exchange.id);
+                              window.setTimeout(() => setCopiedId(null), 1_500);
+                            });
+                          }}
+                          type="button"
                         >
-                          {efforts.map((item) => (
-                            <option key={item} value={item}>
-                              {item}
-                            </option>
-                          ))}
-                        </select>
-                        <ChevronDown aria-hidden="true" size={14} />
+                          <Clipboard aria-hidden="true" size={13} />
+                          {copiedId === exchange.id ? "Copiado" : "Copiar"}
+                        </button>
                       </div>
-                    </label>
-                  )}
-                </div>
-                {result && (
-                  <section
-                    className="inbox-ai-actions-modal__result"
-                    aria-live="polite"
-                  >
-                    <header>
-                      <div>
-                        <Check aria-hidden="true" size={14} /> Análise concluída
+                      <div className="message-markdown inbox-ai-assistant__markdown">
+                        <MessageMarkdown>
+                          {exchange.result.content}
+                        </MessageMarkdown>
                       </div>
-                      <button
-                        onClick={() => {
-                          void copyText(result.content).then(() => {
-                            setCopied(true);
-                            window.setTimeout(() => setCopied(false), 1_500);
-                          });
-                        }}
-                        type="button"
-                      >
-                        <Clipboard aria-hidden="true" size={13} />
-                        {copied ? "Copiado" : "Copiar"}
-                      </button>
-                    </header>
-                    <pre>{result.content}</pre>
+                    </div>
                   </section>
-                )}
-                {error && (
-                  <p className="inbox-ai-actions-modal__error" role="alert">
-                    {error}
-                  </p>
-                )}
-              </Modal.Body>
-              <Modal.Footer className="inbox-ai-actions-modal__footer">
-                <Button onPress={state.close} variant="ghost">
-                  Fechar
-                </Button>
-                <Button
-                  className="inbox-ai-actions-modal__submit"
-                  isDisabled={!selected || !instructions.trim() || analyzing}
-                  type="submit"
+                ))}
+              </div>
+            )}
+            {analyzing && (
+              <div className="inbox-ai-assistant__thinking" role="status">
+                <Spinner size="sm" /> Analisando com{" "}
+                {selectedProvider?.providerLabel}…
+              </div>
+            )}
+            {error && (
+              <p className="inbox-ai-assistant__error" role="alert">
+                {error}
+              </p>
+            )}
+          </div>
+
+          <form className="inbox-ai-assistant__composer" onSubmit={submit}>
+            <textarea
+              aria-label="O que você quer saber?"
+              maxLength={4_000}
+              onChange={(event) => {
+                setInstructions(event.target.value);
+                setAction("custom");
+                setError(null);
+              }}
+              onKeyDown={handlePromptKeyDown}
+              placeholder="Pergunte algo sobre este e-mail…"
+              value={instructions}
+            />
+            <div className="inbox-ai-assistant__controls">
+              <label>
+                <span className="sr-only">Provider</span>
+                <select
+                  aria-label="Provider"
+                  disabled={loadingCatalog}
+                  onChange={(event) =>
+                    chooseProvider(event.target.value as RuntimeKind)
+                  }
+                  value={provider}
                 >
-                  {analyzing ? (
-                    <Spinner size="sm" />
-                  ) : (
-                    <Sparkles aria-hidden="true" size={14} />
-                  )}
-                  {analyzing ? "Analisando…" : "Executar ação"}
-                </Button>
-              </Modal.Footer>
-            </form>
-          </Modal.Dialog>
-        </Modal.Container>
-      </Modal.Backdrop>
-    </Modal.Root>
+                  <option value="">Provider</option>
+                  {providers.map((entry) => (
+                    <option key={entry.runtimeKind} value={entry.runtimeKind}>
+                      {entry.providerLabel}
+                    </option>
+                  ))}
+                </select>
+                <ChevronDown aria-hidden="true" size={13} />
+              </label>
+              <label>
+                <span className="sr-only">Modelo</span>
+                <select
+                  aria-label="Modelo"
+                  onChange={(event) => {
+                    const next = selectedProvider?.models.find(
+                      (candidate) => candidate.id === event.target.value,
+                    );
+                    setModel(event.target.value);
+                    setEffort(
+                      defaultEffort(next?.efforts, next?.defaultEffort),
+                    );
+                  }}
+                  value={model}
+                >
+                  <option value="">Modelo</option>
+                  {selectedProvider?.models.map((entry) => (
+                    <option key={entry.id} value={entry.id}>
+                      {entry.label}
+                    </option>
+                  ))}
+                </select>
+                <ChevronDown aria-hidden="true" size={13} />
+              </label>
+              {efforts.length > 0 && (
+                <label className="inbox-ai-assistant__effort">
+                  <span className="sr-only">Effort</span>
+                  <select
+                    aria-label="Effort"
+                    onChange={(event) => setEffort(event.target.value)}
+                    value={effort}
+                  >
+                    {efforts.map((item) => (
+                      <option key={item}>{item}</option>
+                    ))}
+                  </select>
+                  <ChevronDown aria-hidden="true" size={13} />
+                </label>
+              )}
+              <Button
+                aria-label="Enviar para análise"
+                className="inbox-ai-assistant__send"
+                isDisabled={
+                  !provider || !model || !instructions.trim() || analyzing
+                }
+                isIconOnly
+                type="submit"
+              >
+                {analyzing ? (
+                  <Spinner size="sm" />
+                ) : (
+                  <Send aria-hidden="true" size={16} />
+                )}
+              </Button>
+            </div>
+            <p>Enter para enviar · Shift + Enter para nova linha</p>
+          </form>
+        </aside>
+      )}
+    </>
   );
 }
 
-function defaultEffort(efforts: string[] | undefined): string {
+function defaultEffort(
+  efforts: string[] | undefined,
+  preferred?: string,
+): string {
   if (!efforts?.length) return "";
+  if (preferred && efforts.includes(preferred)) return preferred;
   return efforts.includes("medium") ? "medium" : efforts[0]!;
 }
 

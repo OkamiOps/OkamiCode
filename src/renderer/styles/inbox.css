@@ -3054,49 +3054,52 @@
   outline: none;
 }
 
-.inbox-ai-actions-modal {
-  width: min(720px, calc(100vw - 40px));
-}
-
-.inbox-ai-actions-modal [role="dialog"] {
-  overflow: hidden;
-  border: 1px solid var(--ok-border);
-  border-radius: 18px;
-  background: var(--ok-surface-1);
-  box-shadow: 0 28px 80px rgb(0 0 0 / 52%);
-}
-
-.inbox-ai-actions-modal form {
-  display: flex;
-  max-height: min(780px, calc(100vh - 56px));
-  flex-direction: column;
-}
-
-.inbox-ai-actions-modal__header {
+.inbox-ai-assistant {
+  position: fixed;
+  z-index: 40;
+  top: 0;
+  right: 0;
+  bottom: 0;
   display: grid;
-  grid-template-columns: 38px minmax(0, 1fr) 32px;
+  width: min(440px, calc(100vw - 72px));
+  min-width: 360px;
+  grid-template-rows: auto minmax(0, 1fr) auto;
+  border-left: 1px solid
+    color-mix(in srgb, var(--ok-cyan) 24%, var(--ok-border));
+  background: var(--ok-surface-1);
+  box-shadow: -8px 0 24px rgb(0 0 0 / 28%);
+  animation: inbox-ai-panel-enter 180ms cubic-bezier(0.22, 1, 0.36, 1);
+}
+
+.inbox-ai-assistant__header {
+  display: grid;
+  min-height: 76px;
+  grid-template-columns: 38px minmax(0, 1fr) 34px;
   gap: 12px;
   align-items: center;
-  padding: 20px 22px;
+  padding: 14px 16px;
   border-bottom: 1px solid var(--ok-border);
 }
 
-.inbox-ai-actions-modal__header h2,
-.inbox-ai-actions-modal__header p {
+.inbox-ai-assistant__header h2,
+.inbox-ai-assistant__header p {
   margin: 0;
 }
 
-.inbox-ai-actions-modal__header h2 {
-  font-size: 17px;
+.inbox-ai-assistant__header h2 {
+  color: var(--ok-text);
+  font-size: 15px;
+  font-weight: 720;
 }
 
-.inbox-ai-actions-modal__header p {
+.inbox-ai-assistant__header p {
   margin-top: 3px;
   color: var(--ok-text-muted);
-  font-size: 12px;
+  font-size: 11px;
+  line-height: 1.45;
 }
 
-.inbox-ai-actions-modal__mark {
+.inbox-ai-assistant__mark {
   display: grid;
   width: 36px;
   height: 36px;
@@ -3107,178 +3110,272 @@
   color: var(--ok-cyan);
 }
 
-.inbox-ai-actions-modal__body {
-  display: grid;
-  gap: 16px;
-  overflow: auto;
-  padding: 20px 22px;
+.inbox-ai-assistant__close {
+  color: var(--ok-text-muted);
 }
 
-.inbox-ai-actions-modal__presets {
+.inbox-ai-assistant__scroll {
+  min-height: 0;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  padding: 24px 18px 30px;
+}
+
+.inbox-ai-assistant__welcome {
   display: flex;
-  flex-wrap: wrap;
-  gap: 8px;
+  min-height: 100%;
+  align-items: center;
+  justify-content: center;
+  flex-direction: column;
+  color: var(--ok-text-muted);
+  text-align: center;
 }
 
-.inbox-ai-actions-modal__presets button {
+.inbox-ai-assistant__welcome > svg {
+  margin-bottom: 14px;
+  color: var(--ok-cyan);
+}
+
+.inbox-ai-assistant__welcome h3,
+.inbox-ai-assistant__welcome p {
+  margin: 0;
+}
+
+.inbox-ai-assistant__welcome h3 {
+  color: var(--ok-text);
+  font-size: 15px;
+}
+
+.inbox-ai-assistant__welcome p {
+  max-width: 32ch;
+  margin-top: 6px;
+  font-size: 12px;
+  line-height: 1.6;
+}
+
+.inbox-ai-assistant__welcome > div {
+  display: flex;
+  margin-top: 18px;
+  flex-wrap: wrap;
+  justify-content: center;
+  gap: 7px;
+}
+
+.inbox-ai-assistant__welcome button {
   display: inline-flex;
   align-items: center;
-  gap: 7px;
-  min-height: 34px;
-  padding: 0 11px;
+  gap: 6px;
+  min-height: 32px;
+  padding: 0 10px;
   border: 1px solid var(--ok-border);
-  border-radius: 9px;
+  border-radius: 8px;
   background: var(--ok-surface-2);
   color: var(--ok-text-muted);
-  font-size: 12px;
+  font-size: 11px;
 }
 
-.inbox-ai-actions-modal__presets button[data-selected="true"] {
+.inbox-ai-assistant__welcome button:hover,
+.inbox-ai-assistant__welcome button:focus-visible,
+.inbox-ai-assistant__welcome button[data-selected="true"] {
   border-color: color-mix(in srgb, var(--ok-cyan) 60%, var(--ok-border));
   background: color-mix(in srgb, var(--ok-cyan) 10%, var(--ok-surface-2));
   color: var(--ok-text);
+  outline: none;
 }
 
-.inbox-ai-actions-modal__prompt {
-  display: grid;
-  gap: 8px;
-  color: var(--ok-text-muted);
-  font-size: 11px;
-  font-weight: 700;
-  letter-spacing: 0.04em;
-  text-transform: uppercase;
+.inbox-ai-assistant__history {
+  display: flex;
+  flex-direction: column;
+  gap: 24px;
 }
 
-.inbox-ai-actions-modal__prompt textarea {
-  min-height: 112px;
-  resize: vertical;
-  padding: 13px 14px;
-  border: 1px solid var(--ok-border);
-  border-radius: 11px;
-  background: var(--ok-bg);
-  color: var(--ok-text);
-  font: 13px/1.55 var(--ok-font-ui);
-  text-transform: none;
+.inbox-ai-assistant__history section {
+  display: flex;
+  flex-direction: column;
+  gap: 15px;
 }
 
-.inbox-ai-actions-modal__prompt textarea:focus {
-  border-color: var(--ok-cyan);
-  outline: 2px solid color-mix(in srgb, var(--ok-cyan) 18%, transparent);
-}
-
-.inbox-ai-actions-modal__runtime {
-  display: grid;
-  grid-template-columns: minmax(0, 1fr) 150px;
-  gap: 10px;
-}
-
-.inbox-ai-actions-modal__runtime label {
-  display: grid;
-  gap: 6px;
-  color: var(--ok-text-muted);
-  font-size: 11px;
-  font-weight: 650;
-}
-
-.inbox-ai-actions-modal__runtime label > div {
-  position: relative;
-}
-
-.inbox-ai-actions-modal__runtime select {
-  width: 100%;
-  height: 38px;
-  appearance: none;
-  padding: 0 34px 0 11px;
-  border: 1px solid var(--ok-border);
-  border-radius: 9px;
-  background: var(--ok-bg);
+.inbox-ai-assistant__prompt-bubble {
+  max-width: 88%;
+  margin: 0 0 0 auto;
+  padding: 10px 12px;
+  border-radius: 12px 12px 3px 12px;
+  background: color-mix(in srgb, var(--ok-orange) 13%, var(--ok-surface-2));
   color: var(--ok-text);
   font-size: 12px;
+  line-height: 1.55;
 }
 
-.inbox-ai-actions-modal__runtime label > div > svg {
-  position: absolute;
-  top: 12px;
-  right: 11px;
-  pointer-events: none;
-  color: var(--ok-text-muted);
+.inbox-ai-assistant__answer {
+  min-width: 0;
 }
 
-.inbox-ai-actions-modal__result {
-  overflow: hidden;
-  border: 1px solid color-mix(in srgb, var(--ok-cyan) 42%, var(--ok-border));
-  border-left: 3px solid var(--ok-cyan);
-  border-radius: 11px;
-  background: color-mix(in srgb, var(--ok-cyan) 5%, var(--ok-bg));
-}
-
-.inbox-ai-actions-modal__result header {
+.inbox-ai-assistant__answer-meta {
   display: flex;
   justify-content: space-between;
   align-items: center;
-  padding: 9px 11px;
-  border-bottom: 1px solid var(--ok-border);
+  margin-bottom: 10px;
   color: var(--ok-cyan);
   font-size: 11px;
   font-weight: 700;
 }
 
-.inbox-ai-actions-modal__result header div,
-.inbox-ai-actions-modal__result header button {
+.inbox-ai-assistant__answer-meta span,
+.inbox-ai-assistant__answer-meta button {
   display: inline-flex;
   align-items: center;
   gap: 6px;
 }
 
-.inbox-ai-actions-modal__result header button {
+.inbox-ai-assistant__answer-meta button {
   border: 0;
   background: transparent;
   color: var(--ok-text-muted);
   font: inherit;
 }
 
-.inbox-ai-actions-modal__result pre {
-  max-height: 260px;
-  overflow: auto;
-  margin: 0;
-  padding: 14px;
+.inbox-ai-assistant__markdown {
   color: var(--ok-text);
-  font: 13px/1.6 var(--ok-font-ui);
-  white-space: pre-wrap;
+  font-size: 13px;
+  line-height: 1.68;
   user-select: text;
 }
 
-.inbox-ai-actions-modal__error {
-  margin: 0;
-  color: var(--ok-danger);
+.inbox-ai-assistant__markdown > :first-child {
+  margin-top: 0;
+}
+
+.inbox-ai-assistant__thinking {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-top: 18px;
+  color: var(--ok-text-muted);
   font-size: 12px;
 }
 
-.inbox-ai-actions-modal__footer {
-  display: flex;
-  justify-content: flex-end;
-  gap: 8px;
-  padding: 14px 22px 18px;
-  border-top: 1px solid var(--ok-border);
+.inbox-ai-assistant__error {
+  margin: 16px 0 0;
+  color: var(--ok-danger);
+  font-size: 12px;
+  line-height: 1.5;
 }
 
-.inbox-ai-actions-modal__submit {
-  display: inline-flex;
-  gap: 7px;
-  min-width: 132px;
+.inbox-ai-assistant__composer {
+  padding: 12px 14px 10px;
+  border-top: 1px solid var(--ok-border);
+  background: color-mix(in srgb, var(--ok-surface-1) 96%, var(--ok-bg));
+}
+
+.inbox-ai-assistant__composer textarea {
+  width: 100%;
+  min-height: 74px;
+  max-height: 180px;
+  resize: vertical;
+  padding: 11px 12px;
+  border: 1px solid var(--ok-border);
+  border-bottom: 0;
+  border-radius: 11px 11px 0 0;
+  background: var(--ok-bg);
+  color: var(--ok-text);
+  font: 13px/1.5 var(--ok-font-ui);
+}
+
+.inbox-ai-assistant__composer textarea:focus {
+  border-color: var(--ok-cyan);
+  outline: none;
+}
+
+.inbox-ai-assistant__controls {
+  display: flex;
+  min-width: 0;
+  align-items: center;
+  gap: 5px;
+  padding: 7px;
+  border: 1px solid var(--ok-border);
+  border-top: 0;
+  border-radius: 0 0 11px 11px;
+  background: var(--ok-bg);
+}
+
+.inbox-ai-assistant__controls label {
+  position: relative;
+  min-width: 0;
+}
+
+.inbox-ai-assistant__controls label:first-child {
+  flex: 0 1 112px;
+}
+
+.inbox-ai-assistant__controls label:nth-child(2) {
+  flex: 1 1 145px;
+}
+
+.inbox-ai-assistant__controls select {
+  width: 100%;
+  height: 30px;
+  appearance: none;
+  overflow: hidden;
+  padding: 0 25px 0 8px;
+  border: 0;
+  border-radius: 7px;
+  background: var(--ok-surface-2);
+  color: var(--ok-text);
+  font-size: 10.5px;
+  text-overflow: ellipsis;
+}
+
+.inbox-ai-assistant__controls label > svg {
+  position: absolute;
+  top: 9px;
+  right: 7px;
+  pointer-events: none;
+  color: var(--ok-text-muted);
+}
+
+.inbox-ai-assistant__effort {
+  flex: 0 0 72px;
+}
+
+.inbox-ai-assistant__send {
+  width: 32px;
+  height: 32px;
+  min-width: 32px;
   background: var(--ok-cyan);
   color: var(--ok-bg);
-  font-weight: 750;
+}
+
+.inbox-ai-assistant__composer > p {
+  margin: 7px 2px 0;
+  color: var(--ok-text-muted);
+  font-size: 9.5px;
+}
+
+@keyframes inbox-ai-panel-enter {
+  from {
+    opacity: 0;
+    transform: translateX(18px);
+  }
 }
 
 @media (max-width: 680px) {
-  .inbox-ai-actions-modal__runtime {
-    grid-template-columns: 1fr;
-  }
   .inbox-ai-actions-trigger {
     width: 32px;
     padding: 0;
     justify-content: center;
     font-size: 0;
+  }
+  .inbox-ai-assistant {
+    width: calc(100vw - 52px);
+    min-width: 0;
+  }
+  .inbox-ai-assistant__effort {
+    display: none;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .inbox-ai-assistant {
+    animation: none;
   }
 }
