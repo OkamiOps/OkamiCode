@@ -101,11 +101,24 @@ it("renders the board with explicit ownership and activation policy", async () =
   expect(screen.getByText("GPT-5.6 Codex")).toBeInTheDocument();
   expect(screen.getByText("Acorda ao mover")).toBeInTheDocument();
   expect(screen.getByRole("region", { name: "Revisão" })).toBeInTheDocument();
+  expect(
+    screen.getByRole("searchbox", { name: "Buscar tarefas" }),
+  ).toBeInTheDocument();
+  expect(screen.getByText("Pulso do fluxo")).toBeInTheDocument();
 });
 
 it("creates manual cards by default and moves delegated cards explicitly", async () => {
   const api = renderPage();
   const user = userEvent.setup();
+
+  await user.click(screen.getByRole("button", { name: "Nova tarefa" }));
+  expect(
+    screen.getByRole("dialog", { name: "Criar nova tarefa" }),
+  ).toBeVisible();
+  await user.keyboard("{Escape}");
+  expect(
+    screen.queryByRole("dialog", { name: "Criar nova tarefa" }),
+  ).not.toBeInTheDocument();
 
   await user.click(screen.getByRole("button", { name: "Nova tarefa" }));
   await user.type(
@@ -149,11 +162,10 @@ it("edits and deletes a card from the task inspector", async () => {
   const api = renderPage();
   const user = userEvent.setup();
 
-  await user.click(
-    await screen.findByRole("button", {
-      name: "Abrir ações de Revisar proposta",
-    }),
-  );
+  await user.click(await screen.findByText("Revisar proposta"));
+  expect(
+    screen.getByRole("complementary", { name: "Detalhes da tarefa" }),
+  ).toBeVisible();
   const directive = screen.getByRole("textbox", {
     name: "Editar diretriz da tarefa",
   });
