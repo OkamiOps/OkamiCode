@@ -7,6 +7,7 @@ import {
   InboxInvalidInputError,
   InboxService,
 } from "./service";
+import { InboxTaskActionService } from "./task-action-service";
 
 function createService() {
   const fx = createTestDatabase();
@@ -431,6 +432,127 @@ describe("InboxService", () => {
         .listThreads({ cursor: firstPage.nextCursor ?? undefined })
         .threads.map((thread) => thread.externalThreadId),
     ).toEqual(["a"]);
+  });
+
+  it("keeps inbox, direct mentions, delegated, spam and trash as real browsable flows", () => {
+    const { fx, service } = createService();
+    const account = service.addAccount(accountInput());
+    service.applySyncBatch({
+      accountId: account.id,
+      previousCursor: null,
+      nextCursor: "cursor-1",
+      threads: [
+        threadInput({ externalThreadId: "direct", subject: "Direct" }),
+        threadInput({
+          externalThreadId: "newsletter",
+          subject: "Newsletter",
+          lastMessageAt: "2026-07-21T09:00:00.000Z",
+        }),
+        threadInput({
+          externalThreadId: "delegated",
+          subject: "Delegated",
+          lastMessageAt: "2026-07-21T08:00:00.000Z",
+        }),
+      ],
+      messages: [
+        messageInput({
+          externalMessageId: "direct-message",
+          threadExternalId: "direct",
+          recipients: ["marcos@example.com"],
+        }),
+        messageInput({
+          externalMessageId: "newsletter-message",
+          threadExternalId: "newsletter",
+          recipients: ["newsletter@example.com"],
+        }),
+        messageInput({
+          externalMessageId: "delegated-message",
+          threadExternalId: "delegated",
+          recipients: ["marcos@example.com"],
+        }),
+      ],
+      syncedAt: "2026-07-21T10:05:00.000Z",
+    });
+
+    const delegated = service
+      .listThreads({ flow: "inbox" })
+      .threads.find((thread) => thread.externalThreadId === "delegated")!;
+    new InboxTaskActionService({
+      db: fx.db,
+      createId: (() => {
+        let sequence = 0;
+        return () =>
+          `00000000-0000-4000-8000-${String(++sequence).padStart(12, "0")}`;
+      })(),
+      clock: () => "2026-07-21T10:05:00.000Z",
+    }).createKanbanTask({
+      threadId: delegated.id,
+      mode: "delegate",
+      laneId: fx.laneId,
+      idempotencyKey: "00000000-0000-4000-8000-000000000099",
+    });
+
+    const direct = service
+      .listThreads({ flow: "mentions" })
+      .threads.map((thread) => thread.externalThreadId);
+    expect(direct).toEqual(["direct", "delegated"]);
+    expect(
+      service
+        .listThreads({ flow: "delegated" })
+        .threads.map((thread) => thread.externalThreadId),
+    ).toEqual(["delegated"]);
+
+    const directThread = service
+      .listThreads({ flow: "inbox" })
+      .threads.find((thread) => thread.externalThreadId === "direct")!;
+    service.moveThread(directThread.id, "spam");
+    service.applySyncBatch({
+      accountId: account.id,
+      previousCursor: "cursor-1",
+      nextCursor: "cursor-1",
+      threads: [],
+      messages: [],
+      reconciliation: {
+        checkedProviderUids: ["imap:99:direct-message"],
+        states: [],
+      },
+      syncedAt: "2026-07-21T10:06:00.000Z",
+    });
+    expect(service.listThreads({ flow: "inbox" }).threads).toHaveLength(2);
+    expect(service.listThreads({ flow: "spam" }).threads).toEqual([
+      expect.objectContaining({ externalThreadId: "direct", folder: "spam" }),
+    ]);
+
+    service.moveThread(directThread.id, "trash");
+    expect(service.listThreads({ flow: "spam" }).threads).toEqual([]);
+    expect(service.listThreads({ flow: "trash" }).threads).toEqual([
+      expect.objectContaining({ externalThreadId: "direct", folder: "trash" }),
+    ]);
+
+    service.applySyncBatch({
+      accountId: account.id,
+      previousCursor: "cursor-1",
+      nextCursor: "cursor-2",
+      threads: [
+        {
+          ...threadInput({ externalThreadId: "remote-spam" }),
+          folder: "spam",
+        },
+      ],
+      messages: [
+        messageInput({
+          externalMessageId: "remote-spam-message",
+          threadExternalId: "remote-spam",
+        }),
+      ],
+      syncedAt: "2026-07-21T10:07:00.000Z",
+    });
+    expect(service.listThreads({ flow: "spam" }).threads).toEqual([
+      expect.objectContaining({
+        externalThreadId: "remote-spam",
+        folder: "spam",
+      }),
+    ]);
   });
 
   it("returns ordered thread messages and marks a thread read idempotently without an outbox row", () => {

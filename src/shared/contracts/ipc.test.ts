@@ -221,6 +221,7 @@ it("accepts the stable provider UID in Inbox thread details", () => {
       unreadCount: 1,
       lastMessageAt: timestamp,
       labels: ["inbox"],
+      folder: "inbox",
       createdAt: timestamp,
       updatedAt: timestamp,
     },

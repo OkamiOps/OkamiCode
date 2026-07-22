@@ -6,6 +6,7 @@ import {
   type ImapMoveMessagesInput,
   type ImapSetMessagesSeenInput,
   type ImapSyncInput,
+  type ImapSpecialFolderSnapshot,
   type InboxThreadDestination,
 } from "./imap-adapter";
 import {
@@ -39,6 +40,7 @@ export interface CredentialVault {
 
 export interface ImapSyncer {
   sync(input: ImapSyncInput): Promise<ApplyInboxSyncBatch>;
+  syncSpecialFolders?(input: ImapSyncInput): Promise<ImapSpecialFolderSnapshot>;
 }
 
 export interface ImapMessageMover {
@@ -381,7 +383,7 @@ export class InboxApplicationService {
           externalMessageIds: detail.messages.map(remoteMessageIdentifier),
           destination,
         });
-        this.inbox.deleteThread(id);
+        this.inbox.moveThread(id, destination);
         return { threadId: id, destination, moved: true as const };
       } catch (cause) {
         if (cause instanceof ImapSyncError && cause.code === "auth_required") {
@@ -441,11 +443,21 @@ export class InboxApplicationService {
     try {
       this.setPublicStatus(account.id, "syncing", null);
       stage = "imap";
-      const batch = await this.options.createAdapter(this.options.vault).sync({
+      const adapter = this.options.createAdapter(this.options.vault);
+      const syncInput = {
         account,
         configuration,
         knownProviderUids: this.inbox.listProviderUids(account.id),
-      });
+        knownSpecialProviderUids: this.inbox.listSpecialProviderUids(
+          account.id,
+        ),
+      };
+      const batch = await adapter.sync(syncInput);
+      const specialFolders = adapter.syncSpecialFolders
+        ? await adapter.syncSpecialFolders(syncInput)
+        : { threads: [], messages: [] };
+      batch.threads.push(...specialFolders.threads);
+      batch.messages.push(...specialFolders.messages);
       stage = "persist_messages";
       const counts = this.inbox.applySyncBatch(batch);
       if (this.options.calendarInvitations) {

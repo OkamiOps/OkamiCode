@@ -4,6 +4,7 @@ import { expect, it, vi } from "vitest";
 import type { IpcChannel } from "../../shared/contracts/ipc";
 import { createTestDatabase } from "../db/test-support";
 import { RuntimeRegistry } from "../runtime/registry";
+import type { InboxAgentAssignment } from "../inbox/task-action-service";
 import { createAppState } from "./app-state";
 import { registerIpcHandlers } from "./handlers";
 
@@ -33,8 +34,38 @@ function harness() {
     createId: randomUUID,
     clock: () => new Date(now),
   });
-  const sendTurn = vi.fn();
-  state.laneService = { sendTurn } as unknown as typeof state.laneService;
+  const sendTurn = vi.fn(async (opened: unknown, input: string) => {
+    void opened;
+    void input;
+    return {
+      runId: randomUUID(),
+      events: (async function* () {})(),
+    };
+  });
+  state.laneService = {
+    open: vi.fn(async () => ({
+      laneId: fixture.laneId,
+      taskId: fixture.taskId,
+      harness: "claude",
+      runtimeKind: "claude",
+      runtimeVersion: "test",
+      providerAccountLabel: "Claude Max",
+      model: "claude-test",
+      routeKind: "native",
+      routeReason: "native_requested",
+      displayQuotaAccount: "Claude Max",
+      permissionMode: "ask",
+      workspacePath: "/tmp/project",
+      nativeSessionId: "session-test",
+      nativeSessionIdPrefix: "session…",
+      bindingState: "authoritative",
+      temperature: "hot",
+      delta: null,
+      status: "ready",
+      pendingDeltaEvents: 0,
+    })),
+    sendTurn,
+  } as unknown as typeof state.laneService;
   const inboxService = {
     listAccounts: vi.fn(async () => [
       {
@@ -83,6 +114,7 @@ function harness() {
         unreadCount: 1,
         lastMessageAt: now,
         labels: [],
+        folder: "inbox" as const,
         createdAt: now,
         updatedAt: now,
       },
@@ -98,6 +130,7 @@ function harness() {
       unreadCount: 0,
       lastMessageAt: now,
       labels: [],
+      folder: "inbox" as const,
       createdAt: now,
       updatedAt: now,
     })),
@@ -111,6 +144,7 @@ function harness() {
       unreadCount: 1,
       lastMessageAt: now,
       labels: [],
+      folder: "inbox" as const,
       createdAt: now,
       updatedAt: now,
     })),
@@ -120,6 +154,7 @@ function harness() {
       moved: true as const,
     })),
   };
+  const claimUpdatedAssignments = vi.fn<() => InboxAgentAssignment[]>(() => []);
   const inboxTaskActionService = {
     createKanbanTask: vi.fn(
       () =>
@@ -145,6 +180,9 @@ function harness() {
           executionStarted: false,
         }) as const,
     ),
+    claimUpdatedAssignments,
+    markAwaitingHuman: vi.fn(),
+    markWatching: vi.fn(),
   };
   const inboxReplyDraftService = {
     createReplyDraft: vi.fn(() => ({
@@ -298,6 +336,7 @@ function harness() {
     sender: { mainFrame: senderFrame, send: vi.fn() },
   } as unknown as IpcMainInvokeEvent;
   return {
+    fixture,
     handlers,
     inboxService,
     inboxTaskActionService,
@@ -377,6 +416,37 @@ it("routes all Inbox commands once and rejects invalid payloads before dispatch"
     handlers.get("inbox:account:add")?.(event, { ...add, unexpected: true }),
   ).rejects.toThrow();
   expect(inboxService.addImapAccount).toHaveBeenCalledOnce();
+});
+
+it("wakes the owning agent once when sync finds a newer delegated email", async () => {
+  const { fixture, handlers, inboxTaskActionService, event, sendTurn } =
+    harness();
+  inboxTaskActionService.claimUpdatedAssignments.mockReturnValueOnce([
+    {
+      id: randomUUID(),
+      threadId,
+      actionId: randomUUID(),
+      laneId: fixture.laneId,
+      cardId: randomUUID(),
+      status: "working",
+      lastObservedMessageAt: "2026-07-21T13:00:00.000Z",
+      createdAt: now,
+      updatedAt: now,
+    },
+  ]);
+
+  await handlers.get("inbox:account:sync")?.(event, { accountId });
+
+  expect(sendTurn).toHaveBeenCalledOnce();
+  expect(sendTurn.mock.calls[0]?.[1]).toContain(
+    "Você continua responsável por esta conversa",
+  );
+  expect(sendTurn.mock.calls[0]?.[1]).toContain(
+    "não envie nada sem a aprovação humana",
+  );
+  await vi.waitFor(() =>
+    expect(inboxTaskActionService.markWatching).toHaveBeenCalledWith(threadId),
+  );
 });
 
 it("creates a task through the strict trusted Inbox channel without starting a lane", async () => {

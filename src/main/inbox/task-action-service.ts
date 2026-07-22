@@ -29,11 +29,38 @@ export interface InboxThreadKanbanTaskResult {
   executionStarted: false;
 }
 
+export type InboxAgentAssignmentStatus =
+  "watching" | "working" | "awaiting_human" | "resolved";
+
+export interface InboxAgentAssignment {
+  id: string;
+  threadId: string;
+  actionId: string;
+  laneId: string;
+  cardId: string;
+  status: InboxAgentAssignmentStatus;
+  lastObservedMessageAt: string;
+  createdAt: string;
+  updatedAt: string;
+}
+
 interface ActionRow {
   id: string;
   thread_id: string;
   request_fingerprint: string;
   card_id: string;
+}
+
+interface AssignmentRow {
+  id: string;
+  thread_id: string;
+  action_id: string;
+  lane_id: string;
+  card_id: string;
+  status: InboxAgentAssignmentStatus;
+  last_observed_message_at: string;
+  created_at: string;
+  updated_at: string;
 }
 
 export class InboxTaskActionConflictError extends Error {
@@ -111,7 +138,7 @@ export class InboxTaskActionService {
         ownerKind: normalized.mode === "delegate" ? "lane" : "human",
         laneId: lane?.id ?? null,
         activationPolicy:
-          normalized.mode === "delegate" ? "status_transition" : "manual",
+          normalized.mode === "delegate" ? "relevant_change" : "manual",
       });
       const actionId = this.dependencies.createId();
       this.dependencies.db
@@ -129,6 +156,26 @@ export class InboxTaskActionService {
           card.id,
           this.dependencies.clock(),
         );
+      if (normalized.mode === "delegate" && lane) {
+        const now = this.dependencies.clock();
+        this.dependencies.db
+          .prepare(
+            `INSERT INTO inbox_agent_assignments
+             (id, thread_id, action_id, lane_id, card_id, status,
+              last_observed_message_at, created_at, updated_at)
+             VALUES (?, ?, ?, ?, ?, 'watching', ?, ?, ?)`,
+          )
+          .run(
+            this.dependencies.createId(),
+            normalized.threadId,
+            actionId,
+            lane.id,
+            card.id,
+            detail.thread.lastMessageAt,
+            now,
+            now,
+          );
+      }
       return {
         actionId,
         sourceThreadId: normalized.threadId,
@@ -136,6 +183,71 @@ export class InboxTaskActionService {
         executionStarted: false as const,
       };
     })();
+  }
+
+  getAssignment(threadId: string): InboxAgentAssignment | undefined {
+    const row = this.dependencies.db
+      .prepare("SELECT * FROM inbox_agent_assignments WHERE thread_id = ?")
+      .get(threadId) as AssignmentRow | undefined;
+    return row ? assignmentFromRow(row) : undefined;
+  }
+
+  claimUpdatedAssignments(): InboxAgentAssignment[] {
+    return this.dependencies.db.transaction(() => {
+      const rows = this.dependencies.db
+        .prepare(
+          `SELECT assignment.*
+           FROM inbox_agent_assignments assignment
+           JOIN inbox_threads thread ON thread.id = assignment.thread_id
+           WHERE assignment.status IN ('watching', 'awaiting_human')
+             AND thread.folder = 'inbox'
+             AND thread.last_message_at > assignment.last_observed_message_at
+           ORDER BY thread.last_message_at ASC, assignment.id ASC`,
+        )
+        .all() as AssignmentRow[];
+      const now = this.dependencies.clock();
+      const update = this.dependencies.db.prepare(
+        `UPDATE inbox_agent_assignments
+         SET status = 'working',
+             last_observed_message_at = (
+               SELECT last_message_at FROM inbox_threads WHERE id = thread_id
+             ),
+             updated_at = ?
+         WHERE id = ?`,
+      );
+      for (const row of rows) update.run(now, row.id);
+      return rows.map((row) => {
+        const claimed = this.getAssignment(row.thread_id);
+        if (!claimed) throw new Error("Claimed inbox assignment disappeared");
+        return claimed;
+      });
+    })();
+  }
+
+  markAwaitingHuman(threadId: string): InboxAgentAssignment {
+    return this.setAssignmentStatus(threadId, "awaiting_human");
+  }
+
+  markWatching(threadId: string): InboxAgentAssignment {
+    return this.setAssignmentStatus(threadId, "watching");
+  }
+
+  private setAssignmentStatus(
+    threadId: string,
+    status: InboxAgentAssignmentStatus,
+  ): InboxAgentAssignment {
+    const result = this.dependencies.db
+      .prepare(
+        `UPDATE inbox_agent_assignments SET status = ?, updated_at = ?
+         WHERE thread_id = ?`,
+      )
+      .run(status, this.dependencies.clock(), threadId);
+    if (result.changes !== 1) {
+      throw new Error(`Inbox thread ${threadId} has no agent owner`);
+    }
+    const assignment = this.getAssignment(threadId);
+    if (!assignment) throw new Error("Updated inbox assignment disappeared");
+    return assignment;
   }
 
   private findActionByIdempotencyKey(
@@ -186,6 +298,20 @@ export class InboxTaskActionService {
     if (!lane) throw new InboxTaskActionLaneNotFoundError(laneId);
     return lane;
   }
+}
+
+function assignmentFromRow(row: AssignmentRow): InboxAgentAssignment {
+  return {
+    id: row.id,
+    threadId: row.thread_id,
+    actionId: row.action_id,
+    laneId: row.lane_id,
+    cardId: row.card_id,
+    status: row.status,
+    lastObservedMessageAt: row.last_observed_message_at,
+    createdAt: row.created_at,
+    updatedAt: row.updated_at,
+  };
 }
 
 function normalizeInput(input: CreateInboxThreadKanbanTaskInput) {

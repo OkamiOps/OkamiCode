@@ -55,6 +55,7 @@ const thread: IpcResponse<"inbox:threads:list">["threads"][number] = {
   unreadCount: 1,
   lastMessageAt: now,
   labels: ["Cliente"],
+  folder: "inbox",
   createdAt: now,
   updatedAt: now,
 };
@@ -320,7 +321,7 @@ describe("InboxPage", () => {
       }),
     });
     renderInbox(api);
-    await screen.findByText("2 abertas");
+    await screen.findByText("2 conversas");
 
     await userEvent.click(
       screen.getByRole("button", { name: "Selecionar conversas" }),
@@ -801,6 +802,24 @@ describe("InboxPage", () => {
     });
 
     expect(screen.queryByRole("button", { name: "Pedir rascunho" })).toBeNull();
+  });
+
+  it("opens mentions, delegated, spam and trash as real inbox flows", async () => {
+    const { api } = renderInbox();
+    await screen.findByText("Projetos");
+
+    for (const [label, flow] of [
+      ["Menções e diretos", "mentions"],
+      ["Delegados a agente", "delegated"],
+      ["Spam", "spam"],
+      ["Lixeira", "trash"],
+    ] as const) {
+      await userEvent.click(screen.getByRole("button", { name: label }));
+      expect(api.listThreads).toHaveBeenLastCalledWith({ flow, limit: 100 });
+      expect(
+        screen.getByText(label, { selector: ".inbox-eyebrow" }),
+      ).toBeVisible();
+    }
   });
 
   it("generates an approval-pending agent draft only after an explicit catalog choice", async () => {

@@ -25,6 +25,7 @@ const MIGRATIONS = [
   "schema/020-inbox-provider-uids.sql",
   "schema/021-inbox-remote-state.sql",
   "schema/022-inbox-local-seen-overrides.sql",
+  "schema/023-inbox-flows-and-ownership.sql",
 ];
 
 export function runMigrations(db: InstanceType<typeof SqliteDatabase>): void {

@@ -1074,6 +1074,7 @@ const inboxThreadSchema = z
     unreadCount: z.number().int().nonnegative(),
     lastMessageAt: z.iso.datetime({ offset: true }),
     labels: z.array(z.string().min(1).max(240)).max(100),
+    folder: z.enum(["inbox", "spam", "trash"]),
     createdAt: z.iso.datetime({ offset: true }),
     updatedAt: z.iso.datetime({ offset: true }),
   })
@@ -1123,6 +1124,9 @@ const inboxThreadsListRequestSchema = z
   .object({
     accountIds: z.array(entityIdSchema).min(1).max(50).optional(),
     unreadOnly: z.boolean().optional(),
+    flow: z
+      .enum(["inbox", "mentions", "delegated", "spam", "trash"])
+      .optional(),
     limit: z.number().int().min(1).max(100).optional(),
     cursor: inboxThreadCursorSchema.optional(),
   })

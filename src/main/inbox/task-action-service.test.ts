@@ -93,7 +93,7 @@ describe("InboxTaskActionService", () => {
     ).toBe(threadId);
   });
 
-  it("creates a delegated card for an existing lane without starting execution", () => {
+  it("makes the delegated lane the persistent owner and watches for new email", () => {
     const { fixture, service, threadId } = harness();
 
     const result = service.createKanbanTask({
@@ -110,12 +110,80 @@ describe("InboxTaskActionService", () => {
         taskId: fixture.taskId,
         ownerKind: "lane",
         laneId: fixture.laneId,
-        activationPolicy: "status_transition",
+        activationPolicy: "relevant_change",
       },
+    });
+    expect(service.getAssignment(threadId)).toMatchObject({
+      threadId,
+      actionId: result.actionId,
+      laneId: fixture.laneId,
+      cardId: result.card.id,
+      status: "watching",
+      lastObservedMessageAt: now,
     });
     expect(
       new KanbanCardRepository(fixture.db).listEvents(result.card.id),
     ).toHaveLength(1);
+  });
+
+  it("claims one agent wake only when a delegated thread receives a newer message", () => {
+    const { fixture, inbox, service, threadId } = harness();
+    const delegated = service.createKanbanTask({
+      threadId,
+      mode: "delegate",
+      laneId: fixture.laneId,
+      idempotencyKey: randomUUID(),
+    });
+    expect(delegated.card.laneId).not.toBeNull();
+    expect(service.claimUpdatedAssignments()).toEqual([]);
+
+    const account = inbox.listAccounts()[0]!;
+    inbox.applySyncBatch({
+      accountId: account.id,
+      previousCursor: "cursor-1",
+      nextCursor: "cursor-2",
+      threads: [
+        {
+          externalThreadId: "proposal-1",
+          subject: "Landing page proposal",
+          snippet: "A client replied.",
+          participants: ["client@example.com"],
+          unreadCount: 1,
+          lastMessageAt: "2026-07-21T13:00:00.000Z",
+          labels: ["inbox"],
+        },
+      ],
+      messages: [
+        {
+          externalMessageId: "message-2",
+          threadExternalId: "proposal-1",
+          direction: "incoming",
+          sender: "client@example.com",
+          recipients: ["me@example.com"],
+          body: "Can you include hosting?",
+          bodyFormat: "text",
+          sentAt: "2026-07-21T13:00:00.000Z",
+          receivedAt: "2026-07-21T13:00:00.000Z",
+          attachments: [],
+        },
+      ],
+      syncedAt: "2026-07-21T13:00:00.000Z",
+    });
+
+    expect(service.claimUpdatedAssignments()).toEqual([
+      expect.objectContaining({
+        threadId,
+        status: "working",
+        lastObservedMessageAt: "2026-07-21T13:00:00.000Z",
+      }),
+    ]);
+    expect(service.claimUpdatedAssignments()).toEqual([]);
+    expect(service.markAwaitingHuman(threadId)).toMatchObject({
+      status: "awaiting_human",
+    });
+    expect(service.markWatching(threadId)).toMatchObject({
+      status: "watching",
+    });
   });
 
   it("fails closed when the delegated lane or source thread is unavailable", () => {

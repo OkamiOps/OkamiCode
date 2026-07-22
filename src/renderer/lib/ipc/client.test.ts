@@ -428,6 +428,7 @@ it("provides typed Inbox account and thread commands through the bridge", async 
         unreadCount: 0,
         lastMessageAt: now,
         labels: [],
+        folder: "inbox",
         createdAt: now,
         updatedAt: now,
       },

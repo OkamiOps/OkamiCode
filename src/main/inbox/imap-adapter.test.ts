@@ -173,6 +173,45 @@ function adapter(
 }
 
 describe("ImapSyncAdapter", () => {
+  it("imports recent messages from provider spam and trash folders", async () => {
+    const { client } = fakeClient();
+    vi.mocked(client.getMailboxLock).mockImplementation(async (mailbox) => {
+      client.mailbox =
+        mailbox === "Junk"
+          ? { uidValidity: 201, uidNext: 3, exists: 2 }
+          : { uidValidity: 202, uidNext: 2, exists: 1 };
+      return { release: vi.fn() };
+    });
+    vi.mocked(client.fetchAll).mockImplementation(async () => [message(1)]);
+    vi.mocked(client.download)
+      .mockResolvedValueOnce({
+        content: Readable.from([
+          rfc822({ messageId: "<trash@example.com>", subject: "Trashed" }),
+        ]),
+      })
+      .mockResolvedValueOnce({
+        content: Readable.from([
+          rfc822({ messageId: "<spam@example.com>", subject: "Spam" }),
+        ]),
+      });
+
+    const result = await adapter(client).adapter.syncSpecialFolders({
+      account,
+      configuration: { host: "mail.example.com", port: 993, secure: true },
+    });
+
+    expect(result.threads).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({ subject: "Trashed", folder: "trash" }),
+        expect.objectContaining({ subject: "Spam", folder: "spam" }),
+      ]),
+    );
+    expect(result.messages.map((item) => item.providerUid)).toEqual([
+      "imap-trash:202:1",
+      "imap-spam:201:1",
+    ]);
+  });
+
   it("reconciles flags and remotely deleted UIDs even when there are no new messages", async () => {
     const fetchAll = vi
       .fn()

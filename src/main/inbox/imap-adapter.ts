@@ -6,6 +6,7 @@ import type {
   ApplyInboxSyncBatch,
   ConnectorAccount,
   InboxAttachment,
+  InboxThreadFolder,
   SyncMessage,
   SyncThread,
 } from "./service";
@@ -32,6 +33,12 @@ export interface ImapSyncInput {
   account: ConnectorAccount;
   configuration: ImapAccountConfiguration;
   knownProviderUids?: string[];
+  knownSpecialProviderUids?: string[];
+}
+
+export interface ImapSpecialFolderSnapshot {
+  threads: SyncThread[];
+  messages: SyncMessage[];
 }
 
 export interface ImapMailboxState {
@@ -200,6 +207,58 @@ export class ImapSyncAdapter {
     if (primaryError) throw primaryError;
     if (cleanupFailed || !result) throw new ImapSyncError();
     return result;
+  }
+
+  async syncSpecialFolders(
+    input: ImapSyncInput,
+  ): Promise<ImapSpecialFolderSnapshot> {
+    let configuration: ValidatedConfiguration;
+    try {
+      configuration = validateConfiguration(input.configuration);
+    } catch {
+      throw new ImapSyncError("Invalid IMAP configuration");
+    }
+    const client = await this.createClient(input, configuration);
+    const snapshots: ImapSpecialFolderSnapshot[] = [];
+    let currentLock: { release(): void } | undefined;
+    try {
+      await client.connect();
+      const mailboxes = await client.list();
+      const folders = specialFolders(mailboxes);
+      for (const folder of folders) {
+        currentLock = await client.getMailboxLock(folder.path, {
+          readOnly: true,
+        });
+        snapshots.push(
+          await this.readSpecialFolder(
+            input.account,
+            configuration,
+            client,
+            folder.folder,
+            input.knownSpecialProviderUids,
+          ),
+        );
+        currentLock.release();
+        currentLock = undefined;
+      }
+      await client.logout();
+    } catch (cause) {
+      try {
+        currentLock?.release();
+      } catch {
+        // Cleanup must not expose provider details.
+      }
+      try {
+        await client.logout();
+      } catch {
+        // Preserve the classified synchronization error below.
+      }
+      throw classifyImapFailure(cause, input.account.provider);
+    }
+    return {
+      threads: snapshots.flatMap((snapshot) => snapshot.threads),
+      messages: snapshots.flatMap((snapshot) => snapshot.messages),
+    };
   }
 
   async moveMessages(input: ImapMoveMessagesInput): Promise<void> {
@@ -469,6 +528,63 @@ export class ImapSyncAdapter {
       syncedAt: this.clock().toISOString(),
     };
   }
+
+  private async readSpecialFolder(
+    account: ConnectorAccount,
+    configuration: ValidatedConfiguration,
+    client: ImapClient,
+    folder: Exclude<InboxThreadFolder, "inbox">,
+    knownProviderUids: string[] = [],
+  ): Promise<ImapSpecialFolderSnapshot> {
+    const mailbox = validMailbox(client.mailbox);
+    if (mailbox.exists === 0) return { threads: [], messages: [] };
+    const uidValidity = String(mailbox.uidValidity);
+    const startUid = Math.max(
+      1,
+      mailbox.uidNext - Math.min(configuration.maxInitialMessages, 50),
+    );
+    const metadata = await client.fetchAll(
+      `${startUid}:*`,
+      {
+        uid: true,
+        flags: true,
+        envelope: true,
+        bodyStructure: true,
+        internalDate: true,
+        size: true,
+        threadId: true,
+        labels: true,
+      },
+      { uid: true },
+    );
+    const messages: SyncMessage[] = [];
+    const threadInputs: ThreadInput[] = [];
+    const knownUids = new Set(
+      inputKnownSpecialUids(knownProviderUids, folder, uidValidity),
+    );
+    for (const item of metadata
+      .filter((entry) => Number.isInteger(entry.uid) && entry.uid > 0)
+      .filter((entry) => !knownUids.has(entry.uid))
+      .sort((left, right) => left.uid - right.uid)) {
+      const download = await client.download(String(item.uid), undefined, {
+        uid: true,
+        maxBytes: configuration.maxMessageBytes,
+      });
+      const parsed = await simpleParser(
+        await collectLimited(download.content, configuration.maxMessageBytes),
+      );
+      const normalized = normalizeMessage(
+        account,
+        item,
+        parsed,
+        uidValidity,
+        `imap-${folder}`,
+      );
+      messages.push(normalized.message);
+      threadInputs.push(normalized.thread);
+    }
+    return { threads: groupThreads(threadInputs, folder), messages };
+  }
 }
 
 function validCredential(
@@ -504,6 +620,36 @@ function resolveDestinationMailbox(
     return destination === "trash" ? "[Gmail]/Trash" : "[Gmail]/Spam";
   }
   return destination === "trash" ? "Trash" : "Junk";
+}
+
+function specialFolders(
+  mailboxes: Array<{ path: string; specialUse?: string }>,
+): Array<{ path: string; folder: Exclude<InboxThreadFolder, "inbox"> }> {
+  const folders: Array<{
+    path: string;
+    folder: Exclude<InboxThreadFolder, "inbox">;
+  }> = [];
+  for (const mailbox of mailboxes) {
+    const specialUse = mailbox.specialUse?.toLowerCase();
+    if (specialUse === "\\junk")
+      folders.push({ path: mailbox.path, folder: "spam" });
+    if (specialUse === "\\trash")
+      folders.push({ path: mailbox.path, folder: "trash" });
+  }
+  return folders;
+}
+
+function inputKnownSpecialUids(
+  providerUids: string[],
+  folder: Exclude<InboxThreadFolder, "inbox">,
+  uidValidity: string,
+): number[] {
+  const prefix = `imap-${folder}:${uidValidity}:`;
+  return providerUids.flatMap((providerUid) => {
+    if (!providerUid.startsWith(prefix)) return [];
+    const uid = Number(providerUid.slice(prefix.length));
+    return Number.isSafeInteger(uid) && uid > 0 ? [uid] : [];
+  });
 }
 
 async function resolveMessageUids(
@@ -727,6 +873,7 @@ function normalizeMessage(
   item: ImapFetchedMessage,
   parsed: ParsedMail,
   uidValidity: string,
+  providerUidPrefix = "imap",
 ): { message: SyncMessage; thread: ThreadInput } {
   const externalMessageId =
     parsed.messageId || `imap:${uidValidity}:${item.uid}`;
@@ -763,7 +910,7 @@ function normalizeMessage(
   return {
     message: {
       externalMessageId,
-      providerUid: `imap:${uidValidity}:${item.uid}`,
+      providerUid: `${providerUidPrefix}:${uidValidity}:${item.uid}`,
       seen: item.flags?.has("\\Seen") ?? false,
       threadExternalId: externalThreadId,
       direction:
@@ -793,7 +940,10 @@ function normalizeMessage(
   };
 }
 
-function groupThreads(inputs: ThreadInput[]): SyncThread[] {
+function groupThreads(
+  inputs: ThreadInput[],
+  folder: InboxThreadFolder = "inbox",
+): SyncThread[] {
   const groups = new Map<string, ThreadInput[]>();
   for (const input of inputs)
     groups.set(input.externalThreadId, [
@@ -807,6 +957,7 @@ function groupThreads(inputs: ThreadInput[]): SyncThread[] {
       )[0];
       return {
         externalThreadId,
+        folder,
         subject: latest.subject,
         snippet: latest.snippet,
         participants: unique(group.flatMap((entry) => entry.participants)),

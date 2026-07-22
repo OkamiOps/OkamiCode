@@ -23,6 +23,7 @@ import {
   Send,
   ShieldAlert,
   ShieldCheck,
+  Trash,
   Tag,
   Trash2,
   Users,
@@ -180,7 +181,8 @@ const defaultApi: InboxApi = {
   discardReply: workbenchClient.inboxReplyDiscard,
 };
 
-type AccountFilter = "all" | "unread" | string;
+type InboxFlow = NonNullable<IpcRequest<"inbox:threads:list">["flow"]>;
+type AccountFilter = "all" | "unread" | InboxFlow | string;
 
 export function InboxPage({ api = defaultApi }: { api?: InboxApi }) {
   const queryClient = useQueryClient();
@@ -221,6 +223,7 @@ export function InboxPage({ api = defaultApi }: { api?: InboxApi }) {
   );
   const failedRead = useRef(new Set<string>());
   const automaticallySyncedAccounts = useRef(new Set<string>());
+  const syncableAccountIds = useRef<string[]>([]);
   const detailsDrawer = useOverlayState();
   const accounts = useQuery({
     queryKey: ["inbox", "accounts"],
@@ -231,6 +234,9 @@ export function InboxPage({ api = defaultApi }: { api?: InboxApi }) {
   const threadRequest = useMemo<IpcRequest<"inbox:threads:list">>(() => {
     if (filter === "unread") return { unreadOnly: true, limit: 100 };
     if (filter === "all") return { limit: 100 };
+    if (["mentions", "delegated", "spam", "trash"].includes(filter)) {
+      return { flow: filter as InboxFlow, limit: 100 };
+    }
     return { accountIds: [filter], limit: 100 };
   }, [filter]);
   const threads = useQuery({
@@ -571,18 +577,27 @@ export function InboxPage({ api = defaultApi }: { api?: InboxApi }) {
   const triggerAccountSync = syncAccount.mutate;
 
   useEffect(() => {
-    for (const summary of accounts.data ?? []) {
-      const account = summary.account;
-      if (
-        !summary.hasCredential ||
-        (account.status !== "connected" && account.status !== "degraded") ||
-        automaticallySyncedAccounts.current.has(account.id)
-      )
-        continue;
+    const eligible = (accounts.data ?? []).filter(
+      ({ account, hasCredential }) =>
+        hasCredential &&
+        (account.status === "connected" || account.status === "degraded"),
+    );
+    syncableAccountIds.current = eligible.map(({ account }) => account.id);
+    for (const { account } of eligible) {
+      if (automaticallySyncedAccounts.current.has(account.id)) continue;
       automaticallySyncedAccounts.current.add(account.id);
       triggerAccountSync({ accountId: account.id });
     }
   }, [accounts.data, triggerAccountSync]);
+
+  useEffect(() => {
+    const interval = window.setInterval(() => {
+      for (const accountId of syncableAccountIds.current) {
+        triggerAccountSync({ accountId });
+      }
+    }, 30_000);
+    return () => window.clearInterval(interval);
+  }, [triggerAccountSync]);
 
   useEffect(() => {
     if (
@@ -1049,18 +1064,32 @@ function InboxSidebar({
             </div>
           )}
         </section>
-        <section
-          className="inbox-nav-section inbox-nav-section--muted"
-          aria-label="Filtros futuros"
-        >
+        <section className="inbox-nav-section" aria-label="Fluxos do inbox">
           <p className="inbox-section-label">Fluxos</p>
-          <FilterButton disabled icon={<AtSign size={15} />} label="Menções" />
           <FilterButton
-            disabled
+            active={activeFilter === "mentions"}
+            icon={<AtSign size={15} />}
+            label="Menções e diretos"
+            onPress={() => onFilterChange("mentions")}
+          />
+          <FilterButton
+            active={activeFilter === "delegated"}
             icon={<Bot size={15} />}
             label="Delegados a agente"
+            onPress={() => onFilterChange("delegated")}
           />
-          <FilterButton disabled icon={<Archive size={15} />} label="Spam" />
+          <FilterButton
+            active={activeFilter === "spam"}
+            icon={<Archive size={15} />}
+            label="Spam"
+            onPress={() => onFilterChange("spam")}
+          />
+          <FilterButton
+            active={activeFilter === "trash"}
+            icon={<Trash size={15} />}
+            label="Lixeira"
+            onPress={() => onFilterChange("trash")}
+          />
         </section>
       </div>
     </aside>
@@ -1198,14 +1227,17 @@ function ThreadList({
   threads: InboxThread[];
 }) {
   const selectedCount = selectedThreadIds.size;
+  const listLabel = inboxFlowLabel(activeFilter);
   return (
     <section className="inbox-thread-list" aria-label="Lista de conversas">
       <header className="inbox-thread-list__header">
         <div>
-          <p className="inbox-eyebrow">
-            {activeFilter === "unread" ? "Não lidos" : "Conversas"}
-          </p>
-          <h2>{isLoading ? "Carregando" : `${threads.length} abertas`}</h2>
+          <p className="inbox-eyebrow">{listLabel}</p>
+          <h2>
+            {isLoading
+              ? "Carregando"
+              : `${threads.length} ${threads.length === 1 ? "conversa" : "conversas"}`}
+          </h2>
         </div>
         <Button
           aria-label={
@@ -1349,6 +1381,23 @@ function ThreadList({
       </div>
     </section>
   );
+}
+
+function inboxFlowLabel(filter: AccountFilter): string {
+  switch (filter) {
+    case "unread":
+      return "Não lidos";
+    case "mentions":
+      return "Menções e diretos";
+    case "delegated":
+      return "Delegados a agente";
+    case "spam":
+      return "Spam";
+    case "trash":
+      return "Lixeira";
+    default:
+      return "Conversas";
+  }
 }
 
 function ListState({

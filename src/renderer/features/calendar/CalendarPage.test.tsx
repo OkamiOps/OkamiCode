@@ -194,9 +194,14 @@ function renderCalendar(api = makeApi(), displayTimezone = "Europe/Berlin") {
 }
 
 describe("CalendarPage", () => {
-  afterEach(cleanup);
+  afterEach(() => {
+    cleanup();
+    vi.useRealTimers();
+  });
 
   beforeEach(() => {
+    vi.useFakeTimers({ toFake: ["Date"] });
+    vi.setSystemTime(new Date(now));
     installOkamiMock({
       "calendar:sources:list": sources,
       "calendar:events:list": events,

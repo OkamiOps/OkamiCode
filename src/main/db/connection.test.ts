@@ -11,7 +11,7 @@ describe("openDatabase", () => {
     const key = Buffer.alloc(32, 7);
     const db = openDatabase(file, key);
     expect(db.prepare("SELECT sqlite3mc_version()").pluck().get()).toBeTruthy();
-    expect(db.pragma("user_version", { simple: true })).toBe(22);
+    expect(db.pragma("user_version", { simple: true })).toBe(23);
     expect(
       db
         .prepare("PRAGMA table_info(inbox_messages)")
@@ -149,6 +149,10 @@ describe("openDatabase", () => {
                100, 2097152, 'created', 'updated')`,
     ).run();
     db.exec(`
+      DROP INDEX inbox_agent_assignments_status_updated_idx;
+      DROP TABLE inbox_agent_assignments;
+      DROP INDEX inbox_threads_folder_last_message_idx;
+      ALTER TABLE inbox_threads DROP COLUMN folder;
       DROP INDEX inbox_messages_account_provider_uid_idx;
       ALTER TABLE inbox_messages DROP COLUMN provider_uid;
       ALTER TABLE inbox_messages DROP COLUMN seen;

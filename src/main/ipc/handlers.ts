@@ -93,7 +93,7 @@ export type InboxIpcService = Pick<
 
 export type InboxTaskActionIpcService = Pick<
   InboxTaskActionService,
-  "createKanbanTask"
+  "createKanbanTask" | "claimUpdatedAssignments" | "markWatching"
 >;
 
 export type InboxReplyDraftIpcService = Pick<
@@ -600,10 +600,32 @@ async function dispatch(
       return inboxService().removeAccount(
         (request as IpcRequest<"inbox:account:remove">).accountId,
       );
-    case "inbox:account:sync":
-      return inboxService().syncAccount(
+    case "inbox:account:sync": {
+      const result = await inboxService().syncAccount(
         (request as IpcRequest<"inbox:account:sync">).accountId,
       );
+      const assignments = inboxTaskActionService().claimUpdatedAssignments();
+      for (const assignment of assignments) {
+        await sendLaneTurn(
+          state,
+          openedLanes,
+          event.sender,
+          {
+            laneId: assignment.laneId,
+            input:
+              `[Inbox] Você continua responsável por esta conversa. ` +
+              `Chegou uma atualização no e-mail ${assignment.threadId}. ` +
+              "Revise somente o conteúdo novo, prepare a próxima ação ou resposta e não envie nada sem a aprovação humana. " +
+              "Se precisar de decisão, credencial, pagamento ou mudança de escopo, devolva explicitamente para o humano.",
+          },
+          laneEffort,
+          () => {
+            inboxTaskActionService().markWatching(assignment.threadId);
+          },
+        );
+      }
+      return result;
+    }
     case "inbox:account:updateCredential": {
       const update = request as IpcRequest<"inbox:account:updateCredential">;
       return inboxService().updateCredentialAndSync(
@@ -1634,6 +1656,7 @@ async function sendLaneTurn(
   sender: Pick<WebContents, "send">,
   request: IpcRequest<"lane:sendTurn">,
   laneEffort: Map<string, string>,
+  onFinished?: () => void,
 ) {
   const opened =
     openedLanes.get(request.laneId) ??
@@ -1658,13 +1681,15 @@ async function sendLaneTurn(
     request.input,
     request.effort,
   );
-  void forwardEvents(
-    state,
-    sender,
-    run,
-    opened,
-    expectsNativeSessionPromotion,
-  ).catch(state.reportBackgroundError);
+  void forwardEvents(state, sender, run, opened, expectsNativeSessionPromotion)
+    .catch(state.reportBackgroundError)
+    .finally(() => {
+      try {
+        onFinished?.();
+      } catch (error) {
+        state.reportBackgroundError(error);
+      }
+    });
   return {
     runId: run.runId,
     laneId: opened.laneId,

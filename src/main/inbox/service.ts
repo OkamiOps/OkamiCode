@@ -11,6 +11,9 @@ export type InboxAccountStatus =
   | "unavailable";
 export type InboxMessageDirection = "incoming" | "outgoing" | "draft";
 export type InboxBodyFormat = "text" | "html";
+export type InboxThreadFolder = "inbox" | "spam" | "trash";
+export type InboxThreadFlow =
+  "inbox" | "mentions" | "delegated" | "spam" | "trash";
 
 export interface ConnectorAccount {
   id: string;
@@ -35,6 +38,7 @@ export interface InboxThread {
   unreadCount: number;
   lastMessageAt: string;
   labels: string[];
+  folder: InboxThreadFolder;
   createdAt: string;
   updatedAt: string;
 }
@@ -77,6 +81,7 @@ export interface AddConnectorAccount {
 
 export interface SyncThread {
   externalThreadId: string;
+  folder?: InboxThreadFolder;
   subject: string;
   snippet: string;
   participants: string[];
@@ -136,6 +141,7 @@ export interface InboxThreadCursor {
 export interface ListInboxThreadsOptions {
   accountIds?: string[];
   unreadOnly?: boolean;
+  flow?: InboxThreadFlow;
   limit?: number;
   cursor?: InboxThreadCursor;
 }
@@ -214,6 +220,7 @@ interface ThreadRow {
   unread_count: number;
   last_message_at: string;
   labels_json: string;
+  folder: InboxThreadFolder;
   created_at: string;
   updated_at: string;
 }
@@ -416,7 +423,33 @@ export class InboxService {
         parameters[`account${index}`] = id;
       });
     }
+    const flow = options.flow ?? "inbox";
+    if (!["inbox", "mentions", "delegated", "spam", "trash"].includes(flow)) {
+      throw new InboxInvalidInputError("unsupported inbox flow");
+    }
+    filters.push(`folder = @folder`);
+    parameters.folder = flow === "spam" || flow === "trash" ? flow : "inbox";
     if (options.unreadOnly) filters.push("unread_count > 0");
+    if (flow === "mentions") {
+      filters.push(
+        `EXISTS (
+          SELECT 1 FROM inbox_messages message
+          JOIN connector_accounts account ON account.id = inbox_threads.account_id
+          WHERE message.thread_id = inbox_threads.id
+            AND message.direction = 'incoming'
+            AND lower(message.recipients_json) LIKE '%' || lower(account.address) || '%'
+        )`,
+      );
+    }
+    if (flow === "delegated") {
+      filters.push(
+        `EXISTS (
+          SELECT 1 FROM inbox_thread_actions action
+          WHERE action.thread_id = inbox_threads.id
+            AND action.action_kind = 'kanban_delegate'
+        )`,
+      );
+    }
     if (options.cursor) {
       filters.push(
         "(last_message_at < @cursorLastMessageAt OR (last_message_at = @cursorLastMessageAt AND id < @cursorId))",
@@ -448,8 +481,24 @@ export class InboxService {
     this.requireAccount(accountId);
     return this.db
       .prepare(
-        `SELECT provider_uid FROM inbox_messages
-         WHERE account_id = ? AND provider_uid IS NOT NULL
+        `SELECT message.provider_uid FROM inbox_messages message
+         JOIN inbox_threads thread ON thread.id = message.thread_id
+         WHERE message.account_id = ? AND message.provider_uid IS NOT NULL
+           AND thread.folder = 'inbox'
+         ORDER BY provider_uid ASC`,
+      )
+      .pluck()
+      .all(accountId) as string[];
+  }
+
+  listSpecialProviderUids(accountId: string): string[] {
+    this.requireAccount(accountId);
+    return this.db
+      .prepare(
+        `SELECT message.provider_uid FROM inbox_messages message
+         JOIN inbox_threads thread ON thread.id = message.thread_id
+         WHERE message.account_id = ? AND message.provider_uid IS NOT NULL
+           AND thread.folder IN ('spam', 'trash')
          ORDER BY provider_uid ASC`,
       )
       .pluck()
@@ -535,6 +584,22 @@ export class InboxService {
     if (changed.changes === 0) throw new InboxThreadNotFoundError(id);
   }
 
+  moveThread(
+    id: string,
+    folder: Exclude<InboxThreadFolder, "inbox">,
+  ): InboxThread {
+    const updatedAt = new Date().toISOString();
+    const changed = this.db
+      .prepare(
+        "UPDATE inbox_threads SET folder = ?, updated_at = ? WHERE id = ?",
+      )
+      .run(folder, updatedAt, id);
+    if (changed.changes === 0) throw new InboxThreadNotFoundError(id);
+    const thread = this.findThread(id);
+    if (!thread) throw new InboxThreadNotFoundError(id);
+    return thread;
+  }
+
   private upsertThread(
     accountId: string,
     input: SyncThread,
@@ -548,6 +613,7 @@ export class InboxService {
     const candidate = {
       accountId,
       externalThreadId: input.externalThreadId,
+      folder: input.folder ?? "inbox",
       subject: input.subject,
       snippet: input.snippet,
       participantsJson: canonicalSetJson(input.participants, normalizeAddress),
@@ -560,9 +626,9 @@ export class InboxService {
         .prepare(
           `INSERT INTO inbox_threads
            (id, account_id, external_thread_id, subject, snippet, participants_json,
-            unread_count, last_message_at, labels_json, created_at, updated_at)
+            unread_count, last_message_at, labels_json, folder, created_at, updated_at)
            VALUES (@id, @accountId, @externalThreadId, @subject, @snippet,
-                   @participantsJson, @unreadCount, @lastMessageAt, @labelsJson,
+                   @participantsJson, @unreadCount, @lastMessageAt, @labelsJson, @folder,
                    @createdAt, @updatedAt)`,
         )
         .run({
@@ -580,6 +646,7 @@ export class InboxService {
         candidate.participantsJson &&
       current.unreadCount === candidate.unreadCount &&
       current.lastMessageAt === candidate.lastMessageAt &&
+      current.folder === candidate.folder &&
       canonicalSetJson(current.labels, normalizeLabel) === candidate.labelsJson
     ) {
       return "unchanged";
@@ -589,7 +656,7 @@ export class InboxService {
         `UPDATE inbox_threads
          SET subject = @subject, snippet = @snippet, participants_json = @participantsJson,
              unread_count = @unreadCount, last_message_at = @lastMessageAt,
-             labels_json = @labelsJson, updated_at = @updatedAt
+             labels_json = @labelsJson, folder = @folder, updated_at = @updatedAt
          WHERE id = @id`,
       )
       .run({ ...candidate, id: current.id, updatedAt: syncedAt });
@@ -682,8 +749,11 @@ export class InboxService {
     );
     const affectedThreadIds = new Set<string>();
     const findMessage = this.db.prepare(
-      `SELECT id, thread_id, seen, remote_seen_override FROM inbox_messages
-       WHERE account_id = ? AND provider_uid = ?`,
+      `SELECT message.id, message.thread_id, message.seen,
+              message.remote_seen_override, thread.folder
+       FROM inbox_messages message
+       JOIN inbox_threads thread ON thread.id = message.thread_id
+       WHERE message.account_id = ? AND message.provider_uid = ?`,
     );
     const deleteMessage = this.db.prepare(
       "DELETE FROM inbox_messages WHERE id = ?",
@@ -699,9 +769,10 @@ export class InboxService {
             thread_id: string;
             seen: number;
             remote_seen_override: number | null;
+            folder: InboxThreadFolder;
           }
         | undefined;
-      if (!row || present.has(providerUid)) continue;
+      if (!row || present.has(providerUid) || row.folder !== "inbox") continue;
       affectedThreadIds.add(row.thread_id);
       deleteMessage.run(row.id);
     }
@@ -712,6 +783,7 @@ export class InboxService {
             thread_id: string;
             seen: number;
             remote_seen_override: number | null;
+            folder: InboxThreadFolder;
           }
         | undefined;
       if (!row) continue;
@@ -857,6 +929,7 @@ function threadFromRow(row: ThreadRow): InboxThread {
     unreadCount: row.unread_count,
     lastMessageAt: row.last_message_at,
     labels: JSON.parse(row.labels_json) as string[],
+    folder: row.folder,
     createdAt: row.created_at,
     updatedAt: row.updated_at,
   };
