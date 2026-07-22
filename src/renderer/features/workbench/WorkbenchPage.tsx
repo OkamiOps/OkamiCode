@@ -24,6 +24,7 @@ import {
   type WorkspacePanelMode,
 } from "./WorkspacePanel";
 import { useWorkbenchStore, type WorkbenchState } from "./store";
+import { providerKindForLane } from "./runtime-presentation";
 
 interface WorkbenchPageProps {
   api?: WorkbenchApi;
@@ -479,7 +480,11 @@ export function WorkbenchPage({ api = workbenchApi }: WorkbenchPageProps) {
           </>
         )}
         <span className="chat-topbar__spacer" />
-        <UsagePopover />
+        <UsagePopover
+          activeProvider={
+            selectedLane ? providerKindForLane(selectedLane) : null
+          }
+        />
         {panelToggle("files")}
         {panelToggle("terminal")}
         {panelToggle("browser")}

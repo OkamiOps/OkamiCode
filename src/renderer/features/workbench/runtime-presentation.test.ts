@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import type { WorkbenchLane } from "./api";
 import {
   laneDisplayName,
+  providerKindForLane,
   runtimeGlyph,
   runtimePresentation,
 } from "./runtime-presentation";
@@ -35,5 +36,24 @@ describe("runtime presentation", () => {
       tone: "cursor",
     });
     expect(laneDisplayName(agyLane)).toBe("Antigravity");
+  });
+
+  it("maps the selected lane to the subscription provider shown in quota", () => {
+    expect(providerKindForLane(cursorLane)).toBe("cursor");
+    expect(providerKindForLane(agyLane)).toBe("antigravity");
+    expect(
+      providerKindForLane({
+        runtimeKind: "claude",
+        providerAccountLabel: "ChatGPT",
+        model: "gpt-5.6-sol",
+      } as WorkbenchLane),
+    ).toBe("chatgpt");
+    expect(
+      providerKindForLane({
+        runtimeKind: "claude",
+        providerAccountLabel: "Claude Max",
+        model: "sonnet",
+      } as WorkbenchLane),
+    ).toBe("claude_max");
   });
 });

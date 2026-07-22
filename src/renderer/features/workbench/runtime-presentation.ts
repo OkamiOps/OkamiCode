@@ -1,4 +1,4 @@
-import type { RuntimeKind } from "../../../shared/contracts/lane";
+import type { ProviderKind, RuntimeKind } from "../../../shared/contracts/lane";
 import type { WorkbenchLane } from "./api";
 
 export type RuntimeGlyph = "CL" | "GP" | "GK" | "CU" | "AG" | "MI";
@@ -31,6 +31,16 @@ export function runtimePresentation(lane: WorkbenchLane) {
     return { glyph: "GP", tone: "gpt" } as const;
   }
   return { glyph: "CL", tone: "claude" } as const;
+}
+
+export function providerKindForLane(lane: WorkbenchLane): ProviderKind {
+  if (lane.runtimeKind === "cursor") return "cursor";
+  if (lane.runtimeKind === "agy") return "antigravity";
+  if (lane.runtimeKind === "grok") return "grok";
+  if (lane.runtimeKind === "mimo") return "mimo";
+  if (lane.runtimeKind === "minimax") return "minimax";
+  const account = `${lane.providerAccountLabel} ${lane.model}`.toLowerCase();
+  return /chatgpt|\bgpt|\bo[134]/u.test(account) ? "chatgpt" : "claude_max";
 }
 
 export function laneDisplayName(lane: WorkbenchLane): string {

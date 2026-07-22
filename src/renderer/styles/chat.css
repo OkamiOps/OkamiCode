@@ -2515,7 +2515,8 @@ textarea:focus-visible {
 .usage-pop__trigger {
   display: inline-flex;
   align-items: center;
-  gap: 7px;
+  gap: 8px;
+  min-height: 34px;
   border: 1px solid var(--chat-border-soft);
   background: var(--chat-surface);
   color: var(--chat-text-mid);
@@ -2523,7 +2524,7 @@ textarea:focus-visible {
   font-family: inherit;
   font-variant-numeric: tabular-nums;
   border-radius: 999px;
-  padding: 5px 10px;
+  padding: 4px 10px 4px 5px;
   cursor: pointer;
 }
 
@@ -2532,9 +2533,40 @@ textarea:focus-visible {
   border-color: var(--chat-border);
 }
 
+.usage-pop__trigger-glyph,
+.usage-pop__provider-glyph,
+.usage-pop__focus-glyph {
+  display: inline-grid;
+  place-items: center;
+  flex: none;
+  background: color-mix(in srgb, var(--usage-provider) 15%, transparent);
+  color: var(--usage-provider);
+  font: 800 8px/1 var(--chat-mono);
+}
+
+.usage-pop__trigger-glyph {
+  width: 24px;
+  height: 24px;
+  border-radius: 7px;
+}
+
+.usage-pop__trigger-provider {
+  max-width: 92px;
+  overflow: hidden;
+  color: var(--chat-text);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.usage-pop__trigger > strong {
+  color: var(--chat-text);
+  font-size: 11px;
+  white-space: nowrap;
+}
+
 .usage-pop__bar {
   display: inline-block;
-  width: 34px;
+  width: 42px;
   height: 4px;
   border-radius: 999px;
   background: var(--chat-surface-2);
@@ -2544,7 +2576,8 @@ textarea:focus-visible {
 .usage-pop__bar i {
   display: block;
   height: 100%;
-  background: var(--chat-cyan);
+  background: var(--usage-provider, var(--chat-cyan));
+  transition: width 0.2s ease-out;
 }
 
 .usage-pop__trigger[data-tone="warn"] .usage-pop__bar i {
@@ -2560,115 +2593,324 @@ textarea:focus-visible {
   top: calc(100% + 8px);
   right: 0;
   z-index: 40;
-  width: 320px;
-  padding: 10px;
+  width: min(390px, calc(100vw - 28px));
+  max-height: min(680px, calc(100vh - 92px));
+  padding: 14px;
+  overflow-y: auto;
   background: #16181d;
   border: 1px solid var(--chat-border);
   border-radius: 14px;
-  box-shadow: 0 18px 48px rgba(0, 0, 0, 0.55);
+  box-shadow: 0 6px 8px rgba(0, 0, 0, 0.42);
   display: flex;
   flex-direction: column;
-  gap: 10px;
+  gap: 14px;
 }
 
-.usage-pop__menu header {
+.usage-pop__header {
   display: flex;
-  align-items: center;
+  align-items: flex-start;
   justify-content: space-between;
-  font-size: 12.5px;
+  gap: 16px;
   color: var(--chat-text);
 }
 
-.usage-pop__menu header button {
-  border: none;
-  background: transparent;
+.usage-pop__header > div {
+  display: grid;
+  gap: 3px;
+}
+
+.usage-pop__header strong {
+  font-size: 13px;
+}
+
+.usage-pop__header span {
+  color: var(--chat-text-dim);
+  font-size: 11px;
+}
+
+.usage-pop__header button {
+  display: grid;
+  width: 30px;
+  height: 30px;
+  place-items: center;
+  flex: none;
+  border: 1px solid var(--chat-border-soft);
+  border-radius: 8px;
+  background: var(--chat-surface-2);
   color: var(--chat-text-dim);
   cursor: pointer;
-  padding: 3px;
-  border-radius: 6px;
 }
 
-.usage-pop__menu header button:hover:not(:disabled) {
-  background: var(--chat-surface-2);
+.usage-pop__header button:hover:not(:disabled) {
+  border-color: var(--usage-provider, var(--chat-cyan));
   color: var(--chat-text);
 }
 
-.usage-pop__account {
+.usage-pop__header button:focus-visible,
+.usage-pop__provider:focus-visible,
+.usage-pop__full:focus-visible,
+.usage-pop__trigger:focus-visible {
+  outline: none;
+  box-shadow: var(--ok-focus);
+}
+
+.usage-pop__focus {
+  --usage-provider: var(--chat-cyan);
+  display: grid;
+  gap: 11px;
+  padding: 13px;
+  border: 1px solid
+    color-mix(in srgb, var(--usage-provider) 35%, var(--chat-border));
+  border-radius: 12px;
+  background: color-mix(in srgb, var(--usage-provider) 7%, var(--chat-surface));
+}
+
+.usage-pop__focus-heading {
   display: flex;
   align-items: center;
-  gap: 7px;
-  font-size: 11px;
-  text-transform: uppercase;
-  letter-spacing: 0.06em;
-  color: var(--chat-text-dim);
-  margin-bottom: 6px;
+  gap: 9px;
 }
 
-.usage-pop__account small {
-  text-transform: none;
-  letter-spacing: 0;
-  border: 1px solid var(--chat-border-soft);
-  border-radius: 999px;
-  padding: 1px 6px;
+.usage-pop__focus-glyph {
+  width: 30px;
+  height: 30px;
+  border-radius: 9px;
+  font-size: 9px;
 }
 
-.usage-pop__row {
+.usage-pop__focus-heading > div {
   display: grid;
-  grid-template-columns: 1fr 60px 34px;
-  grid-template-areas: "label track value" "reset reset reset";
-  align-items: center;
-  gap: 4px 8px;
-  padding: 4px 0;
-  font-size: 12px;
-  color: var(--chat-text-mid);
+  min-width: 0;
+  flex: 1;
+  gap: 2px;
 }
 
-.usage-pop__label {
-  grid-area: label;
+.usage-pop__focus-heading > div strong,
+.usage-pop__focus-heading > div span {
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
 }
 
-.usage-pop__track {
-  grid-area: track;
-  height: 5px;
-  border-radius: 999px;
-  background: var(--chat-surface-2);
-  overflow: hidden;
-}
-
-.usage-pop__track i {
-  display: block;
-  height: 100%;
-  background: var(--chat-cyan);
-}
-
-.usage-pop__track[data-tone="warn"] i {
-  background: var(--chat-yellow);
-}
-
-.usage-pop__track[data-tone="high"] i {
-  background: var(--chat-red);
-}
-
-.usage-pop__row strong {
-  grid-area: value;
-  text-align: right;
+.usage-pop__focus-heading > div strong {
   color: var(--chat-text);
-  font-variant-numeric: tabular-nums;
+  font-size: 12.5px;
 }
 
-.usage-pop__row small {
-  grid-area: reset;
+.usage-pop__focus-heading > div span {
   color: var(--chat-text-dim);
   font-size: 10.5px;
 }
 
-.usage-pop__empty {
-  margin: 0;
-  font-size: 11.5px;
+.usage-pop__health {
+  padding: 3px 7px;
+  border-radius: 999px;
+  background: color-mix(in srgb, var(--chat-green) 13%, transparent);
+  color: var(--chat-green);
+  font-size: 10px;
+  font-weight: 700;
+}
+
+.usage-pop__focus[data-tone="warn"] .usage-pop__health {
+  background: color-mix(in srgb, var(--chat-yellow) 14%, transparent);
+  color: var(--chat-yellow);
+}
+
+.usage-pop__focus[data-tone="high"] .usage-pop__health {
+  background: color-mix(in srgb, var(--chat-red) 14%, transparent);
+  color: var(--chat-red);
+}
+
+.usage-pop__focus[data-tone="unknown"] .usage-pop__health {
+  background: var(--chat-surface-2);
   color: var(--chat-text-dim);
+}
+
+.usage-pop__headline {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.usage-pop__headline strong {
+  color: var(--chat-text);
+  font-size: 19px;
+  font-variant-numeric: tabular-nums;
+  letter-spacing: -0.02em;
+}
+
+.usage-pop__headline span {
+  color: var(--chat-text-dim);
+  font-size: 10px;
+  text-align: right;
+}
+
+.usage-pop__focus-track,
+.usage-pop__window-track {
+  overflow: hidden;
+  border-radius: 999px;
+  background: var(--chat-surface-2);
+}
+
+.usage-pop__focus-track {
+  height: 7px;
+}
+
+.usage-pop__focus-track i,
+.usage-pop__window-track i {
+  display: block;
+  height: 100%;
+  border-radius: inherit;
+  background: var(--usage-provider);
+  transition: width 0.2s ease-out;
+}
+
+.usage-pop__focus-track[data-tone="warn"] i,
+.usage-pop__window-track[data-tone="warn"] i {
+  background: var(--chat-yellow);
+}
+
+.usage-pop__focus-track[data-tone="high"] i,
+.usage-pop__window-track[data-tone="high"] i {
+  background: var(--chat-red);
+}
+
+.usage-pop__windows {
+  display: grid;
+  gap: 2px;
+  padding-top: 3px;
+  border-top: 1px solid
+    color-mix(in srgb, var(--usage-provider) 20%, var(--chat-border-soft));
+}
+
+.usage-pop__window {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 72px 32px;
+  align-items: center;
+  gap: 9px;
+  min-height: 42px;
+}
+
+.usage-pop__window > div {
+  display: grid;
+  min-width: 0;
+  gap: 2px;
+}
+
+.usage-pop__window > div strong,
+.usage-pop__window > div span {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.usage-pop__window > div strong {
+  color: var(--chat-text-mid);
+  font-size: 11px;
+  font-weight: 600;
+}
+
+.usage-pop__window > div span {
+  color: var(--chat-text-dim);
+  font-size: 9.5px;
+}
+
+.usage-pop__window > strong {
+  color: var(--chat-text);
+  font-size: 10.5px;
+  font-variant-numeric: tabular-nums;
+  text-align: right;
+}
+
+.usage-pop__window-track {
+  height: 5px;
+}
+
+.usage-pop__empty,
+.usage-pop__no-provider {
+  margin: 0;
+  color: var(--chat-text-dim);
+  font-size: 11px;
+  line-height: 1.45;
+}
+
+.usage-pop__no-provider {
+  display: grid;
+  gap: 4px;
+  padding: 13px;
+  border: 1px solid var(--chat-border-soft);
+  border-radius: 12px;
+  background: var(--chat-surface);
+}
+
+.usage-pop__no-provider strong {
+  color: var(--chat-text);
+  font-size: 12px;
+}
+
+.usage-pop__switcher {
+  display: grid;
+  gap: 8px;
+}
+
+.usage-pop__switcher > span {
+  color: var(--chat-text-dim);
+  font-size: 10.5px;
+  font-weight: 600;
+}
+
+.usage-pop__provider-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 6px;
+}
+
+.usage-pop__provider {
+  --usage-provider: var(--chat-text-mid);
+  display: grid;
+  grid-template-columns: 24px minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 7px;
+  min-height: 36px;
+  padding: 5px 8px 5px 5px;
+  border: 1px solid var(--chat-border-soft);
+  border-radius: 9px;
+  background: var(--chat-surface);
+  color: var(--chat-text-mid);
+  cursor: pointer;
+  text-align: left;
+}
+
+.usage-pop__provider:hover,
+.usage-pop__provider[aria-pressed="true"] {
+  border-color: color-mix(
+    in srgb,
+    var(--usage-provider) 58%,
+    var(--chat-border)
+  );
+  background: color-mix(in srgb, var(--usage-provider) 8%, var(--chat-surface));
+  color: var(--chat-text);
+}
+
+.usage-pop__provider-glyph {
+  width: 24px;
+  height: 24px;
+  border-radius: 7px;
+}
+
+.usage-pop__provider > span:nth-child(2) {
+  overflow: hidden;
+  font-size: 10.5px;
+  font-weight: 600;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.usage-pop__provider > strong {
+  color: var(--usage-provider);
+  font-size: 10.5px;
+  font-variant-numeric: tabular-nums;
 }
 
 .usage-pop__full {
@@ -2676,14 +2918,87 @@ textarea:focus-visible {
   align-items: center;
   justify-content: center;
   gap: 6px;
-  border: none;
-  border-top: 1px solid var(--chat-border-soft);
-  background: transparent;
+  min-height: 34px;
+  border: 1px solid var(--chat-border-soft);
+  border-radius: 9px;
+  background: var(--chat-surface);
   color: var(--chat-cyan);
   font: 600 12px/1 inherit;
   font-family: inherit;
-  padding: 9px 0 2px;
+  padding: 8px 10px;
   cursor: pointer;
+}
+
+.usage-pop__full:hover {
+  border-color: color-mix(in srgb, var(--chat-cyan) 55%, var(--chat-border));
+  background: color-mix(in srgb, var(--chat-cyan) 6%, var(--chat-surface));
+}
+
+.usage-pop__trigger[data-provider="chatgpt"],
+.usage-pop__focus[data-provider="chatgpt"],
+.usage-pop__provider[data-provider="chatgpt"] {
+  --usage-provider: var(--chat-cyan);
+}
+
+.usage-pop__trigger[data-provider="claude_max"],
+.usage-pop__focus[data-provider="claude_max"],
+.usage-pop__provider[data-provider="claude_max"] {
+  --usage-provider: var(--chat-accent);
+}
+
+.usage-pop__trigger[data-provider="cursor"],
+.usage-pop__focus[data-provider="cursor"],
+.usage-pop__provider[data-provider="cursor"] {
+  --usage-provider: color-mix(
+    in srgb,
+    var(--chat-cyan) 58%,
+    var(--chat-accent)
+  );
+}
+
+.usage-pop__trigger[data-provider="antigravity"],
+.usage-pop__focus[data-provider="antigravity"],
+.usage-pop__provider[data-provider="antigravity"] {
+  --usage-provider: var(--chat-green);
+}
+
+.usage-pop__trigger[data-provider="grok"],
+.usage-pop__focus[data-provider="grok"],
+.usage-pop__provider[data-provider="grok"] {
+  --usage-provider: var(--chat-text);
+}
+
+.usage-pop__trigger[data-provider="mimo"],
+.usage-pop__focus[data-provider="mimo"],
+.usage-pop__provider[data-provider="mimo"] {
+  --usage-provider: var(--chat-red);
+}
+
+.usage-pop__trigger[data-provider="minimax"],
+.usage-pop__focus[data-provider="minimax"],
+.usage-pop__provider[data-provider="minimax"] {
+  --usage-provider: var(--chat-yellow);
+}
+
+@media (max-width: 720px) {
+  .usage-pop__trigger-provider,
+  .usage-pop__bar {
+    display: none;
+  }
+
+  .usage-pop__menu {
+    position: fixed;
+    top: 58px;
+    right: 10px;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .usage-pop__bar i,
+  .usage-pop__focus-track i,
+  .usage-pop__window-track i {
+    transition: none;
+  }
 }
 
 /* Conversation ⋮ menu */
