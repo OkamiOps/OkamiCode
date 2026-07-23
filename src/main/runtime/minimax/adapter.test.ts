@@ -55,7 +55,16 @@ it("runs MiniMax Token Plan chat through the installed mmx CLI", async () => {
   expect(events[2]?.payload).toMatchObject({ text: "Resposta MiniMax" });
   expect(events[3]?.payload).toEqual({
     runtime: "minimax",
-    usage: { input_tokens: 4, output_tokens: 2 },
+    usage: {
+      aggregation: "snapshot",
+      complete: true,
+      input_token_semantics: "excludes_cache_read",
+      input_tokens: 4,
+      observed_total_tokens: 6,
+      output_tokens: 2,
+      scope: "turn",
+      source: "provider",
+    },
   });
   expect(run).toHaveBeenCalledWith(
     "/nvm/v24/bin/mmx",

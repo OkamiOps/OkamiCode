@@ -63,4 +63,40 @@ describe("ClaudeProjector", () => {
       new ClaudeProjector(testIds()).projectAll(fixture),
     ).not.toThrow();
   });
+
+  it("keeps cache creation and reported cost in canonical turn usage", () => {
+    const projected = new ClaudeProjector(testIds()).project({
+      type: "result",
+      subtype: "success",
+      is_error: false,
+      result: "OK",
+      total_cost_usd: 0.0042,
+      usage: {
+        input_tokens: 10,
+        cache_creation_input_tokens: 25,
+        cache_read_input_tokens: 40,
+        output_tokens: 5,
+      },
+    });
+
+    expect(
+      projected.find((event) => event.kind === "usage_reported"),
+    ).toMatchObject({
+      payload: {
+        usage: {
+          aggregation: "snapshot",
+          complete: true,
+          input_token_semantics: "excludes_cache_read",
+          input_tokens: 10,
+          cache_creation_input_tokens: 25,
+          cache_read_input_tokens: 40,
+          output_tokens: 5,
+          observed_total_tokens: 80,
+          scope: "turn",
+          source: "provider",
+          cost_usd: 0.0042,
+        },
+      },
+    });
+  });
 });

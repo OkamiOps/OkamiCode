@@ -43,6 +43,9 @@ export interface ClaudeAdapterDependencies {
   command?: string;
   env?: NodeJS.ProcessEnv;
   hookScriptPath?: string;
+  providerUsageForLane?: (
+    laneId: NativeSession["laneId"],
+  ) => NativeRecord | undefined;
 }
 
 interface ClaudeSessionState {
@@ -381,7 +384,21 @@ export class ClaudeAdapter implements RuntimeAdapter {
       for (;;) {
         const message = await run.session.process.next();
         if (!message) break;
-        for (const event of projector.project(message)) yield event;
+        const projected = projector.project(message);
+        const providerUsage =
+          message.type === "result"
+            ? this.dependencies.providerUsageForLane?.(run.session.laneId)
+            : undefined;
+        for (const event of projected) {
+          if (providerUsage && event.kind === "usage_reported") {
+            yield {
+              ...event,
+              payload: { ...event.payload, usage: providerUsage },
+            };
+          } else {
+            yield event;
+          }
+        }
         if (message.type === "result") break;
       }
     } finally {

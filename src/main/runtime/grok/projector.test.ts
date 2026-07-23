@@ -55,9 +55,12 @@ it("projects Grok end usage before the terminal event", () => {
     type: "end",
     sessionId: "grok-session",
     usage: {
-      input_tokens: 300,
-      cache_read_input_tokens: 40,
-      output_tokens: 30,
+      inputTokens: 300,
+      cachedReadTokens: 40,
+      outputTokens: 30,
+      reasoningTokens: 10,
+      totalTokens: 330,
+      costUsd: 0.003,
     },
   });
 
@@ -66,8 +69,18 @@ it("projects Grok end usage before the terminal event", () => {
     "run_completed",
   ]);
   expect(events[0]?.payload.usage).toEqual({
+    aggregation: "snapshot",
+    complete: true,
+    input_token_semantics: "includes_cache_read",
     input_tokens: 300,
     cache_read_input_tokens: 40,
     output_tokens: 30,
+    reasoning_tokens: 10,
+    reasoning_token_semantics: "includes_output",
+    observed_total_tokens: 330,
+    reported_total_tokens: 330,
+    scope: "turn",
+    source: "provider",
+    cost_usd: 0.003,
   });
 });

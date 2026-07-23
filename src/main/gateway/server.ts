@@ -112,7 +112,7 @@ async function handleRequest(
     const effort = laneId ? effortResolver?.(laneId) : undefined;
     const stream = mount.bridge.handleMessages(
       body,
-      effort ? { effort } : undefined,
+      laneId ? { effort, laneId } : undefined,
     );
     const iterator = stream[Symbol.asyncIterator]();
     const first = await iterator.next();

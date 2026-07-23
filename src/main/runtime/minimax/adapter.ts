@@ -19,6 +19,7 @@ import type {
 } from "../adapter";
 import { subscriptionEnvironment } from "../agy/adapter";
 import { executableEnvironment } from "../commands";
+import { canonicalTurnUsage, tokenCount } from "../usage";
 
 interface ProcessResult {
   stdout: string;
@@ -257,7 +258,26 @@ export class MiniMaxAdapter implements RuntimeAdapter {
         native: payload,
       });
       if (payload.usage && typeof payload.usage === "object") {
-        yield build("usage_reported", { usage: payload.usage });
+        const usage = payload.usage as Record<string, unknown>;
+        yield build("usage_reported", {
+          usage: canonicalTurnUsage({
+            aggregation: "snapshot",
+            scope: "turn",
+            inputTokenSemantics: "excludes_cache_read",
+            reasoningTokenSemantics: "includes_output",
+            inputTokens: tokenCount(usage.input_tokens ?? usage.prompt_tokens),
+            cacheReadInputTokens: tokenCount(
+              usage.cache_read_input_tokens ?? usage.cached_tokens,
+            ),
+            outputTokens: tokenCount(
+              usage.output_tokens ?? usage.completion_tokens,
+            ),
+            reasoningTokens: tokenCount(usage.reasoning_tokens),
+            reportedTotalTokens: tokenCount(usage.total_tokens),
+            costUsd:
+              typeof usage.cost_usd === "number" ? usage.cost_usd : undefined,
+          }),
+        });
       }
       yield build("run_completed", { native: payload });
     } catch (error) {

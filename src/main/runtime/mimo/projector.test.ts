@@ -79,10 +79,18 @@ describe("MimoProjector", () => {
       payload: {
         runtime: "mimo",
         usage: {
+          aggregation: "delta",
+          complete: true,
+          input_token_semantics: "excludes_cache_read",
           input_tokens: 500,
           cache_read_input_tokens: 100,
+          cache_creation_input_tokens: 0,
           output_tokens: 50,
           reasoning_tokens: 10,
+          reasoning_token_semantics: "excludes_output",
+          observed_total_tokens: 660,
+          scope: "model_call",
+          source: "provider",
         },
       },
     });

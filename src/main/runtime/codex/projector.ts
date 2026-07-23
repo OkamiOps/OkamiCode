@@ -4,6 +4,7 @@ import {
   type CanonicalEventKind,
 } from "../../../shared/contracts/event";
 import type { LaneId, RunId, TaskId } from "../../../shared/ids";
+import { canonicalTurnUsage, tokenCount } from "../usage";
 
 type NativeRecord = Record<string, unknown>;
 
@@ -92,10 +93,29 @@ export class CodexProjector {
     }
 
     if (method === "thread/tokenUsage/updated") {
+      const tokenUsage = record(params.tokenUsage);
+      const last = record(tokenUsage?.last);
+      const usage = last
+        ? canonicalTurnUsage({
+            aggregation: "snapshot",
+            scope: "turn",
+            inputTokenSemantics: "includes_cache_read",
+            reasoningTokenSemantics: "includes_output",
+            inputTokens: tokenCount(last.inputTokens),
+            cacheReadInputTokens: tokenCount(last.cachedInputTokens),
+            cacheCreationInputTokens: tokenCount(last.cacheWriteInputTokens),
+            outputTokens: tokenCount(last.outputTokens),
+            reasoningTokens: tokenCount(last.reasoningOutputTokens),
+            reportedTotalTokens: tokenCount(last.totalTokens),
+          })
+        : undefined;
       return [
         this.event("usage_reported", method, anchor(params), params, {
           nativeMethod: method,
-          usage: params,
+          usage: usage ?? {
+            available: false,
+            source: "codex_app_server",
+          },
         }),
       ];
     }

@@ -4,6 +4,7 @@ import {
   type CanonicalEventKind,
 } from "../../../shared/contracts/event";
 import type { LaneId, RunId, TaskId } from "../../../shared/ids";
+import { canonicalTurnUsage, tokenCount } from "../usage";
 
 type NativeRecord = Record<string, unknown>;
 
@@ -135,20 +136,17 @@ function mimoUsage(native: NativeRecord): NativeRecord | undefined {
   if (input === undefined && cacheRead === undefined && output === undefined) {
     return undefined;
   }
-  return {
-    input_tokens: input ?? 0,
-    cache_read_input_tokens: cacheRead ?? 0,
-    output_tokens: output ?? 0,
-    ...(tokenCount(tokens.reasoning) === undefined
-      ? {}
-      : { reasoning_tokens: tokenCount(tokens.reasoning) }),
-  };
-}
-
-function tokenCount(value: unknown): number | undefined {
-  return typeof value === "number" && Number.isFinite(value) && value >= 0
-    ? value
-    : undefined;
+  return canonicalTurnUsage({
+    aggregation: "delta",
+    scope: "model_call",
+    inputTokenSemantics: "excludes_cache_read",
+    reasoningTokenSemantics: "excludes_output",
+    inputTokens: input,
+    cacheReadInputTokens: cacheRead,
+    cacheCreationInputTokens: tokenCount(cache?.write),
+    outputTokens: output,
+    reasoningTokens: tokenCount(tokens.reasoning),
+  });
 }
 
 function textDelta(native: NativeRecord): string | undefined {

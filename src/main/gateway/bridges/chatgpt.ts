@@ -1,4 +1,5 @@
 import { BridgeUnhealthyError } from "./chatgpt-backend";
+import { canonicalTurnUsage, tokenCount } from "../../runtime/usage";
 
 export {
   BridgeUnhealthyError,
@@ -31,6 +32,7 @@ export interface ChatGptBackend {
 
 export interface ChatGptBridgeContext {
   effort?: string;
+  laneId?: string;
 }
 
 export interface ChatGptBridge {
@@ -45,6 +47,7 @@ export interface ChatGptBridgeOptions {
   // Anthropic model ids, which the ChatGPT backend rejects with a 400, so the
   // profile's configured model always wins.
   model: string;
+  onUsage?: (laneId: string, usage: JsonRecord) => void;
 }
 
 export function createChatGptBridge(
@@ -74,7 +77,12 @@ export function createChatGptBridge(
             usage: { input_tokens: 0, output_tokens: 0 },
           },
         });
-        yield* translateChatGptStream(prepend(first, upstream));
+        yield* translateChatGptStream(
+          prepend(first, upstream),
+          context?.laneId
+            ? (usage) => options.onUsage?.(context.laneId!, usage)
+            : undefined,
+        );
       } catch (error) {
         if (error instanceof BridgeUnhealthyError) throw error;
         throw new BridgeUnhealthyError("ChatGPT bridge is unhealthy", {
@@ -185,6 +193,7 @@ function translateMessages(messages: unknown[]): JsonRecord[] {
 
 async function* translateChatGptStream(
   stream: AsyncIterable<ChatGptStreamEvent>,
+  onUsage?: (usage: JsonRecord) => void,
 ): AsyncIterable<string> {
   const blocks = new Map<number, { index: number; stopped: boolean }>();
   let nextIndex = 0;
@@ -250,6 +259,23 @@ async function* translateChatGptStream(
     } else if (event.type === "response.completed") {
       const usage = record(record(event.response)?.usage);
       outputTokens = number(usage?.output_tokens) ?? 0;
+      if (usage) {
+        const details = record(usage.input_tokens_details);
+        const canonicalUsage = canonicalTurnUsage({
+          aggregation: "delta",
+          scope: "turn",
+          inputTokenSemantics: "includes_cache_read",
+          reasoningTokenSemantics: "includes_output",
+          inputTokens: tokenCount(usage.input_tokens),
+          cacheReadInputTokens: tokenCount(details?.cached_tokens),
+          outputTokens: tokenCount(usage.output_tokens),
+          reasoningTokens: tokenCount(
+            record(usage.output_tokens_details)?.reasoning_tokens,
+          ),
+          reportedTotalTokens: tokenCount(usage.total_tokens),
+        });
+        if (canonicalUsage) onUsage?.(canonicalUsage);
+      }
     } else if (event.type === "response.failed" || event.type === "error") {
       throw new Error(`ChatGPT backend stream failed: ${event.type}`);
     }

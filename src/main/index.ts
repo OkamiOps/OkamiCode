@@ -23,6 +23,7 @@ import { openDatabase } from "./db/connection";
 import { createAppState, type AppState } from "./ipc/app-state";
 import { registerIpcHandlers } from "./ipc/handlers";
 import { createChatGptBridge } from "./gateway/bridges/chatgpt";
+import { TurnUsageAccumulator } from "./gateway/turn-usage";
 import { createCodexChatGptBackend } from "./gateway/bridges/chatgpt-backend";
 import { createGatewayProfile } from "./gateway/profile";
 import { startGatewayServer } from "./gateway/server";
@@ -260,6 +261,7 @@ async function bootstrap(): Promise<void> {
       console.error("[okami] AGY companion provisioning failed");
     }
   }
+  const bridgedTurnUsage = new TurnUsageAccumulator();
   const runtimes = createRuntimeRegistry({
     claude: {
       policyEngine: {
@@ -270,6 +272,7 @@ async function bootstrap(): Promise<void> {
       leaseIdsForRun,
       hookScriptPath: path.resolve(app.getAppPath(), "bin/okami-hook.mjs"),
       command: runtimeCommands.claude,
+      providerUsageForLane: (laneId) => bridgedTurnUsage.drain(laneId),
     },
     codex: {
       approvalBroker,
@@ -330,6 +333,7 @@ async function bootstrap(): Promise<void> {
         profile: chatgptProfile,
         bridge: createChatGptBridge(createCodexChatGptBackend(), {
           model: GPT_BACKEND_MODEL,
+          onUsage: (laneId, usage) => bridgedTurnUsage.record(laneId, usage),
         }),
       },
     ],

@@ -4,6 +4,7 @@ import {
   type CanonicalEventKind,
 } from "../../../shared/contracts/event";
 import type { LaneId, RunId, TaskId } from "../../../shared/ids";
+import { canonicalTurnUsage, tokenCount } from "../usage";
 
 type NativeRecord = Record<string, unknown>;
 
@@ -114,26 +115,31 @@ export class GrokProjector {
 function canonicalUsage(value: unknown): NativeRecord | undefined {
   const usage = record(value);
   if (!usage) return undefined;
-  const input = tokenCount(usage.input_tokens);
-  const cacheRead = tokenCount(usage.cache_read_input_tokens);
-  const output = tokenCount(usage.output_tokens);
+  const input = tokenCount(usage.input_tokens ?? usage.inputTokens);
+  const cacheRead = tokenCount(
+    usage.cache_read_input_tokens ?? usage.cachedReadTokens,
+  );
+  const output = tokenCount(usage.output_tokens ?? usage.outputTokens);
   if (input === undefined && cacheRead === undefined && output === undefined) {
     return undefined;
   }
-  return {
-    input_tokens: input ?? 0,
-    cache_read_input_tokens: cacheRead ?? 0,
-    output_tokens: output ?? 0,
-    ...(tokenCount(usage.reasoning_tokens) === undefined
-      ? {}
-      : { reasoning_tokens: tokenCount(usage.reasoning_tokens) }),
-  };
-}
-
-function tokenCount(value: unknown): number | undefined {
-  return typeof value === "number" && Number.isFinite(value) && value >= 0
-    ? value
-    : undefined;
+  return canonicalTurnUsage({
+    aggregation: "snapshot",
+    scope: "turn",
+    inputTokenSemantics: "includes_cache_read",
+    reasoningTokenSemantics: "includes_output",
+    inputTokens: input,
+    cacheReadInputTokens: cacheRead,
+    outputTokens: output,
+    reasoningTokens: tokenCount(
+      usage.reasoning_tokens ?? usage.reasoningTokens,
+    ),
+    reportedTotalTokens: tokenCount(usage.total_tokens ?? usage.totalTokens),
+    costUsd:
+      typeof (usage.cost_usd ?? usage.costUsd) === "number"
+        ? ((usage.cost_usd ?? usage.costUsd) as number)
+        : undefined,
+  });
 }
 
 function record(value: unknown): NativeRecord | undefined {

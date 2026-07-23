@@ -70,23 +70,41 @@ export class UsageActivityService {
         const payload = parse(event.payload_json);
         const bucketStart = hourStart(event.occurred_at);
         const sample = usageSample(payload, event.model);
+        const usage = record(sample.usage);
+        if (
+          !usage ||
+          typeof usage.observed_total_tokens !== "number" ||
+          !Number.isFinite(usage.observed_total_tokens)
+        ) {
+          continue;
+        }
+        const cacheRead = numeric(usage, [
+          "cache_read_input_tokens",
+          "cacheReadInputTokens",
+          "cachedInputTokens",
+        ]);
+        const cacheCreation = numeric(usage, [
+          "cache_creation_input_tokens",
+          "cacheCreationInputTokens",
+        ]);
+        const rawInput = numeric(usage, ["input_tokens", "inputTokens"]);
+        const inputTokens =
+          usage.input_token_semantics === "includes_cache_read"
+            ? Math.max(0, rawInput - cacheRead - cacheCreation)
+            : rawInput;
+        const reasoningTokens =
+          usage.reasoning_token_semantics === "includes_output"
+            ? 0
+            : numeric(usage, ["reasoning_tokens", "reasoningTokens"]);
         insert.run(
           `${event.lane_id}:${bucketStart}:${sample.model}`,
           event.lane_id,
           bucketStart,
           sample.model,
-          numeric(sample.usage, ["input_tokens", "inputTokens"]),
-          numeric(sample.usage, [
-            "cache_read_input_tokens",
-            "cacheReadInputTokens",
-            "cachedInputTokens",
-          ]) +
-            numeric(sample.usage, [
-              "cache_creation_input_tokens",
-              "cacheCreationInputTokens",
-            ]),
-          numeric(sample.usage, ["output_tokens", "outputTokens"]),
-          numeric(sample.usage, ["reasoning_tokens", "reasoningTokens"]),
+          inputTokens,
+          cacheRead + cacheCreation,
+          numeric(usage, ["output_tokens", "outputTokens"]),
+          reasoningTokens,
         );
       }
     })();
@@ -134,7 +152,10 @@ export class UsageActivityService {
     const row = this.db
       .prepare(
         `SELECT lane_id, occurred_at, payload_json
-         FROM events WHERE kind = 'usage_reported'
+         FROM events
+         WHERE kind = 'usage_reported'
+           AND json_type(payload_json, '$.usage.observed_total_tokens')
+               IN ('integer', 'real')
          ORDER BY occurred_at DESC, sequence DESC LIMIT 1`,
       )
       .get() as
@@ -147,10 +168,7 @@ export class UsageActivityService {
       "contextWindow",
       "model_context_window",
     ]);
-    const usedTokens =
-      numeric(payload, ["input_tokens", "inputTokens"]) +
-      numeric(payload, ["cache_read_input_tokens", "cachedInputTokens"]) +
-      numeric(payload, ["output_tokens", "outputTokens"]);
+    const usedTokens = numeric(payload, ["observed_total_tokens"]);
     if (contextWindow <= 0)
       return unavailableContext(row.occurred_at, row.lane_id);
     return {

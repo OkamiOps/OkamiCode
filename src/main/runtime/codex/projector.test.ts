@@ -90,4 +90,54 @@ describe("CodexProjector", () => {
       ]),
     ).not.toThrow();
   });
+
+  it("normalizes the last Codex turn instead of exposing a nested session snapshot", () => {
+    const projected = new CodexProjector(testIds()).project({
+      method: "thread/tokenUsage/updated",
+      params: {
+        threadId: "thread-1",
+        turnId: "turn-1",
+        tokenUsage: {
+          total: {
+            totalTokens: 9_999,
+            inputTokens: 8_000,
+            cachedInputTokens: 1_000,
+            cacheWriteInputTokens: 0,
+            outputTokens: 999,
+            reasoningOutputTokens: 100,
+          },
+          last: {
+            totalTokens: 130,
+            inputTokens: 100,
+            cachedInputTokens: 40,
+            cacheWriteInputTokens: 5,
+            outputTokens: 30,
+            reasoningOutputTokens: 7,
+          },
+          modelContextWindow: 200_000,
+        },
+      },
+    });
+
+    expect(projected[0]).toMatchObject({
+      kind: "usage_reported",
+      payload: {
+        usage: {
+          aggregation: "snapshot",
+          complete: true,
+          input_token_semantics: "includes_cache_read",
+          input_tokens: 100,
+          cache_read_input_tokens: 40,
+          cache_creation_input_tokens: 5,
+          output_tokens: 30,
+          reasoning_tokens: 7,
+          reasoning_token_semantics: "includes_output",
+          observed_total_tokens: 130,
+          reported_total_tokens: 130,
+          scope: "turn",
+          source: "provider",
+        },
+      },
+    });
+  });
 });

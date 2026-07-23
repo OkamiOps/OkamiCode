@@ -426,6 +426,8 @@ describe("local activity", () => {
             input_tokens: 120,
             cache_read_input_tokens: 30,
             output_tokens: 50,
+            observed_total_tokens: 200,
+            input_token_semantics: "excludes_cache_read",
           },
           model: "claude-sonnet-4-6",
         },
@@ -463,6 +465,8 @@ describe("local activity", () => {
             cache_read_input_tokens: 90,
             cache_creation_input_tokens: 9,
             output_tokens: 99,
+            observed_total_tokens: 1_197,
+            input_token_semantics: "excludes_cache_read",
           },
           modelUsage: {
             "claude-sonnet-4-6": {
@@ -504,7 +508,12 @@ describe("local activity", () => {
         kind: "usage_reported",
         payload: {
           runtime: "claude",
-          usage: { input_tokens: 500, output_tokens: 50 },
+          usage: {
+            input_tokens: 500,
+            output_tokens: 50,
+            observed_total_tokens: 550,
+            input_token_semantics: "excludes_cache_read",
+          },
           modelUsage: {},
         },
       }),
@@ -518,6 +527,26 @@ describe("local activity", () => {
       inputTokens: 500,
       outputTokens: 50,
     });
+  });
+
+  it("excludes legacy usage records from cost-comparison buckets", () => {
+    const fixture = createTestDatabase();
+    fixture.events.append(
+      fixture.event({
+        kind: "usage_reported",
+        payload: {
+          usage: {
+            input_tokens: 37_000_000,
+            output_tokens: 10,
+          },
+        },
+      }),
+    );
+    const activity = new UsageActivityService(fixture.db);
+
+    activity.rebuild();
+
+    expect(activity.readBuckets()).toEqual([]);
   });
 
   it("keeps completed Antigravity work visible with an explicit local estimate", () => {

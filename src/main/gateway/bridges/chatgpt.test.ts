@@ -83,12 +83,18 @@ describe("ChatGPT bridge", () => {
     const backend = await fakeChatGptBackend(
       "tests/fixtures/gateway/chatgpt-stream.jsonl",
     );
-    const bridge = createChatGptBridge(backend, { model: "gpt-5.6-sol" });
+    const observedUsage: Array<Record<string, unknown>> = [];
+    const bridge = createChatGptBridge(backend, {
+      model: "gpt-5.6-sol",
+      onUsage: (_laneId, usage) => observedUsage.push(usage),
+    });
     const request = await readJson(
       "tests/fixtures/gateway/anthropic-messages-request.json",
     );
 
-    const events = await collectSse(bridge.handleMessages(request));
+    const events = await collectSse(
+      bridge.handleMessages(request, { laneId: "lane-chatgpt" }),
+    );
 
     expect(backend.requests).toHaveLength(1);
     expect(backend.requests[0]).toMatchObject({
@@ -129,6 +135,19 @@ describe("ChatGPT bridge", () => {
       ),
     ).toBe(true);
     expect(events.at(-1)?.type).toBe("message_stop");
+    expect(observedUsage).toEqual([
+      {
+        aggregation: "delta",
+        complete: true,
+        input_token_semantics: "includes_cache_read",
+        input_tokens: 27,
+        observed_total_tokens: 39,
+        output_tokens: 12,
+        reported_total_tokens: 39,
+        scope: "turn",
+        source: "provider",
+      },
+    ]);
   });
 
   it("surfaces an OAuth refresh failure as bridge_unhealthy", async () => {

@@ -116,9 +116,15 @@ describe("CursorProjector", () => {
           payload: {
             runtime: "cursor",
             usage: {
+              aggregation: "snapshot",
+              complete: true,
+              input_token_semantics: "excludes_cache_read",
               input_tokens: 120,
               cache_read_input_tokens: 80,
+              observed_total_tokens: 220,
               output_tokens: 20,
+              scope: "turn",
+              source: "provider",
             },
           },
         }),

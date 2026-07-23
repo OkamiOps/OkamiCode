@@ -4,6 +4,7 @@ import {
   type CanonicalEventKind,
 } from "../../../shared/contracts/event";
 import type { LaneId, RunId, TaskId } from "../../../shared/ids";
+import { canonicalTurnUsage, tokenCount } from "../usage";
 
 type NativeRecord = Record<string, unknown>;
 
@@ -201,12 +202,29 @@ export class ClaudeProjector {
         ? "run_failed"
         : "run_completed";
     const events: CanonicalEvent[] = [];
-    if (record(native.usage)) {
+    const nativeUsage = record(native.usage);
+    const usage = nativeUsage
+      ? canonicalTurnUsage({
+          aggregation: "snapshot",
+          scope: "turn",
+          inputTokenSemantics: "excludes_cache_read",
+          inputTokens: tokenCount(nativeUsage.input_tokens),
+          cacheReadInputTokens: tokenCount(nativeUsage.cache_read_input_tokens),
+          cacheCreationInputTokens: tokenCount(
+            nativeUsage.cache_creation_input_tokens,
+          ),
+          outputTokens: tokenCount(nativeUsage.output_tokens),
+          costUsd:
+            typeof native.total_cost_usd === "number"
+              ? native.total_cost_usd
+              : undefined,
+        })
+      : undefined;
+    if (usage) {
       events.push(
         this.event("usage_reported", native, {
-          usage: native.usage,
+          usage,
           modelUsage: native.modelUsage,
-          totalCostUsd: native.total_cost_usd,
         }),
       );
     }

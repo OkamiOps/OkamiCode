@@ -142,10 +142,16 @@ interface RunTelemetry {
   durationMs: number | null;
   inputTokens: number;
   cacheReadTokens: number;
+  cacheCreationTokens: number;
   outputTokens: number;
+  reasoningTokens: number;
   totalTokens: number;
+  costUsd: number | null;
+  source: string | null;
+  scope: string | null;
+  complete: boolean | null;
   terminalObserved: boolean;
-  usageState: "numeric" | "unavailable" | "not-reported";
+  usageState: "numeric" | "legacy" | "unavailable" | "not-reported";
 }
 
 function finiteToken(value: unknown): number {
@@ -160,32 +166,67 @@ function telemetryForRun(
   startedAt: string,
 ): RunTelemetry {
   const runEvents = allEvents.filter((event) => event.runId === runId);
-  const usageEvent = runEvents
+  const usageRecords = runEvents
     .filter((event) => event.kind === "usage_reported")
-    .at(-1);
-  const usage =
-    usageEvent?.payload.usage &&
-    typeof usageEvent.payload.usage === "object" &&
-    !Array.isArray(usageEvent.payload.usage)
-      ? (usageEvent.payload.usage as Record<string, unknown>)
-      : null;
-  const inputTokens = finiteToken(usage?.input_tokens);
-  const cacheReadTokens = finiteToken(usage?.cache_read_input_tokens);
-  const outputTokens = finiteToken(usage?.output_tokens);
+    .flatMap((event) =>
+      event.payload.usage &&
+      typeof event.payload.usage === "object" &&
+      !Array.isArray(event.payload.usage)
+        ? [event.payload.usage as Record<string, unknown>]
+        : [],
+    );
+  const deltaRecords = usageRecords.filter(
+    (usage) => usage.aggregation === "delta",
+  );
+  const selected =
+    deltaRecords.length > 0
+      ? deltaRecords
+      : usageRecords.length > 0
+        ? [usageRecords.at(-1)!]
+        : [];
+  const inputTokens = selected.reduce(
+    (sum, record) => sum + freshInputTokens(record),
+    0,
+  );
+  const cacheReadTokens = sumUsage(selected, "cache_read_input_tokens");
+  const cacheCreationTokens = sumUsage(selected, "cache_creation_input_tokens");
+  const outputTokens = sumUsage(selected, "output_tokens");
+  const reasoningTokens = sumUsage(selected, "reasoning_tokens");
+  const hasCanonicalUsage = selected.some(
+    (usage) =>
+      typeof usage.observed_total_tokens === "number" &&
+      Number.isFinite(usage.observed_total_tokens),
+  );
+  const observedTotals = selected.map((usage) =>
+    hasCanonicalUsage ? finiteToken(usage.observed_total_tokens) : 0,
+  );
+  const totalTokens = observedTotals.reduce((sum, value) => sum + value, 0);
+  const usage = selected.at(-1) ?? null;
   const hasNumericTokens =
-    usage !== null &&
-    ["input_tokens", "cache_read_input_tokens", "output_tokens"].some(
-      (key) =>
-        typeof usage[key] === "number" &&
-        Number.isFinite(usage[key]) &&
-        (usage[key] as number) >= 0,
+    selected.length > 0 &&
+    selected.some((record) =>
+      [
+        "observed_total_tokens",
+        "input_tokens",
+        "cache_read_input_tokens",
+        "cache_creation_input_tokens",
+        "output_tokens",
+        "reasoning_tokens",
+      ].some(
+        (key) =>
+          typeof record[key] === "number" &&
+          Number.isFinite(record[key]) &&
+          (record[key] as number) >= 0,
+      ),
     );
   const usageState =
     usage?.available === false
       ? "unavailable"
-      : hasNumericTokens
+      : hasNumericTokens && hasCanonicalUsage
         ? "numeric"
-        : "not-reported";
+        : hasNumericTokens
+          ? "legacy"
+          : "not-reported";
   const terminal = runEvents
     .filter((event) =>
       ["run_completed", "run_failed", "run_cancelled"].includes(event.kind),
@@ -201,11 +242,62 @@ function telemetryForRun(
     durationMs,
     inputTokens,
     cacheReadTokens,
+    cacheCreationTokens,
     outputTokens,
-    totalTokens: inputTokens + cacheReadTokens + outputTokens,
+    reasoningTokens,
+    totalTokens,
+    costUsd: selected.some((record) => typeof record.cost_usd === "number")
+      ? sumUsage(selected, "cost_usd")
+      : null,
+    source: typeof usage?.source === "string" ? usage.source : null,
+    scope: typeof usage?.scope === "string" ? usage.scope : null,
+    complete: typeof usage?.complete === "boolean" ? usage.complete : null,
     terminalObserved: terminal !== undefined,
     usageState,
   };
+}
+
+function sumUsage(records: Record<string, unknown>[], key: string): number {
+  return records.reduce((sum, usage) => sum + finiteToken(usage[key]), 0);
+}
+
+function freshInputTokens(usage: Record<string, unknown>): number {
+  const input = finiteToken(usage.input_tokens);
+  return usage.input_token_semantics === "includes_cache_read"
+    ? Math.max(
+        0,
+        input -
+          finiteToken(usage.cache_read_input_tokens) -
+          finiteToken(usage.cache_creation_input_tokens),
+      )
+    : input;
+}
+
+function UsageMetric({ label, value }: { label: string; value: number }) {
+  return (
+    <span className="message-usage__metric">
+      <span>{label}</span>
+      <strong>{formatTokens(value)}</strong>
+    </span>
+  );
+}
+
+function usageProvenance(telemetry: RunTelemetry): string {
+  const source =
+    telemetry.source === "provider" ? "Provider" : "Fonte não identificada";
+  const scope =
+    telemetry.scope === "turn"
+      ? "turno"
+      : telemetry.scope === "model_call"
+        ? "chamadas do modelo"
+        : "escopo não informado";
+  const completeness =
+    telemetry.complete === true
+      ? "completo"
+      : telemetry.complete === false
+        ? "parcial"
+        : "completude não informada";
+  return `${source} · ${scope} ${completeness}`;
 }
 
 function formatDuration(durationMs: number): string {
@@ -696,8 +788,14 @@ export function Conversation({
                 durationMs: null,
                 inputTokens: 0,
                 cacheReadTokens: 0,
+                cacheCreationTokens: 0,
                 outputTokens: 0,
+                reasoningTokens: 0,
                 totalTokens: 0,
+                costUsd: null,
+                source: null,
+                scope: null,
+                complete: null,
                 terminalObserved: false,
                 usageState: "not-reported" as const,
               };
@@ -733,6 +831,7 @@ export function Conversation({
                   {showsRunTelemetry &&
                     (telemetry.durationMs !== null ||
                       telemetry.usageState === "numeric" ||
+                      telemetry.usageState === "legacy" ||
                       telemetry.usageState === "unavailable" ||
                       (telemetry.terminalObserved &&
                         telemetry.usageState === "not-reported")) && (
@@ -744,11 +843,53 @@ export function Conversation({
                           </span>
                         )}
                         {telemetry.usageState === "numeric" && (
-                          <span
-                            title={`Entrada ${formatTokens(telemetry.inputTokens)} · cache ${formatTokens(telemetry.cacheReadTokens)} · saída ${formatTokens(telemetry.outputTokens)}`}
-                          >
+                          <details className="message-usage">
+                            <summary>
+                              <Coins aria-hidden="true" size={11} />
+                              {formatTokens(telemetry.totalTokens)} tokens
+                              observados
+                              <ChevronRight
+                                aria-hidden="true"
+                                className="message-usage__chevron"
+                                size={11}
+                              />
+                            </summary>
+                            <div className="message-usage__ledger">
+                              <UsageMetric
+                                label="Entrada nova"
+                                value={telemetry.inputTokens}
+                              />
+                              <UsageMetric
+                                label="Cache lido"
+                                value={telemetry.cacheReadTokens}
+                              />
+                              <UsageMetric
+                                label="Cache criado"
+                                value={telemetry.cacheCreationTokens}
+                              />
+                              <UsageMetric
+                                label="Saída"
+                                value={telemetry.outputTokens}
+                              />
+                              <UsageMetric
+                                label="Raciocínio"
+                                value={telemetry.reasoningTokens}
+                              />
+                              <footer>
+                                {usageProvenance(telemetry)}
+                                <span>
+                                  {telemetry.costUsd === null
+                                    ? "Custo monetário não reportado"
+                                    : `$${telemetry.costUsd.toFixed(6)} reportado`}
+                                </span>
+                              </footer>
+                            </div>
+                          </details>
+                        )}
+                        {telemetry.usageState === "legacy" && (
+                          <span title="Este turno foi salvo antes da telemetria comparável">
                             <Coins aria-hidden="true" size={11} />
-                            {formatTokens(telemetry.totalTokens)} tokens
+                            tokens legados · execute novamente
                           </span>
                         )}
                         {telemetry.usageState === "unavailable" && (

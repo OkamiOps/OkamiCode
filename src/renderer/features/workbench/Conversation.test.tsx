@@ -110,7 +110,7 @@ describe("Conversation", () => {
     expect(health).toHaveTextContent("CLI não informa tokens");
   });
 
-  it("shows run duration and observed token usage beside the response", () => {
+  it("shows a comparable token total with an expandable provider breakdown", () => {
     renderConversation(false, [
       {
         id: "usage-1",
@@ -122,7 +122,13 @@ describe("Conversation", () => {
           usage: {
             input_tokens: 120,
             cache_read_input_tokens: 1_000,
+            cache_creation_input_tokens: 25,
             output_tokens: 80,
+            reasoning_tokens: 5,
+            observed_total_tokens: 1_230,
+            source: "provider",
+            scope: "turn",
+            complete: true,
           },
         },
       },
@@ -137,8 +143,101 @@ describe("Conversation", () => {
     ]);
 
     expect(screen.getByText("Trabalhou por 42s")).toBeVisible();
-    expect(screen.getByText("1.2k tokens")).toBeVisible();
+    const usageSummary = document.querySelector(".message-usage > summary");
+    expect(usageSummary).not.toBeNull();
+    fireEvent.click(usageSummary!);
     expect(screen.getByText("1 turno")).toBeVisible();
+    expect(screen.getByText("Entrada nova")).toBeVisible();
+    expect(screen.getByText("120")).toBeVisible();
+    expect(screen.getByText("Cache lido")).toBeVisible();
+    expect(screen.getByText("1.0k")).toBeVisible();
+    expect(screen.getByText("Cache criado")).toBeVisible();
+    expect(screen.getByText("25")).toBeVisible();
+    expect(screen.getByText("Saída")).toBeVisible();
+    expect(screen.getByText("80")).toBeVisible();
+    expect(screen.getByText("Raciocínio")).toBeVisible();
+    expect(screen.getByText("5")).toBeVisible();
+    expect(screen.getByText("Provider · turno completo")).toBeVisible();
+  });
+
+  it("aggregates delta usage events without double-counting snapshots", () => {
+    renderConversation(false, [
+      {
+        id: "usage-delta-1",
+        kind: "usage_reported",
+        laneId: agyLane.laneId,
+        runId: "run-1",
+        occurredAt: "2026-07-22T16:57:10.000Z",
+        payload: {
+          usage: {
+            aggregation: "delta",
+            input_tokens: 100,
+            output_tokens: 10,
+            observed_total_tokens: 110,
+          },
+        },
+      },
+      {
+        id: "usage-delta-2",
+        kind: "usage_reported",
+        laneId: agyLane.laneId,
+        runId: "run-1",
+        occurredAt: "2026-07-22T16:57:20.000Z",
+        payload: {
+          usage: {
+            aggregation: "delta",
+            input_tokens: 200,
+            output_tokens: 20,
+            observed_total_tokens: 220,
+          },
+        },
+      },
+      {
+        id: "completed-deltas",
+        kind: "run_completed",
+        laneId: agyLane.laneId,
+        runId: "run-1",
+        occurredAt: "2026-07-22T16:57:21.000Z",
+        payload: {},
+      },
+    ]);
+
+    expect(
+      document.querySelector(".message-usage > summary"),
+    ).toHaveTextContent("330 tokens observados");
+  });
+
+  it("does not present legacy token records as comparable usage", () => {
+    renderConversation(false, [
+      {
+        id: "usage-legacy",
+        kind: "usage_reported",
+        laneId: agyLane.laneId,
+        runId: "run-1",
+        occurredAt: "2026-07-22T16:57:20.000Z",
+        payload: {
+          usage: {
+            input_tokens: 37_000_000,
+            output_tokens: 10,
+          },
+        },
+      },
+      {
+        id: "completed-legacy",
+        kind: "run_completed",
+        laneId: agyLane.laneId,
+        runId: "run-1",
+        occurredAt: "2026-07-22T16:57:21.000Z",
+        payload: {},
+      },
+    ]);
+
+    expect(
+      screen.getByText("tokens legados · execute novamente"),
+    ).toBeVisible();
+    expect(
+      screen.queryByText("37 mi tokens observados"),
+    ).not.toBeInTheDocument();
   });
 
   it("states when a runtime does not expose token accounting", () => {

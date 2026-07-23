@@ -4,6 +4,7 @@ import {
   type CanonicalEventKind,
 } from "../../../shared/contracts/event";
 import type { LaneId, RunId, TaskId } from "../../../shared/ids";
+import { canonicalTurnUsage, tokenCount } from "../usage";
 
 type NativeRecord = Record<string, unknown>;
 
@@ -210,23 +211,16 @@ export class CursorProjector {
 function cursorUsage(value: unknown): NativeRecord | undefined {
   const usage = record(value);
   if (!usage) return undefined;
-  const input = tokenCount(usage.inputTokens);
-  const cacheRead = tokenCount(usage.cacheReadTokens);
-  const output = tokenCount(usage.outputTokens);
-  if (input === undefined && cacheRead === undefined && output === undefined) {
-    return undefined;
-  }
-  return {
-    input_tokens: input ?? 0,
-    cache_read_input_tokens: cacheRead ?? 0,
-    output_tokens: output ?? 0,
-  };
-}
-
-function tokenCount(value: unknown): number | undefined {
-  return typeof value === "number" && Number.isFinite(value) && value >= 0
-    ? value
-    : undefined;
+  return canonicalTurnUsage({
+    aggregation: "snapshot",
+    scope: "turn",
+    inputTokenSemantics: "excludes_cache_read",
+    inputTokens: tokenCount(usage.inputTokens),
+    cacheReadInputTokens: tokenCount(usage.cacheReadTokens),
+    outputTokens: tokenCount(usage.outputTokens),
+    reportedTotalTokens: tokenCount(usage.totalTokens),
+    costUsd: typeof usage.costUsd === "number" ? usage.costUsd : undefined,
+  });
 }
 
 function record(value: unknown): NativeRecord | undefined {

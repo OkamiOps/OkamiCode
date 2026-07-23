@@ -6010,6 +6010,111 @@ textarea:focus-visible {
   color: var(--runtime-accent);
 }
 
+.message-usage {
+  position: relative;
+}
+
+.message-usage > summary {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  padding: 3px 6px;
+  border: 1px solid transparent;
+  border-radius: 6px;
+  cursor: pointer;
+  list-style: none;
+  transition:
+    color 140ms ease,
+    border-color 140ms ease,
+    background 140ms ease;
+}
+
+.message-usage > summary::-webkit-details-marker {
+  display: none;
+}
+
+.message-usage > summary:hover,
+.message-usage > summary:focus-visible,
+.message-usage[open] > summary {
+  border-color: rgba(var(--runtime-rgb), 0.22);
+  outline: none;
+  background: rgba(var(--runtime-rgb), 0.07);
+  color: var(--chat-text);
+}
+
+.message-usage__chevron {
+  transition: transform 140ms ease;
+}
+
+.message-usage[open] .message-usage__chevron {
+  transform: rotate(90deg);
+}
+
+.message-usage__ledger {
+  position: absolute;
+  z-index: 24;
+  top: calc(100% + 7px);
+  left: 0;
+  display: grid;
+  grid-template-columns: repeat(5, minmax(72px, 1fr));
+  width: min(520px, calc(100vw - 72px));
+  padding: 10px;
+  border: 1px solid rgba(var(--runtime-rgb), 0.24);
+  border-radius: 10px;
+  background:
+    linear-gradient(rgba(var(--runtime-rgb), 0.04), transparent 48%),
+    var(--chat-surface);
+  box-shadow: 0 18px 46px rgba(0, 0, 0, 0.42);
+}
+
+.message-usage__metric {
+  display: grid;
+  gap: 3px;
+  padding: 3px 8px;
+  border-right: 1px solid var(--chat-border-soft);
+}
+
+.message-usage__metric:nth-child(5) {
+  border-right: 0;
+}
+
+.message-usage__metric > span {
+  color: var(--chat-text-dim);
+}
+
+.message-usage__metric > strong {
+  color: var(--chat-text);
+  font-size: 11px;
+  font-weight: 650;
+}
+
+.message-usage__ledger footer {
+  grid-column: 1 / -1;
+  display: flex;
+  justify-content: space-between;
+  gap: 16px;
+  margin-top: 8px;
+  padding: 8px 8px 1px;
+  border-top: 1px solid var(--chat-border-soft);
+  color: var(--chat-text-dim);
+}
+
+@media (max-width: 720px) {
+  .message-usage__ledger {
+    grid-template-columns: repeat(2, minmax(92px, 1fr));
+  }
+
+  .message-usage__metric,
+  .message-usage__metric:nth-child(5) {
+    border-right: 0;
+  }
+
+  .message-usage__ledger footer {
+    flex-direction: column;
+    gap: 3px;
+  }
+}
+
 .message-group--agent .message-bubble--agent,
 .message-group--agent[data-tone] .message-bubble--agent {
   position: relative;
