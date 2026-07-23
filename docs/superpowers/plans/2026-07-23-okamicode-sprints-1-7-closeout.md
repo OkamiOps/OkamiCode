@@ -395,7 +395,7 @@ git add .
 git commit -m "release: finish OkamiCode runtime sprints"
 ```
 
-- [ ] **Step 8: Publish without rewriting history**
+- [x] **Step 8: Publish without rewriting history**
 
 Push the named branch, verify the remote SHA equals local `HEAD`, and create or update the review path selected by the user. Never force-push.
 
@@ -411,4 +411,4 @@ Push the named branch, verify the remote SHA equals local `HEAD`, and create or 
 - [x] Tokens and quotas are numeric only when sourced; unavailable states are visible.
 - [x] OpenCode ACP and the BB architectural boundary are documented.
 - [x] DMG exists with checksum and signing status.
-- [ ] Local branch and remote branch resolve to the same commit.
+- [x] Local branch and remote branch resolve to the same commit.
