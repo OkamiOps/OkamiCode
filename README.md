@@ -12,7 +12,7 @@
   <strong>English</strong> · <a href="README.pt-BR.md">Português do Brasil</a>
 </p>
 
-> **Beta software.** OkamiCode `1.0.0-beta.1` is usable for local evaluation and active development, but provider parity, quota collection, account connectors, and packaging still depend on the capabilities exposed by each installed CLI and service.
+> **Beta software.** OkamiCode `1.0.1-beta` is usable for local evaluation and active development, but provider parity, quota collection, account connectors, and packaging still depend on the capabilities exposed by each installed CLI and service.
 
 ## Why OkamiCode exists
 
@@ -21,6 +21,17 @@ Developers who already pay for several AI subscriptions should not need to keep 
 OkamiCode provides one visual workspace around the CLIs and subscriptions already available on your Mac. A project stays attached to its folder, each provider keeps its own native session, and switching models does not silently ask one paid agent to drive another paid agent.
 
 The product also brings the rest of the workday into the same local cockpit: independent chat, multi-account email, calendars, Kanban tasks, usage and equivalent API-cost analysis, local memory, runtime diagnostics, Git changes, files, terminals, browser previews, and background activity.
+
+## What's new in 1.0.1 Beta
+
+- **Context that survives provider changes:** a shared conversation history, explicit task-state handoff, and deterministic compaction keep relevant context available without replaying the entire transcript to every model.
+- **Safer local continuity:** automatic database backup and recovery, legacy application-data discovery, and Keychain identity compatibility protect projects, tasks, conversations, and credentials during upgrades.
+- **A calmer Code workspace:** compact agent activity, expandable execution details, refined composer and workspace panels, stronger project colors, pinning, active-run motion, unread completion badges, and visible loading feedback.
+- **OpenCode through ACP:** OpenCode joins the runtime catalog through its official ACP server while remaining one provider option—not the owner of every OkamiCode thread.
+- **Runtime truth instead of optimistic guessing:** authoritative capability manifests, packaged binary discovery, conformance tests, lane-health signals, and explicit provider limitations.
+- **Honest usage economics:** normalized provider telemetry, restored historical activity, and OpenRouter-equivalent cost tracking now emphasize observed spend while keeping monthly projection secondary.
+
+Read the complete [1.0.1 Beta release notes](docs/releases/v1.0.1-beta.md) or the [PT-BR version](docs/releases/v1.0.1-beta.pt-BR.md).
 
 ## Highlights
 
@@ -175,9 +186,9 @@ pnpm package
 The command produces both the unpacked application and the Apple Silicon installer:
 
 - `release/mac-arm64/OkamiCode.app`
-- `release/OkamiCode-v1.0.0-beta.1-macOS-arm64.dmg`
+- `release/OkamiCode-v1.0.1-beta-macOS-arm64.dmg`
 
-Open the DMG, drag **OkamiCode** to **Applications**, and launch it from Applications. The `1.0.0-beta.1` artifact is unsigned and non-notarized, so macOS may require an explicit approval in **Privacy & Security**. Production signing and notarization are intentionally not claimed by this beta.
+Open the DMG, drag **OkamiCode** to **Applications**, and launch it from Applications. The `1.0.1-beta` artifact is unsigned and non-notarized, so macOS may require an explicit approval in **Privacy & Security**. Production signing and notarization are intentionally not claimed by this beta.
 
 ## Configuration notes
 
@@ -199,7 +210,8 @@ Open the DMG, drag **OkamiCode** to **Applications**, and launch it from Applica
 ## Documentation
 
 - [Changelog](CHANGELOG.md) · [PT-BR](CHANGELOG.pt-BR.md)
-- [1.0 Beta release notes](docs/releases/v1.0.0-beta.1.md) · [PT-BR](docs/releases/v1.0.0-beta.1.pt-BR.md)
+- [1.0.1 Beta release notes](docs/releases/v1.0.1-beta.md) · [PT-BR](docs/releases/v1.0.1-beta.pt-BR.md)
+- [1.0.0 Beta release notes](docs/releases/v1.0.0-beta.1.md) · [PT-BR](docs/releases/v1.0.0-beta.1.pt-BR.md)
 - [Product principles](PRODUCT.md)
 
 ## Project status

@@ -12,7 +12,7 @@
   <a href="README.md">English (principal)</a> · <strong>Português do Brasil</strong>
 </p>
 
-> **Software beta.** O OkamiCode `1.0.0-beta.1` pode ser usado para avaliação local e desenvolvimento ativo, mas a paridade entre providers, coleta de cotas, conectores de conta e empacotamento ainda dependem do que cada CLI e serviço instalado expõe.
+> **Software beta.** O OkamiCode `1.0.1-beta` pode ser usado para avaliação local e desenvolvimento ativo, mas a paridade entre providers, coleta de cotas, conectores de conta e empacotamento ainda dependem do que cada CLI e serviço instalado expõe.
 
 ## Por que o OkamiCode existe
 
@@ -21,6 +21,17 @@ Quem já paga várias assinaturas de IA não deveria manter cinco terminais e ap
 O OkamiCode oferece um único ambiente visual em volta dos CLIs e das assinaturas já disponíveis no Mac. Cada projeto permanece vinculado à sua pasta, cada provider preserva a própria sessão nativa e trocar de modelo não faz silenciosamente um agente pago controlar outro agente pago.
 
 O restante do trabalho também entra no mesmo cockpit local: chat independente, múltiplas caixas de e-mail, agendas, tarefas Kanban, análise de uso e custo equivalente de API, memória local, diagnóstico dos runtimes, alterações Git, arquivos, terminais, navegador e processos em segundo plano.
+
+## Novidades do 1.0.1 Beta
+
+- **Contexto que sobrevive à troca de provider:** histórico compartilhado, handoff explícito do estado da tarefa e compactação determinística preservam o que importa sem reenviar a conversa inteira para cada modelo.
+- **Continuidade local mais segura:** backup e recuperação automática do banco, descoberta dos dados da identidade anterior do aplicativo e compatibilidade com o Keychain protegem projetos, tarefas, conversas e credenciais durante atualizações.
+- **Workspace Code mais calmo:** atividade compacta do agente, detalhes expansíveis, composer e painéis refinados, cores de projeto mais fortes, fixação, animação de execução, badge de conclusão não lida e feedback visível de carregamento.
+- **OpenCode via ACP:** o OpenCode entra no catálogo pelo servidor ACP oficial, mas continua sendo uma opção de provider — não o dono de todas as threads do OkamiCode.
+- **Verdade do runtime no lugar de adivinhação otimista:** manifestos autoritativos, descoberta de binários no aplicativo empacotado, testes de conformidade, saúde da lane e limitações explícitas por provider.
+- **Economia de uso honesta:** telemetria normalizada, histórico restaurado e custo equivalente via OpenRouter agora priorizam o consumo observado e deixam a projeção mensal como informação secundária.
+
+Leia as [notas completas do 1.0.1 Beta em PT-BR](docs/releases/v1.0.1-beta.pt-BR.md) ou a [versão em inglês](docs/releases/v1.0.1-beta.md).
 
 ## Principais recursos
 
@@ -175,9 +186,9 @@ pnpm package
 O comando produz tanto o aplicativo descompactado quanto o instalador para Apple Silicon:
 
 - `release/mac-arm64/OkamiCode.app`
-- `release/OkamiCode-v1.0.0-beta.1-macOS-arm64.dmg`
+- `release/OkamiCode-v1.0.1-beta-macOS-arm64.dmg`
 
-Abra o DMG, arraste o **OkamiCode** para **Aplicativos** e execute-o pela pasta Aplicativos. O artefato `1.0.0-beta.1` não é assinado nem notarizado, então o macOS pode exigir aprovação em **Privacidade e Segurança**. Este beta não alega assinatura ou notarização de produção.
+Abra o DMG, arraste o **OkamiCode** para **Aplicativos** e execute-o pela pasta Aplicativos. O artefato `1.0.1-beta` não é assinado nem notarizado, então o macOS pode exigir aprovação em **Privacidade e Segurança**. Este beta não alega assinatura ou notarização de produção.
 
 ## Notas de configuração
 
@@ -199,7 +210,8 @@ Abra o DMG, arraste o **OkamiCode** para **Aplicativos** e execute-o pela pasta 
 ## Documentação
 
 - [Changelog em inglês](CHANGELOG.md) · [PT-BR](CHANGELOG.pt-BR.md)
-- [Release 1.0 Beta em inglês](docs/releases/v1.0.0-beta.1.md) · [PT-BR](docs/releases/v1.0.0-beta.1.pt-BR.md)
+- [Release 1.0.1 Beta em inglês](docs/releases/v1.0.1-beta.md) · [PT-BR](docs/releases/v1.0.1-beta.pt-BR.md)
+- [Release 1.0.0 Beta em inglês](docs/releases/v1.0.0-beta.1.md) · [PT-BR](docs/releases/v1.0.0-beta.1.pt-BR.md)
 - [Princípios do produto](PRODUCT.md)
 
 ## Estado do projeto

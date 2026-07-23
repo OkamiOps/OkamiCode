@@ -6,6 +6,41 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 Portuguese version: [CHANGELOG.pt-BR.md](CHANGELOG.pt-BR.md)
 
+## [1.0.1-beta] - 2026-07-23
+
+### Added
+
+- Shared cross-provider conversation history with explicit task-state handoff and deterministic context compaction.
+- OpenCode integration through its official ACP server, including readiness, lifecycle, cancellation, model discovery, and context-occupancy events.
+- Authoritative runtime manifests, capability discovery, packaged-binary resolution, provider conformance coverage, and lane-health presentation.
+- Project activity indicators with active-run motion, unread completion badges, stronger color identity, pinning, and project-switch loading feedback.
+- Automatic encrypted-database backup and recovery support before risky startup or migration paths.
+
+### Changed
+
+- Redesigned the Code workspace with a quieter composer, compact and expandable agent activity, collapsible workspace panels, richer Markdown/HTML presentation, and clearer execution status.
+- Shared context now sends bounded, provider-neutral task state instead of treating each provider lane as an isolated blank conversation.
+- Usage accounting now normalizes provider-specific input, cached-input, output, and total-token signals into one canonical model.
+- Subscription analysis now emphasizes observed API-equivalent spend for the measured period and keeps monthly projection secondary.
+- Runtime availability and limitations are driven by detected capabilities rather than optimistic provider defaults.
+
+### Fixed
+
+- Preserved projects, tasks, conversations, worktrees, and native-session references when opening the renamed application with its previous local identity.
+- Retained access to existing Keychain-protected credentials after the product rename.
+- Resolved packaged-app executable discovery for subscription runtimes, including Cursor Agent, MiniMax, OpenCode, Claude, and Codex paths.
+- Restored historical provider token activity that had been excluded from the current cost view.
+- Prevented context occupancy, cumulative totals, and per-turn usage from being displayed as interchangeable token values.
+- Corrected workspace panel toggles, modal stacking, project pin behavior, and stale loading/active indicators.
+
+### Known beta limitations
+
+- Packaged artifact targets unsigned, non-notarized macOS Apple Silicon only.
+- Provider capabilities still depend on the installed CLI version and authenticated account.
+- Some runtimes do not expose reliable per-turn tokens or native subscription quota.
+- Equivalent API cost is an OpenRouter-based estimate, not a provider invoice.
+- At least seven observed days are recommended before treating a monthly projection as decision-grade.
+
 ## [1.0.0-beta.1] - 2026-07-23
 
 ### Added
@@ -38,4 +73,5 @@ Portuguese version: [CHANGELOG.pt-BR.md](CHANGELOG.pt-BR.md)
 - MiMo native quota is currently not exposed by its CLI.
 - Connector behavior depends on each email/calendar provider's OAuth and account policies.
 
+[1.0.1-beta]: https://github.com/OkamiOps/OkamiCode/releases/tag/v1.0.1-beta
 [1.0.0-beta.1]: https://github.com/OkamiOps/OkamiCode/releases/tag/v1.0.0-beta.1

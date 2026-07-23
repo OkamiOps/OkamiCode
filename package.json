@@ -1,6 +1,6 @@
 {
   "name": "okami-code",
-  "version": "1.0.0-beta.1",
+  "version": "1.0.1-beta",
   "description": "Local-first desktop cockpit for native AI coding CLIs, communication, planning, usage intelligence, and memory.",
   "author": "OkamiOps",
   "homepage": "https://github.com/OkamiOps/OkamiCode",
