@@ -1,8 +1,8 @@
-import { cleanup, render, screen, within } from "@testing-library/react";
+import { act, cleanup, render, screen, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { App } from "../App";
-import { installOkamiMock } from "../../test/okami-mock";
+import { emitOkamiEvent, installOkamiMock } from "../../test/okami-mock";
 
 function renderApp(path: string) {
   window.history.replaceState({}, "", `/#${path}`);
@@ -54,10 +54,12 @@ describe("AppShell", () => {
   });
 
   it("shows a readable project status instead of an unexplained dot", async () => {
+    const taskId = "27ee79a7-d3c3-48dd-84c6-cb589a4cb606";
+    const laneId = "94e1d8f5-1369-4c75-89c9-3ac95f071091";
     installOkamiMock({
       "task:list": [
         {
-          id: "27ee79a7-d3c3-48dd-84c6-cb589a4cb606",
+          id: taskId,
           kind: "workbench",
           title: "Okami Workspace",
           objective: "Continuar o app",
@@ -67,12 +69,51 @@ describe("AppShell", () => {
           updatedAt: new Date().toISOString(),
         },
       ],
-      "lane:list": [],
+      "lane:list": [
+        {
+          laneId,
+          taskId,
+          harness: "native",
+          runtimeKind: "codex",
+          runtimeVersion: "1.0.0",
+          providerAccountLabel: "Codex",
+          model: "gpt-5.6",
+          routeKind: "native",
+          routeReason: "Runtime local",
+          displayQuotaAccount: "Codex",
+          permissionMode: "manual",
+          workspacePath: "/workspace/okami",
+          nativeSessionIdPrefix: null,
+          status: "ready",
+          temperature: "hot",
+          pendingDeltaEvents: 0,
+        },
+      ],
     });
     renderApp("/workbench");
 
     expect(await screen.findByText("Ativo")).toBeVisible();
     expect(screen.getByText("agora")).toBeVisible();
+
+    act(() =>
+      emitOkamiEvent({
+        schemaVersion: 1,
+        id: "live-message",
+        taskId,
+        laneId,
+        runId: "d7059114-39f2-4a24-894f-b487f26a653e",
+        sequence: 1,
+        occurredAt: "2026-07-23T10:00:00.000Z",
+        kind: "message_delta",
+        nativeEventId: "native-live-message",
+        payload: { delta: "Trabalhando" },
+      }),
+    );
+
+    expect(
+      await screen.findByLabelText("Okami Workspace em execução"),
+    ).toBeVisible();
+    expect(screen.getByText("Executando")).toBeVisible();
   });
 
   it("makes project pinning and color personalization visible and persistent", async () => {
@@ -133,6 +174,88 @@ describe("AppShell", () => {
         "94e1d8f5-1369-4c75-89c9-3ac95f071091": "violet",
       },
     });
+  });
+
+  it("shows persisted unread outputs and clears them when the project opens", async () => {
+    const taskId = "27ee79a7-d3c3-48dd-84c6-cb589a4cb606";
+    const laneId = "94e1d8f5-1369-4c75-89c9-3ac95f071091";
+    localStorage.setItem(
+      "okami.code.project-activity",
+      JSON.stringify({ unreadByLane: { [laneId]: 2 } }),
+    );
+    installOkamiMock({
+      "task:list": [
+        {
+          id: taskId,
+          kind: "workbench",
+          title: "Alpha",
+          objective: "Primeiro projeto",
+          status: "active",
+          workspacePath: "/workspace/alpha",
+          createdAt: "2026-07-22T03:00:00.000Z",
+          updatedAt: "2026-07-23T09:00:00.000Z",
+        },
+      ],
+      "lane:list": [
+        {
+          laneId,
+          taskId,
+          harness: "native",
+          runtimeKind: "codex",
+          runtimeVersion: "1.0.0",
+          providerAccountLabel: "Codex",
+          model: "gpt-5.6",
+          routeKind: "native",
+          routeReason: "Runtime local",
+          displayQuotaAccount: "Codex",
+          permissionMode: "manual",
+          workspacePath: "/workspace/alpha",
+          nativeSessionIdPrefix: null,
+          status: "ready",
+          temperature: "hot",
+          pendingDeltaEvents: 0,
+        },
+      ],
+    });
+    renderApp("/workbench");
+
+    const badge = await screen.findByLabelText("2 resultados não lidos");
+    expect(badge).toBeVisible();
+
+    await userEvent.click(screen.getByText("Alpha").closest("button")!);
+
+    expect(screen.queryByLabelText("2 resultados não lidos")).toBeNull();
+    expect(
+      JSON.parse(localStorage.getItem("okami.code.project-activity") ?? "null"),
+    ).toMatchObject({ unreadByLane: {} });
+  });
+
+  it("acknowledges a project switch while its history is loading", async () => {
+    const taskId = "27ee79a7-d3c3-48dd-84c6-cb589a4cb606";
+    installOkamiMock({
+      "task:list": [
+        {
+          id: taskId,
+          kind: "workbench",
+          title: "Projeto demorado",
+          objective: "Carregar o histórico",
+          status: "active",
+          workspacePath: "/workspace/slow",
+          createdAt: "2026-07-22T03:00:00.000Z",
+          updatedAt: "2026-07-23T09:00:00.000Z",
+        },
+      ],
+      "lane:list": [],
+      "conversation:history": new Promise(() => undefined),
+    });
+
+    renderApp("/workbench");
+
+    expect(
+      await screen.findByRole("status", {
+        name: "Abrindo Projeto demorado",
+      }),
+    ).toBeVisible();
   });
 
   it("opens a fresh workspace-free chat from the global action", async () => {

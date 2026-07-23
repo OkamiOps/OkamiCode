@@ -32,6 +32,8 @@ export interface SessionUsage {
 export interface WorkbenchState {
   activeRunId: string | null;
   activeRunLaneId: string | null;
+  runningRuns: Record<string, string>;
+  unreadByLane: Record<string, number>;
   effortByLane: Record<string, string>;
   lastUsageByLane: Record<string, SessionUsage>;
   appliedEventIds: Record<string, true>;
@@ -48,20 +50,42 @@ export interface WorkbenchState {
   selectLane(laneId: string | null): void;
   setEffort(laneId: string, effort: string): void;
   hydrateConversation(messages: SentMessage[], events: CanonicalEvent[]): void;
+  markLanesRead(laneIds: string[]): void;
   selectTask(taskId: string | null): void;
   setActiveRun(runId: string, laneId: string): void;
   upsertLane(lane: WorkbenchLane): void;
 }
 
+const LIVE_ACTIVITY_KINDS = new Set<CanonicalEvent["kind"]>([
+  "session_started",
+  "session_resumed",
+  "message_delta",
+  "message_completed",
+  "tool_call_started",
+  "tool_call_updated",
+  "tool_call_completed",
+  "approval_requested",
+  "approval_resolved",
+  "subagent_started",
+  "subagent_completed",
+]);
+
 export function reduceCanonicalEvent(
   state: WorkbenchState,
   event: CanonicalEvent,
+  options: { trackActivity?: boolean } = {},
 ): WorkbenchState {
   if (state.appliedEventIds[event.id]) return state;
   const next = {
     ...state,
     appliedEventIds: { ...state.appliedEventIds, [event.id]: true as const },
   };
+  if (options.trackActivity !== false && LIVE_ACTIVITY_KINDS.has(event.kind)) {
+    next.runningRuns = {
+      ...(state.runningRuns ?? {}),
+      [event.runId]: event.laneId,
+    };
+  }
   if (event.kind === "message_delta") {
     const anchor = event.payload.messageAnchor ?? event.nativeEventId;
     const key = `${event.runId}:${String(anchor)}`;
@@ -100,14 +124,40 @@ export function reduceCanonicalEvent(
       };
     }
   }
-  if (event.kind === "run_completed" || event.kind === "run_failed") {
+  if (
+    event.kind === "run_completed" ||
+    event.kind === "run_failed" ||
+    event.kind === "run_cancelled"
+  ) {
+    const runningRuns = { ...(state.runningRuns ?? {}) };
+    delete runningRuns[event.runId];
+    next.runningRuns = runningRuns;
     next.runStatus = {
       ...state.runStatus,
-      [event.runId]: event.kind === "run_completed" ? "completed" : "failed",
+      [event.runId]:
+        event.kind === "run_completed"
+          ? "completed"
+          : event.kind === "run_cancelled"
+            ? "cancelled"
+            : "failed",
     };
     if (state.activeRunId === event.runId) {
       next.activeRunId = null;
       next.activeRunLaneId = null;
+    }
+    const outputIsVisible =
+      event.laneId === state.selectedLaneId ||
+      event.taskId === state.selectedTaskId;
+    if (
+      options.trackActivity !== false &&
+      event.kind !== "run_cancelled" &&
+      !outputIsVisible
+    ) {
+      next.unreadByLane = {
+        ...(state.unreadByLane ?? {}),
+        [event.laneId]: ((state.unreadByLane ?? {})[event.laneId] ?? 0) + 1,
+      };
+      persistProjectActivity(next.unreadByLane);
     }
   }
   if (event.kind === "session_started" || event.kind === "session_resumed") {
@@ -202,6 +252,42 @@ function finiteCount(value: unknown): number | null {
 
 const EFFORT_STORAGE_KEY = "okami.effortByLane";
 const USAGE_STORAGE_KEY = "okami.usageByLane";
+const PROJECT_ACTIVITY_STORAGE_KEY = "okami.code.project-activity";
+
+function loadProjectActivity(): Record<string, number> {
+  try {
+    const raw = globalThis.localStorage?.getItem(PROJECT_ACTIVITY_STORAGE_KEY);
+    const parsed: unknown = raw ? JSON.parse(raw) : null;
+    const unread =
+      parsed && typeof parsed === "object" && !Array.isArray(parsed)
+        ? (parsed as { unreadByLane?: unknown }).unreadByLane
+        : null;
+    if (!unread || typeof unread !== "object" || Array.isArray(unread)) {
+      return {};
+    }
+    return Object.fromEntries(
+      Object.entries(unread).filter(
+        (entry): entry is [string, number] =>
+          typeof entry[1] === "number" &&
+          Number.isInteger(entry[1]) &&
+          entry[1] > 0,
+      ),
+    );
+  } catch {
+    return {};
+  }
+}
+
+function persistProjectActivity(unreadByLane: Record<string, number>): void {
+  try {
+    globalThis.localStorage?.setItem(
+      PROJECT_ACTIVITY_STORAGE_KEY,
+      JSON.stringify({ unreadByLane }),
+    );
+  } catch {
+    // Activity remains available in memory when persistence is unavailable.
+  }
+}
 
 function loadPersistedUsage(): Record<string, SessionUsage> {
   try {
@@ -255,6 +341,8 @@ export function createWorkbenchStore(): StoreApi<WorkbenchState> {
   return createStore<WorkbenchState>((set) => ({
     activeRunId: null,
     activeRunLaneId: null,
+    runningRuns: {},
+    unreadByLane: loadProjectActivity(),
     effortByLane: loadPersistedEfforts(),
     lastUsageByLane: loadPersistedUsage(),
     appliedEventIds: {},
@@ -269,13 +357,26 @@ export function createWorkbenchStore(): StoreApi<WorkbenchState> {
       set((state) => ({ sentMessages: [...state.sentMessages, message] })),
     applyEvent: (event) => set((state) => reduceCanonicalEvent(state, event)),
     cancelActiveRun: (runId) =>
-      set((state) => ({
-        activeRunId: state.activeRunId === runId ? null : state.activeRunId,
-        activeRunLaneId:
-          state.activeRunId === runId ? null : state.activeRunLaneId,
-        runStatus: { ...state.runStatus, [runId]: "cancelled" },
-      })),
-    selectLane: (laneId) => set({ selectedLaneId: laneId }),
+      set((state) => {
+        const runningRuns = { ...state.runningRuns };
+        delete runningRuns[runId];
+        return {
+          activeRunId: state.activeRunId === runId ? null : state.activeRunId,
+          activeRunLaneId:
+            state.activeRunId === runId ? null : state.activeRunLaneId,
+          runningRuns,
+          runStatus: { ...state.runStatus, [runId]: "cancelled" },
+        };
+      }),
+    selectLane: (laneId) =>
+      set((state) => {
+        if (!laneId || !state.unreadByLane[laneId])
+          return { selectedLaneId: laneId };
+        const unreadByLane = { ...state.unreadByLane };
+        delete unreadByLane[laneId];
+        persistProjectActivity(unreadByLane);
+        return { selectedLaneId: laneId, unreadByLane };
+      }),
     hydrateConversation: (messages, events) =>
       set((state) => {
         let next: WorkbenchState = {
@@ -289,8 +390,16 @@ export function createWorkbenchStore(): StoreApi<WorkbenchState> {
           activeRunId: null,
           activeRunLaneId: null,
         };
-        for (const event of events) next = reduceCanonicalEvent(next, event);
+        for (const event of events)
+          next = reduceCanonicalEvent(next, event, { trackActivity: false });
         return next;
+      }),
+    markLanesRead: (laneIds) =>
+      set((state) => {
+        const unreadByLane = { ...state.unreadByLane };
+        for (const laneId of laneIds) delete unreadByLane[laneId];
+        persistProjectActivity(unreadByLane);
+        return { unreadByLane };
       }),
     setEffort: (laneId, effort) =>
       set((state) => {
@@ -304,6 +413,7 @@ export function createWorkbenchStore(): StoreApi<WorkbenchState> {
       set((state) => ({
         activeRunId: runId,
         activeRunLaneId: laneId,
+        runningRuns: { ...state.runningRuns, [runId]: laneId },
         runStatus: { ...state.runStatus, [runId]: "running" },
       })),
     upsertLane: (lane) =>

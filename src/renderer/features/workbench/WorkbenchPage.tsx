@@ -4,6 +4,7 @@ import {
   FolderTree,
   Globe,
   ListChecks,
+  LoaderCircle,
   SquareTerminal,
   Sparkle,
 } from "lucide-react";
@@ -91,6 +92,7 @@ export function WorkbenchPage({ api = workbenchApi }: WorkbenchPageProps) {
   const openedLanes = useWorkbenchStore((state) => state.openedLanes);
   const activeRunId = useWorkbenchStore((state) => state.activeRunId);
   const activeRunLaneId = useWorkbenchStore((state) => state.activeRunLaneId);
+  const runningRuns = useWorkbenchStore((state) => state.runningRuns);
   const sentMessages = useWorkbenchStore((state) => state.sentMessages);
   const streams = useWorkbenchStore((state) => state.streams);
   const effortByLane = useWorkbenchStore((state) => state.effortByLane);
@@ -263,6 +265,7 @@ export function WorkbenchPage({ api = workbenchApi }: WorkbenchPageProps) {
   // clobbers a conversation already streaming live.
   const historyData = historyQuery.data;
   const hydratedTaskRef = useRef<string | null>(null);
+  const [hydratedTaskId, setHydratedTaskId] = useState<string | null>(null);
   useEffect(() => {
     if (!historyData || effectiveTaskId === null) return;
     if (hydratedTaskRef.current === effectiveTaskId) return;
@@ -272,8 +275,10 @@ export function WorkbenchPage({ api = workbenchApi }: WorkbenchPageProps) {
       !isTaskSwitch &&
       historyData.userMessages.length === 0 &&
       historyData.events.length === 0
-    )
+    ) {
+      setHydratedTaskId(effectiveTaskId);
       return;
+    }
     storeActions.hydrateConversation(
       historyData.userMessages.map((message) => ({
         id: message.id,
@@ -283,6 +288,7 @@ export function WorkbenchPage({ api = workbenchApi }: WorkbenchPageProps) {
       })),
       historyData.events,
     );
+    setHydratedTaskId(effectiveTaskId);
   }, [historyData, effectiveTaskId, storeActions]);
 
   // Dev-server URLs the agent printed become one-click previews, the way
@@ -302,9 +308,12 @@ export function WorkbenchPage({ api = workbenchApi }: WorkbenchPageProps) {
 
   // A running turn only gates the lane it belongs to.
   const laneActiveRunId =
-    activeRunLaneId !== null && activeRunLaneId === selectedLane?.laneId
+    Object.entries(runningRuns).find(
+      ([, laneId]) => laneId === selectedLane?.laneId,
+    )?.[0] ??
+    (activeRunLaneId !== null && activeRunLaneId === selectedLane?.laneId
       ? activeRunId
-      : null;
+      : null);
   const openUrlInternally = (url: string) => {
     setPreviewUrl(url);
     focusPanel("browser");
@@ -378,6 +387,31 @@ export function WorkbenchPage({ api = workbenchApi }: WorkbenchPageProps) {
       }}
     />
   );
+
+  if (
+    tasksQuery.isPending ||
+    (effectiveTaskId !== null &&
+      (historyQuery.isPending ||
+        lanesQuery.isPending ||
+        hydratedTaskId !== effectiveTaskId))
+  ) {
+    const loadingTitle = selectedTask?.title ?? "projeto";
+    return (
+      <section
+        aria-label={`Abrindo ${loadingTitle}`}
+        className="chat-view chat-project-loading"
+        role="status"
+      >
+        <div className="chat-project-loading__signal" aria-hidden="true">
+          <LoaderCircle size={20} />
+          <i />
+          <i />
+        </div>
+        <strong>Abrindo {loadingTitle}</strong>
+        <span>Sincronizando conversa e ambiente local</span>
+      </section>
+    );
+  }
 
   if (!hasConversation) {
     return (

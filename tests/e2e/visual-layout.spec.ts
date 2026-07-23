@@ -93,15 +93,34 @@ test("Code project controls persist and remain visually stable", async ({}, test
     const project = page.locator(".chat-session", { hasText: "Visual QA" });
     await expect(project).toBeVisible();
 
-    await project.hover();
-    await page.getByRole("button", { name: "Opções de Visual QA" }).click();
+    await project.click({ button: "right" });
     await page.getByRole("menuitem", { name: "Fixar projeto" }).click();
     await expect(page.getByLabel("Projeto fixado: Visual QA")).toBeVisible();
 
-    await project.hover();
-    await page.getByRole("button", { name: "Opções de Visual QA" }).click();
+    await project.click({ button: "right" });
     await page.getByRole("menuitemradio", { name: "Usar cor violeta" }).click();
     await expect(project).toHaveAttribute("data-color", "violet");
+
+    const unreadTask = await page.evaluate(async () => {
+      const [lanes, tasks] = await Promise.all([
+        window.okami.invoke["lane:list"]({}),
+        window.okami.invoke["task:list"]({}),
+      ]);
+      const lane = lanes[0];
+      const task = lane
+        ? tasks.find((candidate) => candidate.id === lane.taskId)
+        : null;
+      if (!lane || !task) return null;
+      localStorage.setItem(
+        "okami.code.project-activity",
+        JSON.stringify({ unreadByLane: { [lane.laneId]: 1 } }),
+      );
+      return task.title;
+    });
+    expect(unreadTask).not.toBeNull();
+    await page.reload();
+    await page.getByRole("link", { name: "Code" }).click();
+    await expect(page.getByLabel("1 resultado não lido")).toBeVisible();
 
     await expectNoPageOverflow(page);
     await page.screenshot({

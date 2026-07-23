@@ -15,7 +15,11 @@ import type { CanonicalEvent } from "../../../shared/contracts/event";
 import type { IpcRequest, IpcResponse } from "../../../shared/contracts/ipc";
 import { AppShell } from "../../app/layout/AppShell";
 import type { WorkbenchApi } from "./api";
-import { reduceCanonicalEvent, type WorkbenchState } from "./store";
+import {
+  createWorkbenchStore,
+  reduceCanonicalEvent,
+  type WorkbenchState,
+} from "./store";
 import { WorkbenchPage } from "./WorkbenchPage";
 
 vi.mock("./TerminalPane", () => ({
@@ -541,6 +545,35 @@ it("marks completed and failed runs without mutating duplicate events", () => {
 
   expect(next.runStatus[runId]).toBe("completed");
   expect(reduceCanonicalEvent(next, completed)).toBe(next);
+});
+
+it("tracks concurrent lane activity and persists unseen completions", () => {
+  const store = createWorkbenchStore();
+  const secondRunId = "d7059114-39f2-4a24-894f-b487f26a653e";
+  const secondLaneId = "89833940-7683-4b55-b490-a20eb6094681";
+
+  store.getState().setActiveRun(runId, claudeLaneId);
+  store.getState().setActiveRun(secondRunId, secondLaneId);
+
+  expect(store.getState().runningRuns).toEqual({
+    [runId]: claudeLaneId,
+    [secondRunId]: secondLaneId,
+  });
+
+  store.getState().applyEvent({
+    ...messageDelta(""),
+    id: "background-completed",
+    kind: "run_completed",
+    payload: {},
+  });
+
+  expect(store.getState().runningRuns).toEqual({
+    [secondRunId]: secondLaneId,
+  });
+  expect(store.getState().unreadByLane).toEqual({ [claudeLaneId]: 1 });
+  expect(
+    JSON.parse(localStorage.getItem("okami.code.project-activity") ?? "null"),
+  ).toMatchObject({ unreadByLane: { [claudeLaneId]: 1 } });
 });
 
 it("projects completion-only provider responses into the Code conversation", () => {

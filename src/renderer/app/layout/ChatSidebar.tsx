@@ -33,6 +33,10 @@ export function ChatSidebar() {
   const navigate = useNavigate();
   const selectedTaskId = useWorkbenchStore((state) => state.selectedTaskId);
   const selectTask = useWorkbenchStore((state) => state.selectTask);
+  const runningRuns = useWorkbenchStore((state) => state.runningRuns);
+  const unreadByLane = useWorkbenchStore((state) => state.unreadByLane);
+  const openedLanes = useWorkbenchStore((state) => state.openedLanes);
+  const markLanesRead = useWorkbenchStore((state) => state.markLanesRead);
   const [renamingId, setRenamingId] = useState<string | null>(null);
   const [renameDraft, setRenameDraft] = useState("");
   const [filter, setFilter] = useState("");
@@ -46,6 +50,10 @@ export function ChatSidebar() {
   const tasksQuery = useQuery({
     queryKey: ["sessions"],
     queryFn: () => workbenchClient.taskList(),
+  });
+  const lanesQuery = useQuery({
+    queryKey: ["workbench", "lanes", "all"],
+    queryFn: () => workbenchClient.laneList({}),
   });
   const invalidateTasks = () => {
     void queryClient.invalidateQueries({ queryKey: ["sessions"] });
@@ -147,6 +155,39 @@ export function ChatSidebar() {
     }
     return [...groups].map(([label, grouped]) => ({ label, tasks: grouped }));
   }, [preferences.groupByWorkspace, tasks]);
+  const activityByTask = useMemo(() => {
+    const lanes = new Map(
+      [...(lanesQuery.data ?? []), ...Object.values(openedLanes)].map(
+        (lane) => [lane.laneId, lane.taskId],
+      ),
+    );
+    const activity = new Map<
+      string,
+      { laneIds: string[]; running: boolean; unread: number }
+    >();
+    for (const [laneId, taskId] of lanes) {
+      const current = activity.get(taskId) ?? {
+        laneIds: [],
+        running: false,
+        unread: 0,
+      };
+      current.laneIds.push(laneId);
+      current.unread += unreadByLane[laneId] ?? 0;
+      activity.set(taskId, current);
+    }
+    for (const laneId of Object.values(runningRuns)) {
+      const taskId = lanes.get(laneId);
+      if (!taskId) continue;
+      const current = activity.get(taskId) ?? {
+        laneIds: [laneId],
+        running: false,
+        unread: 0,
+      };
+      current.running = true;
+      activity.set(taskId, current);
+    }
+    return activity;
+  }, [lanesQuery.data, openedLanes, runningRuns, unreadByLane]);
 
   function updatePreferences(next: ProjectPreferences) {
     setPreferences(next);
@@ -275,72 +316,112 @@ export function ChatSidebar() {
               <span>{section.label}</span>
               <small>{section.tasks.length}</small>
             </div>
-            {section.tasks.map((task) => (
-              <div
-                className="chat-session"
-                data-color={preferences.colors[task.id] ?? "cyan"}
-                data-active={task.id === selectedTaskId || undefined}
-                data-pinned={preferences.pinned.includes(task.id) || undefined}
-                key={task.id}
-                onContextMenu={(event) => openMenu(event, task)}
-              >
-                {renamingId === task.id ? (
-                  <input
-                    aria-label="Novo nome do projeto"
-                    className="chat-session__rename"
-                    ref={(node) => node?.focus()}
-                    onBlur={() => commitRename(task)}
-                    onChange={(event) => setRenameDraft(event.target.value)}
-                    onKeyDown={(event) => handleRenameKeys(event, task)}
-                    value={renameDraft}
-                  />
-                ) : (
-                  <button
-                    className="chat-session__open"
-                    onClick={() => {
-                      selectTask(task.id);
-                      navigate("/workbench");
-                    }}
-                    type="button"
-                  >
-                    <span className="chat-session__title-row">
-                      <span className="chat-session__title">{task.title}</span>
-                      {preferences.pinned.includes(task.id) && (
-                        <Pin
-                          aria-label={`Projeto fixado: ${task.title}`}
-                          className="chat-session__pin"
-                          size={11}
-                        />
+            {section.tasks.map((task) => {
+              const activity = activityByTask.get(task.id) ?? {
+                laneIds: [],
+                running: false,
+                unread: 0,
+              };
+              const status = activity.running
+                ? ({ label: "Executando", tone: "running" } as const)
+                : projectStatus(task.status);
+              return (
+                <div
+                  className="chat-session"
+                  data-color={preferences.colors[task.id] ?? "cyan"}
+                  data-active={task.id === selectedTaskId || undefined}
+                  data-pinned={
+                    preferences.pinned.includes(task.id) || undefined
+                  }
+                  data-running={activity.running || undefined}
+                  data-unread={activity.unread > 0 || undefined}
+                  key={task.id}
+                  onContextMenu={(event) => openMenu(event, task)}
+                >
+                  {renamingId === task.id ? (
+                    <input
+                      aria-label="Novo nome do projeto"
+                      className="chat-session__rename"
+                      ref={(node) => node?.focus()}
+                      onBlur={() => commitRename(task)}
+                      onChange={(event) => setRenameDraft(event.target.value)}
+                      onKeyDown={(event) => handleRenameKeys(event, task)}
+                      value={renameDraft}
+                    />
+                  ) : (
+                    <button
+                      className="chat-session__open"
+                      onClick={() => {
+                        markLanesRead(activity.laneIds);
+                        selectTask(task.id);
+                        navigate("/workbench");
+                      }}
+                      type="button"
+                    >
+                      <span className="chat-session__title-row">
+                        <span className="chat-session__title">
+                          {task.title}
+                        </span>
+                        {activity.running && (
+                          <span
+                            aria-label={`${task.title} em execução`}
+                            className="chat-session__live"
+                          >
+                            <i />
+                            <i />
+                            <i />
+                          </span>
+                        )}
+                        {activity.unread > 0 && (
+                          <span
+                            aria-label={`${activity.unread} ${
+                              activity.unread === 1
+                                ? "resultado não lido"
+                                : "resultados não lidos"
+                            }`}
+                            className="chat-session__unread"
+                          >
+                            {Math.min(activity.unread, 9)}
+                            {activity.unread > 9 ? "+" : ""}
+                          </span>
+                        )}
+                        {preferences.pinned.includes(task.id) && (
+                          <Pin
+                            aria-label={`Projeto fixado: ${task.title}`}
+                            className="chat-session__pin"
+                            size={11}
+                          />
+                        )}
+                      </span>
+                      <span className="chat-session__meta">
+                        <span data-status={status.tone}>
+                          <i aria-hidden="true" />
+                          {status.label}
+                        </span>
+                        <time dateTime={task.updatedAt}>
+                          {formatProjectUpdate(task.updatedAt)}
+                        </time>
+                      </span>
+                      {task.workspacePath && (
+                        <span className="chat-session__path">
+                          {task.workspacePath}
+                        </span>
                       )}
-                    </span>
-                    <span className="chat-session__meta">
-                      <span data-status={projectStatus(task.status).tone}>
-                        <i aria-hidden="true" />
-                        {projectStatus(task.status).label}
-                      </span>
-                      <time dateTime={task.updatedAt}>
-                        {formatProjectUpdate(task.updatedAt)}
-                      </time>
-                    </span>
-                    {task.workspacePath && (
-                      <span className="chat-session__path">
-                        {task.workspacePath}
-                      </span>
-                    )}
-                  </button>
-                )}
-                <span className="chat-session__actions">
-                  <button
-                    aria-label={`Opções de ${task.title}`}
-                    onClick={(event) => openMenu(event, task)}
-                    title="Mais ações"
-                    type="button"
-                  >
-                    <MoreHorizontal aria-hidden="true" size={13} />
-                  </button>
-                </span>
-              </div>
-            ))}
+                    </button>
+                  )}
+                  <span className="chat-session__actions">
+                    <button
+                      aria-label={`Opções de ${task.title}`}
+                      onClick={(event) => openMenu(event, task)}
+                      title="Mais ações"
+                      type="button"
+                    >
+                      <MoreHorizontal aria-hidden="true" size={13} />
+                    </button>
+                  </span>
+                </div>
+              );
+            })}
           </div>
         ))}
       </nav>
