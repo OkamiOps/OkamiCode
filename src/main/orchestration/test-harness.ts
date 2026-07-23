@@ -163,6 +163,7 @@ export function createLaneHarness(
     grok: new FakeRuntimeAdapter("grok"),
     mimo: new FakeRuntimeAdapter("mimo"),
     minimax: new FakeRuntimeAdapter("minimax"),
+    opencode: new FakeRuntimeAdapter("opencode"),
   };
   if (runtime === "agy") {
     throw new Error("AGY is not registered in the test harness");
@@ -176,6 +177,7 @@ export function createLaneHarness(
   registry.register(runtimes.grok);
   registry.register(runtimes.mimo);
   registry.register(runtimes.minimax);
+  registry.register(runtimes.opencode);
   const deltaBuilder = new DeltaBuilder({
     db: fx.db,
     tasks: fx.tasks,
@@ -261,6 +263,7 @@ function providerForRuntime(runtime: RuntimeKind) {
   if (runtime === "grok") return "grok" as const;
   if (runtime === "mimo") return "mimo" as const;
   if (runtime === "minimax") return "minimax" as const;
+  if (runtime === "opencode") return "multi_provider" as const;
   return "cursor" as const;
 }
 

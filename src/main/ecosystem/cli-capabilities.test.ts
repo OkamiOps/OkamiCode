@@ -91,8 +91,42 @@ it("reports unavailable clients without probing a missing binary", async () => {
       detail: "CLI não encontrado neste computador.",
       capabilities: [],
     },
+    {
+      client: "opencode",
+      label: "OpenCode",
+      binaryPath: null,
+      version: null,
+      role: "runtime",
+      integrationStatus: "unavailable",
+      detail: "CLI não encontrado neste computador.",
+      capabilities: [],
+    },
   ]);
   expect(injected.execute).not.toHaveBeenCalled();
+});
+
+it("recognizes OpenCode as ready only when the ACP command is advertised", async () => {
+  const injected = dependencies(
+    { opencode: "/bin/opencode" },
+    {
+      "--version": "1.17.15",
+      "acp --help": "opencode acp — start ACP server",
+    },
+  );
+
+  const clients = await createCliCapabilityDetector(injected)();
+  expect(clients.find(({ client }) => client === "opencode")).toMatchObject({
+    binaryPath: "/bin/opencode",
+    integrationStatus: "ready",
+    role: "runtime",
+    version: "1.17.15",
+    capabilities: expect.arrayContaining([
+      "sessions",
+      "models",
+      "approvals",
+      "plugins",
+    ]),
+  });
 });
 
 it("derives only the verified local capabilities and statuses from harmless probes", async () => {

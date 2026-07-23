@@ -583,6 +583,7 @@ function providerDisplay(runtime: QuickChatRuntime): string {
     grok: "Grok",
     mimo: "MiMo Code",
     minimax: "MiniMax",
+    opencode: "OpenCode",
   };
   return labels[runtime];
 }
@@ -601,6 +602,7 @@ function providerForRuntime(runtime: QuickChatRuntime) {
     grok: "grok",
     mimo: "mimo",
     minimax: "minimax",
+    opencode: "multi_provider",
   } as const;
   return providers[runtime];
 }

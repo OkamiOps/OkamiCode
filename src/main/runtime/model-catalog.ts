@@ -254,6 +254,7 @@ export interface ModelCatalogServiceOptions {
   minimaxConfigPath?: string | null;
   mimoCachePath?: string;
   mimoBinary?: string | null;
+  opencodeBinary?: string | null;
   executeNative?: CursorModelListExecutor;
   now?: () => Date;
 }
@@ -772,6 +773,10 @@ export function createModelCatalogService(
     options.mimoBinary === undefined
       ? locateLocalBinary("mimo")
       : options.mimoBinary;
+  const opencodeBinary =
+    options.opencodeBinary === undefined
+      ? locateLocalBinary("opencode")
+      : options.opencodeBinary;
   const executeCursor = options.executeCursor ?? executeCursorModelList;
   const executeNative = options.executeNative ?? executeCursorModelList;
   const executeMimo = options.executeNative ?? executeMimoModelList;
@@ -1039,6 +1044,24 @@ export function createModelCatalogService(
               ? "consultando mimo models…"
               : "MiMo Code CLI não encontrado",
           models: mimo?.models ?? [],
+        },
+        {
+          runtimeKind: "opencode",
+          providerLabel: "OpenCode",
+          routeKind: opencodeBinary ? "native" : "unavailable",
+          source: opencodeBinary
+            ? "provider e modelo padrão configurados no OpenCode"
+            : "OpenCode CLI não encontrado",
+          models: opencodeBinary
+            ? [
+                {
+                  id: "default",
+                  label: "Padrão do OpenCode",
+                  description:
+                    "Usa o provider e o modelo selecionados na configuração do OpenCode.",
+                },
+              ]
+            : [],
         },
       ];
     },

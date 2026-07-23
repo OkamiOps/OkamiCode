@@ -1,4 +1,4 @@
-import { mkdtempSync } from "node:fs";
+import { mkdtempSync, readdirSync } from "node:fs";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import { describe, expect, it } from "vitest";
@@ -132,6 +132,7 @@ describe("openDatabase", () => {
   it("backfills the official Hostinger SMTP endpoint for existing IMAP accounts", () => {
     const dir = mkdtempSync(path.join(tmpdir(), "okami-db-hostinger-"));
     const file = path.join(dir, "workbench.db");
+    const backupDirectory = path.join(dir, "backups");
     const key = Buffer.alloc(32, 9);
     const db = openDatabase(file, key);
     db.prepare(
@@ -166,7 +167,13 @@ describe("openDatabase", () => {
     db.pragma("user_version = 16");
     db.close();
 
-    const migrated = openDatabase(file, key);
+    const migrated = openDatabase(file, key, {
+      backupDirectory,
+      now: new Date("2026-07-23T12:20:00.000Z"),
+    });
+    expect(readdirSync(backupDirectory)).toEqual([
+      "workbench-2026-07-23T12-20-00.000Z.db",
+    ]);
     expect(
       migrated
         .prepare(
@@ -182,5 +189,12 @@ describe("openDatabase", () => {
       from_addresses_json: "[]",
     });
     migrated.close();
+
+    const current = openDatabase(file, key, {
+      backupDirectory,
+      now: new Date("2026-07-23T12:21:00.000Z"),
+    });
+    current.close();
+    expect(readdirSync(backupDirectory)).toHaveLength(1);
   });
 });

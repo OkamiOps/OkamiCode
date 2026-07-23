@@ -277,6 +277,7 @@ function providerKindForRuntime(runtimeKind: RuntimeKind): ProviderKind {
     grok: "grok",
     mimo: "mimo",
     minimax: "minimax",
+    opencode: "multi_provider",
   };
   return providers[runtimeKind];
 }

@@ -23,10 +23,11 @@
     "format:check": "prettier --check .",
     "test": "vitest run",
     "test:e2e": "playwright test",
-    "package": "electron-vite build && electron-builder --mac --config electron-builder.yml",
+    "package": "pnpm rebuild:native && electron-vite build && electron-builder --mac --config electron-builder.yml",
     "check": "pnpm typecheck && pnpm lint && pnpm format:check && pnpm test"
   },
   "dependencies": {
+    "@agentclientprotocol/sdk": "0.21.0",
     "@heroui/react": "3.2.2",
     "@heroui/styles": "3.2.2",
     "@tanstack/react-query": "5.101.2",

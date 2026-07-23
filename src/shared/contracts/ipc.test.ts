@@ -30,6 +30,30 @@ it("accepts the verified Cursor runtime capability record", () => {
   expect(cliCapabilitySchema.safeParse(cursor).success).toBe(true);
 });
 
+it("accepts the verified OpenCode ACP capability record", () => {
+  expect(
+    cliCapabilitySchema.safeParse({
+      client: "opencode",
+      label: "OpenCode",
+      binaryPath: "/bin/opencode",
+      version: "1.17.15",
+      role: "runtime",
+      integrationStatus: "ready",
+      detail: "OpenCode encontrado e integrado pelo protocolo ACP oficial.",
+      capabilities: [
+        "sessions",
+        "models",
+        "approvals",
+        "mcp",
+        "skills",
+        "background",
+        "structured_output",
+        "plugins",
+      ],
+    }).success,
+  ).toBe(true);
+});
+
 it("accepts only the AGY runtime capabilities proven by the local help", () => {
   const agy = {
     client: "agy",

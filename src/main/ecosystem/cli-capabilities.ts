@@ -14,6 +14,7 @@ const CLIENTS = [
   "grok",
   "minimax",
   "mimo",
+  "opencode",
 ] as const;
 type Capability =
   | "sessions"
@@ -79,6 +80,7 @@ const CAPABILITIES = {
   grok: [],
   minimax: [],
   mimo: [],
+  opencode: [],
 } as const satisfies Record<(typeof CLIENTS)[number], readonly Capability[]>;
 
 type CliClient = (typeof CLIENTS)[number];
@@ -108,6 +110,7 @@ const labels: Record<CliClient, string> = {
   grok: "Grok",
   minimax: "MiniMax mmx",
   mimo: "MiMo Code",
+  opencode: "OpenCode",
 };
 
 function roleFor(client: CliClient): "runtime" | "launcher" {
@@ -512,6 +515,39 @@ async function detectClient(
         ? "MiMo Code encontrado; catálogo nativo disponível e adapter de execução ainda não integrado."
         : "MiMo Code encontrado, mas o comando models não foi comprovado.",
       capabilities,
+    };
+  }
+
+  if (client === "opencode") {
+    let help = "";
+    try {
+      help = await dependencies.execute(binaryPath, ["acp", "--help"]);
+    } catch {
+      // A failed help probe cannot establish ACP compatibility.
+    }
+    const protocolReady = /\bacp\b/iu.test(help);
+    return {
+      client,
+      label: labels.opencode,
+      binaryPath,
+      version,
+      role: "runtime",
+      integrationStatus: protocolReady ? "ready" : "update_required",
+      detail: protocolReady
+        ? "OpenCode encontrado e integrado pelo protocolo ACP oficial."
+        : "OpenCode encontrado, mas o comando ACP não foi comprovado.",
+      capabilities: protocolReady
+        ? [
+            "sessions",
+            "models",
+            "approvals",
+            "mcp",
+            "skills",
+            "background",
+            "structured_output",
+            "plugins",
+          ]
+        : [],
     };
   }
 

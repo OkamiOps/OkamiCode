@@ -14,10 +14,18 @@ it("registers the native Antigravity adapter", () => {
     grok: {} as never,
     mimo: {} as never,
     minimax: {} as never,
+    opencode: {} as never,
   });
 
   expect(registry.lookup("agy")).toBeInstanceOf(AgyAdapter);
   expect(registry.lookup("grok")).toBeInstanceOf(GrokAdapter);
   expect(registry.lookup("mimo")).toBeInstanceOf(MimoAdapter);
   expect(registry.lookup("minimax")).toBeInstanceOf(MiniMaxAdapter);
+  expect(registry.manifest("cursor")).toMatchObject({
+    runtimeId: "cursor",
+    providerId: "cursor",
+    driver: "native_cli",
+    authentication: "browser_subscription",
+  });
+  expect(registry.manifests()).toHaveLength(8);
 });

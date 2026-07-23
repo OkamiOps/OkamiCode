@@ -57,6 +57,7 @@ import { createAgyPolicyAuthorizer } from "./runtime/agy/policy-authorizer";
 import { GoogleInboxOAuthService } from "./inbox/google-oauth-service";
 import { InboxSyncScheduler } from "./inbox/sync-scheduler";
 import { resolveAppStorageIdentity, resolveUserDataPath } from "./user-data";
+import { bootstrapFailurePage } from "./bootstrap-failure";
 
 const execFileAsync = promisify(execFile);
 
@@ -213,9 +214,11 @@ function seedInitialWorkspace(state: AppState): void {
 }
 
 async function bootstrap(): Promise<void> {
+  const userDataPath = app.getPath("userData");
   const database = openDatabase(
-    path.join(app.getPath("userData"), "workbench.db"),
+    path.join(userDataPath, "workbench.db"),
     getOrCreateDatabaseKey(),
+    { backupDirectory: path.join(userDataPath, "backups") },
   );
   const leaseRepository = new LeaseRepository(database);
 
@@ -303,6 +306,10 @@ async function bootstrap(): Promise<void> {
       taskIdForRun,
       command: locateLocalBinary("minimax") ?? "mmx",
     },
+    opencode: {
+      taskIdForRun,
+      command: locateLocalBinary("opencode") ?? "opencode",
+    },
   });
 
   const chatgptProfile = createGatewayProfile({
@@ -337,16 +344,19 @@ async function bootstrap(): Promise<void> {
     minimaxBinary: locateLocalBinary("minimax"),
     mimoCachePath: path.join(app.getPath("userData"), "mimo-models.json"),
     mimoBinary: locateLocalBinary("mimo"),
+    opencodeBinary: locateLocalBinary("opencode"),
   });
   const modelFavoritesService = new ModelFavoritesService({
     filePath: path.join(app.getPath("userData"), "model-favorites.json"),
   });
-  void modelCatalogService.refreshClaude();
-  void modelCatalogService.refreshCursor();
-  void modelCatalogService.refreshAgy();
-  void modelCatalogService.refreshGrok();
-  void modelCatalogService.refreshMiniMax();
-  void modelCatalogService.refreshMimo();
+  if (process.env.OKAMI_RUN_LIVE_CLI_TESTS !== "0") {
+    void modelCatalogService.refreshClaude();
+    void modelCatalogService.refreshCursor();
+    void modelCatalogService.refreshAgy();
+    void modelCatalogService.refreshGrok();
+    void modelCatalogService.refreshMiniMax();
+    void modelCatalogService.refreshMimo();
+  }
 
   const state = createAppState({
     database,
@@ -491,6 +501,29 @@ app.whenReady().then(async () => {
     await bootstrap();
   } catch (error) {
     console.error("[okami] bootstrap failed", error);
+    const failureWindow = new BrowserWindow({
+      width: 760,
+      height: 520,
+      minWidth: 640,
+      minHeight: 420,
+      webPreferences: secureWebPreferences,
+    });
+    const code =
+      typeof error === "object" &&
+      error !== null &&
+      "code" in error &&
+      typeof error.code === "string"
+        ? error.code
+        : undefined;
+    await failureWindow.loadURL(
+      `data:text/html;charset=utf-8,${encodeURIComponent(
+        bootstrapFailurePage({
+          code,
+          development: !app.isPackaged,
+        }),
+      )}`,
+    );
+    return;
   }
   createMainWindow();
 });

@@ -151,6 +151,20 @@ const clientCapabilityRules = {
     statuses: ["needs_adapter", "unavailable"],
     capabilities: ["sessions", "models", "effort", "mcp", "structured_output"],
   },
+  opencode: {
+    role: "runtime",
+    statuses: ["ready", "update_required", "unavailable"],
+    capabilities: [
+      "sessions",
+      "models",
+      "approvals",
+      "mcp",
+      "skills",
+      "background",
+      "structured_output",
+      "plugins",
+    ],
+  },
 } as const;
 
 function hasExactCapabilities(
@@ -173,6 +187,7 @@ export const cliCapabilitySchema = z
       "grok",
       "minimax",
       "mimo",
+      "opencode",
     ]),
     label: z.string().min(1),
     binaryPath: z.string().min(1).nullable(),
@@ -257,7 +272,8 @@ export const cliCapabilitySchema = z
       });
     }
     const capabilitiesValid =
-      client.integrationStatus === "needs_adapter"
+      client.integrationStatus === "needs_adapter" ||
+      client.integrationStatus === "update_required"
         ? client.capabilities.every((capability) =>
             (rule.capabilities as readonly string[]).includes(capability),
           ) && new Set(client.capabilities).size === client.capabilities.length

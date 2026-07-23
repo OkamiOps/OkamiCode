@@ -355,7 +355,8 @@ export class LaneService {
       lane.runtimeKind === "agy" ||
       lane.runtimeKind === "grok" ||
       lane.runtimeKind === "mimo" ||
-      lane.runtimeKind === "minimax"
+      lane.runtimeKind === "minimax" ||
+      lane.runtimeKind === "opencode"
     ) {
       return {
         harness: "native",
@@ -371,7 +372,9 @@ export class LaneService {
                 ? "MiMo subscription"
                 : lane.runtimeKind === "minimax"
                   ? "MiniMax Token Plan"
-                  : "Cursor subscription",
+                  : lane.runtimeKind === "opencode"
+                    ? "OpenCode provider account"
+                    : "Cursor subscription",
       };
     }
     const gateway = this.dependencies.gateway;
@@ -407,6 +410,9 @@ function providerAccountLabel(lane: LaneRecord): string {
   if (lane.providerKind === "chatgpt") return "ChatGPT";
   if (lane.providerKind === "antigravity") return "Antigravity";
   if (lane.providerKind === "grok") return "Grok";
+  if (lane.providerKind === "mimo") return "MiMo";
+  if (lane.providerKind === "minimax") return "MiniMax";
+  if (lane.providerKind === "multi_provider") return "OpenCode";
   return "Cursor";
 }
 

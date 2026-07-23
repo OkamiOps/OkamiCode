@@ -26,6 +26,7 @@ const PROVIDERS: Record<ProviderKind, ProviderMeta> = {
   grok: { glyph: "GK", shortLabel: "Grok" },
   minimax: { glyph: "MX", shortLabel: "MiniMax" },
   mimo: { glyph: "MI", shortLabel: "MiMo" },
+  multi_provider: { glyph: "OC", shortLabel: "OpenCode" },
 };
 
 function tone(used: number | null): "ok" | "warn" | "high" | "unknown" {

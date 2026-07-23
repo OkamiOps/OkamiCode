@@ -1,7 +1,8 @@
 import type { ProviderKind, RuntimeKind } from "../../../shared/contracts/lane";
 import type { WorkbenchLane } from "./api";
 
-export type RuntimeGlyph = "CL" | "GP" | "GK" | "CU" | "AG" | "MI" | "MM";
+export type RuntimeGlyph =
+  "CL" | "GP" | "GK" | "CU" | "AG" | "MI" | "MM" | "OC";
 
 export function runtimeGlyph(runtime: RuntimeKind): RuntimeGlyph {
   if (runtime === "claude") return "CL";
@@ -10,6 +11,7 @@ export function runtimeGlyph(runtime: RuntimeKind): RuntimeGlyph {
   if (runtime === "grok") return "GK";
   if (runtime === "mimo") return "MI";
   if (runtime === "minimax") return "MM";
+  if (runtime === "opencode") return "OC";
   return "CU";
 }
 
@@ -29,6 +31,9 @@ export function runtimePresentation(lane: WorkbenchLane) {
   if (lane.runtimeKind === "minimax") {
     return { glyph: "MM", tone: "minimax" } as const;
   }
+  if (lane.runtimeKind === "opencode") {
+    return { glyph: "OC", tone: "opencode" } as const;
+  }
   const account = `${lane.providerAccountLabel} ${lane.model}`.toLowerCase();
   if (account.includes("grok")) return { glyph: "GK", tone: "grok" } as const;
   if (/chatgpt|\bgpt|\bo[134]/u.test(account)) {
@@ -43,6 +48,7 @@ export function providerKindForLane(lane: WorkbenchLane): ProviderKind {
   if (lane.runtimeKind === "grok") return "grok";
   if (lane.runtimeKind === "mimo") return "mimo";
   if (lane.runtimeKind === "minimax") return "minimax";
+  if (lane.runtimeKind === "opencode") return "multi_provider";
   const account = `${lane.providerAccountLabel} ${lane.model}`.toLowerCase();
   return /chatgpt|\bgpt|\bo[134]/u.test(account) ? "chatgpt" : "claude_max";
 }
@@ -53,6 +59,7 @@ export function laneDisplayName(lane: WorkbenchLane): string {
   if (lane.runtimeKind === "grok") return "Grok";
   if (lane.runtimeKind === "mimo") return "MiMo Code";
   if (lane.runtimeKind === "minimax") return "MiniMax";
+  if (lane.runtimeKind === "opencode") return "OpenCode";
   return lane.providerAccountLabel === "ChatGPT" ||
     /^gpt|^o[134]/iu.test(lane.model)
     ? "Codex"

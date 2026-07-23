@@ -7,6 +7,9 @@ settings:
 importers:
   .:
     dependencies:
+      "@agentclientprotocol/sdk":
+        specifier: 0.21.0
+        version: 0.21.0(zod@4.4.3)
       "@heroui/react":
         specifier: 3.2.2
         version: 3.2.2(@react-spectrum/provider@3.11.1(react-dom@19.2.7(react@19.2.7))(react@19.2.7))(@types/react-dom@19.2.3(@types/react@19.2.17))(@types/react@19.2.17)(react-dom@19.2.7(react@19.2.7))(react@19.2.7)(tailwindcss@4.3.3)
@@ -207,6 +210,14 @@ packages:
     peerDependencies:
       react: ^16.8.0 || ^17.0.0-rc.1 || ^18.0.0 || ^19.0.0-rc.1
       react-dom: ^16.8.0 || ^17.0.0-rc.1 || ^18.0.0 || ^19.0.0-rc.1
+
+  "@agentclientprotocol/sdk@0.21.0":
+    resolution:
+      {
+        integrity: sha512-ONj+Q8qOdNQp5XbH5jnMwzT9IKZJsSN0p0lkceS4GtUtNOPVLpNzSS8gqQdGMKfBvA0ESbkL8BTaSN1Rc9miEw==,
+      }
+    peerDependencies:
+      zod: ^3.25.0 || ^4.0.0
 
   "@asamuzakjp/css-color@5.1.11":
     resolution:
@@ -7559,6 +7570,10 @@ snapshots:
       react-stately: 3.48.0(react@19.2.7)
       react-transition-group: 4.4.5(react-dom@19.2.7(react@19.2.7))(react@19.2.7)
       use-sync-external-store: 1.6.0(react@19.2.7)
+
+  "@agentclientprotocol/sdk@0.21.0(zod@4.4.3)":
+    dependencies:
+      zod: 4.4.3
 
   "@asamuzakjp/css-color@5.1.11":
     dependencies:

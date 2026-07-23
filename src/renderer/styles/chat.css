@@ -5438,6 +5438,12 @@ textarea:focus-visible {
   --runtime-rgb: 97, 207, 140;
 }
 
+.message-group--agent[data-tone="opencode"],
+.chat-live[data-tone="opencode"] {
+  --runtime-accent: #62d9c7;
+  --runtime-rgb: 98, 217, 199;
+}
+
 .message-group--agent {
   gap: 7px;
   animation: runtime-response-arrive 180ms ease-out both;
@@ -5759,6 +5765,9 @@ textarea:focus-visible {
 }
 .chat-topbar__runtime[data-tone="minimax"] {
   --topbar-runtime: var(--chat-green);
+}
+.chat-topbar__runtime[data-tone="opencode"] {
+  --topbar-runtime: #62d9c7;
 }
 
 .chat-topbar__runtime > i {

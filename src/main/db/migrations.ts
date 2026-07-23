@@ -29,6 +29,10 @@ const MIGRATIONS = [
   "schema/024-kanban-card-updates.sql",
 ];
 
+export function latestMigrationVersion(): number {
+  return MIGRATIONS.length;
+}
+
 export function runMigrations(db: InstanceType<typeof SqliteDatabase>): void {
   const version = db.pragma("user_version", { simple: true }) as number;
   for (let next = version; next < MIGRATIONS.length; next += 1) {

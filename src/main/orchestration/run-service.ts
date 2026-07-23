@@ -4,6 +4,7 @@ import type { LaneRepository } from "../db/repositories/lanes";
 import type { RunRepository } from "../db/repositories/runs";
 import type { RunHandle } from "../runtime/adapter";
 import type { RuntimeRegistry } from "../runtime/registry";
+import { ContextCompiler } from "./context-compiler";
 import type { DeltaPackage } from "./delta";
 
 interface RunServiceDependencies {
@@ -12,6 +13,11 @@ interface RunServiceDependencies {
   runtimes: Pick<RuntimeRegistry, "lookup">;
   createRunId: () => string;
   clock?: () => Date;
+  contextCompiler?: Pick<ContextCompiler, "compile">;
+  contextBudgetForModel?: (model: string) => {
+    maxInputTokens: number;
+    reserveForReplyTokens: number;
+  };
 }
 
 export interface SendLaneTurnRequest {
@@ -25,9 +31,12 @@ export interface SendLaneTurnRequest {
 
 export class RunService {
   private readonly clock: () => Date;
+  private readonly contextCompiler: Pick<ContextCompiler, "compile">;
 
   constructor(private readonly dependencies: RunServiceDependencies) {
     this.clock = dependencies.clock ?? (() => new Date());
+    this.contextCompiler =
+      dependencies.contextCompiler ?? new ContextCompiler();
   }
 
   async sendTurn(request: SendLaneTurnRequest): Promise<RunHandle> {
@@ -67,7 +76,15 @@ export class RunService {
         model: lane.model,
         ...(request.effort ? { effort: request.effort } : {}),
         input: request.delta
-          ? `${JSON.stringify(request.delta)}\n\n${request.input}`
+          ? `${
+              this.contextCompiler.compile(
+                request.delta,
+                this.dependencies.contextBudgetForModel?.(lane.model) ?? {
+                  maxInputTokens: 16_000,
+                  reserveForReplyTokens: 4_000,
+                },
+              ).content
+            }\n\n# Nova solicitação\n${request.input}`
           : request.input,
       });
     } catch (error) {
