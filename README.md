@@ -71,18 +71,20 @@ The product also brings the rest of the workday into the same local cockpit: ind
 
 ## Supported runtimes
 
-| Runtime             | Adapter                  | Typical account source    | Notes                                                                                   |
-| ------------------- | ------------------------ | ------------------------- | --------------------------------------------------------------------------------------- |
-| Claude Code         | Native                   | Anthropic subscription    | Sessions, hooks, tools, approvals, usage, and model discovery where exposed             |
-| Codex               | Native app-server        | OpenAI subscription       | Sessions, models, effort, approvals, tools, usage, and background work                  |
-| Cursor Agent        | Native                   | Cursor subscription       | Model catalog and structured session stream depend on the installed CLI                 |
-| Antigravity (`agy`) | Native + local companion | Google AI subscription    | Hook companion is installed locally; capability and quota support are version-dependent |
-| Grok CLI            | Native                   | xAI subscription          | Native sessions and structured output where supported by the CLI                        |
-| MiMo Code           | Native                   | Xiaomi MiMo token plan    | Execution and model discovery are supported; quota may remain web-console-only          |
-| MiniMax (`mmx`)     | Native                   | MiniMax token plan        | Text execution, model discovery, and native usage windows where exposed                 |
-| OpenCode            | ACP                      | OpenCode-selected account | Sessions, tools, approvals, and models after `opencode acp` is verified                 |
+| Runtime             | Adapter                  | Typical account source    | Notes                                                                                |
+| ------------------- | ------------------------ | ------------------------- | ------------------------------------------------------------------------------------ |
+| Claude Code         | Native                   | Anthropic subscription    | Sessions, hooks, tools, approvals, usage, and model discovery where exposed          |
+| Codex               | Native app-server        | OpenAI subscription       | Sessions, models, effort, approvals, tools, usage, and background work               |
+| Cursor Agent        | Native                   | Cursor subscription       | Turn tokens appear only when `cursor-agent` reports them; quota is version-dependent |
+| Antigravity (`agy`) | Native + local companion | Google AI subscription    | Hook companion is local; the CLI does not reliably expose per-turn token accounting  |
+| Grok CLI            | Native                   | xAI subscription          | Native sessions and structured output where supported by the CLI                     |
+| MiMo Code           | Native                   | Xiaomi MiMo token plan    | Execution and model discovery are supported; quota may remain web-console-only       |
+| MiniMax (`mmx`)     | Native                   | MiniMax token plan        | Text execution, model discovery, and native usage windows where exposed              |
+| OpenCode            | ACP                      | OpenCode-selected account | ACP exposes context occupancy, not provider turn spend; readiness is verified        |
 
 OkamiCode does not ship or authenticate these CLIs for you. Install each provider CLI separately, sign in through its official flow, and use **Settings** to verify the exact binary, version, and capabilities detected on the machine.
+Removing an executable marks its runtime unavailable without deleting the
+project, task, conversation, worktree, database, or native-session reference.
 
 OpenCode is integrated through its official ACP server. BB is an architectural
 reference for persistent, steerable threads and explicit handoff; it is not

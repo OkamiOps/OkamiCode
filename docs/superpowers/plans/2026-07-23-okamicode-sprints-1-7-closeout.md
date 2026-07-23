@@ -287,7 +287,9 @@ git commit -m "test: enforce provider runtime conformance"
 **Files:**
 - Modify: `src/renderer/features/workbench/Conversation.tsx`
 - Modify: `src/renderer/features/workbench/Conversation.test.tsx`
-- Modify: `src/renderer/styles/workbench.css`
+- Modify: `src/renderer/features/workbench/WorkbenchPage.tsx`
+- Modify: `src/renderer/styles/chat.css`
+- Modify: `tests/e2e/visual-layout.spec.ts`
 - Modify: `README.md`
 - Modify: `README.pt-BR.md`
 - Modify: `docs/releases/v1.0.0-beta.1.md`
@@ -297,20 +299,20 @@ git commit -m "test: enforce provider runtime conformance"
 - Consumes: lane runtime/model, run status, context telemetry, and usage state.
 - Produces: accessible lane-health summary with exact provider limitations.
 
-- [ ] **Step 1: Write failing accessible UI tests**
+- [x] **Step 1: Write failing accessible UI tests**
 
 ```tsx
 expect(screen.getByLabelText("Saúde da lane")).toHaveTextContent("Contexto sincronizado");
 expect(screen.getByText("CLI não informa tokens")).toBeVisible();
 ```
 
-- [ ] **Step 2: Run the renderer test and verify RED**
+- [x] **Step 2: Run the renderer test and verify RED**
 
 Run: `pnpm vitest run src/renderer/features/workbench/Conversation.test.tsx`
 
 Expected: FAIL because the health summary does not exist.
 
-- [ ] **Step 3: Implement the restrained health summary**
+- [x] **Step 3: Implement the restrained health summary**
 
 Design system:
 
@@ -323,11 +325,11 @@ Design system:
 
 Signature: one thin animated activity rail while a lane is running; static and reduced-motion-safe otherwise.
 
-- [ ] **Step 4: Update English and Portuguese documentation**
+- [x] **Step 4: Update English and Portuguese documentation**
 
 List all eight runtimes, their executable dependency, authentication owner, token state, quota state, and behavior when the binary is removed. Explain that OpenCode is integrated through ACP and BB is an architectural reference only.
 
-- [ ] **Step 5: Run renderer and documentation checks**
+- [x] **Step 5: Run renderer and documentation checks**
 
 Run: `pnpm vitest run src/renderer/features/workbench/Conversation.test.tsx`
 
@@ -335,7 +337,7 @@ Run: `pnpm exec prettier --check README.md README.pt-BR.md docs/releases docs/ar
 
 Expected: PASS.
 
-- [ ] **Step 6: Commit sprint 6**
+- [x] **Step 6: Commit sprint 6**
 
 ```bash
 git add src/renderer README.md README.pt-BR.md docs

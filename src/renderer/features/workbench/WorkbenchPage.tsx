@@ -12,7 +12,7 @@ import { useEffect, useRef, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { useShallow } from "zustand/react/shallow";
 import { Composer } from "./Composer";
-import { Conversation } from "./Conversation";
+import { Conversation, LaneHealth } from "./Conversation";
 import { workbenchApi, type WorkbenchApi } from "./api";
 import { modelDetail, modelLabel } from "./ModelPicker";
 import { ResizeHandle, useResizablePane } from "../../app/layout/ResizeHandle";
@@ -429,6 +429,11 @@ export function WorkbenchPage({ api = workbenchApi }: WorkbenchPageProps) {
           )}
         </div>
         <div className="chat-greeting">
+          <LaneHealth
+            events={historyData?.events ?? []}
+            isRunning={laneActiveRunId !== null}
+            lane={selectedLane}
+          />
           <h1>
             <Sparkle aria-hidden="true" size={26} />O que vem a seguir, Marcos?
           </h1>

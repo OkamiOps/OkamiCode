@@ -388,6 +388,65 @@ function eventForCard(raw: unknown): EventCardEvent {
   };
 }
 
+export function LaneHealth({
+  events = [],
+  isRunning = false,
+  lane,
+}: {
+  events?: EventCardEvent[];
+  isRunning?: boolean;
+  lane: WorkbenchLane | null;
+}) {
+  if (!lane) return null;
+
+  const laneRuntime = runtimePresentation(lane);
+  const laneProvider = laneDisplayName(lane);
+  const laneModel = shortModel(lane.model);
+  const laneContext = isRunning
+    ? "Contexto em uso"
+    : lane.temperature === "stale"
+      ? `${lane.pendingDeltaEvents} atualizações pendentes`
+      : lane.temperature === "cold"
+        ? "Contexto será herdado"
+        : lane.temperature === "clean"
+          ? "Contexto isolado"
+          : "Contexto sincronizado";
+  const laneUsage = laneUsageLabel(events, lane.laneId);
+
+  return (
+    <section
+      aria-label="Saúde da lane"
+      className="lane-health"
+      data-running={isRunning || undefined}
+      data-tone={laneRuntime.tone}
+    >
+      <span aria-hidden="true" className="lane-health__rail" />
+      <span
+        aria-hidden="true"
+        className={`message-agent-glyph runtime-glyph--${laneRuntime.tone}`}
+      >
+        {laneRuntime.glyph}
+      </span>
+      <span className="lane-health__identity">
+        <small>Saúde da lane</small>
+        <strong>
+          {laneProvider} <i>·</i> {laneModel}
+        </strong>
+      </span>
+      <span className="lane-health__signals">
+        <span>
+          <Check aria-hidden="true" size={11} />
+          {laneContext}
+        </span>
+        <span>
+          <Coins aria-hidden="true" size={11} />
+          {laneUsage}
+        </span>
+      </span>
+    </section>
+  );
+}
+
 export function Conversation({
   initialEvents = [],
   isRunning = false,
@@ -574,9 +633,9 @@ export function Conversation({
     sessionEnd >= sessionStart
       ? sessionEnd - sessionStart
       : null;
-
   return (
     <div aria-label="Conversa da tarefa" className="conversation-scroll">
+      <LaneHealth events={events} isRunning={isRunning} lane={lane} />
       {isEmpty ? (
         <div className="conversation-empty">
           <span>
@@ -795,4 +854,36 @@ function shortModel(model: string): string {
   );
   const value = match?.[1] ?? match?.[2] ?? model;
   return `${value.charAt(0).toUpperCase()}${value.slice(1)}`;
+}
+
+function laneUsageLabel(
+  events: EventCardEvent[],
+  laneId: string | undefined,
+): string {
+  const event = events
+    .filter(
+      (candidate) =>
+        candidate.kind === "usage_reported" &&
+        (!laneId || candidate.laneId === laneId),
+    )
+    .at(-1);
+  const usage =
+    event?.payload.usage &&
+    typeof event.payload.usage === "object" &&
+    !Array.isArray(event.payload.usage)
+      ? (event.payload.usage as Record<string, unknown>)
+      : null;
+  if (usage?.available === false) return "CLI não informa tokens";
+  if (
+    usage &&
+    ["input_tokens", "cache_read_input_tokens", "output_tokens"].some(
+      (key) =>
+        typeof usage[key] === "number" &&
+        Number.isFinite(usage[key]) &&
+        (usage[key] as number) >= 0,
+    )
+  ) {
+    return "Tokens observados";
+  }
+  return "Tokens ainda não reportados";
 }

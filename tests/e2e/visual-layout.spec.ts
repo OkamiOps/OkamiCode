@@ -90,6 +90,28 @@ test("Code project controls persist and remain visually stable", async ({}, test
     await page.reload();
     await page.getByRole("link", { name: "Code" }).click();
 
+    const seededProject = page.locator(".chat-session", {
+      hasText: "Primeira tarefa",
+    });
+    await seededProject.locator(".chat-session__open").click();
+    const laneHealth = page.getByLabel("Saúde da lane");
+    await expect(laneHealth).toContainText(/Claude|Codex/);
+    await expect(laneHealth).toContainText("Contexto");
+    await expectNoPageOverflow(page);
+    await page.screenshot({
+      path: testInfo.outputPath("lane-health-1440.png"),
+      fullPage: true,
+    });
+
+    await page.setViewportSize({ width: 760, height: 900 });
+    await expect(laneHealth).toBeVisible();
+    await expectNoPageOverflow(page);
+    await page.screenshot({
+      path: testInfo.outputPath("lane-health-760.png"),
+      fullPage: true,
+    });
+    await page.setViewportSize({ width: 1440, height: 900 });
+
     const project = page.locator(".chat-session", { hasText: "Visual QA" });
     await expect(project).toBeVisible();
 

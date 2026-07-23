@@ -11,6 +11,8 @@ const agyLane = {
   runtimeKind: "agy",
   providerAccountLabel: "Antigravity",
   model: "Gemini 3.6 Flash Low",
+  temperature: "hot",
+  pendingDeltaEvents: 0,
 } as WorkbenchLane;
 
 afterEach(() => {
@@ -82,6 +84,30 @@ describe("Conversation", () => {
     expect(screen.getByRole("status")).toHaveTextContent(
       "Gemini 3.6 Flash Low",
     );
+  });
+
+  it("summarizes lane health without hiding provider limitations", () => {
+    renderConversation(false, [
+      {
+        id: "usage-unavailable-health",
+        kind: "usage_reported",
+        laneId: agyLane.laneId,
+        runId: "run-1",
+        occurredAt: "2026-07-22T16:57:20.000Z",
+        payload: {
+          usage: {
+            available: false,
+            source: "agy_cli",
+          },
+        },
+      },
+    ]);
+
+    const health = screen.getByLabelText("Saúde da lane");
+    expect(health).toHaveTextContent("Antigravity");
+    expect(health).toHaveTextContent("Gemini 3.6 Flash Low");
+    expect(health).toHaveTextContent("Contexto sincronizado");
+    expect(health).toHaveTextContent("CLI não informa tokens");
   });
 
   it("shows run duration and observed token usage beside the response", () => {
