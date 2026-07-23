@@ -51,6 +51,7 @@ import { RemoteCalendarAdapter } from "./calendar/remote-adapter";
 import type { Capability } from "./policy/action";
 import type { TaskId } from "../shared/ids";
 import { locateLocalBinary } from "./ecosystem/cli-capabilities";
+import { resolveRuntimeCommands } from "./runtime/commands";
 import { AgyCompanionServer } from "./runtime/agy/companion-server";
 import { AgyPluginManager } from "./runtime/agy/plugin";
 import { createAgyPolicyAuthorizer } from "./runtime/agy/policy-authorizer";
@@ -234,8 +235,9 @@ async function bootstrap(): Promise<void> {
     stateRef,
     () => leaseRepository,
   );
+  const runtimeCommands = resolveRuntimeCommands(locateLocalBinary);
   const agyBinary = locateLocalBinary("agy");
-  const agyCommand = agyBinary ?? "agy";
+  const agyCommand = runtimeCommands.agy;
   const agyPluginManager = new AgyPluginManager({
     command: agyCommand,
     sourceDirectory: path.join(app.getPath("userData"), "agy-companion-plugin"),
@@ -267,6 +269,7 @@ async function bootstrap(): Promise<void> {
       taskIdForRun,
       leaseIdsForRun,
       hookScriptPath: path.resolve(app.getAppPath(), "bin/okami-hook.mjs"),
+      command: runtimeCommands.claude,
     },
     codex: {
       approvalBroker,
@@ -274,7 +277,7 @@ async function bootstrap(): Promise<void> {
     },
     cursor: {
       taskIdForRun,
-      command: locateLocalBinary("cursor") ?? "cursor-agent",
+      command: runtimeCommands.cursor,
     },
     agy: {
       taskIdForRun,
@@ -296,19 +299,19 @@ async function bootstrap(): Promise<void> {
     },
     grok: {
       taskIdForRun,
-      command: locateLocalBinary("grok") ?? "grok",
+      command: runtimeCommands.grok,
     },
     mimo: {
       taskIdForRun,
-      command: locateLocalBinary("mimo") ?? "mimo",
+      command: runtimeCommands.mimo,
     },
     minimax: {
       taskIdForRun,
-      command: locateLocalBinary("minimax") ?? "mmx",
+      command: runtimeCommands.minimax,
     },
     opencode: {
       taskIdForRun,
-      command: locateLocalBinary("opencode") ?? "opencode",
+      command: runtimeCommands.opencode,
     },
   });
 

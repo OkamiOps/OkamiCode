@@ -83,20 +83,29 @@ export class CursorProjector {
     if (!message || !Array.isArray(message.content)) {
       throw new Error("Cursor assistant event requires message.content");
     }
-    return message.content.flatMap((entry) => {
+    const textBlocks = message.content.flatMap((entry) => {
       const block = record(entry);
       if (block?.type !== "text") return [];
       if (typeof block.text !== "string") {
         throw new Error("Cursor assistant text block requires text");
       }
-      this.assistantText.push(block.text);
+      return [block.text];
+    });
+    if (
+      native.timestamp_ms === undefined &&
+      textBlocks.join("") === this.assistantText.join("")
+    ) {
+      return [];
+    }
+    return textBlocks.map((text) => {
+      this.assistantText.push(text);
       return [
         this.event("message_delta", native, {
-          delta: block.text,
+          delta: text,
           messageAnchor: `assistant-${this.assistantMessageOrdinal}`,
           native,
         }),
-      ];
+      ][0];
     });
   }
 

@@ -48,6 +48,8 @@ describe("OpenCodeAdapter over ACP", () => {
     }));
     const adapter = new OpenCodeAdapter({
       taskIdForRun: async () => taskId,
+      command: "/nvm/v24/bin/opencode",
+      env: { PATH: "/usr/bin:/bin" },
       connect,
       execute,
       createEventId: (sequence) => `event-${sequence}`,
@@ -86,6 +88,14 @@ describe("OpenCodeAdapter over ACP", () => {
     expect(connection.setModel).toHaveBeenCalledWith(
       "oc-session-1",
       "anthropic/claude-sonnet-4",
+    );
+    expect(connect).toHaveBeenCalledWith(
+      expect.objectContaining({
+        command: "/nvm/v24/bin/opencode",
+        env: expect.objectContaining({
+          PATH: "/nvm/v24/bin:/usr/bin:/bin",
+        }),
+      }),
     );
   });
 

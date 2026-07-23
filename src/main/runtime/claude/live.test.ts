@@ -2,6 +2,7 @@ import { execFile } from "node:child_process";
 import { promisify } from "node:util";
 import { describe, expect, it } from "vitest";
 import { newRunId } from "../../../shared/ids";
+import { locateLocalBinary } from "../../ecosystem/cli-capabilities";
 import { claudeEnvironment } from "./command";
 import { startClaudeLiveHarness } from "./test-harness";
 
@@ -16,9 +17,11 @@ describe.skipIf(process.env.OKAMI_RUN_LIVE_CLI_TESTS !== "1")(
       expect(environment.ANTHROPIC_API_KEY).toBeUndefined();
       expect(environment.OPENAI_API_KEY).toBeUndefined();
 
+      const command = locateLocalBinary("claude");
+      expect(command).toBeTruthy();
       const [{ stdout: version }, { stdout: authOutput }] = await Promise.all([
-        execFileAsync("claude", ["--version"], { env: environment }),
-        execFileAsync("claude", ["auth", "status", "--json"], {
+        execFileAsync(command!, ["--version"], { env: environment }),
+        execFileAsync(command!, ["auth", "status", "--json"], {
           env: environment,
         }),
       ]);
@@ -35,7 +38,7 @@ describe.skipIf(process.env.OKAMI_RUN_LIVE_CLI_TESTS !== "1")(
 
       expect(auth.loggedIn).toBe(true);
       expect(process.env.OKAMI_LIVE_PROMPT ?? SMOKE_PROMPT).toBe(SMOKE_PROMPT);
-      const harness = await startClaudeLiveHarness();
+      const harness = await startClaudeLiveHarness({ command: command! });
       const runId = newRunId();
       try {
         const session = await harness.adapter.start({

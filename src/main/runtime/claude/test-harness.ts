@@ -122,8 +122,8 @@ export async function startClaudeAdapterHarness(
   };
 }
 
-export function startClaudeLiveHarness() {
-  return startClaudeAdapterHarness();
+export function startClaudeLiveHarness(options: { command?: string } = {}) {
+  return startClaudeAdapterHarness(options);
 }
 
 async function runHook(

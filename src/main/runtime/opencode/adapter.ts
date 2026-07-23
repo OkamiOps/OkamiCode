@@ -28,6 +28,7 @@ import {
   type AcpConnection,
   type AcpConnectionFactory,
 } from "../acp/connection";
+import { executableEnvironment } from "../commands";
 
 interface ExecuteResult {
   stdout: string;
@@ -60,7 +61,11 @@ export interface OpenCodeAdapterDependencies {
   taskIdForRun: (runId: NativeTurnRequest["runId"]) => TaskId | Promise<TaskId>;
   command?: string;
   env?: NodeJS.ProcessEnv;
-  execute?: (command: string, args: string[]) => Promise<ExecuteResult>;
+  execute?: (
+    command: string,
+    args: string[],
+    options?: { env: NodeJS.ProcessEnv },
+  ) => Promise<ExecuteResult>;
   connect?: AcpConnectionFactory;
   createEventId?: (sequence: number) => string;
   clock?: () => Date;
@@ -76,11 +81,15 @@ export class OpenCodeAdapter implements RuntimeAdapter {
   async detect(): Promise<RuntimeHealth> {
     const command = this.dependencies.command ?? "opencode";
     const execute = this.dependencies.execute ?? executeFile;
+    const env = executableEnvironment(command, {
+      ...process.env,
+      ...this.dependencies.env,
+    });
     try {
-      const versionResult = await execute(command, ["--version"]);
+      const versionResult = await execute(command, ["--version"], { env });
       const version =
         versionResult.stdout.match(/\b\d+\.\d+\.\d+\b/u)?.[0] ?? null;
-      const helpResult = await execute(command, ["acp", "--help"]);
+      const helpResult = await execute(command, ["acp", "--help"], { env });
       const help = `${helpResult.stdout}\n${helpResult.stderr ?? ""}`;
       const protocolSupported = /\bacp\b/iu.test(help);
       return {
@@ -234,7 +243,11 @@ export class OpenCodeAdapter implements RuntimeAdapter {
       command: this.dependencies.command ?? "opencode",
       args: ["acp", "--cwd", request.cwd],
       cwd: request.cwd,
-      env: { ...process.env, ...this.dependencies.env, ...request.env },
+      env: executableEnvironment(this.dependencies.command ?? "opencode", {
+        ...process.env,
+        ...this.dependencies.env,
+        ...request.env,
+      }),
       handlers,
     });
     await connection.initialize();
@@ -415,8 +428,12 @@ const execFileAsync = promisify(execFile);
 async function executeFile(
   command: string,
   args: string[],
+  options?: { env: NodeJS.ProcessEnv },
 ): Promise<ExecuteResult> {
-  const result = await execFileAsync(command, args, { windowsHide: true });
+  const result = await execFileAsync(command, args, {
+    ...options,
+    windowsHide: true,
+  });
   return {
     stdout: String(result.stdout),
     stderr: String(result.stderr),

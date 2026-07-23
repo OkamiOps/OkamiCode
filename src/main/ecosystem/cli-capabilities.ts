@@ -1,5 +1,5 @@
 import { execFile } from "node:child_process";
-import { existsSync, readdirSync, realpathSync, statSync } from "node:fs";
+import { existsSync, readdirSync, statSync } from "node:fs";
 import { homedir } from "node:os";
 import path from "node:path";
 import { promisify } from "node:util";
@@ -83,7 +83,7 @@ const CAPABILITIES = {
   opencode: [],
 } as const satisfies Record<(typeof CLIENTS)[number], readonly Capability[]>;
 
-type CliClient = (typeof CLIENTS)[number];
+export type CliClient = (typeof CLIENTS)[number];
 
 export interface CliCapability {
   client: CliClient;
@@ -137,7 +137,10 @@ export function localBinaryCandidates(client: CliClient): string[] {
       : [];
   const mimoCandidates =
     client === "mimo" ? [path.join(homedir(), ".mimocode", "bin", "mimo")] : [];
-  const nvmCandidates = client === "minimax" ? nvmBinaryCandidates(binary) : [];
+  const nvmCandidates =
+    client === "minimax" || client === "opencode"
+      ? nvmBinaryCandidates(binary)
+      : [];
 
   return [
     ...fromPath,
@@ -174,10 +177,18 @@ function nvmBinaryCandidates(binary: string): string[] {
 }
 
 export function locateLocalBinary(client: CliClient): string | null {
-  for (const candidate of localBinaryCandidates(client)) {
+  return resolveExecutableCandidate(localBinaryCandidates(client));
+}
+
+export function resolveExecutableCandidate(
+  candidates: readonly string[],
+): string | null {
+  for (const candidate of candidates) {
     try {
       if (!existsSync(candidate) || !statSync(candidate).isFile()) continue;
-      return realpathSync(candidate);
+      // Preserve the launcher path instead of resolving its symlink. Node-based
+      // CLIs installed by NVM rely on the sibling `node` binary in this folder.
+      return path.resolve(candidate);
     } catch {
       // A stale PATH entry or unavailable packaged resource is not a client.
     }

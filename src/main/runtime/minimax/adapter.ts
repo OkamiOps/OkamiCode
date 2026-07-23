@@ -18,6 +18,7 @@ import type {
   UsageCapabilities,
 } from "../adapter";
 import { subscriptionEnvironment } from "../agy/adapter";
+import { executableEnvironment } from "../commands";
 
 interface ProcessResult {
   stdout: string;
@@ -45,6 +46,7 @@ export interface MiniMaxAdapterDependencies {
   execute?: (
     command: string,
     args: string[],
+    options?: { env: NodeJS.ProcessEnv },
   ) => Promise<{ stdout: string; stderr?: string }>;
   run?: (
     command: string,
@@ -64,11 +66,15 @@ export class MiniMaxAdapter implements RuntimeAdapter {
   async detect(): Promise<RuntimeHealth> {
     const command = this.dependencies.command ?? "mmx";
     const execute = this.dependencies.execute ?? executeFile;
+    const env = executableEnvironment(
+      command,
+      subscriptionEnvironment(this.dependencies.env, undefined),
+    );
     try {
-      const versionOutput = await execute(command, ["--version"]);
+      const versionOutput = await execute(command, ["--version"], { env });
       const version =
         versionOutput.stdout.match(/\b\d+\.\d+\.\d+\b/u)?.[0] ?? null;
-      const help = await execute(command, ["text", "chat", "--help"]);
+      const help = await execute(command, ["text", "chat", "--help"], { env });
       const helpText = `${help.stdout}\n${help.stderr ?? ""}`;
       const required = ["--message", "--model", "--output"];
       const missing = required.filter((flag) => !helpText.includes(flag));
@@ -95,7 +101,10 @@ export class MiniMaxAdapter implements RuntimeAdapter {
     const nativeSessionId = randomUUID();
     this.sessions.set(request.laneId, {
       cwd: request.cwd,
-      env: subscriptionEnvironment(this.dependencies.env, request.env),
+      env: executableEnvironment(
+        this.dependencies.command ?? "mmx",
+        subscriptionEnvironment(this.dependencies.env, request.env),
+      ),
       model: request.model,
       nativeSessionId,
       history: [],
@@ -112,7 +121,10 @@ export class MiniMaxAdapter implements RuntimeAdapter {
     const { version } = await this.requireProtocol();
     this.sessions.set(request.laneId, {
       cwd: request.cwd,
-      env: subscriptionEnvironment(this.dependencies.env, request.env),
+      env: executableEnvironment(
+        this.dependencies.command ?? "mmx",
+        subscriptionEnvironment(this.dependencies.env, request.env),
+      ),
       model: request.model,
       nativeSessionId: request.nativeSessionId,
       history: [],
@@ -280,9 +292,10 @@ function extractText(payload: Record<string, unknown>): string | null {
 function executeFile(
   command: string,
   args: string[],
+  options?: { env: NodeJS.ProcessEnv },
 ): Promise<{ stdout: string; stderr: string }> {
   return new Promise((resolve, reject) => {
-    execFile(command, args, (error, stdout, stderr) => {
+    execFile(command, args, options, (error, stdout, stderr) => {
       if (error) reject(error);
       else resolve({ stdout: String(stdout), stderr: String(stderr) });
     });

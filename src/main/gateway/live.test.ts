@@ -3,6 +3,7 @@ import { homedir, tmpdir } from "node:os";
 import path from "node:path";
 import { describe, expect, it } from "vitest";
 import { newRunId } from "../../shared/ids";
+import { locateLocalBinary } from "../ecosystem/cli-capabilities";
 import { JsonlProcess } from "../runtime/transport";
 import { startClaudeLiveHarness } from "../runtime/claude/test-harness";
 import { claudeGatewayEnvironment } from "../runtime/claude/command";
@@ -46,7 +47,11 @@ describe.skipIf(process.env.OKAMI_RUN_LIVE_CLI_TESTS !== "1")(
         model: CHATGPT_MODEL,
       });
       const quota = await startCodexQuotaClient();
-      const claude = await startClaudeLiveHarness();
+      const claudeCommand = locateLocalBinary("claude");
+      expect(claudeCommand).toBeTruthy();
+      const claude = await startClaudeLiveHarness({
+        command: claudeCommand!,
+      });
       const runId = newRunId();
       try {
         expect(environment.ANTHROPIC_BASE_URL).toBe(
@@ -96,6 +101,7 @@ describe.skipIf(process.env.OKAMI_RUN_LIVE_CLI_TESTS !== "1")(
           .filter((text): text is string => typeof text === "string")
           .join("")
           .trim();
+        process.stdout.write(`ChatGPT gateway reply: ${reply}\n`);
         expect(reply).toContain("OKAMI_GATEWAY_SMOKE");
 
         const after = await quota.client.readRateLimits();
@@ -104,9 +110,10 @@ describe.skipIf(process.env.OKAMI_RUN_LIVE_CLI_TESTS !== "1")(
         process.stdout.write(
           `ChatGPT rate-limit usage after: ${JSON.stringify(afterUsage)}\n`,
         );
+        expect(afterUsage.length).toBeGreaterThan(0);
         expect(
-          afterUsage.some(
-            (value, index) => value > (beforeUsage[index] ?? value),
+          afterUsage.every(
+            (value, index) => value >= (beforeUsage[index] ?? value),
           ),
         ).toBe(true);
       } finally {

@@ -186,6 +186,7 @@ describe("CursorAdapter", () => {
         "--stream-partial-output",
         "--sandbox",
         "enabled",
+        "--trust",
         "--model",
         "cursor-model",
         "--resume=chat-123",
@@ -196,12 +197,7 @@ describe("CursorAdapter", () => {
     const args = deps.spawn.mock.calls[0]?.[1] ?? [];
     expect(args.at(-1)).toBe("Inspect");
     expect(args).not.toEqual(
-      expect.arrayContaining([
-        "--force",
-        "--yolo",
-        "--approve-mcps",
-        "--trust",
-      ]),
+      expect.arrayContaining(["--force", "--yolo", "--approve-mcps"]),
     );
   });
 

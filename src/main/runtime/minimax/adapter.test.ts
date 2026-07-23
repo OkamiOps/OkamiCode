@@ -24,6 +24,8 @@ it("runs MiniMax Token Plan chat through the installed mmx CLI", async () => {
       stderr: "",
     })),
     run,
+    command: "/nvm/v24/bin/mmx",
+    env: { PATH: "/usr/bin:/bin" },
     createEventId: () => randomUUID(),
   });
   const laneId = randomUUID() as LaneId;
@@ -52,7 +54,7 @@ it("runs MiniMax Token Plan chat through the installed mmx CLI", async () => {
   expect(events[1]?.payload).toMatchObject({ delta: "Resposta MiniMax" });
   expect(events[2]?.payload).toMatchObject({ text: "Resposta MiniMax" });
   expect(run).toHaveBeenCalledWith(
-    "mmx",
+    "/nvm/v24/bin/mmx",
     expect.arrayContaining([
       "text",
       "chat",
@@ -63,6 +65,11 @@ it("runs MiniMax Token Plan chat through the installed mmx CLI", async () => {
       "--output",
       "json",
     ]),
-    expect.objectContaining({ cwd: "/workspace" }),
+    expect.objectContaining({
+      cwd: "/workspace",
+      env: expect.objectContaining({
+        PATH: "/nvm/v24/bin:/usr/bin:/bin",
+      }),
+    }),
   );
 });

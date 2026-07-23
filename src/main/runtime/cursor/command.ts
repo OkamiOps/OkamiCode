@@ -13,6 +13,9 @@ export function cursorArgs(options: CursorArgsOptions): string[] {
     "stream-json",
     "--stream-partial-output",
     ...permissionArgs,
+    // Trust only suppresses Cursor's separate workspace identity prompt.
+    // Execution remains constrained by sandbox/mode and is never force-approved.
+    "--trust",
     ...(options.model && options.model !== "default"
       ? ["--model", options.model]
       : []),

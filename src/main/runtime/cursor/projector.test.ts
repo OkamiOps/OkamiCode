@@ -61,6 +61,41 @@ describe("CursorProjector", () => {
     expect(second?.payload.messageAnchor).toBe("assistant-0");
   });
 
+  it("does not append Cursor's final assistant snapshot after streamed deltas", () => {
+    const projector = new CursorProjector(testIds());
+
+    expect(
+      projector.project({
+        type: "assistant",
+        timestamp_ms: 1,
+        message: { content: [{ type: "text", text: "OKAMI_" }] },
+      }),
+    ).toHaveLength(1);
+    expect(
+      projector.project({
+        type: "assistant",
+        timestamp_ms: 2,
+        message: { content: [{ type: "text", text: "CURSOR_SMOKE" }] },
+      }),
+    ).toHaveLength(1);
+    expect(
+      projector.project({
+        type: "assistant",
+        message: {
+          content: [{ type: "text", text: "OKAMI_CURSOR_SMOKE" }],
+        },
+      }),
+    ).toEqual([]);
+    const completed = projector.project({
+      type: "result",
+      subtype: "success",
+      is_error: false,
+      result: "OKAMI_CURSOR_SMOKE",
+    });
+
+    expect(completed[0]?.payload.text).toBe("OKAMI_CURSOR_SMOKE");
+  });
+
   it("extracts the authoritative init session without inventing a terminal event for process failure", () => {
     const native = fixture("process-failure");
     const projected = new CursorProjector({

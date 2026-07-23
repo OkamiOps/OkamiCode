@@ -3,8 +3,12 @@ import {
   createCliCapabilityDetector,
   executeProbe,
   localBinaryCandidates,
+  resolveExecutableCandidate,
   type CliCapabilityDetectorDependencies,
 } from "./cli-capabilities";
+import { mkdirSync, mkdtempSync, symlinkSync, writeFileSync } from "node:fs";
+import { tmpdir } from "node:os";
+import path from "node:path";
 
 function dependencies(
   binaries: Record<string, string | null>,
@@ -330,6 +334,18 @@ it("locates Cursor through cursor-agent candidates without treating the GUI laun
   );
 });
 
+it("preserves an executable symlink so launchers keep their sibling interpreter", () => {
+  const directory = mkdtempSync(path.join(tmpdir(), "okami-cli-link-"));
+  const target = path.join(directory, "lib", "mmx.mjs");
+  const launcher = path.join(directory, "bin", "mmx");
+  mkdirSync(path.dirname(target), { recursive: true });
+  mkdirSync(path.dirname(launcher), { recursive: true });
+  writeFileSync(target, "#!/usr/bin/env node\n");
+  symlinkSync(target, launcher);
+
+  expect(resolveExecutableCandidate([launcher])).toBe(launcher);
+});
+
 it("detects Grok as a native runtime and MiniMax as a Token Plan launcher", async () => {
   const injected = dependencies(
     { grok: "/bin/grok", minimax: "/bin/mmx" },
@@ -362,6 +378,13 @@ it("detects Grok as a native runtime and MiniMax as a Token Plan launcher", asyn
       expect.stringMatching(/\/mmx$/u),
       expect.stringMatching(
         /\.nvm\/(?:current|versions\/node\/[^/]+)\/bin\/mmx$/u,
+      ),
+    ]),
+  );
+  expect(localBinaryCandidates("opencode")).toEqual(
+    expect.arrayContaining([
+      expect.stringMatching(
+        /\.nvm\/(?:current|versions\/node\/[^/]+)\/bin\/opencode$/u,
       ),
     ]),
   );

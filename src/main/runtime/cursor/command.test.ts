@@ -12,6 +12,7 @@ describe("cursorArgs", () => {
       "--stream-partial-output",
       "--sandbox",
       "enabled",
+      "--trust",
       "--model",
       "auto",
       "Inspect this workspace",
@@ -31,6 +32,7 @@ describe("cursorArgs", () => {
       "--stream-partial-output",
       "--sandbox",
       "enabled",
+      "--trust",
       "--resume=<redacted-cursor-session-id>",
       "Continue",
     ]);
@@ -48,6 +50,7 @@ describe("cursorArgs", () => {
       "plan",
       "--sandbox",
       "enabled",
+      "--trust",
       "Plan",
     ]);
     expect(cursorArgs({ prompt: "Auto", permissionMode: "auto" })).toEqual([
@@ -58,6 +61,7 @@ describe("cursorArgs", () => {
       "--auto-review",
       "--sandbox",
       "enabled",
+      "--trust",
       "Auto",
     ]);
     expect(() =>
