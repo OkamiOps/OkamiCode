@@ -1,5 +1,5 @@
 import { fireEvent, render, screen } from "@testing-library/react";
-import { afterEach, describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 import type { WorkbenchLane } from "./api";
 import { Conversation } from "./Conversation";
 import { MessageMarkdown } from "./MessageMarkdown";
@@ -21,6 +21,7 @@ function renderConversation(
   isRunning = false,
   initialEvents: EventCardEvent[] = [],
   userMessage?: string,
+  streams?: Record<string, { laneId: string; at: string; text: string }>,
 ) {
   const store = createWorkbenchStore();
   store.setState({
@@ -34,7 +35,7 @@ function renderConversation(
           },
         ]
       : [],
-    streams: {
+    streams: streams ?? {
       "run-1:assistant-0": {
         laneId: agyLane.laneId,
         at: "2026-07-22T16:56:59.000Z",
@@ -188,5 +189,79 @@ describe("Conversation", () => {
     expect(
       screen.getByText(/uma frase que\s+continua normalmente/i),
     ).toBeVisible();
+  });
+
+  it("folds intermediate agent updates and leaves the final answer open", () => {
+    renderConversation(false, [], undefined, {
+      "run-1:assistant-0": {
+        laneId: agyLane.laneId,
+        at: "2026-07-22T16:56:59.000Z",
+        text: "Vou verificar a configuração.",
+      },
+      "run-1:assistant-1": {
+        laneId: agyLane.laneId,
+        at: "2026-07-22T16:57:02.000Z",
+        text: "Encontrei o deployment e estou validando os links.",
+      },
+      "run-1:assistant-2": {
+        laneId: agyLane.laneId,
+        at: "2026-07-22T16:57:07.000Z",
+        text: "Tudo validado: o deployment está pronto para revisão.",
+      },
+    });
+
+    expect(
+      screen.getByText("Tudo validado: o deployment está pronto para revisão."),
+    ).toBeVisible();
+    expect(screen.queryByText("Vou verificar a configuração.")).toBeNull();
+    expect(
+      screen.queryByText("Encontrei o deployment e estou validando os links."),
+    ).toBeNull();
+
+    fireEvent.click(
+      screen.getByRole("button", { name: /2 atualizações do agente/u }),
+    );
+    expect(screen.getByText("Vou verificar a configuração.")).toBeVisible();
+    expect(
+      screen.getByText("Encontrei o deployment e estou validando os links."),
+    ).toBeVisible();
+  });
+
+  it("opens Markdown links inside the workspace browser and keeps an external option", () => {
+    const openInside = vi.fn();
+    const openExternal = vi.fn();
+
+    render(
+      <MessageMarkdown onOpenExternal={openExternal} onOpenUrl={openInside}>
+        {"[Abrir a prévia](https://okamiops.com/design-system/)"}
+      </MessageMarkdown>,
+    );
+
+    fireEvent.click(screen.getByRole("link", { name: "Abrir a prévia" }));
+    expect(openInside).toHaveBeenCalledWith(
+      "https://okamiops.com/design-system/",
+    );
+
+    fireEvent.click(screen.getByRole("button", { name: "Opções do link" }));
+    fireEvent.click(
+      screen.getByRole("menuitem", { name: "Abrir no navegador" }),
+    );
+    expect(openExternal).toHaveBeenCalledWith(
+      "https://okamiops.com/design-system/",
+    );
+  });
+
+  it("renders safe inline HTML without allowing script execution surfaces", () => {
+    const { container } = render(
+      <MessageMarkdown>
+        {
+          "<details><summary>Prévia HTML</summary><p>Conteúdo renderizado.</p><script>window.bad = true</script></details>"
+        }
+      </MessageMarkdown>,
+    );
+
+    expect(screen.getByText("Prévia HTML")).toBeVisible();
+    expect(screen.getByText("Conteúdo renderizado.")).toBeInTheDocument();
+    expect(container.querySelector("script")).toBeNull();
   });
 });

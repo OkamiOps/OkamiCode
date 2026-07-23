@@ -173,13 +173,16 @@ export function ChatSidebar() {
       className="chat-sidebar code-projects-sidebar"
     >
       <header className="code-projects-sidebar__header">
-        <span className="pane-kicker">Desenvolvimento</span>
+        <span className="pane-kicker">Espaço de código</span>
         <div>
           <span className="code-projects-sidebar__icon" aria-hidden="true">
             <FolderCode size={16} strokeWidth={1.8} />
           </span>
-          <h1>Code</h1>
-          <span>
+          <span className="code-projects-sidebar__heading">
+            <h1>Projetos</h1>
+            <small>pastas e worktrees locais</small>
+          </span>
+          <span className="code-projects-sidebar__count">
             {tasks.length} {tasks.length === 1 ? "projeto" : "projetos"}
           </span>
         </div>
@@ -192,7 +195,10 @@ export function ChatSidebar() {
         type="button"
       >
         <Plus aria-hidden="true" size={15} />
-        Novo projeto
+        <span className="chat-new-button__copy">
+          <strong>Novo projeto</strong>
+          <small>Abrir pasta ou worktree</small>
+        </span>
       </button>
 
       <label className="chat-search">
@@ -208,7 +214,7 @@ export function ChatSidebar() {
 
       <div className="code-projects-toolbar">
         <span>
-          <ArrowUpDown aria-hidden="true" size={12} /> Organizar
+          <ArrowUpDown aria-hidden="true" size={12} /> Visão
         </span>
         <select
           aria-label="Ordenar projetos"
@@ -247,7 +253,10 @@ export function ChatSidebar() {
         )}
         {sections.map((section) => (
           <div className="chat-session-group" key={section.label}>
-            <div className="chat-sessions__label">{section.label}</div>
+            <div className="chat-sessions__label">
+              <span>{section.label}</span>
+              <small>{section.tasks.length}</small>
+            </div>
             {section.tasks.map((task) => (
               <div
                 className="chat-session"

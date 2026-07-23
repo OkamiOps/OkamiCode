@@ -792,16 +792,21 @@ export function Composer({
           </button>
         </div>
       )}
-      <textarea
-        aria-label="Mensagem"
-        onChange={(event) => updateInput(event.target.value)}
-        onKeyDown={handleKeyDown}
-        placeholder="Como posso ajudar? Digite / para comandos"
-        ref={textareaRef}
-        rows={1}
-        value={input}
-      />
-      <div className="chat-composer__row">
+      <div className="chat-composer__input">
+        <span aria-hidden="true" className="chat-composer__prompt-mark">
+          ›
+        </span>
+        <textarea
+          aria-label="Mensagem"
+          onChange={(event) => updateInput(event.target.value)}
+          onKeyDown={handleKeyDown}
+          placeholder="Descreva o próximo passo ou digite / para comandos"
+          ref={textareaRef}
+          rows={1}
+          value={input}
+        />
+      </div>
+      <div className="chat-composer__row chat-composer__row--controls">
         {lane && (
           <PermissionModeMenu
             mode={lane.permissionMode ?? "manual"}
@@ -840,6 +845,9 @@ export function Composer({
             selected={effort}
           />
         )}
+        <span className="chat-composer__shortcut" aria-hidden="true">
+          ↵ enviar · ⇧↵ linha
+        </span>
         <span className="chat-composer__spacer" />
         {contextNote && (
           <button

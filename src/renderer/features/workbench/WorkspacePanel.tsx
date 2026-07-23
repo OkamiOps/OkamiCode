@@ -9,6 +9,7 @@ import {
   Code2,
   Copy,
   Eye,
+  ExternalLink,
   FileCode2,
   FileDiff,
   Folder,
@@ -228,6 +229,8 @@ function DirNode({
   depth,
   filter,
   onOpenFile,
+  isRoot = false,
+  rootPath,
 }: {
   taskId: string;
   dir: string;
@@ -235,9 +238,11 @@ function DirNode({
   depth: number;
   filter: string;
   onOpenFile: (file: string) => void;
+  isRoot?: boolean;
+  rootPath?: string | null;
 }) {
   // A filter expands the tree so matches are reachable without clicking.
-  const [open, setOpen] = useState(name === null);
+  const [open, setOpen] = useState(name === null || isRoot);
   const expanded = open || filter.length > 0;
   const listing = useQuery({
     queryKey: ["workspace-fs", taskId, dir],
@@ -250,8 +255,10 @@ function DirNode({
       {name !== null && (
         <button
           className="fs-row fs-row--dir"
+          data-root={isRoot || undefined}
           onClick={() => setOpen((value) => !value)}
           style={{ paddingLeft: 8 + depth * 14 }}
+          title={isRoot ? (rootPath ?? undefined) : undefined}
           type="button"
         >
           {expanded ? (
@@ -279,6 +286,7 @@ function DirNode({
                   depth={depth + 1}
                   dir={childPath}
                   filter={filter}
+                  isRoot={false}
                   key={childPath}
                   name={entry.name}
                   onOpenFile={onOpenFile}
@@ -304,6 +312,10 @@ function DirNode({
       )}
     </div>
   );
+}
+
+export function workspaceFolderName(workspacePath: string | null | undefined) {
+  return workspacePath?.split("/").filter(Boolean).at(-1) ?? "Workspace";
 }
 
 function FileView({ taskId, file }: { taskId: string; file: string }) {
@@ -589,17 +601,42 @@ function TasksPane({ taskId }: { taskId: string }) {
   );
 }
 
-function BrowserPane({ initialUrl }: { initialUrl: string | null }) {
-  const [address, setAddress] = useState(initialUrl ?? "http://localhost:5173");
-  const [target, setTarget] = useState<string | null>(
-    initialUrl ?? "http://localhost:5173",
+function normalizeBrowserUrl(value: string): string | null {
+  const candidate = /^[a-z]+:\/\//u.test(value) ? value : `http://${value}`;
+  try {
+    const url = new URL(candidate);
+    return url.protocol === "http:" || url.protocol === "https:"
+      ? url.toString()
+      : null;
+  } catch {
+    return null;
+  }
+}
+
+function BrowserPane({
+  initialUrl,
+  onOpenExternal,
+}: {
+  initialUrl: string | null;
+  onOpenExternal?: (url: string) => void;
+}) {
+  const safeInitialUrl = initialUrl ? normalizeBrowserUrl(initialUrl) : null;
+  const [address, setAddress] = useState(
+    safeInitialUrl ?? "http://localhost:5173",
   );
+  const [target, setTarget] = useState<string | null>(safeInitialUrl);
   const [reloadNonce, setReloadNonce] = useState(0);
+  const [error, setError] = useState<string | null>(null);
 
   function navigate() {
     const trimmed = address.trim();
     if (!trimmed) return;
-    const url = /^[a-z]+:\/\//u.test(trimmed) ? trimmed : `http://${trimmed}`;
+    const url = normalizeBrowserUrl(trimmed);
+    if (!url) {
+      setError("Use um endereço http:// ou https:// para abrir aqui.");
+      return;
+    }
+    setError(null);
     setAddress(url);
     setTarget(url);
     setReloadNonce((value) => value + 1);
@@ -630,7 +667,21 @@ function BrowserPane({ initialUrl }: { initialUrl: string | null }) {
         >
           <RotateCw aria-hidden="true" size={13} />
         </button>
+        <button
+          aria-label="Abrir no navegador externo"
+          disabled={!target || !onOpenExternal}
+          onClick={() => target && onOpenExternal?.(target)}
+          title="Abrir no navegador externo"
+          type="button"
+        >
+          <ExternalLink aria-hidden="true" size={13} />
+        </button>
       </div>
+      {error && (
+        <p className="ws-browser__error" role="alert">
+          {error}
+        </p>
+      )}
       {target ? (
         <webview
           className="ws-browser__view"
@@ -659,6 +710,7 @@ export function WorkspacePanel({
   onOpenFile,
   onClose,
   initialUrl = null,
+  onOpenExternal,
   isMaximized = false,
   onToggleMaximize,
   onDragStart,
@@ -672,6 +724,7 @@ export function WorkspacePanel({
   onOpenFile: (file: string | null) => void;
   onClose: () => void;
   initialUrl?: string | null;
+  onOpenExternal?: (url: string) => void;
   isMaximized?: boolean;
   onToggleMaximize?: () => void;
   onDragStart?: () => void;
@@ -757,7 +810,11 @@ export function WorkspacePanel({
         ) : mode === "terminal" ? (
           <TerminalPane taskId={taskId} />
         ) : mode === "browser" ? (
-          <BrowserPane initialUrl={initialUrl} key={initialUrl ?? "blank"} />
+          <BrowserPane
+            initialUrl={initialUrl}
+            key={initialUrl ?? "blank"}
+            onOpenExternal={onOpenExternal}
+          />
         ) : openFile ? (
           <FileView file={openFile} key={openFile} taskId={taskId} />
         ) : (
@@ -771,18 +828,15 @@ export function WorkspacePanel({
                 value={filter}
               />
             </label>
-            {workspacePath && (
-              <span className="fs-root" title={workspacePath}>
-                {workspacePath}
-              </span>
-            )}
             <div className="fs-tree">
               <DirNode
                 depth={0}
                 dir=""
                 filter={filter.trim().toLowerCase()}
-                name={null}
+                isRoot
+                name={workspaceFolderName(workspacePath)}
                 onOpenFile={onOpenFile}
+                rootPath={workspacePath}
                 taskId={taskId}
               />
             </div>

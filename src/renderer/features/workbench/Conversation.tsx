@@ -107,6 +107,15 @@ interface TimelineAgentItem {
   text: string;
 }
 
+interface TimelineAgentActivityItem {
+  type: "agent_activity";
+  at: string;
+  key: string;
+  runId: string;
+  laneId: string;
+  messages: TimelineAgentItem[];
+}
+
 interface TimelineToolsItem {
   type: "tools";
   at: string;
@@ -123,7 +132,11 @@ interface TimelineCardItem {
 }
 
 type TimelineItem =
-  TimelineUserItem | TimelineAgentItem | TimelineToolsItem | TimelineCardItem;
+  | TimelineUserItem
+  | TimelineAgentItem
+  | TimelineAgentActivityItem
+  | TimelineToolsItem
+  | TimelineCardItem;
 
 interface RunTelemetry {
   durationMs: number | null;
@@ -283,6 +296,56 @@ function ToolGroup({
   );
 }
 
+function AgentActivityGroup({
+  messages,
+  onOpenExternal,
+  onOpenUrl,
+}: {
+  messages: TimelineAgentItem[];
+  onOpenExternal?: (url: string) => void;
+  onOpenUrl?: (url: string) => void;
+}) {
+  const [open, setOpen] = useState(false);
+  const count = messages.length;
+  const label = `${count} ${count === 1 ? "atualização" : "atualizações"} do agente`;
+
+  return (
+    <div className="chat-agent-activity" data-open={open || undefined}>
+      <button
+        aria-expanded={open}
+        className="chat-agent-activity__summary"
+        onClick={() => setOpen((value) => !value)}
+        type="button"
+      >
+        <Activity aria-hidden="true" size={13} />
+        <span className="chat-agent-activity__copy">
+          <strong>{label}</strong>
+          <span>Registro compacto — abra para ver os detalhes</span>
+        </span>
+        <ChevronRight
+          aria-hidden="true"
+          className="chat-agent-activity__chevron"
+          size={13}
+        />
+      </button>
+      {open && (
+        <div className="chat-agent-activity__items">
+          {messages.map((message) => (
+            <div className="chat-agent-activity__item" key={message.key}>
+              <MessageMarkdown
+                onOpenExternal={onOpenExternal}
+                onOpenUrl={onOpenUrl}
+              >
+                {message.text}
+              </MessageMarkdown>
+            </div>
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}
+
 function eventForCard(raw: unknown): EventCardEvent {
   const parsed = canonicalEventSchema.safeParse(raw);
   if (parsed.success) return parsed.data;
@@ -312,11 +375,15 @@ export function Conversation({
   isRunning = false,
   lane,
   lanes = [],
+  onOpenExternal,
+  onOpenUrl,
 }: {
   initialEvents?: EventCardEvent[];
   isRunning?: boolean;
   lane: WorkbenchLane | null;
   lanes?: WorkbenchLane[];
+  onOpenExternal?: (url: string) => void;
+  onOpenUrl?: (url: string) => void;
 }) {
   const sentMessages = useWorkbenchStore((state) => state.sentMessages);
   const streams = useWorkbenchStore((state) => state.streams);
@@ -348,15 +415,38 @@ export function Conversation({
       body: message.body,
     });
   }
+  const agentsByRun = new Map<string, TimelineAgentItem[]>();
   for (const [key, entry] of Object.entries(streams)) {
-    items.push({
+    const agent: TimelineAgentItem = {
       type: "agent",
       at: entry.at,
       key,
       runId: key.split(":", 1)[0] ?? key,
       laneId: entry.laneId,
       text: entry.text,
-    });
+    };
+    const group = agentsByRun.get(agent.runId) ?? [];
+    group.push(agent);
+    agentsByRun.set(agent.runId, group);
+  }
+  for (const [runId, agents] of agentsByRun) {
+    const ordered = agents.sort((left, right) =>
+      left.at.localeCompare(right.at),
+    );
+    const final = ordered.at(-1);
+    if (!final) continue;
+    const intermediate = ordered.slice(0, -1);
+    if (intermediate.length > 0) {
+      items.push({
+        type: "agent_activity",
+        at: intermediate[0]?.at ?? final.at,
+        key: `agent-activity:${runId}`,
+        runId,
+        laneId: final.laneId,
+        messages: intermediate,
+      });
+    }
+    items.push(final);
   }
   const visibleEvents = mergeToolLifecycle(events.filter(isVisibleEvent));
   const toolEventsByRun = new Map<string, EventCardEvent[]>();
@@ -509,7 +599,12 @@ export function Conversation({
                   key={item.key}
                 >
                   <div className="message-bubble message-bubble--user">
-                    <MessageMarkdown>{item.body}</MessageMarkdown>
+                    <MessageMarkdown
+                      onOpenExternal={onOpenExternal}
+                      onOpenUrl={onOpenUrl}
+                    >
+                      {item.body}
+                    </MessageMarkdown>
                   </div>
                 </article>
               );
@@ -579,12 +674,28 @@ export function Conversation({
                   <div className="message-bubble message-bubble--agent">
                     <span aria-hidden="true" className="message-accent-rail" />
                     <div className="message-bubble__content">
-                      <MessageMarkdown>{item.text}</MessageMarkdown>
+                      <MessageMarkdown
+                        onOpenExternal={onOpenExternal}
+                        onOpenUrl={onOpenUrl}
+                      >
+                        {item.text}
+                      </MessageMarkdown>
                       {isLiveTail && (
                         <span aria-hidden="true" className="stream-caret" />
                       )}
                     </div>
                   </div>
+                </article>
+              );
+            }
+            if (item.type === "agent_activity") {
+              return (
+                <article className="conversation-event" key={item.key}>
+                  <AgentActivityGroup
+                    messages={item.messages}
+                    onOpenExternal={onOpenExternal}
+                    onOpenUrl={onOpenUrl}
+                  />
                 </article>
               );
             }

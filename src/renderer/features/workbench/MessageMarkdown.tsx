@@ -1,4 +1,10 @@
-import { Check, Copy } from "lucide-react";
+import {
+  Check,
+  ChevronDown,
+  Copy,
+  ExternalLink,
+  PanelRightOpen,
+} from "lucide-react";
 import { useRef, useState, type ComponentProps } from "react";
 import ReactMarkdown from "react-markdown";
 import rehypeHighlight from "rehype-highlight";
@@ -90,7 +96,96 @@ function InlineCode({ children, ...props }: ComponentProps<"code">) {
   );
 }
 
-export function MessageMarkdown({ children }: { children: string }) {
+function isTrustedWebLink(href: string | undefined): href is string {
+  if (!href) return false;
+  try {
+    const url = new URL(href);
+    return url.protocol === "http:" || url.protocol === "https:";
+  } catch {
+    return false;
+  }
+}
+
+function MessageLink({
+  children,
+  href,
+  onOpenExternal,
+  onOpenUrl,
+  ...props
+}: ComponentProps<"a"> & {
+  onOpenExternal?: (url: string) => void;
+  onOpenUrl?: (url: string) => void;
+}) {
+  const [open, setOpen] = useState(false);
+  const canOpenInside = isTrustedWebLink(href) && Boolean(onOpenUrl);
+
+  return (
+    <span className="md-link">
+      <a
+        {...props}
+        href={href}
+        onClick={(event) => {
+          if (!canOpenInside || !href) return;
+          event.preventDefault();
+          onOpenUrl?.(href);
+        }}
+        rel="noreferrer noopener"
+        target={canOpenInside ? undefined : "_blank"}
+      >
+        {children}
+      </a>
+      {canOpenInside && href && (
+        <span className="md-link__actions">
+          <button
+            aria-expanded={open}
+            aria-label="Opções do link"
+            onClick={() => setOpen((value) => !value)}
+            type="button"
+          >
+            <ChevronDown aria-hidden="true" size={12} />
+          </button>
+          {open && (
+            <span className="md-link__menu" role="menu">
+              <button
+                onClick={() => {
+                  onOpenUrl?.(href);
+                  setOpen(false);
+                }}
+                role="menuitem"
+                type="button"
+              >
+                <PanelRightOpen aria-hidden="true" size={12} />
+                Abrir aqui
+              </button>
+              <button
+                disabled={!onOpenExternal}
+                onClick={() => {
+                  onOpenExternal?.(href);
+                  setOpen(false);
+                }}
+                role="menuitem"
+                type="button"
+              >
+                <ExternalLink aria-hidden="true" size={12} />
+                Abrir no navegador
+              </button>
+            </span>
+          )}
+        </span>
+      )}
+    </span>
+  );
+}
+
+export function MessageMarkdown({
+  children,
+  onOpenUrl,
+  onOpenExternal,
+}: {
+  children: string;
+  onOpenUrl?: (url: string) => void;
+  onOpenExternal?: (url: string) => void;
+}) {
   return (
     <div className="message-markdown">
       <ReactMarkdown
@@ -98,9 +193,13 @@ export function MessageMarkdown({ children }: { children: string }) {
           code: InlineCode,
           pre: CodeBlock,
           a: ({ children, ...props }) => (
-            <a {...props} rel="noreferrer noopener" target="_blank">
+            <MessageLink
+              {...props}
+              onOpenExternal={onOpenExternal}
+              onOpenUrl={onOpenUrl}
+            >
               {children}
-            </a>
+            </MessageLink>
           ),
         }}
         rehypePlugins={[

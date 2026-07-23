@@ -298,6 +298,13 @@ export function WorkbenchPage({ api = workbenchApi }: WorkbenchPageProps) {
     activeRunLaneId !== null && activeRunLaneId === selectedLane?.laneId
       ? activeRunId
       : null;
+  const openUrlInternally = (url: string) => {
+    setPreviewUrl(url);
+    focusPanel("browser");
+  };
+  const openUrlExternally = (url: string) => {
+    void workbenchClient.systemOpenExternal({ url });
+  };
   const composer = (
     <Composer
       key={effectiveTaskId ?? "no-task"}
@@ -330,10 +337,7 @@ export function WorkbenchPage({ api = workbenchApi }: WorkbenchPageProps) {
           })
           .then(() => lanesQuery.refetch());
       }}
-      onOpenUrl={(url) => {
-        setPreviewUrl(url);
-        focusPanel("browser");
-      }}
+      onOpenUrl={openUrlInternally}
       onNavigate={navigate}
       slashCommands={
         selectedLane ? (slashCommandsByLane[selectedLane.laneId] ?? []) : []
@@ -517,6 +521,8 @@ export function WorkbenchPage({ api = workbenchApi }: WorkbenchPageProps) {
                   key={effectiveTaskId ?? "none"}
                   lane={selectedLane}
                   lanes={lanes}
+                  onOpenExternal={openUrlExternally}
+                  onOpenUrl={openUrlInternally}
                 />
               </FileOpenContext.Provider>
             </div>
@@ -555,6 +561,7 @@ export function WorkbenchPage({ api = workbenchApi }: WorkbenchPageProps) {
               initialUrl={previewUrl}
               mode={activePanel}
               onClose={() => closePanel(activePanel)}
+              onOpenExternal={openUrlExternally}
               onOpenFile={setPanelFile}
               openFile={panelFile}
               taskId={effectiveTaskId}
