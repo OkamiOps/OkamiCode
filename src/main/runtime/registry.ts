@@ -1,5 +1,5 @@
 import type { RuntimeKind } from "../../shared/contracts/lane";
-import type { RuntimeAdapter } from "./adapter";
+import type { RuntimeAdapter, RuntimeHealth } from "./adapter";
 import {
   builtInRuntimeManifests,
   runtimeManifestSchema,
@@ -55,6 +55,26 @@ export class RuntimeRegistry {
 
   manifests(): RuntimeManifest[] {
     return [...this.runtimeManifests.values()];
+  }
+
+  async health(kind: RuntimeKind): Promise<{
+    manifest: RuntimeManifest;
+    health: RuntimeHealth;
+  }> {
+    const adapter = this.lookup(kind);
+    const manifest = this.manifest(kind);
+    if (!adapter || !manifest) throw new Error(`Unknown runtime ${kind}`);
+    return { manifest, health: await adapter.detect() };
+  }
+
+  async healthAll(): Promise<
+    Array<{ manifest: RuntimeManifest; health: RuntimeHealth }>
+  > {
+    return Promise.all(
+      this.manifests().map((manifest) =>
+        this.health(manifest.runtimeId as RuntimeKind),
+      ),
+    );
   }
 }
 

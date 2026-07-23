@@ -82,7 +82,7 @@ export const builtInRuntimeManifests = {
     accountStrategy: "cursor_subscription",
     executable: "cursor-agent",
     protocolVersion: "stream-json",
-    capabilities: ["sessions", "streaming", "tools", "models"],
+    capabilities: ["sessions", "streaming", "tools", "models", "usage"],
   },
   agy: {
     schemaVersion: 1,
@@ -118,7 +118,7 @@ export const builtInRuntimeManifests = {
     accountStrategy: "environment_api_key",
     executable: "mimo",
     protocolVersion: "stream-json",
-    capabilities: ["sessions", "streaming", "tools"],
+    capabilities: ["sessions", "streaming", "tools", "usage"],
   },
   minimax: {
     schemaVersion: 1,
@@ -130,7 +130,7 @@ export const builtInRuntimeManifests = {
     accountStrategy: "environment_api_key",
     executable: "mmx",
     protocolVersion: "json",
-    capabilities: ["sessions", "streaming"],
+    capabilities: ["sessions", "streaming", "usage"],
   },
   opencode: {
     schemaVersion: 1,

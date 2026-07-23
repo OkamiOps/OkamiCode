@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { runtimeManifestSchema } from "./manifest";
+import { builtInRuntimeManifests, runtimeManifestSchema } from "./manifest";
 
 describe("Okami runtime manifest", () => {
   it("keeps provider, model driver, account and authentication as separate concerns", () => {
@@ -35,5 +35,11 @@ describe("Okami runtime manifest", () => {
         capabilities: [],
       }),
     ).toThrow();
+  });
+
+  it("advertises canonical turn usage for every adapter that emits it", () => {
+    expect(builtInRuntimeManifests.cursor.capabilities).toContain("usage");
+    expect(builtInRuntimeManifests.mimo.capabilities).toContain("usage");
+    expect(builtInRuntimeManifests.minimax.capabilities).toContain("usage");
   });
 });
