@@ -1,6 +1,6 @@
 import { execFile } from "node:child_process";
 import { randomUUID } from "node:crypto";
-import { mkdirSync } from "node:fs";
+import { existsSync, mkdirSync } from "node:fs";
 import { homedir } from "node:os";
 import path from "node:path";
 import { promisify } from "node:util";
@@ -56,13 +56,20 @@ import { AgyPluginManager } from "./runtime/agy/plugin";
 import { createAgyPolicyAuthorizer } from "./runtime/agy/policy-authorizer";
 import { GoogleInboxOAuthService } from "./inbox/google-oauth-service";
 import { InboxSyncScheduler } from "./inbox/sync-scheduler";
+import { resolveUserDataPath } from "./user-data";
 
 const execFileAsync = promisify(execFile);
 
-// Visual/E2E runs use an isolated profile so validation never touches the
-// user's real inbox, calendar, credentials, favorites, or local database.
-if (process.env.OKAMI_USER_DATA_DIR) {
-  app.setPath("userData", process.env.OKAMI_USER_DATA_DIR);
+// Keep the profile stable across the okami-workbench -> okami-code package
+// rename. Visual/E2E overrides still take priority and stay isolated.
+const userDataPath = resolveUserDataPath({
+  appDataPath: app.getPath("appData"),
+  currentUserDataPath: app.getPath("userData"),
+  override: process.env.OKAMI_USER_DATA_DIR,
+  pathExists: existsSync,
+});
+if (userDataPath !== app.getPath("userData")) {
+  app.setPath("userData", userDataPath);
 }
 
 const GPT_BACKEND_MODEL = "gpt-5.6-sol";
