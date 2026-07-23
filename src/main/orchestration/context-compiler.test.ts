@@ -67,4 +67,38 @@ describe("ContextCompiler", () => {
     expect(first.fingerprint).toBe(second.fingerprint);
     expect(first.omittedEvents).toBe(0);
   });
+
+  it("omits whole low-priority entries instead of slicing a message", () => {
+    const oversized = delta(8);
+    oversized.conversation = [
+      {
+        sequence: 1,
+        role: "assistant",
+        body: `BEGIN_OLD_MESSAGE ${"detalhe ".repeat(500)} END_OLD_MESSAGE`,
+        laneId: "lane-source",
+        providerLabel: "Claude",
+        model: "Opus",
+      },
+      {
+        sequence: 2,
+        role: "user",
+        body: "A solicitação mais recente precisa permanecer inteira.",
+        laneId: "lane-source",
+      },
+    ];
+
+    const result = new ContextCompiler().compile(oversized, {
+      maxInputTokens: 360,
+      reserveForReplyTokens: 120,
+    });
+
+    expect(result.content).toContain(
+      "A solicitação mais recente precisa permanecer inteira.",
+    );
+    expect(result.content).not.toContain("BEGIN_OLD_MESSAGE");
+    expect(result.content).not.toContain("END_OLD_MESSAGE");
+    expect(result.content).not.toContain("[contexto truncado]");
+    expect(result.omittedMessages).toBe(1);
+    expect(result.modelCalls).toBe(0);
+  });
 });

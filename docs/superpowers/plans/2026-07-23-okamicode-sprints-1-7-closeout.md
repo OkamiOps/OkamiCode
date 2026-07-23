@@ -140,7 +140,7 @@ git commit -m "docs: close OpenCode and BB harness boundary"
 - Consumes: canonical assistant, tool-completion, approval, and failure events.
 - Produces: bounded `conversation` entries with roles `user`, `assistant`, and `context`, deduplicated per target/source lane.
 
-- [ ] **Step 1: Write failing cross-provider handoff tests**
+- [x] **Step 1: Write failing cross-provider handoff tests**
 
 ```ts
 it("hands a sibling lane the completed tool, failure and approval summaries once", async () => {
@@ -150,27 +150,27 @@ it("hands a sibling lane the completed tool, failure and approval summaries once
 });
 ```
 
-- [ ] **Step 2: Run tests and verify RED**
+- [x] **Step 2: Run tests and verify RED**
 
 Run: `pnpm vitest run src/main/ipc/lane-ipc.test.ts src/main/orchestration/lane-service.test.ts src/main/orchestration/context-compiler.test.ts`
 
 Expected: FAIL because only user/assistant text is shared.
 
-- [ ] **Step 3: Persist sanitized context entries**
+- [x] **Step 3: Persist sanitized context entries**
 
 Persist concise context messages only for `tool_call_completed`, `approval_resolved`, and `run_failed`. Store no raw environment, authorization header, full terminal output, or provider credential. Reuse the existing per-source cursor so each target receives each entry once.
 
-- [ ] **Step 4: Pack context entries by priority**
+- [x] **Step 4: Pack context entries by priority**
 
 Compile in this order: objective and constraints, decisions/Git, latest user and assistant turns, failure/approval summaries, tool summaries, then older messages. Never cut a message in the middle.
 
-- [ ] **Step 5: Run focused tests and verify GREEN**
+- [x] **Step 5: Run focused tests and verify GREEN**
 
 Run: `pnpm vitest run src/main/ipc/lane-ipc.test.ts src/main/orchestration/lane-service.test.ts src/main/orchestration/context-compiler.test.ts`
 
 Expected: PASS.
 
-- [ ] **Step 6: Commit sprint 3**
+- [x] **Step 6: Commit sprint 3**
 
 ```bash
 git add src/main/ipc src/main/orchestration
@@ -188,7 +188,7 @@ git commit -m "feat: hand off task state across providers"
 - Consumes: prioritized delta entries and `ContextBudget`.
 - Produces: `CompiledContext` with exact entry counts, estimated savings, deterministic fingerprint, and `modelCalls: 0`.
 
-- [ ] **Step 1: Write failing whole-entry compaction tests**
+- [x] **Step 1: Write failing whole-entry compaction tests**
 
 ```ts
 it("drops the oldest low-priority entries without slicing authoritative text", () => {
@@ -198,23 +198,23 @@ it("drops the oldest low-priority entries without slicing authoritative text", (
 });
 ```
 
-- [ ] **Step 2: Run tests and verify RED**
+- [x] **Step 2: Run tests and verify RED**
 
 Run: `pnpm vitest run src/main/orchestration/context-compiler.test.ts src/main/orchestration/run-service.test.ts`
 
 Expected: FAIL because current compaction slices the final string.
 
-- [ ] **Step 3: Implement priority packing**
+- [x] **Step 3: Implement priority packing**
 
 Estimate each complete entry, keep authoritative sections immutable, add newest entries while budget remains, and return omitted counts by category. If authoritative state alone exceeds the budget, use fixed field limits rather than slicing arbitrary bytes.
 
-- [ ] **Step 4: Run focused tests and verify GREEN**
+- [x] **Step 4: Run focused tests and verify GREEN**
 
 Run: `pnpm vitest run src/main/orchestration/context-compiler.test.ts src/main/orchestration/run-service.test.ts`
 
 Expected: PASS with deterministic fingerprints and zero model calls.
 
-- [ ] **Step 5: Commit sprint 4**
+- [x] **Step 5: Commit sprint 4**
 
 ```bash
 git add src/main/orchestration
