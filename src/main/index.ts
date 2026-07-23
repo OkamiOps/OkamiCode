@@ -334,6 +334,14 @@ async function bootstrap(): Promise<void> {
       },
     ],
   });
+  const opencodeHealth = await runtimes
+    .health("opencode")
+    .then(({ health }) => health)
+    .catch(() => ({
+      available: false,
+      protocolSupported: false,
+      version: null,
+    }));
 
   const modelCatalogService = createModelCatalogService({
     cachePath: path.join(app.getPath("userData"), "claude-models.json"),
@@ -348,6 +356,8 @@ async function bootstrap(): Promise<void> {
     mimoCachePath: path.join(app.getPath("userData"), "mimo-models.json"),
     mimoBinary: locateLocalBinary("mimo"),
     opencodeBinary: locateLocalBinary("opencode"),
+    opencodeAcpReady:
+      opencodeHealth.available && opencodeHealth.protocolSupported,
   });
   const modelFavoritesService = new ModelFavoritesService({
     filePath: path.join(app.getPath("userData"), "model-favorites.json"),

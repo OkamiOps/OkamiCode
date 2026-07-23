@@ -24,6 +24,34 @@ function cachePaths() {
 }
 
 describe("Cursor model catalog", () => {
+  it("offers OpenCode only after the ACP command is verified", () => {
+    const paths = cachePaths();
+    const unavailable = createModelCatalogService({
+      cachePath: paths.claude,
+      opencodeBinary: "/real/opencode",
+      opencodeAcpReady: false,
+    });
+    const ready = createModelCatalogService({
+      cachePath: paths.claude,
+      opencodeBinary: "/real/opencode",
+      opencodeAcpReady: true,
+    });
+
+    expect(
+      unavailable.list().find((entry) => entry.runtimeKind === "opencode"),
+    ).toMatchObject({
+      routeKind: "unavailable",
+      models: [],
+      source: expect.stringMatching(/ACP.*n.o.*comprovado/iu),
+    });
+    expect(
+      ready.list().find((entry) => entry.runtimeKind === "opencode"),
+    ).toMatchObject({
+      routeKind: "native",
+      models: [{ id: "default" }],
+    });
+  });
+
   it("extracts AGY models from pseudo-terminal output without treating logs as models", () => {
     expect(
       parseNamedModelsFromCli(

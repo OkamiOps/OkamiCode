@@ -71,17 +71,23 @@ O restante do trabalho também entra no mesmo cockpit local: chat independente, 
 
 ## Runtimes suportados
 
-| Runtime             | Adapter                  | Origem típica da conta | Observações                                                                |
-| ------------------- | ------------------------ | ---------------------- | -------------------------------------------------------------------------- |
-| Claude Code         | Nativo                   | Assinatura Anthropic   | Sessões, hooks, ferramentas, aprovações, uso e modelos quando expostos     |
-| Codex               | App-server nativo        | Assinatura OpenAI      | Sessões, modelos, effort, aprovações, ferramentas, uso e background        |
-| Cursor Agent        | Nativo                   | Assinatura Cursor      | Catálogo e stream estruturado dependem do CLI instalado                    |
-| Antigravity (`agy`) | Nativo + companion local | Assinatura Google AI   | O companion de hooks é local; capacidades e cota dependem da versão        |
-| Grok CLI            | Nativo                   | Assinatura xAI         | Sessões e saída estruturada quando suportadas pelo CLI                     |
-| MiMo Code           | Nativo                   | Token Plan Xiaomi MiMo | Execução e modelos; a cota pode continuar disponível apenas no console web |
-| MiniMax (`mmx`)     | Nativo                   | Token Plan MiniMax     | Texto, catálogo e janelas de uso quando expostos                           |
+| Runtime             | Adapter                  | Origem típica da conta      | Observações                                                                |
+| ------------------- | ------------------------ | --------------------------- | -------------------------------------------------------------------------- |
+| Claude Code         | Nativo                   | Assinatura Anthropic        | Sessões, hooks, ferramentas, aprovações, uso e modelos quando expostos     |
+| Codex               | App-server nativo        | Assinatura OpenAI           | Sessões, modelos, effort, aprovações, ferramentas, uso e background        |
+| Cursor Agent        | Nativo                   | Assinatura Cursor           | Catálogo e stream estruturado dependem do CLI instalado                    |
+| Antigravity (`agy`) | Nativo + companion local | Assinatura Google AI        | O companion de hooks é local; capacidades e cota dependem da versão        |
+| Grok CLI            | Nativo                   | Assinatura xAI              | Sessões e saída estruturada quando suportadas pelo CLI                     |
+| MiMo Code           | Nativo                   | Token Plan Xiaomi MiMo      | Execução e modelos; a cota pode continuar disponível apenas no console web |
+| MiniMax (`mmx`)     | Nativo                   | Token Plan MiniMax          | Texto, catálogo e janelas de uso quando expostos                           |
+| OpenCode            | ACP                      | Conta escolhida no OpenCode | Sessões, tools, aprovações e modelos após validar `opencode acp`           |
 
 O OkamiCode não instala nem autentica esses CLIs. Instale cada CLI separadamente, use o login oficial e confira em **Configurações** o binário, a versão e as capacidades realmente detectadas.
+
+O OpenCode entra pelo servidor ACP oficial. O BB é uma referência arquitetural
+para threads persistentes, direcionáveis e handoff explícito; ele não é
+embutido como um segundo orquestrador. Consulte
+[Fronteira de runtimes e harnesses](docs/architecture/runtime-harness-boundary.md).
 
 ## Arquitetura
 
@@ -99,6 +105,7 @@ flowchart LR
   ORCH --> GROK["Grok CLI"]
   ORCH --> MIMO["MiMo Code"]
   ORCH --> MINIMAX["MiniMax mmx"]
+  ORCH --> OPENCODE["OpenCode ACP"]
   MAIN --> CONNECTORS["IMAP/SMTP · OAuth Google\nagenda · memória local"]
 ```
 

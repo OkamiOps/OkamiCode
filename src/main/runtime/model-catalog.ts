@@ -255,6 +255,7 @@ export interface ModelCatalogServiceOptions {
   mimoCachePath?: string;
   mimoBinary?: string | null;
   opencodeBinary?: string | null;
+  opencodeAcpReady?: boolean;
   executeNative?: CursorModelListExecutor;
   now?: () => Date;
 }
@@ -777,6 +778,7 @@ export function createModelCatalogService(
     options.opencodeBinary === undefined
       ? locateLocalBinary("opencode")
       : options.opencodeBinary;
+  const opencodeAcpReady = options.opencodeAcpReady ?? false;
   const executeCursor = options.executeCursor ?? executeCursorModelList;
   const executeNative = options.executeNative ?? executeCursorModelList;
   const executeMimo = options.executeNative ?? executeMimoModelList;
@@ -1048,11 +1050,13 @@ export function createModelCatalogService(
         {
           runtimeKind: "opencode",
           providerLabel: "OpenCode",
-          routeKind: opencodeBinary ? "native" : "unavailable",
-          source: opencodeBinary
-            ? "provider e modelo padrão configurados no OpenCode"
-            : "OpenCode CLI não encontrado",
-          models: opencodeBinary
+          routeKind: opencodeAcpReady ? "native" : "unavailable",
+          source: opencodeAcpReady
+            ? "OpenCode ACP · provider e modelo padrão configurados"
+            : opencodeBinary
+              ? "OpenCode encontrado · protocolo ACP não comprovado"
+              : "OpenCode CLI não encontrado",
+          models: opencodeAcpReady
             ? [
                 {
                   id: "default",

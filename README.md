@@ -71,17 +71,23 @@ The product also brings the rest of the workday into the same local cockpit: ind
 
 ## Supported runtimes
 
-| Runtime             | Adapter                  | Typical account source | Notes                                                                                   |
-| ------------------- | ------------------------ | ---------------------- | --------------------------------------------------------------------------------------- |
-| Claude Code         | Native                   | Anthropic subscription | Sessions, hooks, tools, approvals, usage, and model discovery where exposed             |
-| Codex               | Native app-server        | OpenAI subscription    | Sessions, models, effort, approvals, tools, usage, and background work                  |
-| Cursor Agent        | Native                   | Cursor subscription    | Model catalog and structured session stream depend on the installed CLI                 |
-| Antigravity (`agy`) | Native + local companion | Google AI subscription | Hook companion is installed locally; capability and quota support are version-dependent |
-| Grok CLI            | Native                   | xAI subscription       | Native sessions and structured output where supported by the CLI                        |
-| MiMo Code           | Native                   | Xiaomi MiMo token plan | Execution and model discovery are supported; quota may remain web-console-only          |
-| MiniMax (`mmx`)     | Native                   | MiniMax token plan     | Text execution, model discovery, and native usage windows where exposed                 |
+| Runtime             | Adapter                  | Typical account source    | Notes                                                                                   |
+| ------------------- | ------------------------ | ------------------------- | --------------------------------------------------------------------------------------- |
+| Claude Code         | Native                   | Anthropic subscription    | Sessions, hooks, tools, approvals, usage, and model discovery where exposed             |
+| Codex               | Native app-server        | OpenAI subscription       | Sessions, models, effort, approvals, tools, usage, and background work                  |
+| Cursor Agent        | Native                   | Cursor subscription       | Model catalog and structured session stream depend on the installed CLI                 |
+| Antigravity (`agy`) | Native + local companion | Google AI subscription    | Hook companion is installed locally; capability and quota support are version-dependent |
+| Grok CLI            | Native                   | xAI subscription          | Native sessions and structured output where supported by the CLI                        |
+| MiMo Code           | Native                   | Xiaomi MiMo token plan    | Execution and model discovery are supported; quota may remain web-console-only          |
+| MiniMax (`mmx`)     | Native                   | MiniMax token plan        | Text execution, model discovery, and native usage windows where exposed                 |
+| OpenCode            | ACP                      | OpenCode-selected account | Sessions, tools, approvals, and models after `opencode acp` is verified                 |
 
 OkamiCode does not ship or authenticate these CLIs for you. Install each provider CLI separately, sign in through its official flow, and use **Settings** to verify the exact binary, version, and capabilities detected on the machine.
+
+OpenCode is integrated through its official ACP server. BB is an architectural
+reference for persistent, steerable threads and explicit handoff; it is not
+embedded as a second orchestrator. See
+[Runtime and harness boundary](docs/architecture/runtime-harness-boundary.md).
 
 ## Architecture
 
@@ -99,6 +105,7 @@ flowchart LR
   ORCH --> GROK["Grok CLI"]
   ORCH --> MIMO["MiMo Code"]
   ORCH --> MINIMAX["MiniMax mmx"]
+  ORCH --> OPENCODE["OpenCode ACP"]
   MAIN --> CONNECTORS["IMAP/SMTP · Google OAuth\ncalendar · local memory"]
 ```
 

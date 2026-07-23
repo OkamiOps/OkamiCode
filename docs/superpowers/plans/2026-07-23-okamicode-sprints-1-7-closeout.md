@@ -36,7 +36,7 @@
 - Consumes: `RuntimeAdapter`, `RuntimeManifest`, `RuntimeHealth`.
 - Produces: `RuntimeRegistry.health(kind)`, `RuntimeRegistry.healthAll()`, and one truthful manifest per registered runtime.
 
-- [ ] **Step 1: Write failing capability and registry-health tests**
+- [x] **Step 1: Write failing capability and registry-health tests**
 
 ```ts
 it("advertises usage only when the adapter emits canonical usage", () => {
@@ -50,23 +50,23 @@ it("reports health for every registered runtime from the same registry", async (
 });
 ```
 
-- [ ] **Step 2: Run the focused tests and verify the expected RED**
+- [x] **Step 2: Run the focused tests and verify the expected RED**
 
 Run: `pnpm vitest run src/main/runtime/manifest.test.ts src/main/runtime/registry.test.ts src/main/ecosystem/cli-capabilities.test.ts`
 
 Expected: FAIL because usage capabilities and registry health are incomplete.
 
-- [ ] **Step 3: Implement the minimal single-source capability contract**
+- [x] **Step 3: Implement the minimal single-source capability contract**
 
 Add `usage` to manifests only for adapters that emit `usage_reported`; add registry health methods that call the registered adapter's `detect()`; make CLI capability projection consume the matching manifest rather than a second hard-coded empty list.
 
-- [ ] **Step 4: Run the focused tests and verify GREEN**
+- [x] **Step 4: Run the focused tests and verify GREEN**
 
 Run: `pnpm vitest run src/main/runtime/manifest.test.ts src/main/runtime/registry.test.ts src/main/ecosystem/cli-capabilities.test.ts`
 
 Expected: PASS.
 
-- [ ] **Step 5: Commit sprint 1**
+- [x] **Step 5: Commit sprint 1**
 
 ```bash
 git add src/main/runtime src/main/ecosystem
@@ -88,7 +88,7 @@ git commit -m "fix: make runtime capabilities authoritative"
 - Consumes: official OpenCode ACP session/update/permission protocol.
 - Produces: selectable OpenCode runtime, visible ACP health, and a documented decision that BB is a reference for steerable threads/handoffs—not an embedded runtime.
 
-- [ ] **Step 1: Write failing OpenCode catalog and conformance tests**
+- [x] **Step 1: Write failing OpenCode catalog and conformance tests**
 
 ```ts
 it("shows OpenCode only when ACP is verified", async () => {
@@ -97,21 +97,21 @@ it("shows OpenCode only when ACP is verified", async () => {
 });
 ```
 
-- [ ] **Step 2: Run the focused tests and verify RED**
+- [x] **Step 2: Run the focused tests and verify RED**
 
 Run: `pnpm vitest run src/main/runtime/opencode/adapter.test.ts src/main/runtime/model-catalog.test.ts`
 
 Expected: FAIL if catalog readiness does not follow ACP health.
 
-- [ ] **Step 3: Implement only the missing ACP readiness behavior**
+- [x] **Step 3: Implement only the missing ACP readiness behavior**
 
 Keep the existing adapter and permission bridge; remove any model entry that claims readiness without `opencode acp` being detected.
 
-- [ ] **Step 4: Document the BB decision with primary-source links**
+- [x] **Step 4: Document the BB decision with primary-source links**
 
 Record three adopted patterns: steerable persistent threads, explicit agent handoff, and provider-CLI reuse. Record three rejected choices: embedding BB, running a second orchestrator, and adding BB telemetry/runtime state to OkamiCode.
 
-- [ ] **Step 5: Run fixture conformance and the opt-in OpenCode live smoke**
+- [x] **Step 5: Run fixture conformance and the opt-in OpenCode live smoke**
 
 Run: `pnpm vitest run src/main/runtime/opencode/adapter.test.ts src/main/runtime/model-catalog.test.ts`
 
@@ -119,7 +119,7 @@ Live run: `OKAMI_RUN_LIVE_CLI_TESTS=1 OKAMI_RUN_OPENCODE_LIVE_TESTS=1 pnpm vites
 
 Expected: fixture tests PASS; live test returns `OKAMI_OPENCODE_SMOKE` or records an honest environment/authentication failure.
 
-- [ ] **Step 6: Commit sprint 2**
+- [x] **Step 6: Commit sprint 2**
 
 ```bash
 git add src/main/runtime docs/architecture README.md README.pt-BR.md

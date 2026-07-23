@@ -243,7 +243,7 @@ function writeDiagnostic(stream: PassThrough, message: string): void {
   if (!stream.writableEnded) stream.write(`${redactDiagnostic(message)}\n`);
 }
 
-function redactDiagnostic(message: string): string {
+export function redactDiagnostic(message: string): string {
   return message
     .replace(
       /((?:"?(?:api[_-]?key|authorization|cookie|password|secret|token)"?)\s*[:=]\s*)(?:"[^"]*"|'[^']*'|[^\r\n,;]+)/gi,
