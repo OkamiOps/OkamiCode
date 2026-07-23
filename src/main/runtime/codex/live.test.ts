@@ -56,7 +56,12 @@ describe.skipIf(process.env.OKAMI_RUN_LIVE_CLI_TESTS !== "1")(
         );
       } finally {
         await client?.close();
-        await rm(temporaryCodexHome, { recursive: true, force: true });
+        await rm(temporaryCodexHome, {
+          recursive: true,
+          force: true,
+          maxRetries: 5,
+          retryDelay: 100,
+        });
       }
     }, 30_000);
   },

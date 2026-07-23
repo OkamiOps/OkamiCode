@@ -354,41 +354,41 @@ git commit -m "feat: surface lane health and provider limits"
 - Consumes: completed sprints 1–6.
 - Produces: validated DMG and remote branch evidence.
 
-- [ ] **Step 1: Run the full Node gate**
+- [x] **Step 1: Run the full Node gate**
 
 Run: `pnpm rebuild better-sqlite3-multiple-ciphers && pnpm check`
 
 Expected: typecheck, lint, format, and all non-live tests PASS.
 
-- [ ] **Step 2: Run provider live smokes**
+- [x] **Step 2: Run provider live smokes**
 
 Run each provider-specific smoke with the smallest exact-string prompt and record reply, terminal event, and usage state. Do not retry a paid turn more than once.
 
 Expected: Claude, Codex, Cursor, AGY, Grok, MiMo, MiniMax, and OpenCode either pass or expose a precise environment/authentication blocker in the UI and report.
 
-- [ ] **Step 3: Package for Electron ABI**
+- [x] **Step 3: Package for Electron ABI**
 
 Run: `pnpm package`
 
 Expected: DMG and blockmap created; unsigned status reported honestly.
 
-- [ ] **Step 4: Run Playwright Electron visual QA**
+- [x] **Step 4: Run Playwright Electron visual QA**
 
 Run: `pnpm test:e2e`
 
 Expected: all Electron tests PASS with no horizontal overflow, no modal overlap, Node isolation preserved, and screenshots generated.
 
-- [ ] **Step 5: Inspect screenshots**
+- [x] **Step 5: Inspect screenshots**
 
 Inspect Code at 1440×900 plus narrow sidebar and open lane-health states. Reject clipped text, inaccessible contrast, inconsistent control heights, hidden focus, or motion that ignores reduced-motion.
 
-- [ ] **Step 6: Rebuild Node ABI and rerun final gate**
+- [x] **Step 6: Rebuild Node ABI and rerun final gate**
 
 Run: `pnpm rebuild better-sqlite3-multiple-ciphers && pnpm check`
 
 Expected: PASS after packaging.
 
-- [ ] **Step 7: Commit final release evidence**
+- [x] **Step 7: Commit final release evidence**
 
 ```bash
 git add .
@@ -401,14 +401,14 @@ Push the named branch, verify the remote SHA equals local `HEAD`, and create or 
 
 ## Completion Audit
 
-- [ ] All seven sprint commits exist or an equivalent smaller commit set proves the same deliverables.
-- [ ] `pnpm check` passes after the final native-module rebuild.
-- [ ] `pnpm test:e2e` passes outside the macOS sandbox.
-- [ ] Every runtime has fixture conformance evidence.
-- [ ] Every installed/authenticated runtime has one bounded live-smoke result.
-- [ ] Context transfer contains conversation and sanitized operational state exactly once.
-- [ ] Compaction never calls a model and never slices a message mid-entry.
-- [ ] Tokens and quotas are numeric only when sourced; unavailable states are visible.
-- [ ] OpenCode ACP and the BB architectural boundary are documented.
-- [ ] DMG exists with checksum and signing status.
+- [x] All seven sprint commits exist or an equivalent smaller commit set proves the same deliverables.
+- [x] `pnpm check` passes after the final native-module rebuild.
+- [x] `pnpm test:e2e` passes outside the macOS sandbox.
+- [x] Every runtime has fixture conformance evidence.
+- [x] Every installed/authenticated runtime has one bounded live-smoke result.
+- [x] Context transfer contains conversation and sanitized operational state exactly once.
+- [x] Compaction never calls a model and never slices a message mid-entry.
+- [x] Tokens and quotas are numeric only when sourced; unavailable states are visible.
+- [x] OpenCode ACP and the BB architectural boundary are documented.
+- [x] DMG exists with checksum and signing status.
 - [ ] Local branch and remote branch resolve to the same commit.

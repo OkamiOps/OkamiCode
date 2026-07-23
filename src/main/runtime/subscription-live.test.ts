@@ -1,14 +1,21 @@
 import { randomUUID } from "node:crypto";
+import { execFile } from "node:child_process";
+import { promisify } from "node:util";
 import { describe, expect, it } from "vitest";
 import type { LaneId, RunId, TaskId } from "../../shared/ids";
 import { locateLocalBinary } from "../ecosystem/cli-capabilities";
 import type { CanonicalEvent } from "../../shared/contracts/event";
+import { AgyAdapter } from "./agy/adapter";
+import { AgyCompanionServer } from "./agy/companion-server";
 import { CursorAdapter } from "./cursor/adapter";
+import { GrokAdapter } from "./grok/adapter";
+import { MimoAdapter } from "./mimo/adapter";
 import { MiniMaxAdapter } from "./minimax/adapter";
 import { connectAcpProcess } from "./acp/connection";
 import { executableEnvironment } from "./commands";
 
 const live = process.env.OKAMI_RUN_LIVE_CLI_TESTS === "1";
+const execFileAsync = promisify(execFile);
 
 describe.skipIf(!live)("native subscription runtimes live smoke", () => {
   it("runs one Cursor Agent turn through the production adapter", async () => {
@@ -36,6 +43,99 @@ describe.skipIf(!live)("native subscription runtimes live smoke", () => {
     const reply = completedText(events);
     process.stdout.write(`Cursor reply: ${reply}\n`);
     expect(reply).toContain("OKAMI_CURSOR_SMOKE");
+    expect(events.at(-1)?.kind).toBe("run_completed");
+  }, 120_000);
+
+  it("runs one Antigravity turn through the production adapter", async () => {
+    const command = locateLocalBinary("agy");
+    expect(command).toBeTruthy();
+    const laneId = randomUUID() as LaneId;
+    const adapter = new AgyAdapter({
+      command: command!,
+      taskIdForRun: () => randomUUID() as TaskId,
+      authorizer: async () => "allow",
+      pluginStatus: async () => {
+        const { stdout } = await execFileAsync(command!, ["plugin", "list"], {
+          env: executableEnvironment(command!, { ...process.env }),
+        });
+        const entry = stdout
+          .split(/\r?\n/u)
+          .find((line) => line.includes("okami-agy-companion"));
+        return entry && !/\bdisabled\b/iu.test(entry) ? "enabled" : "absent";
+      },
+      companionFactory: (onHook) => new AgyCompanionServer({ onHook }),
+    });
+    const session = await adapter.start({
+      laneId,
+      cwd: process.cwd(),
+      permissionMode: "manual",
+    });
+    const run = await adapter.sendTurn({
+      runId: randomUUID() as RunId,
+      laneId,
+      nativeSessionId: session.nativeSessionId,
+      input: "Reply exactly OKAMI_AGY_SMOKE",
+    });
+    const events = await collect(run.events);
+    const reply = completedText(events);
+    process.stdout.write(`Antigravity reply: ${reply}\n`);
+    expect(reply).toContain("OKAMI_AGY_SMOKE");
+    expect(events.at(-1)?.kind).toBe("run_completed");
+  }, 120_000);
+
+  it("runs one Grok turn through the production adapter", async () => {
+    const command = locateLocalBinary("grok");
+    expect(command).toBeTruthy();
+    const laneId = randomUUID() as LaneId;
+    const adapter = new GrokAdapter({
+      command: command!,
+      taskIdForRun: () => randomUUID() as TaskId,
+    });
+    const session = await adapter.start({
+      laneId,
+      cwd: process.cwd(),
+      model: "grok-4.5",
+      permissionMode: "manual",
+    });
+    const run = await adapter.sendTurn({
+      runId: randomUUID() as RunId,
+      laneId,
+      nativeSessionId: session.nativeSessionId,
+      input: "Reply exactly OKAMI_GROK_SMOKE",
+      model: "grok-4.5",
+    });
+    const events = await collect(run.events);
+    const reply = completedText(events);
+    process.stdout.write(`Grok reply: ${reply}\n`);
+    expect(reply).toContain("OKAMI_GROK_SMOKE");
+    expect(events.at(-1)?.kind).toBe("run_completed");
+  }, 120_000);
+
+  it("runs one MiMo Code turn through the production adapter", async () => {
+    const command = locateLocalBinary("mimo");
+    expect(command).toBeTruthy();
+    const laneId = randomUUID() as LaneId;
+    const adapter = new MimoAdapter({
+      command: command!,
+      taskIdForRun: () => randomUUID() as TaskId,
+    });
+    const session = await adapter.start({
+      laneId,
+      cwd: process.cwd(),
+      model: "xiaomi/mimo-v2.5-pro",
+      permissionMode: "manual",
+    });
+    const run = await adapter.sendTurn({
+      runId: randomUUID() as RunId,
+      laneId,
+      nativeSessionId: session.nativeSessionId,
+      input: "Reply exactly OKAMI_MIMO_SMOKE",
+      model: "xiaomi/mimo-v2.5-pro",
+    });
+    const events = await collect(run.events);
+    const reply = completedText(events);
+    process.stdout.write(`MiMo reply: ${reply}\n`);
+    expect(reply).toContain("OKAMI_MIMO_SMOKE");
     expect(events.at(-1)?.kind).toBe("run_completed");
   }, 120_000);
 
