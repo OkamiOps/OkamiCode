@@ -39,6 +39,9 @@ function authoritativeContext(delta: DeltaPackage): string {
       ? delta.conversation
           .map((message) => {
             if (message.role === "user") return `- Você: ${message.body}`;
+            if (message.role === "context") {
+              return `- Contexto operacional: ${message.body}`;
+            }
             const agent = [message.providerLabel, message.model]
               .filter(Boolean)
               .join(" · ");

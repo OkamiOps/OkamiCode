@@ -395,6 +395,44 @@ describe("LaneService", () => {
     );
   });
 
+  it("hands sanitized operational context to a sibling lane exactly once", async () => {
+    const h = createLaneHarness({ nativeSession: "target-session" });
+    const siblingLaneId = h.addLane({ nativeSession: "sibling-session" });
+    const conversationId = crypto.randomUUID();
+    const now = new Date().toISOString();
+    h.fx.db
+      .prepare(
+        `INSERT INTO conversations (id, task_id, kind, created_at, updated_at)
+         VALUES (?, ?, 'workbench', ?, ?)`,
+      )
+      .run(conversationId, h.fx.taskId, now, now);
+    h.fx.db
+      .prepare(
+        `INSERT INTO messages
+         (id, conversation_id, sequence, role, content_json, created_at)
+         VALUES (?, ?, 1, 'context', ?, ?)`,
+      )
+      .run(
+        crypto.randomUUID(),
+        conversationId,
+        JSON.stringify({
+          body: "Arquivos alterados: src/a.ts",
+          laneId: siblingLaneId,
+          contextKind: "tool_call_completed",
+        }),
+        now,
+      );
+
+    const opened = await h.openExisting();
+    await h.service.sendTurn(opened, "revise o resultado");
+    await h.service.sendTurn(opened, "continue");
+
+    expect(h.fakeRuntime.sentTurns[0]?.input).toContain(
+      "Arquivos alterados: src/a.ts",
+    );
+    expect(h.fakeRuntime.sentTurns[1]?.input).toBe("continue");
+  });
+
   it("builds the exact canonical delta from persisted projections only", () => {
     const h = createLaneHarness({ cursor: 1 });
     const task = h.fx.tasks.findById(h.fx.taskId);

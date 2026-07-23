@@ -1778,6 +1778,7 @@ async function persistAndForwardEvent(
   }
   state.events.append(event);
   persistAssistantMessage(state, event);
+  persistOperationalContext(state, event);
   // Without this the run row stays "running" forever: the terminal event
   // was streamed to the UI but never written back to the run itself.
   const terminal = TERMINAL_RUN_KINDS[event.kind];
@@ -1834,6 +1835,73 @@ function persistAssistantMessage(
       }),
       event.occurredAt,
     );
+}
+
+function persistOperationalContext(
+  state: AppState,
+  event: ReturnType<typeof canonicalEventSchema.parse>,
+): void {
+  const body = operationalContextBody(event);
+  if (!body) return;
+  const conversationId = conversationForTask(state, event.taskId);
+  const messageId = `context:${event.id}`;
+  const exists = state.database
+    .prepare(`SELECT 1 FROM messages WHERE id = ?`)
+    .get(messageId);
+  if (exists) return;
+  const next = state.database
+    .prepare(
+      `SELECT COALESCE(MAX(sequence), 0) + 1 AS seq
+       FROM messages WHERE conversation_id = ?`,
+    )
+    .get(conversationId) as { seq: number };
+  state.database
+    .prepare(
+      `INSERT OR IGNORE INTO messages
+       (id, conversation_id, sequence, role, content_json, created_at)
+       VALUES (?, ?, ?, 'context', ?, ?)`,
+    )
+    .run(
+      messageId,
+      conversationId,
+      next.seq,
+      JSON.stringify({
+        body,
+        laneId: event.laneId,
+        contextKind: event.kind,
+      }),
+      event.occurredAt,
+    );
+}
+
+function operationalContextBody(
+  event: ReturnType<typeof canonicalEventSchema.parse>,
+): string | null {
+  let candidate: unknown;
+  if (event.kind === "tool_call_completed") {
+    candidate =
+      event.payload.summary ??
+      event.payload.title ??
+      event.payload.name ??
+      "Ferramenta concluída";
+  } else if (event.kind === "approval_resolved") {
+    candidate =
+      event.payload.summary ??
+      (typeof event.payload.decision === "string"
+        ? `Aprovação: ${event.payload.decision}`
+        : "Aprovação resolvida");
+  } else if (event.kind === "run_failed") {
+    candidate =
+      event.payload.summary ??
+      event.payload.message ??
+      event.payload.reason ??
+      "Execução falhou";
+  } else {
+    return null;
+  }
+  const sanitized = sanitizeValue(candidate, new WeakSet());
+  if (typeof sanitized !== "string" || !sanitized.trim()) return null;
+  return sanitized.trim().slice(0, 800);
 }
 
 function nativeSessionPromotion(

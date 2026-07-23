@@ -22,11 +22,12 @@ export interface DeltaPackage {
   }>;
   conversation: Array<{
     sequence: number;
-    role: "user" | "assistant";
+    role: "user" | "assistant" | "context";
     body: string;
     laneId: string | null;
     providerLabel?: string;
     model?: string;
+    contextKind?: string;
   }>;
   events: Array<{ sequence: number; kind: string; summary: string }>;
 }
@@ -44,7 +45,7 @@ interface ArtifactRow {
 
 interface ConversationRow {
   sequence: number;
-  role: "user" | "assistant";
+  role: "user" | "assistant" | "context";
   content_json: string;
 }
 
@@ -101,7 +102,7 @@ export class DeltaBuilder {
            JOIN conversations ON conversations.id = messages.conversation_id
            WHERE conversations.task_id = ?
              AND conversations.kind = 'workbench'
-             AND messages.role IN ('user', 'assistant')
+             AND messages.role IN ('user', 'assistant', 'context')
            ORDER BY messages.created_at ASC, messages.sequence ASC`,
         )
         .all(task.id) as ConversationRow[]
@@ -127,6 +128,9 @@ export class DeltaBuilder {
             : {}),
           ...(typeof content.model === "string"
             ? { model: content.model }
+            : {}),
+          ...(typeof content.contextKind === "string"
+            ? { contextKind: content.contextKind }
             : {}),
         },
       ];

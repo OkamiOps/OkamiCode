@@ -309,6 +309,68 @@ describe("lane IPC safety", () => {
     });
   });
 
+  it("persists sanitized operational context for sibling providers", async () => {
+    const { event, fixture, handlers, state } = harness();
+    async function* events() {
+      yield fixture.event({
+        kind: "tool_call_completed",
+        runId: fixture.runId as RunId,
+        payload: {
+          title: "Editou 2 arquivos",
+          status: "completed",
+          summary: "Arquivos alterados: src/a.ts, src/b.ts",
+          rawOutput: "Authorization: Bearer do-not-share-this-token",
+        },
+      });
+      yield fixture.event({
+        kind: "approval_resolved",
+        sequence: 2,
+        runId: fixture.runId as RunId,
+        payload: {
+          decision: "allow_once",
+          summary: "Aprovação: escrita permitida uma vez",
+          authorization: "Bearer do-not-share-this-token",
+        },
+      });
+      yield fixture.event({
+        kind: "run_failed",
+        sequence: 3,
+        runId: fixture.runId as RunId,
+        payload: {
+          message: "Falha: build terminou com código 1",
+          environment: { API_KEY: "do-not-share-this-token" },
+        },
+      });
+    }
+    configureDeferredRun(state, fixture, events());
+
+    await handlers.get("lane:sendTurn")?.(event, {
+      laneId: fixture.laneId,
+      input: "Faça a correção",
+    });
+
+    await vi.waitFor(() => {
+      const rows = fixture.db
+        .prepare(
+          `SELECT role, content_json FROM messages ORDER BY sequence ASC`,
+        )
+        .all() as Array<{ role: string; content_json: string }>;
+      expect(rows.map((row) => row.role)).toEqual([
+        "user",
+        "context",
+        "context",
+        "context",
+      ]);
+      const serialized = JSON.stringify(rows);
+      expect(serialized).toContain("Arquivos alterados: src/a.ts, src/b.ts");
+      expect(serialized).toContain("Aprovação: escrita permitida uma vez");
+      expect(serialized).toContain("Falha: build terminou com código 1");
+      expect(serialized).not.toContain("do-not-share-this-token");
+      expect(serialized).not.toContain("rawOutput");
+      expect(serialized).not.toContain("environment");
+    });
+  });
+
   it("promotes a matching event and refreshes an equal idempotent binding", async () => {
     const { event, fixture, handlers, state } = harness();
     async function* events() {
