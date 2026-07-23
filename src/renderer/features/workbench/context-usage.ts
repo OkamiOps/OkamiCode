@@ -20,7 +20,11 @@ export function describeSessionContext(
     return null;
 
   const compact = (value: number) =>
-    value >= 1000 ? `${Math.round(value / 1000)}k` : `${value}`;
+    value >= 1_000_000
+      ? `${Number((value / 1_000_000).toFixed(1))}M`
+      : value >= 1000
+        ? `${Math.round(value / 1000)}k`
+        : `${value}`;
   const breakdown = [
     {
       label: "Entrada faturada",
@@ -51,7 +55,13 @@ export function describeSessionContext(
     usage.contextTokens === undefined ||
     !window
   ) {
-    return { label: "janela indisponível", percent: null, breakdown };
+    return {
+      label: window
+        ? `Contexto · ${compact(window)} máx.`
+        : "Contexto sem leitura",
+      percent: null,
+      breakdown,
+    };
   }
 
   return {

@@ -137,6 +137,13 @@ export function WorkbenchPage({ api = workbenchApi }: WorkbenchPageProps) {
     setActivePanel(active);
     persistLayout(next, active);
   };
+  const togglePanel = (mode: WorkspacePanelMode) => {
+    if (activePanelRef.current === mode) {
+      closePanel(mode);
+      return;
+    }
+    focusPanel(mode);
+  };
   const panelPane = useResizablePane({
     storageKey: "okami.width.panel",
     initial: 420,
@@ -408,9 +415,10 @@ export function WorkbenchPage({ api = workbenchApi }: WorkbenchPageProps) {
 
   const panelToggle = (mode: WorkspacePanelMode) => (
     <button
+      aria-pressed={activePanel === mode}
       className="chat-topbar__tool"
       data-active={activePanel === mode || undefined}
-      onClick={() => focusPanel(mode)}
+      onClick={() => togglePanel(mode)}
       title={PANEL_TITLES[mode]}
       type="button"
     >
@@ -507,7 +515,7 @@ export function WorkbenchPage({ api = workbenchApi }: WorkbenchPageProps) {
                 window.location.reload();
               });
           }}
-          onTogglePanel={focusPanel}
+          onTogglePanel={togglePanel}
         />
       </div>
       <div className="chat-split">

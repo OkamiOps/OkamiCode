@@ -15,7 +15,7 @@ describe("describeSessionContext", () => {
     );
 
     expect(context).toMatchObject({
-      label: "janela indisponível",
+      label: "Contexto · 1M máx.",
       percent: null,
     });
     expect(context?.label).not.toContain("861k");

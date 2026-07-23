@@ -72,3 +72,43 @@ test("renderer keeps Node isolated and the preload bridge available", async () =
     app.process().kill("SIGTERM");
   }
 });
+
+// eslint-disable-next-line no-empty-pattern
+test("Code project controls persist and remain visually stable", async ({}, testInfo) => {
+  const app = await launchIsolatedApp();
+  try {
+    const page = await app.firstWindow();
+    await page.setViewportSize({ width: 1440, height: 900 });
+    await page.evaluate(async () => {
+      await window.okami.invoke["task:create"]({
+        title: "Visual QA",
+        objective: "Validar a experiência do painel Code",
+        workspacePath: "/Users/marcos/Documents/Git/Chat-Panel",
+        useWorktree: false,
+      });
+    });
+    await page.reload();
+    await page.getByRole("link", { name: "Code" }).click();
+
+    const project = page.locator(".chat-session", { hasText: "Visual QA" });
+    await expect(project).toBeVisible();
+
+    await project.hover();
+    await page.getByRole("button", { name: "Opções de Visual QA" }).click();
+    await page.getByRole("menuitem", { name: "Fixar projeto" }).click();
+    await expect(page.getByLabel("Projeto fixado: Visual QA")).toBeVisible();
+
+    await project.hover();
+    await page.getByRole("button", { name: "Opções de Visual QA" }).click();
+    await page.getByRole("menuitemradio", { name: "Usar cor violeta" }).click();
+    await expect(project).toHaveAttribute("data-color", "violet");
+
+    await expectNoPageOverflow(page);
+    await page.screenshot({
+      path: testInfo.outputPath("code-project-controls.png"),
+      fullPage: true,
+    });
+  } finally {
+    app.process().kill("SIGTERM");
+  }
+});

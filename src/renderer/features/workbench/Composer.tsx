@@ -906,7 +906,7 @@ export function Composer({
             </ul>
             <p className="context-pop__note">
               {contextPercent === null
-                ? "O harness informou tokens faturados agregados, mas não uma leitura da janela ativa. Eles não são somados como contexto."
+                ? "O runtime informa o limite do modelo, mas não a ocupação desta conversa. Entrada, cache e saída abaixo são faturamento — não são somados como contexto."
                 : "Leitura dedicada da janela ativa. Os valores abaixo são telemetria de faturamento."}
             </p>
           </div>

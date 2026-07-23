@@ -293,6 +293,37 @@ describe("WorkbenchPage", () => {
     });
   });
 
+  it("closes an active workspace panel when its toolbar action is clicked again", async () => {
+    renderWorkbenchFixture({
+      lanes: [claudeLane],
+      history: {
+        userMessages: [
+          {
+            id: "message-toggle",
+            laneId: claudeLaneId,
+            body: "Alternar painel",
+            at: "2026-07-18T12:00:00.000Z",
+          },
+        ],
+        events: [],
+      },
+    });
+
+    const changes = await screen.findByTitle("Alterações");
+    fireEvent.click(changes);
+    expect(
+      await screen.findByRole("region", { name: "Alterações" }),
+    ).toBeVisible();
+
+    fireEvent.click(changes);
+    expect(
+      screen.queryByRole("complementary", { name: "Painel de trabalho" }),
+    ).toBeNull();
+    expect(
+      JSON.parse(localStorage.getItem("okami.panelLayout") ?? "null"),
+    ).toEqual({ panels: [], active: null });
+  });
+
   it("keeps every workspace panel closed after navigating away and back", async () => {
     localStorage.setItem(
       "okami.panelLayout",

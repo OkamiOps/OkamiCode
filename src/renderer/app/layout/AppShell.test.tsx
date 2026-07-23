@@ -75,6 +75,66 @@ describe("AppShell", () => {
     expect(screen.getByText("agora")).toBeVisible();
   });
 
+  it("makes project pinning and color personalization visible and persistent", async () => {
+    installOkamiMock({
+      "task:list": [
+        {
+          id: "27ee79a7-d3c3-48dd-84c6-cb589a4cb606",
+          kind: "workbench",
+          title: "Alpha",
+          objective: "Primeiro projeto",
+          status: "active",
+          workspacePath: "/workspace/alpha",
+          createdAt: "2026-07-22T03:00:00.000Z",
+          updatedAt: "2026-07-23T09:00:00.000Z",
+        },
+        {
+          id: "94e1d8f5-1369-4c75-89c9-3ac95f071091",
+          kind: "workbench",
+          title: "Beta",
+          objective: "Segundo projeto",
+          status: "active",
+          workspacePath: "/workspace/beta",
+          createdAt: "2026-07-21T03:00:00.000Z",
+          updatedAt: "2026-07-22T09:00:00.000Z",
+        },
+      ],
+      "lane:list": [],
+    });
+    const { container } = renderApp("/workbench");
+    const user = userEvent.setup();
+
+    await user.click(
+      await screen.findByRole("button", { name: "Opções de Beta" }),
+    );
+    await user.click(screen.getByRole("menuitem", { name: "Fixar projeto" }));
+
+    expect(
+      container.querySelectorAll(".chat-session__title")[0],
+    ).toHaveTextContent("Beta");
+    expect(screen.getByLabelText("Projeto fixado: Beta")).toBeVisible();
+
+    await user.click(screen.getByRole("button", { name: "Opções de Beta" }));
+    await user.click(
+      screen.getByRole("menuitemradio", { name: "Usar cor violeta" }),
+    );
+
+    expect(screen.getByText("Beta").closest(".chat-session")).toHaveAttribute(
+      "data-color",
+      "violet",
+    );
+    expect(
+      JSON.parse(
+        localStorage.getItem("okami.code.project-preferences") ?? "null",
+      ),
+    ).toMatchObject({
+      pinned: ["94e1d8f5-1369-4c75-89c9-3ac95f071091"],
+      colors: {
+        "94e1d8f5-1369-4c75-89c9-3ac95f071091": "violet",
+      },
+    });
+  });
+
   it("opens a fresh workspace-free chat from the global action", async () => {
     renderApp("/workbench");
 

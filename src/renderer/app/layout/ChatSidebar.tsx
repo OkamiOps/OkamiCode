@@ -18,6 +18,16 @@ import { workbenchApi, type WorkbenchTask } from "../../features/workbench/api";
 import { workbenchClient } from "../../lib/ipc/client";
 import { useWorkbenchStore } from "../../features/workbench/store";
 
+const PROJECT_COLORS = [
+  { id: "orange", label: "laranja" },
+  { id: "cyan", label: "ciano" },
+  { id: "violet", label: "violeta" },
+  { id: "green", label: "verde" },
+  { id: "rose", label: "rosa" },
+  { id: "amber", label: "âmbar" },
+] as const;
+type ProjectColor = (typeof PROJECT_COLORS)[number]["id"];
+
 export function ChatSidebar() {
   const queryClient = useQueryClient();
   const navigate = useNavigate();
@@ -167,6 +177,14 @@ export function ChatSidebar() {
     setMenu(null);
   }
 
+  function setProjectColor(taskId: string, color: ProjectColor) {
+    updatePreferences({
+      ...preferences,
+      colors: { ...preferences.colors, [taskId]: color },
+    });
+    setMenu(null);
+  }
+
   return (
     <aside
       aria-label="Projetos do Code"
@@ -214,7 +232,7 @@ export function ChatSidebar() {
 
       <div className="code-projects-toolbar">
         <span>
-          <ArrowUpDown aria-hidden="true" size={12} /> Visão
+          <ArrowUpDown aria-hidden="true" size={12} /> Ordenar
         </span>
         <select
           aria-label="Ordenar projetos"
@@ -260,7 +278,9 @@ export function ChatSidebar() {
             {section.tasks.map((task) => (
               <div
                 className="chat-session"
+                data-color={preferences.colors[task.id] ?? "cyan"}
                 data-active={task.id === selectedTaskId || undefined}
+                data-pinned={preferences.pinned.includes(task.id) || undefined}
                 key={task.id}
                 onContextMenu={(event) => openMenu(event, task)}
               >
@@ -283,7 +303,16 @@ export function ChatSidebar() {
                     }}
                     type="button"
                   >
-                    <span className="chat-session__title">{task.title}</span>
+                    <span className="chat-session__title-row">
+                      <span className="chat-session__title">{task.title}</span>
+                      {preferences.pinned.includes(task.id) && (
+                        <Pin
+                          aria-label={`Projeto fixado: ${task.title}`}
+                          className="chat-session__pin"
+                          size={11}
+                        />
+                      )}
+                    </span>
                     <span className="chat-session__meta">
                       <span data-status={projectStatus(task.status).tone}>
                         <i aria-hidden="true" />
@@ -346,6 +375,27 @@ export function ChatSidebar() {
             >
               <Pencil size={13} /> Renomear projeto
             </button>
+            <span className="code-project-menu__label">Cor do projeto</span>
+            <span
+              aria-label={`Cor de ${menu.task.title}`}
+              className="code-project-menu__colors"
+              role="group"
+            >
+              {PROJECT_COLORS.map((color) => (
+                <button
+                  aria-checked={
+                    (preferences.colors[menu.task.id] ?? "cyan") === color.id
+                  }
+                  aria-label={`Usar cor ${color.label}`}
+                  data-color={color.id}
+                  key={color.id}
+                  onClick={() => setProjectColor(menu.task.id, color.id)}
+                  role="menuitemradio"
+                  title={color.label}
+                  type="button"
+                />
+              ))}
+            </span>
             <button
               disabled={!menu.task.workspacePath}
               onClick={() => {
@@ -413,6 +463,7 @@ interface ProjectPreferences {
   sort: ProjectSort;
   groupByWorkspace: boolean;
   pinned: string[];
+  colors: Record<string, ProjectColor>;
 }
 const projectPreferencesKey = "okami.code.project-preferences";
 function readProjectPreferences(): ProjectPreferences {
@@ -420,6 +471,15 @@ function readProjectPreferences(): ProjectPreferences {
     const value = JSON.parse(
       localStorage.getItem(projectPreferencesKey) ?? "null",
     ) as Partial<ProjectPreferences> | null;
+    const validColors = new Set<ProjectColor>(
+      PROJECT_COLORS.map((color) => color.id),
+    );
+    const colors = Object.fromEntries(
+      Object.entries(value?.colors ?? {}).filter(
+        (entry): entry is [string, ProjectColor] =>
+          validColors.has(entry[1] as ProjectColor),
+      ),
+    );
     return {
       sort: ["recent", "name", "workspace"].includes(value?.sort ?? "")
         ? value!.sort!
@@ -428,9 +488,15 @@ function readProjectPreferences(): ProjectPreferences {
       pinned: Array.isArray(value?.pinned)
         ? value.pinned.filter((id): id is string => typeof id === "string")
         : [],
+      colors,
     };
   } catch {
-    return { sort: "recent", groupByWorkspace: false, pinned: [] };
+    return {
+      sort: "recent",
+      groupByWorkspace: false,
+      pinned: [],
+      colors: {},
+    };
   }
 }
 function workspaceLabel(task: WorkbenchTask): string {
