@@ -87,13 +87,19 @@ describe("HomePage", () => {
 
     expect(await screen.findByText("1,5 mi")).toBeVisible();
     expect(await screen.findAllByText(/US\$\s*126,60/u)).not.toHaveLength(0);
+    expect(
+      screen.getByRole("button", {
+        name: /API consumida · período.*US\$\s*4,22/iu,
+      }),
+    ).toBeVisible();
     expect(screen.getByText(/US\$\s*410,00\/mês/u)).toBeVisible();
     expect(screen.getByText("1/7 dias · amostra curta")).toBeVisible();
-    expect(screen.getByText(/US\$\s*4,22 observados em 1 dia/iu)).toBeVisible();
+    expect(screen.getByText(/US\$\s*4,22 consumidos em 1 dia/iu)).toBeVisible();
     expect(screen.queryByText("openai/gpt-5.6-luna")).not.toBeInTheDocument();
     expect(screen.getByText("Entrada nova")).toBeVisible();
     expect(screen.getByText("Cache lido")).toBeVisible();
     expect(screen.getByText("Saída")).toBeVisible();
+    expect(screen.getByText("API consumida")).toBeVisible();
 
     const user = userEvent.setup();
     await user.click(
@@ -103,7 +109,7 @@ describe("HomePage", () => {
     expect(screen.getAllByText("1 mi").length).toBeGreaterThan(0);
     expect(screen.getAllByText("500 mil").length).toBeGreaterThan(0);
     await user.click(
-      screen.getByRole("button", { name: /API projetada · mês/u }),
+      screen.getByRole("button", { name: /API consumida · período/u }),
     );
     const openAi = screen.getByRole("spinbutton", {
       name: "OpenAI (US$/mês)",

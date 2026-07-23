@@ -158,13 +158,13 @@ export function HomePage() {
           <MetricCard
             accent="orange"
             icon={CircleDollarSign}
-            label="API projetada · mês"
+            label="API consumida · período"
             value={
               roi.pricedTokens > 0
-                ? `≈ ${usdEquivalent(roi.apiEquivalentTotalUsd)}`
+                ? usdEquivalent(roi.observedEquivalentTotalUsd)
                 : "Sem cobertura"
             }
-            detail={`${usd(roi.subscriptionTotalUsd)}/mês em assinaturas · ${confidenceLabel(roi)}`}
+            detail={`${dayCount(roi.observedDays)} observados · projeção ${usdEquivalent(roi.apiEquivalentTotalUsd)}/mês`}
             onClick={() => setPricingOpen(true)}
           />
           <MetricCard
@@ -418,13 +418,14 @@ function RoiPanel({
             {roi.observedTokens > 0 ? (
               <>
                 <strong>
-                  {usdEquivalent(roi.observedEquivalentTotalUsd)} observados em{" "}
+                  {usdEquivalent(roi.observedEquivalentTotalUsd)} consumidos em{" "}
                   {dayCount(roi.observedDays)}
                 </strong>
                 <span aria-hidden="true"> → </span>
                 {usdEquivalent(roi.apiEquivalentTotalUsd)}/mês no ritmo atual.
-                Mínimo de 7 dias antes de recomendar cancelamento; taxa de
-                créditos de 5,5% incluída.
+                Assinaturas: {usd(roi.subscriptionTotalUsd)}/mês. Mínimo de 7
+                dias antes de recomendar cancelamento; taxa de créditos de 5,5%
+                incluída.
               </>
             ) : (
               "A comparação começa quando houver telemetria de tokens com preço correspondente no OpenRouter."
@@ -446,7 +447,7 @@ function RoiPanel({
           <span>Entrada nova</span>
           <span>Cache lido</span>
           <span>Saída</span>
-          <span>API projetada / mês</span>
+          <span>API consumida</span>
           <span>Decisão</span>
         </div>
         {roi.rows.map((row) => {
@@ -488,9 +489,9 @@ function RoiPanel({
                   {row.observedTokens ? compact(row.outputTokens) : "—"}
                 </span>
                 <span>
-                  {row.apiEquivalentUsd === null
+                  {row.observedEquivalentUsd === null
                     ? "—"
-                    : `${row.isProjected || row.id === "antigravity" ? "≈ " : ""}${usdEquivalent(row.apiEquivalentUsd)}`}
+                    : `${row.id === "antigravity" ? "≈ " : ""}${usdEquivalent(row.observedEquivalentUsd)}`}
                 </span>
                 <span
                   className={`home-roi__verdict home-roi__verdict--${row.verdict}`}
@@ -814,11 +815,6 @@ function roiDecisionLabel(row: RoiSummary["rows"][number]): string {
   return row.verdict === "subscription"
     ? `Assinatura economiza ${usdEquivalent(difference)}/mês`
     : `API economizaria ${usdEquivalent(difference)}/mês`;
-}
-function confidenceLabel(roi: RoiSummary): string {
-  return roi.coveragePercent === null
-    ? "sem telemetria"
-    : `${roi.coveragePercent}% precificado`;
 }
 function dayCount(value: number): string {
   return `${value} ${value === 1 ? "dia" : "dias"}`;
