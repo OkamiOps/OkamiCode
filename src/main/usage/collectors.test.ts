@@ -529,6 +529,73 @@ describe("local activity", () => {
     });
   });
 
+  it("restores provider-authored historical usage recorded before canonical markers", () => {
+    const fixture = createTestDatabase();
+    fixture.events.append(
+      fixture.event({
+        kind: "usage_reported",
+        occurredAt: "2026-07-18T09:42:00.000Z",
+        payload: {
+          runtime: "claude",
+          usage: {
+            input_tokens: 44,
+            cache_read_input_tokens: 4_080_093,
+            output_tokens: 13_798,
+          },
+          modelUsage: {
+            "claude-opus-4-8": {
+              inputTokens: 44,
+              cacheReadInputTokens: 4_080_093,
+              outputTokens: 13_798,
+            },
+          },
+        },
+      }),
+    );
+    const activity = new UsageActivityService(fixture.db);
+
+    activity.rebuild();
+
+    expect(activity.readBuckets()[0]).toMatchObject({
+      model: "claude-opus-4-8",
+      inputTokens: 44,
+      cachedInputTokens: 4_080_093,
+      outputTokens: 13_798,
+    });
+  });
+
+  it("restores historical ChatGPT usage emitted through the Claude harness", () => {
+    const fixture = createTestDatabase();
+    fixture.events.append(
+      fixture.event({
+        kind: "usage_reported",
+        payload: {
+          runtime: "claude",
+          usage: {
+            input_tokens: 0,
+            cache_read_input_tokens: 0,
+            output_tokens: 10,
+          },
+          modelUsage: {
+            "gpt-5.6-luna": {
+              inputTokens: 0,
+              cacheReadInputTokens: 0,
+              outputTokens: 24,
+            },
+          },
+        },
+      }),
+    );
+    const activity = new UsageActivityService(fixture.db);
+
+    activity.rebuild();
+
+    expect(activity.readBuckets()[0]).toMatchObject({
+      model: "gpt-5.6-luna",
+      outputTokens: 10,
+    });
+  });
+
   it("excludes legacy usage records from cost-comparison buckets", () => {
     const fixture = createTestDatabase();
     fixture.events.append(

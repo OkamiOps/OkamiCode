@@ -452,6 +452,15 @@
   font-size: 10px;
   line-height: 1.5;
 }
+.home-roi__header p strong {
+  color: var(--ok-orange);
+  font-weight: 650;
+}
+.home-roi__header p span {
+  padding: 0 3px;
+  color: var(--ok-cyan);
+  font-family: var(--ok-font-mono);
+}
 .home-roi__header > button {
   flex: 0 0 auto;
   min-height: 34px;

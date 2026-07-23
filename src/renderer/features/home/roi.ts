@@ -20,6 +20,7 @@ export interface RoiRow {
   id: SubscriptionId;
   label: string;
   subscriptionUsd: number;
+  observedEquivalentUsd: number | null;
   apiEquivalentUsd: number | null;
   observedDays: number;
   isProjected: boolean;
@@ -49,7 +50,9 @@ export interface RoiModelBreakdown {
 export interface RoiSummary {
   rows: RoiRow[];
   subscriptionTotalUsd: number;
+  observedEquivalentTotalUsd: number;
   apiEquivalentTotalUsd: number;
+  observedDays: number;
   observedTokens: number;
   pricedTokens: number;
   coveragePercent: number | null;
@@ -172,6 +175,7 @@ export function calculateRoi(
       id: plan.id,
       label: plan.label,
       subscriptionUsd: subscriptions[plan.id],
+      observedEquivalentUsd: observedEquivalent,
       apiEquivalentUsd: equivalent,
       observedDays,
       isProjected: observedDays > 0 && observedDays < 30,
@@ -197,8 +201,16 @@ export function calculateRoi(
       (sum, row) => sum + row.subscriptionUsd,
       0,
     ),
+    observedEquivalentTotalUsd: rows.reduce(
+      (sum, row) => sum + (row.observedEquivalentUsd ?? 0),
+      0,
+    ),
     apiEquivalentTotalUsd: rows.reduce(
       (sum, row) => sum + (row.apiEquivalentUsd ?? 0),
+      0,
+    ),
+    observedDays: rows.reduce(
+      (maximum, row) => Math.max(maximum, row.observedDays),
       0,
     ),
     observedTokens,

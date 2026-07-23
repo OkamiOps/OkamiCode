@@ -415,8 +415,20 @@ function RoiPanel({
           <span className="pane-kicker">Retorno das assinaturas</span>
           <h2 id="roi-heading">Assinatura ou API?</h2>
           <p>
-            Projeção mensal do uso local, com mínimo de 7 dias antes de
-            recomendar cancelamento e taxa de compra de créditos de 5,5%.
+            {roi.observedTokens > 0 ? (
+              <>
+                <strong>
+                  {usdEquivalent(roi.observedEquivalentTotalUsd)} observados em{" "}
+                  {dayCount(roi.observedDays)}
+                </strong>
+                <span aria-hidden="true"> → </span>
+                {usdEquivalent(roi.apiEquivalentTotalUsd)}/mês no ritmo atual.
+                Mínimo de 7 dias antes de recomendar cancelamento; taxa de
+                créditos de 5,5% incluída.
+              </>
+            ) : (
+              "A comparação começa quando houver telemetria de tokens com preço correspondente no OpenRouter."
+            )}
           </p>
         </div>
         <button onClick={onConfigure} type="button">
@@ -807,6 +819,9 @@ function confidenceLabel(roi: RoiSummary): string {
   return roi.coveragePercent === null
     ? "sem telemetria"
     : `${roi.coveragePercent}% precificado`;
+}
+function dayCount(value: number): string {
+  return `${value} ${value === 1 ? "dia" : "dias"}`;
 }
 function relativeTime(value: string | null): string {
   if (!value) return "agora";

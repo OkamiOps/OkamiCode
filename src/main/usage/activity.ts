@@ -70,14 +70,8 @@ export class UsageActivityService {
         const payload = parse(event.payload_json);
         const bucketStart = hourStart(event.occurred_at);
         const sample = usageSample(payload, event.model);
-        const usage = record(sample.usage);
-        if (
-          !usage ||
-          typeof usage.observed_total_tokens !== "number" ||
-          !Number.isFinite(usage.observed_total_tokens)
-        ) {
-          continue;
-        }
+        const usage = normalizedUsage(payload, sample.usage);
+        if (!usage) continue;
         const cacheRead = numeric(usage, [
           "cache_read_input_tokens",
           "cacheReadInputTokens",
@@ -285,6 +279,66 @@ function usageSample(
       fallbackModel,
     usage: root?.usage ?? payload,
   };
+}
+
+function normalizedUsage(
+  payload: unknown,
+  value: unknown,
+): Record<string, unknown> | null {
+  const usage = record(value);
+  if (!usage) return null;
+  if (
+    typeof usage.observed_total_tokens === "number" &&
+    Number.isFinite(usage.observed_total_tokens)
+  ) {
+    return usage;
+  }
+
+  const root = record(payload);
+  const runtime = typeof root?.runtime === "string" ? root.runtime : null;
+  if (
+    runtime !== "claude" &&
+    runtime !== "codex" &&
+    runtime !== "cursor" &&
+    runtime !== "grok" &&
+    runtime !== "mimo" &&
+    runtime !== "minimax"
+  ) {
+    return null;
+  }
+  const legacy =
+    runtime === "codex"
+      ? (record(record(usage.tokenUsage)?.last) ?? usage)
+      : usage;
+  if (
+    !hasNumeric(legacy, [
+      "input_tokens",
+      "inputTokens",
+      "cache_read_input_tokens",
+      "cacheReadInputTokens",
+      "cachedInputTokens",
+      "output_tokens",
+      "outputTokens",
+      "reasoning_tokens",
+      "reasoningTokens",
+    ])
+  ) {
+    return null;
+  }
+  return {
+    ...legacy,
+    input_token_semantics:
+      runtime === "codex" || runtime === "grok"
+        ? "includes_cache_read"
+        : "excludes_cache_read",
+    reasoning_token_semantics:
+      runtime === "mimo" ? "excludes_output" : "includes_output",
+  };
+}
+
+function hasNumeric(value: unknown, keys: string[]): boolean {
+  const found = find(value, new Set(keys));
+  return typeof found === "number" && Number.isFinite(found) && found >= 0;
 }
 
 function record(value: unknown): Record<string, unknown> | null {

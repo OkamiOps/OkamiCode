@@ -89,6 +89,7 @@ describe("HomePage", () => {
     expect(await screen.findAllByText(/US\$\s*126,60/u)).not.toHaveLength(0);
     expect(screen.getByText(/US\$\s*410,00\/mês/u)).toBeVisible();
     expect(screen.getByText("1/7 dias · amostra curta")).toBeVisible();
+    expect(screen.getByText(/US\$\s*4,22 observados em 1 dia/iu)).toBeVisible();
     expect(screen.queryByText("openai/gpt-5.6-luna")).not.toBeInTheDocument();
     expect(screen.getByText("Entrada nova")).toBeVisible();
     expect(screen.getByText("Cache lido")).toBeVisible();

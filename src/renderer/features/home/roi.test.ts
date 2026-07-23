@@ -21,9 +21,12 @@ describe("calculateRoi", () => {
 
     const openai = result.rows.find((row) => row.id === "openai")!;
     expect(openai.observedDays).toBe(1);
+    expect(openai.observedEquivalentUsd).toBeCloseTo(7.4905, 3);
     expect(openai.apiEquivalentUsd).toBeCloseTo(7.4905 * 30, 2);
     expect(openai.isProjected).toBe(true);
     expect(openai.verdict).toBe("insufficient");
+    expect(result.observedDays).toBe(1);
+    expect(result.observedEquivalentTotalUsd).toBeCloseTo(7.4905, 3);
   });
 
   it("prices exact observed models over the last 30 days and includes OpenRouter fees", () => {
