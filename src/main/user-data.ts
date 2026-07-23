@@ -2,6 +2,10 @@ import path from "node:path";
 
 const LEGACY_USER_DATA_DIRECTORY = "okami-workbench";
 
+export function resolveAppStorageIdentity(): string {
+  return LEGACY_USER_DATA_DIRECTORY;
+}
+
 export interface ResolveUserDataPathOptions {
   appDataPath: string;
   currentUserDataPath: string;

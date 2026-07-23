@@ -1,8 +1,12 @@
 import path from "node:path";
 import { describe, expect, it } from "vitest";
-import { resolveUserDataPath } from "./user-data";
+import { resolveAppStorageIdentity, resolveUserDataPath } from "./user-data";
 
 describe("resolveUserDataPath", () => {
+  it("keeps the Keychain identity that encrypted existing user data", () => {
+    expect(resolveAppStorageIdentity()).toBe("okami-workbench");
+  });
+
   it("keeps explicit isolated-profile overrides", () => {
     expect(
       resolveUserDataPath({

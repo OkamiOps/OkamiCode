@@ -56,9 +56,14 @@ import { AgyPluginManager } from "./runtime/agy/plugin";
 import { createAgyPolicyAuthorizer } from "./runtime/agy/policy-authorizer";
 import { GoogleInboxOAuthService } from "./inbox/google-oauth-service";
 import { InboxSyncScheduler } from "./inbox/sync-scheduler";
-import { resolveUserDataPath } from "./user-data";
+import { resolveAppStorageIdentity, resolveUserDataPath } from "./user-data";
 
 const execFileAsync = promisify(execFile);
+
+// safeStorage uses the application identity as part of its macOS Keychain
+// lookup. Keep the original identity even though the visible product is now
+// named OkamiCode, otherwise existing encrypted data becomes unreadable.
+app.setName(resolveAppStorageIdentity());
 
 // Keep the profile stable across the okami-workbench -> okami-code package
 // rename. Visual/E2E overrides still take priority and stay isolated.
