@@ -5,6 +5,27 @@ import { calculateRoi, defaultSubscriptionPrices } from "./roi";
 type Activity = IpcResponse<"usage:overview">["activity"][number];
 
 describe("calculateRoi", () => {
+  it("projects a short canonical sample but refuses a cancellation verdict before seven days", () => {
+    const result = calculateRoi(
+      [
+        activity({
+          bucketStart: "2026-07-21T20:00:00.000Z",
+          model: "gpt-5.6-luna",
+          runtime: "codex",
+        }),
+      ],
+      catalog(),
+      defaultSubscriptionPrices(),
+      new Date("2026-07-21T22:00:00.000Z"),
+    );
+
+    const openai = result.rows.find((row) => row.id === "openai")!;
+    expect(openai.observedDays).toBe(1);
+    expect(openai.apiEquivalentUsd).toBeCloseTo(7.4905 * 30, 2);
+    expect(openai.isProjected).toBe(true);
+    expect(openai.verdict).toBe("insufficient");
+  });
+
   it("prices exact observed models over the last 30 days and includes OpenRouter fees", () => {
     const result = calculateRoi(
       [activity({ model: "gpt-5.6-luna", runtime: "codex" })],
@@ -220,7 +241,7 @@ function activity(
   overrides: Partial<Activity> & Pick<Activity, "model" | "runtime">,
 ): Activity {
   return {
-    bucketStart: "2026-07-21T20:00:00.000Z",
+    bucketStart: "2026-06-22T20:00:00.000Z",
     cachedInputTokens: 1_000_000,
     durationMs: 1_000,
     inputTokens: 1_000_000,

@@ -21,6 +21,8 @@ export interface RoiRow {
   label: string;
   subscriptionUsd: number;
   apiEquivalentUsd: number | null;
+  observedDays: number;
+  isProjected: boolean;
   inputTokens: number;
   cachedInputTokens: number;
   outputTokens: number;
@@ -78,6 +80,7 @@ export function calculateRoi(
       input: number;
       cachedInput: number;
       output: number;
+      firstObservedAt: number | null;
       models: Map<string, RoiModelBreakdown>;
     }
   >();
@@ -89,6 +92,7 @@ export function calculateRoi(
       input: 0,
       cachedInput: 0,
       output: 0,
+      firstObservedAt: null,
       models: new Map(),
     });
   }
@@ -97,6 +101,13 @@ export function calculateRoi(
     const planId = subscriptionFor(bucket);
     if (!planId) continue;
     const accumulator = accumulators.get(planId)!;
+    const bucketAt = Date.parse(bucket.bucketStart);
+    if (Number.isFinite(bucketAt)) {
+      accumulator.firstObservedAt =
+        accumulator.firstObservedAt === null
+          ? bucketAt
+          : Math.min(accumulator.firstObservedAt, bucketAt);
+    }
     const tokens = tokenTotal(bucket);
     accumulator.observed += tokens;
     accumulator.input += bucket.inputTokens;
@@ -141,10 +152,18 @@ export function calculateRoi(
   const rows = subscriptionDefaults.map((plan): RoiRow => {
     const values = accumulators.get(plan.id)!;
     const coverage = percent(values.priced, values.observed);
-    const equivalent =
+    const observedDays = observationDays(values.firstObservedAt, now);
+    const observedEquivalent =
       values.observed > 0 && values.priced > 0 ? values.cost * 1.055 : null;
+    const equivalent =
+      observedEquivalent === null
+        ? null
+        : observedEquivalent * (30 / observedDays);
     const verdict =
-      equivalent === null || coverage === null || coverage < 80
+      equivalent === null ||
+      coverage === null ||
+      coverage < 80 ||
+      observedDays < 7
         ? "insufficient"
         : equivalent >= subscriptions[plan.id]
           ? "subscription"
@@ -154,6 +173,8 @@ export function calculateRoi(
       label: plan.label,
       subscriptionUsd: subscriptions[plan.id],
       apiEquivalentUsd: equivalent,
+      observedDays,
+      isProjected: observedDays > 0 && observedDays < 30,
       inputTokens: values.input,
       cachedInputTokens: values.cachedInput,
       outputTokens: values.output,
@@ -184,6 +205,12 @@ export function calculateRoi(
     pricedTokens,
     coveragePercent: percent(pricedTokens, observedTokens),
   };
+}
+
+function observationDays(firstObservedAt: number | null, now: Date): number {
+  if (firstObservedAt === null) return 0;
+  const elapsed = Math.max(0, now.getTime() - firstObservedAt);
+  return Math.min(30, Math.max(1, Math.floor(elapsed / 86_400_000) + 1));
 }
 
 function subscriptionFor(bucket: Activity): SubscriptionId | null {

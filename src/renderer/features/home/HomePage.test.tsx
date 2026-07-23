@@ -86,8 +86,9 @@ describe("HomePage", () => {
     );
 
     expect(await screen.findByText("1,5 mi")).toBeVisible();
-    expect(await screen.findAllByText(/US\$\s*4,22/u)).not.toHaveLength(0);
+    expect(await screen.findAllByText(/US\$\s*126,60/u)).not.toHaveLength(0);
     expect(screen.getByText(/US\$\s*410,00\/mês/u)).toBeVisible();
+    expect(screen.getByText("1/7 dias · amostra curta")).toBeVisible();
     expect(screen.queryByText("openai/gpt-5.6-luna")).not.toBeInTheDocument();
     expect(screen.getByText("Entrada nova")).toBeVisible();
     expect(screen.getByText("Cache lido")).toBeVisible();
@@ -101,7 +102,7 @@ describe("HomePage", () => {
     expect(screen.getAllByText("1 mi").length).toBeGreaterThan(0);
     expect(screen.getAllByText("500 mil").length).toBeGreaterThan(0);
     await user.click(
-      screen.getByRole("button", { name: /API equivalente · 30 dias/u }),
+      screen.getByRole("button", { name: /API projetada · mês/u }),
     );
     const openAi = screen.getByRole("spinbutton", {
       name: "OpenAI (US$/mês)",
@@ -115,7 +116,7 @@ describe("HomePage", () => {
     await waitFor(() =>
       expect(screen.getByText(/US\$\s*360,00\/mês/u)).toBeVisible(),
     );
-    expect(screen.getByText(/incluindo a taxa.*5,5%/iu)).toBeVisible();
+    expect(screen.getByText(/mínimo de 7 dias.*taxa.*5,5%/iu)).toBeVisible();
   });
 
   it("shows every runtime returned by the system doctor without a fixed total", async () => {

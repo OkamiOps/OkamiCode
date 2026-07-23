@@ -472,7 +472,7 @@
   min-height: 42px;
   padding: 0 9px;
   display: grid;
-  grid-template-columns: 1.2fr 0.7fr 0.72fr 0.72fr 0.72fr 0.82fr 1.22fr;
+  grid-template-columns: 1.15fr 0.65fr 0.67fr 0.67fr 0.67fr 0.82fr 1.55fr;
   gap: 12px;
   align-items: center;
   border-radius: 9px;
@@ -615,6 +615,15 @@
   color: var(--ok-text-faint);
   border-top: 1px solid var(--ok-border);
   font-size: 9px;
+}
+.home-roi__footer > div {
+  min-width: 0;
+  display: grid;
+  gap: 3px;
+}
+.home-roi__footer small {
+  color: color-mix(in srgb, var(--ok-orange) 62%, var(--ok-text-faint));
+  font-size: 8px;
 }
 .home-roi__footer button {
   display: inline-flex;

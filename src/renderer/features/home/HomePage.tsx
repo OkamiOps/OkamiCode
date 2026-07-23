@@ -72,6 +72,7 @@ export function HomePage() {
     data?.usage?.activity ?? [],
     pricingCatalog.data ?? null,
     subscriptions,
+    data?.usage?.generatedAt ? new Date(data.usage.generatedAt) : new Date(),
   );
   const runtimeClients = data?.doctor?.clients ?? [];
   const readyClients = runtimeClients.filter(
@@ -157,13 +158,13 @@ export function HomePage() {
           <MetricCard
             accent="orange"
             icon={CircleDollarSign}
-            label="API equivalente · 30 dias"
+            label="API projetada · mês"
             value={
               roi.pricedTokens > 0
-                ? usdEquivalent(roi.apiEquivalentTotalUsd)
+                ? `≈ ${usdEquivalent(roi.apiEquivalentTotalUsd)}`
                 : "Sem cobertura"
             }
-            detail={`${usd(roi.subscriptionTotalUsd)}/mês em assinaturas · ${coverageLabel(roi)}`}
+            detail={`${usd(roi.subscriptionTotalUsd)}/mês em assinaturas · ${confidenceLabel(roi)}`}
             onClick={() => setPricingOpen(true)}
           />
           <MetricCard
@@ -414,8 +415,8 @@ function RoiPanel({
           <span className="pane-kicker">Retorno das assinaturas</span>
           <h2 id="roi-heading">Assinatura ou API?</h2>
           <p>
-            Uso local dos últimos 30 dias comparado ao preço equivalente no
-            OpenRouter, incluindo a taxa de compra de créditos de 5,5%.
+            Projeção mensal do uso local, com mínimo de 7 dias antes de
+            recomendar cancelamento e taxa de compra de créditos de 5,5%.
           </p>
         </div>
         <button onClick={onConfigure} type="button">
@@ -433,8 +434,8 @@ function RoiPanel({
           <span>Entrada nova</span>
           <span>Cache lido</span>
           <span>Saída</span>
-          <span>API equivalente</span>
-          <span>Leitura</span>
+          <span>API projetada / mês</span>
+          <span>Decisão</span>
         </div>
         {roi.rows.map((row) => {
           const expanded = expandedProviders.has(row.id);
@@ -477,14 +478,12 @@ function RoiPanel({
                 <span>
                   {row.apiEquivalentUsd === null
                     ? "—"
-                    : `${row.id === "antigravity" ? "≈ " : ""}${usdEquivalent(row.apiEquivalentUsd)}`}
+                    : `${row.isProjected || row.id === "antigravity" ? "≈ " : ""}${usdEquivalent(row.apiEquivalentUsd)}`}
                 </span>
                 <span
                   className={`home-roi__verdict home-roi__verdict--${row.verdict}`}
                 >
-                  {row.coveragePercent === null
-                    ? "Sem telemetria"
-                    : `${row.coveragePercent}% · ${verdictLabel(row.verdict)}`}
+                  {roiDecisionLabel(row)}
                 </span>
               </div>
               {expanded && row.models.length > 0 && (
@@ -529,7 +528,7 @@ function RoiPanel({
                           : usdEquivalent(model.costUsd)}
                       </span>
                       <span className="home-roi__formula">
-                        antes da taxa de 5,5%
+                        observado · antes da taxa
                       </span>
                     </div>
                   ))}
@@ -540,13 +539,19 @@ function RoiPanel({
         })}
       </div>
       <footer className="home-roi__footer">
-        <span>
-          {loading
-            ? "Atualizando preços públicos…"
-            : catalogError
-              ? "Preço do OpenRouter indisponível; valores não foram estimados."
-              : `Preços atualizados ${relativeTime(catalogFetchedAt)}.`}
-        </span>
+        <div>
+          <span>
+            {loading
+              ? "Atualizando preços públicos…"
+              : catalogError
+                ? "Preço do OpenRouter indisponível; valores não foram estimados."
+                : `Preços atualizados ${relativeTime(catalogFetchedAt)}.`}
+          </span>
+          <small>
+            Preços por faixa de contexto podem subestimar a API até o uso ser
+            preservado por chamada.
+          </small>
+        </div>
         <button
           onClick={() =>
             void workbenchClient.systemOpenExternal({
@@ -785,12 +790,20 @@ function readSubscriptions(): SubscriptionPrices {
     return fallback;
   }
 }
-function verdictLabel(value: RoiSummary["rows"][number]["verdict"]): string {
-  if (value === "subscription") return "Assinatura compensou";
-  if (value === "api") return "API seria mais barata";
-  return "Dados insuficientes";
+function roiDecisionLabel(row: RoiSummary["rows"][number]): string {
+  if (row.coveragePercent === null) return "Sem telemetria";
+  if (row.observedDays < 7) {
+    return `${row.observedDays}/7 dias · amostra curta`;
+  }
+  if (row.coveragePercent < 80 || row.apiEquivalentUsd === null) {
+    return `${row.coveragePercent}% · de-para incompleto`;
+  }
+  const difference = Math.abs(row.subscriptionUsd - row.apiEquivalentUsd);
+  return row.verdict === "subscription"
+    ? `Assinatura economiza ${usdEquivalent(difference)}/mês`
+    : `API economizaria ${usdEquivalent(difference)}/mês`;
 }
-function coverageLabel(roi: RoiSummary): string {
+function confidenceLabel(roi: RoiSummary): string {
   return roi.coveragePercent === null
     ? "sem telemetria"
     : `${roi.coveragePercent}% precificado`;
