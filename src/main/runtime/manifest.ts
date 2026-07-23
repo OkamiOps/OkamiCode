@@ -148,7 +148,7 @@ export const builtInRuntimeManifests = {
       "tools",
       "approvals",
       "models",
-      "usage",
+      "context",
     ],
   },
 } as const satisfies Record<string, RuntimeManifest>;

@@ -31,6 +31,14 @@ describe("OpenCodeAdapter over ACP", () => {
             content: { type: "text", text: "Resposta via ACP" },
           },
         } as SessionNotification);
+        await handlers!.sessionUpdate({
+          sessionId: "oc-session-1",
+          update: {
+            sessionUpdate: "usage_update",
+            used: 1_200,
+            size: 200_000,
+          },
+        } as SessionNotification);
         return { stopReason: "end_turn" as const };
       }),
       cancel: vi.fn(async () => undefined),
@@ -81,10 +89,22 @@ describe("OpenCodeAdapter over ACP", () => {
 
     expect(events.map((event) => event.kind)).toEqual([
       "message_delta",
+      "usage_reported",
       "message_completed",
       "run_completed",
     ]);
     expect(events[0]?.payload).toMatchObject({ text: "Resposta via ACP" });
+    expect(events[1]?.payload).toEqual({
+      runtime: "opencode",
+      usage: {
+        available: false,
+        source: "opencode_acp_context_only",
+      },
+      context: {
+        used_tokens: 1_200,
+        size_tokens: 200_000,
+      },
+    });
     expect(connection.setModel).toHaveBeenCalledWith(
       "oc-session-1",
       "anthropic/claude-sonnet-4",

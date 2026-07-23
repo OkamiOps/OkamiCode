@@ -140,7 +140,24 @@ describe("Conversation", () => {
       },
     ]);
 
-    expect(screen.getByText("tokens indisponíveis")).toBeVisible();
+    expect(
+      screen.getByText("tokens indisponíveis · CLI não informa"),
+    ).toBeVisible();
+  });
+
+  it("states when a completed turn did not report token accounting", () => {
+    renderConversation(false, [
+      {
+        id: "completed-without-usage",
+        kind: "run_completed",
+        laneId: agyLane.laneId,
+        runId: "run-1",
+        occurredAt: "2026-07-22T16:57:21.000Z",
+        payload: {},
+      },
+    ]);
+
+    expect(screen.getByText("tokens não reportados neste turno")).toBeVisible();
   });
 
   it("reduces completed tool activity to one expandable run summary", () => {

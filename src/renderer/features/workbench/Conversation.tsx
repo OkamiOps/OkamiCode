@@ -144,7 +144,8 @@ interface RunTelemetry {
   cacheReadTokens: number;
   outputTokens: number;
   totalTokens: number;
-  tokensAvailable: boolean;
+  terminalObserved: boolean;
+  usageState: "numeric" | "unavailable" | "not-reported";
 }
 
 function finiteToken(value: unknown): number {
@@ -171,7 +172,20 @@ function telemetryForRun(
   const inputTokens = finiteToken(usage?.input_tokens);
   const cacheReadTokens = finiteToken(usage?.cache_read_input_tokens);
   const outputTokens = finiteToken(usage?.output_tokens);
-  const tokensAvailable = usage?.available !== false;
+  const hasNumericTokens =
+    usage !== null &&
+    ["input_tokens", "cache_read_input_tokens", "output_tokens"].some(
+      (key) =>
+        typeof usage[key] === "number" &&
+        Number.isFinite(usage[key]) &&
+        (usage[key] as number) >= 0,
+    );
+  const usageState =
+    usage?.available === false
+      ? "unavailable"
+      : hasNumericTokens
+        ? "numeric"
+        : "not-reported";
   const terminal = runEvents
     .filter((event) =>
       ["run_completed", "run_failed", "run_cancelled"].includes(event.kind),
@@ -189,7 +203,8 @@ function telemetryForRun(
     cacheReadTokens,
     outputTokens,
     totalTokens: inputTokens + cacheReadTokens + outputTokens,
-    tokensAvailable,
+    terminalObserved: terminal !== undefined,
+    usageState,
   };
 }
 
@@ -624,7 +639,8 @@ export function Conversation({
                 cacheReadTokens: 0,
                 outputTokens: 0,
                 totalTokens: 0,
-                tokensAvailable: true,
+                terminalObserved: false,
+                usageState: "not-reported" as const,
               };
               const showsRunTelemetry =
                 lastAgentKeyByRun.get(item.runId) === item.key;
@@ -657,8 +673,10 @@ export function Conversation({
                   </header>
                   {showsRunTelemetry &&
                     (telemetry.durationMs !== null ||
-                      telemetry.totalTokens > 0 ||
-                      !telemetry.tokensAvailable) && (
+                      telemetry.usageState === "numeric" ||
+                      telemetry.usageState === "unavailable" ||
+                      (telemetry.terminalObserved &&
+                        telemetry.usageState === "not-reported")) && (
                       <div className="message-turn-meta">
                         {telemetry.durationMs !== null && (
                           <span>
@@ -666,7 +684,7 @@ export function Conversation({
                             Trabalhou por {formatDuration(telemetry.durationMs)}
                           </span>
                         )}
-                        {telemetry.totalTokens > 0 && (
+                        {telemetry.usageState === "numeric" && (
                           <span
                             title={`Entrada ${formatTokens(telemetry.inputTokens)} · cache ${formatTokens(telemetry.cacheReadTokens)} · saída ${formatTokens(telemetry.outputTokens)}`}
                           >
@@ -674,12 +692,19 @@ export function Conversation({
                             {formatTokens(telemetry.totalTokens)} tokens
                           </span>
                         )}
-                        {!telemetry.tokensAvailable && (
+                        {telemetry.usageState === "unavailable" && (
                           <span title="Este runtime não expõe contagem de tokens">
                             <Coins aria-hidden="true" size={11} />
-                            tokens indisponíveis
+                            tokens indisponíveis · CLI não informa
                           </span>
                         )}
+                        {telemetry.terminalObserved &&
+                          telemetry.usageState === "not-reported" && (
+                            <span title="Nenhum evento de uso foi recebido neste turno">
+                              <Coins aria-hidden="true" size={11} />
+                              tokens não reportados neste turno
+                            </span>
+                          )}
                       </div>
                     )}
                   <div className="message-bubble message-bubble--agent">

@@ -41,5 +41,9 @@ describe("Okami runtime manifest", () => {
     expect(builtInRuntimeManifests.cursor.capabilities).toContain("usage");
     expect(builtInRuntimeManifests.mimo.capabilities).toContain("usage");
     expect(builtInRuntimeManifests.minimax.capabilities).toContain("usage");
+    expect(builtInRuntimeManifests.opencode.capabilities).not.toContain(
+      "usage",
+    );
+    expect(builtInRuntimeManifests.opencode.capabilities).toContain("context");
   });
 });

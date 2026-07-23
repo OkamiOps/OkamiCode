@@ -235,7 +235,7 @@ git commit -m "feat: compact provider context deterministically"
 - Consumes: canonical events from all eight runtime adapters.
 - Produces: one conformance result per runtime and a visible telemetry state of numeric, unavailable, or not-reported.
 
-- [ ] **Step 1: Write the failing parameterized conformance gate**
+- [x] **Step 1: Write the failing parameterized conformance gate**
 
 ```ts
 it.each(runtimeFixtures)(
@@ -248,17 +248,17 @@ it.each(runtimeFixtures)(
 );
 ```
 
-- [ ] **Step 2: Run the gate and verify RED**
+- [x] **Step 2: Run the gate and verify RED**
 
 Run: `pnpm vitest run src/main/runtime/conformance.test.ts`
 
 Expected: FAIL for any adapter with duplicate terminal events or mismatched usage claims.
 
-- [ ] **Step 3: Normalize remaining usage states**
+- [x] **Step 3: Normalize remaining usage states**
 
 Keep numeric values only from provider output. Emit `available:false` for protocols proven not to expose tokens. Leave quota unavailable for MiMo and any other provider without a stable source.
 
-- [ ] **Step 4: Make the UI visually distinguish telemetry states**
+- [x] **Step 4: Make the UI visually distinguish telemetry states**
 
 Use the existing compact metadata row:
 
@@ -269,13 +269,13 @@ Use the existing compact metadata row:
 
 No new card, modal, gradient, or decorative animation is introduced.
 
-- [ ] **Step 5: Run conformance and renderer tests**
+- [x] **Step 5: Run conformance and renderer tests**
 
 Run: `pnpm vitest run src/main/runtime/conformance.test.ts src/main/usage/service.test.ts src/renderer/features/workbench/Conversation.test.tsx`
 
 Expected: PASS for all built-ins.
 
-- [ ] **Step 6: Commit sprint 5**
+- [x] **Step 6: Commit sprint 5**
 
 ```bash
 git add src/main/runtime src/main/usage src/renderer/features/workbench

@@ -306,7 +306,17 @@ export class OpenCodeAdapter implements RuntimeAdapter {
       return;
     }
     if (update.sessionUpdate === "usage_update") {
-      this.emit(run, "usage_reported", { ...update });
+      this.emit(run, "usage_reported", {
+        runtime: "opencode",
+        usage: {
+          available: false,
+          source: "opencode_acp_context_only",
+        },
+        context: {
+          used_tokens: update.used,
+          size_tokens: update.size,
+        },
+      });
     }
   }
 
