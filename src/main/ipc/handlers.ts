@@ -1703,6 +1703,11 @@ async function sendLaneTurn(
   // run remain subject to idempotency/conflict checks.
   const expectsNativeSessionPromotion = opened.bindingState === "deferred";
   if (request.effort) laneEffort.set(request.laneId, request.effort);
+  const run = await state.laneService.sendTurn(
+    opened,
+    request.input,
+    request.effort,
+  );
   const laneForTask = state.lanes.findById(request.laneId);
   if (laneForTask) {
     persistUserMessage(
@@ -1712,11 +1717,6 @@ async function sendLaneTurn(
       request.input,
     );
   }
-  const run = await state.laneService.sendTurn(
-    opened,
-    request.input,
-    request.effort,
-  );
   void forwardEvents(state, sender, run, opened, expectsNativeSessionPromotion)
     .catch(state.reportBackgroundError)
     .finally(() => {
@@ -1777,6 +1777,7 @@ async function persistAndForwardEvent(
     state.laneService.promoteNativeSession(opened, promotion);
   }
   state.events.append(event);
+  persistAssistantMessage(state, event);
   // Without this the run row stays "running" forever: the terminal event
   // was streamed to the UI but never written back to the run itself.
   const terminal = TERMINAL_RUN_KINDS[event.kind];
@@ -1792,6 +1793,47 @@ async function persistAndForwardEvent(
     ...event,
     payload: sanitizePayload(event.payload),
   });
+}
+
+function persistAssistantMessage(
+  state: AppState,
+  event: ReturnType<typeof canonicalEventSchema.parse>,
+): void {
+  if (event.kind !== "message_completed") return;
+  const text = event.payload.text;
+  if (typeof text !== "string" || !text.trim()) return;
+  const lane = state.lanes.findById(event.laneId);
+  if (!lane) return;
+  const conversationId = conversationForTask(state, event.taskId);
+  const messageId = `event:${event.id}`;
+  const exists = state.database
+    .prepare(`SELECT 1 FROM messages WHERE id = ?`)
+    .get(messageId);
+  if (exists) return;
+  const next = state.database
+    .prepare(
+      `SELECT COALESCE(MAX(sequence), 0) + 1 AS seq
+       FROM messages WHERE conversation_id = ?`,
+    )
+    .get(conversationId) as { seq: number };
+  state.database
+    .prepare(
+      `INSERT OR IGNORE INTO messages
+       (id, conversation_id, sequence, role, content_json, created_at)
+       VALUES (?, ?, ?, 'assistant', ?, ?)`,
+    )
+    .run(
+      messageId,
+      conversationId,
+      next.seq,
+      JSON.stringify({
+        body: text,
+        laneId: event.laneId,
+        providerLabel: lane.providerKind,
+        model: lane.model,
+      }),
+      event.occurredAt,
+    );
 }
 
 function nativeSessionPromotion(

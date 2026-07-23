@@ -27,6 +27,7 @@ const MIGRATIONS = [
   "schema/022-inbox-local-seen-overrides.sql",
   "schema/023-inbox-flows-and-ownership.sql",
   "schema/024-kanban-card-updates.sql",
+  "schema/025-shared-conversation-history.sql",
 ];
 
 export function latestMigrationVersion(): number {

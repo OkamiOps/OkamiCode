@@ -115,6 +115,34 @@ describe("Conversation", () => {
     expect(screen.getByText("1 turno")).toBeVisible();
   });
 
+  it("states when a runtime does not expose token accounting", () => {
+    renderConversation(false, [
+      {
+        id: "usage-unavailable",
+        kind: "usage_reported",
+        laneId: agyLane.laneId,
+        runId: "run-1",
+        occurredAt: "2026-07-22T16:57:20.000Z",
+        payload: {
+          usage: {
+            available: false,
+            source: "agy_cli",
+          },
+        },
+      },
+      {
+        id: "completed-unavailable",
+        kind: "run_completed",
+        laneId: agyLane.laneId,
+        runId: "run-1",
+        occurredAt: "2026-07-22T16:57:21.000Z",
+        payload: {},
+      },
+    ]);
+
+    expect(screen.getByText("tokens indisponíveis")).toBeVisible();
+  });
+
   it("reduces completed tool activity to one expandable run summary", () => {
     renderConversation(false, [
       {

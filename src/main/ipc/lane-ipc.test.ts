@@ -278,6 +278,37 @@ describe("lane IPC safety", () => {
     expect(state.reportBackgroundError).not.toHaveBeenCalled();
   });
 
+  it("persists completed assistant text in the shared task conversation", async () => {
+    const { event, fixture, handlers, state } = harness();
+    async function* events() {
+      yield fixture.event({
+        kind: "message_completed",
+        runId: fixture.runId as RunId,
+        payload: { text: "Resultado que o próximo provider precisa receber" },
+      });
+    }
+    configureDeferredRun(state, fixture, events());
+
+    await handlers.get("lane:sendTurn")?.(event, {
+      laneId: fixture.laneId,
+      input: "Faça a correção",
+    });
+
+    await vi.waitFor(() => {
+      const rows = fixture.db
+        .prepare(
+          `SELECT role, content_json FROM messages ORDER BY sequence ASC`,
+        )
+        .all() as Array<{ role: string; content_json: string }>;
+      expect(rows.map((row) => row.role)).toEqual(["user", "assistant"]);
+      expect(JSON.parse(rows[1]?.content_json ?? "{}")).toMatchObject({
+        body: "Resultado que o próximo provider precisa receber",
+        laneId: fixture.laneId,
+        model: "claude-test",
+      });
+    });
+  });
+
   it("promotes a matching event and refreshes an equal idempotent binding", async () => {
     const { event, fixture, handlers, state } = harness();
     async function* events() {

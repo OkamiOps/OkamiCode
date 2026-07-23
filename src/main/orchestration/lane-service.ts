@@ -38,7 +38,7 @@ interface LaneServiceDependencies {
   >;
   audit: Pick<AuditRepository, "record">;
   runtimes: Pick<RuntimeRegistry, "lookup">;
-  deltaBuilder: Pick<DeltaBuilder, "build">;
+  deltaBuilder: Pick<DeltaBuilder, "build" | "advanceConversationCursors">;
   runService: Pick<RunService, "sendTurn">;
   createAuditId: () => string;
   clock?: () => Date;
@@ -70,6 +70,7 @@ export interface OpenedLane {
   permissionMode: string | null;
   workspacePath: string | null;
   status: LaneRecord["status"];
+  inheritTask?: boolean;
 }
 
 export interface LaneSummary {
@@ -231,6 +232,7 @@ export class LaneService {
       permissionMode: lane.permissionMode ?? "manual",
       workspacePath: lane.workspacePath,
       status: lane.status,
+      inheritTask,
     };
   }
 
@@ -239,18 +241,34 @@ export class LaneService {
     input: string,
     effort?: string,
   ): Promise<RunHandle> {
+    const refreshedDelta =
+      opened.inheritTask === false
+        ? null
+        : this.dependencies.deltaBuilder.build(opened.laneId);
+    const delta =
+      refreshedDelta &&
+      (opened.temperature === "cold" ||
+        refreshedDelta.events.length > 0 ||
+        refreshedDelta.conversation.length > 0)
+        ? refreshedDelta
+        : null;
     const run = await this.dependencies.runService.sendTurn({
       laneId: opened.laneId,
       nativeSessionId: opened.nativeSessionId,
       input,
-      delta: opened.delta,
+      delta,
       runtimeKind: opened.runtimeKind,
       ...(effort ? { effort } : {}),
     });
     // The opened projection is retained by the renderer between turns. Once
     // its delta is accepted, keeping it here would replay an obsolete cursor
     // on the next Enter press and correctly trigger a conflict in RunService.
-    if (opened.delta) {
+    if (delta) {
+      this.dependencies.deltaBuilder.advanceConversationCursors(
+        opened.laneId,
+        delta.conversationCursors,
+        this.clock().toISOString(),
+      );
       opened.delta = null;
       opened.pendingDeltaEvents = 0;
       opened.temperature = "hot";

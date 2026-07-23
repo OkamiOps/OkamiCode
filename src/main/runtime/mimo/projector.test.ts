@@ -51,4 +51,40 @@ describe("MimoProjector", () => {
       projector.project({ type: "text", sessionID: "ses_two", text: "b" }),
     ).toThrow("MiMo session changed during the run");
   });
+
+  it("normalizes MiMo step-finish token accounting", () => {
+    const projector = new MimoProjector({
+      taskId: randomUUID() as TaskId,
+      laneId: randomUUID() as LaneId,
+      runId: randomUUID() as RunId,
+      createEventId: () => randomUUID(),
+    });
+
+    const events = projector.project({
+      type: "step_finish",
+      sessionID: "ses_usage",
+      part: {
+        type: "step-finish",
+        tokens: {
+          input: 500,
+          output: 50,
+          reasoning: 10,
+          cache: { read: 100, write: 0 },
+        },
+      },
+    });
+
+    expect(events.at(-1)).toMatchObject({
+      kind: "usage_reported",
+      payload: {
+        runtime: "mimo",
+        usage: {
+          input_tokens: 500,
+          cache_read_input_tokens: 100,
+          output_tokens: 50,
+          reasoning_tokens: 10,
+        },
+      },
+    });
+  });
 });

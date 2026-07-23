@@ -63,6 +63,10 @@ export class MimoProjector {
         }),
       );
     }
+    const usage = mimoUsage(native);
+    if (usage) {
+      events.push(this.event("usage_reported", native, { usage }));
+    }
     return events;
   }
 
@@ -118,6 +122,33 @@ export class MimoProjector {
       payload: { runtime: "mimo", ...payload },
     });
   }
+}
+
+function mimoUsage(native: NativeRecord): NativeRecord | undefined {
+  const part = record(native.part);
+  const tokens = record(part?.tokens ?? native.tokens);
+  if (!tokens) return undefined;
+  const cache = record(tokens.cache);
+  const input = tokenCount(tokens.input);
+  const cacheRead = tokenCount(cache?.read);
+  const output = tokenCount(tokens.output);
+  if (input === undefined && cacheRead === undefined && output === undefined) {
+    return undefined;
+  }
+  return {
+    input_tokens: input ?? 0,
+    cache_read_input_tokens: cacheRead ?? 0,
+    output_tokens: output ?? 0,
+    ...(tokenCount(tokens.reasoning) === undefined
+      ? {}
+      : { reasoning_tokens: tokenCount(tokens.reasoning) }),
+  };
+}
+
+function tokenCount(value: unknown): number | undefined {
+  return typeof value === "number" && Number.isFinite(value) && value >= 0
+    ? value
+    : undefined;
 }
 
 function textDelta(native: NativeRecord): string | undefined {

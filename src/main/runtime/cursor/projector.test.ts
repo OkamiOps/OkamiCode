@@ -96,6 +96,36 @@ describe("CursorProjector", () => {
     expect(completed[0]?.payload.text).toBe("OKAMI_CURSOR_SMOKE");
   });
 
+  it("normalizes Cursor result usage into canonical token fields", () => {
+    const events = new CursorProjector(testIds()).project({
+      type: "result",
+      subtype: "success",
+      is_error: false,
+      result: "OK",
+      usage: {
+        inputTokens: 120,
+        cacheReadTokens: 80,
+        outputTokens: 20,
+      },
+    });
+
+    expect(events).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          kind: "usage_reported",
+          payload: {
+            runtime: "cursor",
+            usage: {
+              input_tokens: 120,
+              cache_read_input_tokens: 80,
+              output_tokens: 20,
+            },
+          },
+        }),
+      ]),
+    );
+  });
+
   it("extracts the authoritative init session without inventing a terminal event for process failure", () => {
     const native = fixture("process-failure");
     const projected = new CursorProjector({

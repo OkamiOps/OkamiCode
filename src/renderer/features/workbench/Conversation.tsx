@@ -144,6 +144,7 @@ interface RunTelemetry {
   cacheReadTokens: number;
   outputTokens: number;
   totalTokens: number;
+  tokensAvailable: boolean;
 }
 
 function finiteToken(value: unknown): number {
@@ -170,6 +171,7 @@ function telemetryForRun(
   const inputTokens = finiteToken(usage?.input_tokens);
   const cacheReadTokens = finiteToken(usage?.cache_read_input_tokens);
   const outputTokens = finiteToken(usage?.output_tokens);
+  const tokensAvailable = usage?.available !== false;
   const terminal = runEvents
     .filter((event) =>
       ["run_completed", "run_failed", "run_cancelled"].includes(event.kind),
@@ -187,6 +189,7 @@ function telemetryForRun(
     cacheReadTokens,
     outputTokens,
     totalTokens: inputTokens + cacheReadTokens + outputTokens,
+    tokensAvailable,
   };
 }
 
@@ -621,6 +624,7 @@ export function Conversation({
                 cacheReadTokens: 0,
                 outputTokens: 0,
                 totalTokens: 0,
+                tokensAvailable: true,
               };
               const showsRunTelemetry =
                 lastAgentKeyByRun.get(item.runId) === item.key;
@@ -653,7 +657,8 @@ export function Conversation({
                   </header>
                   {showsRunTelemetry &&
                     (telemetry.durationMs !== null ||
-                      telemetry.totalTokens > 0) && (
+                      telemetry.totalTokens > 0 ||
+                      !telemetry.tokensAvailable) && (
                       <div className="message-turn-meta">
                         {telemetry.durationMs !== null && (
                           <span>
@@ -667,6 +672,12 @@ export function Conversation({
                           >
                             <Coins aria-hidden="true" size={11} />
                             {formatTokens(telemetry.totalTokens)} tokens
+                          </span>
+                        )}
+                        {!telemetry.tokensAvailable && (
+                          <span title="Este runtime não expõe contagem de tokens">
+                            <Coins aria-hidden="true" size={11} />
+                            tokens indisponíveis
                           </span>
                         )}
                       </div>

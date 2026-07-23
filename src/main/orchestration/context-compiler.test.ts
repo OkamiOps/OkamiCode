@@ -16,6 +16,8 @@ function delta(eventCount: number): DeltaPackage {
       dirtyFiles: ["src/main/runtime/registry.ts"],
     },
     artifacts: ["artifact://backup/verified"],
+    conversationCursors: [],
+    conversation: [],
     events: Array.from({ length: eventCount }, (_, index) => ({
       sequence: index + 3,
       kind: "message_completed",

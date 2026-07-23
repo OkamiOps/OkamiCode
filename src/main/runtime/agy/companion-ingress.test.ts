@@ -86,7 +86,7 @@ describe("AgyCompanionIngress", () => {
     ]);
     expect(
       ingress.completeStdout("Final answer").map((event) => event.kind),
-    ).toEqual(["message_completed", "run_completed"]);
+    ).toEqual(["message_completed", "usage_reported", "run_completed"]);
     expect(ingress.receive(envelope)).toEqual([]);
   });
 
@@ -111,6 +111,7 @@ describe("AgyCompanionIngress", () => {
         .map((event) => event.kind),
     ).toEqual([]);
     expect(ingress.completeStdout("").map((event) => event.kind)).toEqual([
+      "usage_reported",
       "run_completed",
     ]);
   });

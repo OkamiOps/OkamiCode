@@ -282,6 +282,119 @@ describe("LaneService", () => {
     expect(h.fakeRuntime.sentTurns[0]?.input).toBe("continue");
   });
 
+  it("gives a cold provider the shared task conversation from sibling lanes", async () => {
+    const h = createLaneHarness();
+    const siblingLaneId = h.addLane({ nativeSession: "sibling-session" });
+    const conversationId = crypto.randomUUID();
+    const now = new Date().toISOString();
+    h.fx.db
+      .prepare(
+        `INSERT INTO conversations (id, task_id, kind, created_at, updated_at)
+         VALUES (?, ?, 'workbench', ?, ?)`,
+      )
+      .run(conversationId, h.fx.taskId, now, now);
+    const insert = h.fx.db.prepare(
+      `INSERT INTO messages
+       (id, conversation_id, sequence, role, content_json, created_at)
+       VALUES (?, ?, ?, ?, ?, ?)`,
+    );
+    insert.run(
+      crypto.randomUUID(),
+      conversationId,
+      1,
+      "user",
+      JSON.stringify({
+        body: "Corrija o deploy sem perder as tarefas",
+        laneId: siblingLaneId,
+      }),
+      now,
+    );
+    insert.run(
+      crypto.randomUUID(),
+      conversationId,
+      2,
+      "assistant",
+      JSON.stringify({
+        body: "O deploy foi corrigido e as tarefas foram preservadas.",
+        laneId: siblingLaneId,
+        providerLabel: "Claude",
+        model: "Opus",
+      }),
+      now,
+    );
+
+    const opened = await h.openExisting();
+    await h.service.sendTurn(opened, "ta por ai?");
+
+    expect(h.fakeRuntime.sentTurns[0]?.input).toContain(
+      "Corrija o deploy sem perder as tarefas",
+    );
+    expect(h.fakeRuntime.sentTurns[0]?.input).toContain(
+      "O deploy foi corrigido e as tarefas foram preservadas.",
+    );
+    expect(h.fakeRuntime.sentTurns[0]?.input).toContain("ta por ai?");
+  });
+
+  it("sends new sibling context to a hot provider once without replaying it", async () => {
+    const h = createLaneHarness({ nativeSession: "target-session" });
+    const siblingLaneId = h.addLane({ nativeSession: "sibling-session" });
+    const conversationId = crypto.randomUUID();
+    const now = new Date().toISOString();
+    h.fx.db
+      .prepare(
+        `INSERT INTO conversations (id, task_id, kind, created_at, updated_at)
+         VALUES (?, ?, 'workbench', ?, ?)`,
+      )
+      .run(conversationId, h.fx.taskId, now, now);
+    const insert = h.fx.db.prepare(
+      `INSERT INTO messages
+       (id, conversation_id, sequence, role, content_json, created_at)
+       VALUES (?, ?, ?, ?, ?, ?)`,
+    );
+    insert.run(
+      crypto.randomUUID(),
+      conversationId,
+      1,
+      "user",
+      JSON.stringify({
+        body: "Primeira decisão compartilhada",
+        laneId: siblingLaneId,
+      }),
+      now,
+    );
+
+    const opened = await h.openExisting();
+    await h.service.sendTurn(opened, "continue");
+    await h.service.sendTurn(opened, "continue de novo");
+
+    expect(h.fakeRuntime.sentTurns[0]?.input).toContain(
+      "Primeira decisão compartilhada",
+    );
+    expect(h.fakeRuntime.sentTurns[1]?.input).toBe("continue de novo");
+
+    insert.run(
+      crypto.randomUUID(),
+      conversationId,
+      2,
+      "assistant",
+      JSON.stringify({
+        body: "Novo resultado do provider irmão",
+        laneId: siblingLaneId,
+        providerLabel: "Claude",
+        model: "Opus",
+      }),
+      new Date(Date.parse(now) + 1).toISOString(),
+    );
+    await h.service.sendTurn(opened, "e agora?");
+
+    expect(h.fakeRuntime.sentTurns[2]?.input).toContain(
+      "Novo resultado do provider irmão",
+    );
+    expect(h.fakeRuntime.sentTurns[2]?.input).not.toContain(
+      "Primeira decisão compartilhada",
+    );
+  });
+
   it("builds the exact canonical delta from persisted projections only", () => {
     const h = createLaneHarness({ cursor: 1 });
     const task = h.fx.tasks.findById(h.fx.taskId);
@@ -312,6 +425,8 @@ describe("LaneService", () => {
       decisions: ["Resume native sessions"],
       git: { branch: "feature/lanes", dirtyFiles: ["src/lane.ts"] },
       artifacts: ["file:///tmp/result.txt"],
+      conversationCursors: [],
+      conversation: [],
       events: [
         {
           sequence: 2,

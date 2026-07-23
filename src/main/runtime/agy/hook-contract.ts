@@ -245,6 +245,11 @@ export class AgyHookProjector {
         }),
       );
     }
+    events.push(
+      this.syntheticEvent("usage_reported", "usage-unavailable", {
+        usage: { available: false, source: "agy_cli" },
+      }),
+    );
     if (this.pendingTerminal && includeTerminal) {
       const hook = this.pendingTerminal;
       this.pendingTerminal = undefined;

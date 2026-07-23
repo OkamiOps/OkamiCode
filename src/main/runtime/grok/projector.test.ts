@@ -41,3 +41,33 @@ it("anchors every text delta to one assistant message", () => {
   expect(first?.payload.messageAnchor).toBe("assistant-0");
   expect(second?.payload.messageAnchor).toBe("assistant-0");
 });
+
+it("projects Grok end usage before the terminal event", () => {
+  const projector = new GrokProjector({
+    taskId: randomUUID() as TaskId,
+    laneId: randomUUID() as LaneId,
+    runId: randomUUID() as RunId,
+    nativeSessionId: "grok-session",
+    createEventId: () => randomUUID(),
+  });
+
+  const events = projector.project({
+    type: "end",
+    sessionId: "grok-session",
+    usage: {
+      input_tokens: 300,
+      cache_read_input_tokens: 40,
+      output_tokens: 30,
+    },
+  });
+
+  expect(events.map((event) => event.kind)).toEqual([
+    "usage_reported",
+    "run_completed",
+  ]);
+  expect(events[0]?.payload.usage).toEqual({
+    input_tokens: 300,
+    cache_read_input_tokens: 40,
+    output_tokens: 30,
+  });
+});

@@ -53,6 +53,10 @@ it("runs MiniMax Token Plan chat through the installed mmx CLI", async () => {
   ]);
   expect(events[1]?.payload).toMatchObject({ delta: "Resposta MiniMax" });
   expect(events[2]?.payload).toMatchObject({ text: "Resposta MiniMax" });
+  expect(events[3]?.payload).toEqual({
+    runtime: "minimax",
+    usage: { input_tokens: 4, output_tokens: 2 },
+  });
   expect(run).toHaveBeenCalledWith(
     "/nvm/v24/bin/mmx",
     expect.arrayContaining([

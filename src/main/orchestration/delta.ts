@@ -16,6 +16,18 @@ export interface DeltaPackage {
   decisions: string[];
   git: { branch: string; dirtyFiles: string[] } | null;
   artifacts: string[];
+  conversationCursors: Array<{
+    sourceLaneId: string;
+    toSequenceInclusive: number;
+  }>;
+  conversation: Array<{
+    sequence: number;
+    role: "user" | "assistant";
+    body: string;
+    laneId: string | null;
+    providerLabel?: string;
+    model?: string;
+  }>;
   events: Array<{ sequence: number; kind: string; summary: string }>;
 }
 
@@ -28,6 +40,17 @@ interface DeltaBuilderDependencies {
 
 interface ArtifactRow {
   uri: string;
+}
+
+interface ConversationRow {
+  sequence: number;
+  role: "user" | "assistant";
+  content_json: string;
+}
+
+interface ConversationCursorRow {
+  source_lane_id: string;
+  last_sequence: number;
 }
 
 interface PersistedProjections {
@@ -59,6 +82,68 @@ export class DeltaBuilder {
          ORDER BY artifacts.created_at ASC, artifacts.id ASC`,
       )
       .all(lane.id) as ArtifactRow[];
+    const cursors = new Map(
+      (
+        this.dependencies.db
+          .prepare(
+            `SELECT source_lane_id, last_sequence
+             FROM event_cursors
+             WHERE lane_id = ?`,
+          )
+          .all(lane.id) as ConversationCursorRow[]
+      ).map((row) => [row.source_lane_id, row.last_sequence]),
+    );
+    const conversation = (
+      this.dependencies.db
+        .prepare(
+          `SELECT messages.sequence, messages.role, messages.content_json
+           FROM messages
+           JOIN conversations ON conversations.id = messages.conversation_id
+           WHERE conversations.task_id = ?
+             AND conversations.kind = 'workbench'
+             AND messages.role IN ('user', 'assistant')
+           ORDER BY messages.created_at ASC, messages.sequence ASC`,
+        )
+        .all(task.id) as ConversationRow[]
+    ).flatMap((row) => {
+      const content = JSON.parse(row.content_json) as Record<string, unknown>;
+      if (typeof content.body !== "string" || !content.body.trim()) return [];
+      const sourceLaneId =
+        typeof content.laneId === "string" ? content.laneId : null;
+      if (
+        sourceLaneId === lane.id ||
+        (sourceLaneId && row.sequence <= (cursors.get(sourceLaneId) ?? 0))
+      ) {
+        return [];
+      }
+      return [
+        {
+          sequence: row.sequence,
+          role: row.role,
+          body: content.body,
+          laneId: sourceLaneId,
+          ...(typeof content.providerLabel === "string"
+            ? { providerLabel: content.providerLabel }
+            : {}),
+          ...(typeof content.model === "string"
+            ? { model: content.model }
+            : {}),
+        },
+      ];
+    });
+    const conversationCursors = [
+      ...conversation.reduce((advances, message) => {
+        if (!message.laneId) return advances;
+        advances.set(
+          message.laneId,
+          Math.max(advances.get(message.laneId) ?? 0, message.sequence),
+        );
+        return advances;
+      }, new Map<string, number>()),
+    ].map(([sourceLaneId, toSequenceInclusive]) => ({
+      sourceLaneId,
+      toSequenceInclusive,
+    }));
 
     return {
       schemaVersion: 1,
@@ -70,12 +155,39 @@ export class DeltaBuilder {
       decisions: projections.decisions,
       git: projections.git,
       artifacts: artifacts.map((artifact) => artifact.uri),
+      conversationCursors,
+      conversation,
       events: deltaEvents.map((event) => ({
         sequence: event.sequence,
         kind: event.kind,
         summary: eventSummary(event),
       })),
     };
+  }
+
+  advanceConversationCursors(
+    laneId: string,
+    advances: DeltaPackage["conversationCursors"],
+    updatedAt: string,
+  ): void {
+    const upsert = this.dependencies.db.prepare(
+      `INSERT INTO event_cursors
+       (lane_id, source_lane_id, last_sequence, updated_at)
+       VALUES (?, ?, ?, ?)
+       ON CONFLICT(lane_id, source_lane_id) DO UPDATE SET
+         last_sequence = MAX(event_cursors.last_sequence, excluded.last_sequence),
+         updated_at = excluded.updated_at`,
+    );
+    this.dependencies.db.transaction(() => {
+      for (const advance of advances) {
+        upsert.run(
+          laneId,
+          advance.sourceLaneId,
+          advance.toSequenceInclusive,
+          updatedAt,
+        );
+      }
+    })();
   }
 }
 

@@ -74,8 +74,13 @@ describe("AGY hook contract", () => {
       "tool_call_started",
       "tool_call_completed",
       "message_completed",
+      "usage_reported",
       "run_completed",
     ]);
+    expect(events.at(-2)?.payload).toEqual({
+      runtime: "agy",
+      usage: { available: false, source: "agy_cli" },
+    });
     expect(
       events.filter((event) => event.kind.startsWith("session_")),
     ).toHaveLength(1);

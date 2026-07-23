@@ -154,6 +154,7 @@ export class CursorProjector {
       throw new Error("Cursor result requires is_error");
     }
     const text = this.assistantText.join("");
+    const usage = cursorUsage(native.usage);
     return [
       ...(!native.is_error && text
         ? [
@@ -164,6 +165,7 @@ export class CursorProjector {
             }),
           ]
         : []),
+      ...(usage ? [this.event("usage_reported", native, { usage })] : []),
       this.event(native.is_error ? "run_failed" : "run_completed", native, {
         result: native.result,
         nativeStatus: native.subtype,
@@ -203,6 +205,28 @@ export class CursorProjector {
       "event"
     );
   }
+}
+
+function cursorUsage(value: unknown): NativeRecord | undefined {
+  const usage = record(value);
+  if (!usage) return undefined;
+  const input = tokenCount(usage.inputTokens);
+  const cacheRead = tokenCount(usage.cacheReadTokens);
+  const output = tokenCount(usage.outputTokens);
+  if (input === undefined && cacheRead === undefined && output === undefined) {
+    return undefined;
+  }
+  return {
+    input_tokens: input ?? 0,
+    cache_read_input_tokens: cacheRead ?? 0,
+    output_tokens: output ?? 0,
+  };
+}
+
+function tokenCount(value: unknown): number | undefined {
+  return typeof value === "number" && Number.isFinite(value) && value >= 0
+    ? value
+    : undefined;
 }
 
 function record(value: unknown): NativeRecord | undefined {

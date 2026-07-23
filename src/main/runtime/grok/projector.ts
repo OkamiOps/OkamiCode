@@ -50,6 +50,7 @@ export class GrokProjector {
         throw new Error("Grok end event returned a different session id");
       }
       const text = this.assistantText.join("");
+      const usage = canonicalUsage(native.usage);
       return [
         ...(text
           ? [
@@ -60,6 +61,7 @@ export class GrokProjector {
               }),
             ]
           : []),
+        ...(usage ? [this.event("usage_reported", native, { usage })] : []),
         this.event("run_completed", native, { native }),
       ];
     }
@@ -107,6 +109,31 @@ export class GrokProjector {
       payload: { runtime: "grok", ...payload },
     });
   }
+}
+
+function canonicalUsage(value: unknown): NativeRecord | undefined {
+  const usage = record(value);
+  if (!usage) return undefined;
+  const input = tokenCount(usage.input_tokens);
+  const cacheRead = tokenCount(usage.cache_read_input_tokens);
+  const output = tokenCount(usage.output_tokens);
+  if (input === undefined && cacheRead === undefined && output === undefined) {
+    return undefined;
+  }
+  return {
+    input_tokens: input ?? 0,
+    cache_read_input_tokens: cacheRead ?? 0,
+    output_tokens: output ?? 0,
+    ...(tokenCount(usage.reasoning_tokens) === undefined
+      ? {}
+      : { reasoning_tokens: tokenCount(usage.reasoning_tokens) }),
+  };
+}
+
+function tokenCount(value: unknown): number | undefined {
+  return typeof value === "number" && Number.isFinite(value) && value >= 0
+    ? value
+    : undefined;
 }
 
 function record(value: unknown): NativeRecord | undefined {

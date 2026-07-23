@@ -34,6 +34,18 @@ function authoritativeContext(delta: DeltaPackage): string {
         `- Arquivos alterados: ${delta.git.dirtyFiles.join(", ") || "nenhum"}`,
       ].join("\n")
     : "- Estado Git não informado";
+  const conversation =
+    delta.conversation.length > 0
+      ? delta.conversation
+          .map((message) => {
+            if (message.role === "user") return `- Você: ${message.body}`;
+            const agent = [message.providerLabel, message.model]
+              .filter(Boolean)
+              .join(" · ");
+            return `- ${agent || "Agente"}: ${message.body}`;
+          })
+          .join("\n")
+      : "- Nenhuma mensagem anterior";
 
   return [
     "# Contexto de transferência Okami",
@@ -52,6 +64,9 @@ function authoritativeContext(delta: DeltaPackage): string {
     "",
     "## Artefatos",
     bulletList(delta.artifacts),
+    "",
+    "## Conversa compartilhada",
+    conversation,
   ].join("\n");
 }
 

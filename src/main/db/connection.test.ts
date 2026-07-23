@@ -11,7 +11,7 @@ describe("openDatabase", () => {
     const key = Buffer.alloc(32, 7);
     const db = openDatabase(file, key);
     expect(db.prepare("SELECT sqlite3mc_version()").pluck().get()).toBeTruthy();
-    expect(db.pragma("user_version", { simple: true })).toBe(24);
+    expect(db.pragma("user_version", { simple: true })).toBe(25);
     expect(
       db
         .prepare("PRAGMA table_info(inbox_messages)")
@@ -127,6 +127,57 @@ describe("openDatabase", () => {
     ).toThrow();
     db.close();
     expect(() => openDatabase(file, Buffer.alloc(32, 8))).toThrow();
+  });
+
+  it("backfills historical assistant completions into the shared conversation", () => {
+    const dir = mkdtempSync(path.join(tmpdir(), "okami-db-context-"));
+    const file = path.join(dir, "workbench.db");
+    const key = Buffer.alloc(32, 8);
+    const db = openDatabase(file, key);
+    db.exec(`
+      INSERT INTO tasks
+        (id, kind, title, objective, status, created_at, updated_at)
+      VALUES
+        ('task-context', 'workbench', 'Context', 'Share context', 'active',
+         '2026-07-23T10:00:00.000Z', '2026-07-23T10:00:00.000Z');
+      INSERT INTO runtime_lanes
+        (id, task_id, runtime_kind, provider_kind, model, status,
+         last_event_cursor, created_at, updated_at)
+      VALUES
+        ('lane-context', 'task-context', 'claude', 'claude_max', 'opus',
+         'ready', 0, '2026-07-23T10:00:00.000Z',
+         '2026-07-23T10:00:00.000Z');
+      INSERT INTO runs
+        (id, task_id, lane_id, status, started_at, finished_at)
+      VALUES
+        ('run-context', 'task-context', 'lane-context', 'completed',
+         '2026-07-23T10:00:00.000Z', '2026-07-23T10:01:00.000Z');
+      INSERT INTO events
+        (id, task_id, lane_id, run_id, sequence, occurred_at, kind,
+         native_event_id, payload_json)
+      VALUES
+        ('answer-context', 'task-context', 'lane-context', 'run-context', 1,
+         '2026-07-23T10:01:00.000Z', 'message_completed', NULL,
+         '{"text":"Resposta histórica preservada"}');
+    `);
+    db.pragma("user_version = 24");
+    db.close();
+
+    const migrated = openDatabase(file, key);
+    const row = migrated
+      .prepare(
+        `SELECT role, content_json FROM messages
+         WHERE id = 'event:answer-context'`,
+      )
+      .get() as { role: string; content_json: string };
+    expect(row.role).toBe("assistant");
+    expect(JSON.parse(row.content_json)).toEqual({
+      body: "Resposta histórica preservada",
+      laneId: "lane-context",
+      providerLabel: "claude",
+      model: "opus",
+    });
+    migrated.close();
   });
 
   it("backfills the official Hostinger SMTP endpoint for existing IMAP accounts", () => {

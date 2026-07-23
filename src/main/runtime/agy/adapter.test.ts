@@ -305,9 +305,10 @@ describe("AgyAdapter", () => {
     expect(events.map((event) => event.kind)).toEqual([
       "session_started",
       "message_completed",
+      "usage_reported",
       "run_completed",
     ]);
-    expect(events.map((event) => event.sequence)).toEqual([0, 1, 2]);
+    expect(events.map((event) => event.sequence)).toEqual([0, 1, 2, 3]);
     expect(deps.companion.close).toHaveBeenCalledOnce();
   });
 
@@ -393,7 +394,7 @@ describe("AgyAdapter", () => {
     expect(deps.authorizer).toHaveBeenCalledOnce();
     await deps.emitHook("Stop", hookForConversation("stop", "conversation-7"));
     deps.process.finish();
-    await expect(collect(handle.events)).resolves.toHaveLength(4);
+    await expect(collect(handle.events)).resolves.toHaveLength(5);
   });
 
   it("emits one cancellation and cleans up an interrupted run", async () => {
@@ -435,6 +436,12 @@ describe("AgyAdapter", () => {
 
     await expect(collect(handle.events)).resolves.toMatchObject([
       { kind: "message_completed", payload: { text: "Final answer" } },
+      {
+        kind: "usage_reported",
+        payload: {
+          usage: { available: false, source: "agy_cli" },
+        },
+      },
       { kind: "run_failed", payload: { reason: "agy_hook_context_mismatch" } },
     ]);
   });
@@ -473,6 +480,7 @@ describe("AgyAdapter", () => {
     withoutStop.process.finish();
     await expect(collect(noStop.events)).resolves.toMatchObject([
       { kind: "message_completed" },
+      { kind: "usage_reported" },
       {
         kind: "run_completed",
         payload: { reason: "agy_stdout_completed" },
@@ -491,6 +499,7 @@ describe("AgyAdapter", () => {
     });
     withoutStop.process.finish({ exitCode: 0, stdout: "" });
     await expect(collect(noStop.events)).resolves.toMatchObject([
+      { kind: "usage_reported" },
       {
         kind: "run_failed",
         payload: { reason: "agy_process_ended_without_stop" },
@@ -528,6 +537,7 @@ describe("AgyAdapter", () => {
     );
     mismatch.process.finish({ exitCode: 0, stdout: "" });
     await expect(collect(mismatchHandle.events)).resolves.toMatchObject([
+      { kind: "usage_reported" },
       {
         kind: "run_failed",
         payload: { reason: "agy_hook_conversation_mismatch" },
@@ -553,6 +563,7 @@ describe("AgyAdapter", () => {
 
     await expect(collect(handle.events)).resolves.toMatchObject([
       { kind: "message_completed", payload: { text: "Final answer" } },
+      { kind: "usage_reported" },
       { kind: "run_completed" },
     ]);
   });

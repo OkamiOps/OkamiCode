@@ -257,7 +257,7 @@ export class MiniMaxAdapter implements RuntimeAdapter {
         native: payload,
       });
       if (payload.usage && typeof payload.usage === "object") {
-        yield build("usage_reported", { native: payload.usage });
+        yield build("usage_reported", { usage: payload.usage });
       }
       yield build("run_completed", { native: payload });
     } catch (error) {
