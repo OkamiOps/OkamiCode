@@ -161,10 +161,14 @@ pnpm check
 
 ```bash
 pnpm package
-open release/mac-arm64/OkamiCode.app
 ```
 
-O artefato `1.0.0-beta.1` é Apple Silicon, não assinado e não notarizado. O macOS pode exigir aprovação em **Privacidade e Segurança**. Este beta não alega assinatura ou notarização de produção.
+O comando produz tanto o aplicativo descompactado quanto o instalador para Apple Silicon:
+
+- `release/mac-arm64/OkamiCode.app`
+- `release/OkamiCode-v1.0.0-beta.1-macOS-arm64.dmg`
+
+Abra o DMG, arraste o **OkamiCode** para **Aplicativos** e execute-o pela pasta Aplicativos. O artefato `1.0.0-beta.1` não é assinado nem notarizado, então o macOS pode exigir aprovação em **Privacidade e Segurança**. Este beta não alega assinatura ou notarização de produção.
 
 ## Notas de configuração
 
