@@ -12,6 +12,16 @@ export interface RuntimeHealth {
   entitlement?: "subscription" | "token_plan" | "provider_managed" | "payg";
 }
 
+export class NativeSessionUnavailableError extends Error {
+  constructor(
+    readonly runtime: RuntimeKind,
+    readonly reason: "provider_session_missing",
+  ) {
+    super(`${runtime} provider session is unavailable`);
+    this.name = "NativeSessionUnavailableError";
+  }
+}
+
 export interface StartSessionRequest {
   laneId: LaneId;
   cwd: string;

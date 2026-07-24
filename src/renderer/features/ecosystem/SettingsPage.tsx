@@ -1,55 +1,128 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import {
   AlertTriangle,
-  Cable,
+  Blocks,
+  Check,
   CheckCircle2,
+  ChevronDown,
   CircleDashed,
-  Database,
   ExternalLink,
-  FolderCog,
-  RefreshCw,
-  ShieldCheck,
   KeyRound,
+  LockKeyhole,
+  RefreshCw,
   Save,
+  ShieldCheck,
   TerminalSquare,
   Wrench,
   X,
 } from "lucide-react";
-import { useState } from "react";
+import { useMemo, useState } from "react";
 import type { IpcResponse } from "../../../shared/contracts/ipc";
 import { workbenchClient } from "../../lib/ipc/client";
-import { useWorkbenchStore } from "../workbench/store";
+import { ProviderAuthTerminal } from "./ProviderAuthTerminal";
 
 type CliCapability = IpcResponse<"system:doctor">["clients"][number];
+type RuntimeHealth = IpcResponse<"system:doctor">["runtimes"][number];
+type ProviderId =
+  | "claude"
+  | "codex"
+  | "cursor"
+  | "agy"
+  | "grok"
+  | "mimo"
+  | "minimax"
+  | "opencode";
 
-const PERMISSION_LABELS: Record<string, string> = {
-  manual: "Manual",
-  acceptEdits: "Aceitar edições",
-  plan: "Planejar",
-  auto: "Automático",
-  bypassPermissions: "Ignorar permissões",
-};
+interface ProviderDefinition {
+  id: ProviderId;
+  label: string;
+  shortLabel: string;
+  family: "subscription" | "token_plan" | "orchestrator";
+  description: string;
+  ownership: string;
+  auth: "device" | "token_plan" | "interactive";
+}
+
+const PROVIDERS: ProviderDefinition[] = [
+  {
+    id: "claude",
+    label: "Claude Code",
+    shortLabel: "CL",
+    family: "subscription",
+    description: "Assinatura Claude Max ou Pro pela autenticação oficial.",
+    ownership: "Único CLI externo necessário",
+    auth: "interactive",
+  },
+  {
+    id: "codex",
+    label: "OpenAI Codex",
+    shortLabel: "CX",
+    family: "subscription",
+    description: "Assinatura ChatGPT por OAuth e device connection.",
+    ownership: "Motor incluído no OkamiCode",
+    auth: "device",
+  },
+  {
+    id: "cursor",
+    label: "Cursor",
+    shortLabel: "CU",
+    family: "subscription",
+    description: "Sua assinatura Cursor, sem API key pay-as-you-go.",
+    ownership: "Motor incluído no OkamiCode",
+    auth: "interactive",
+  },
+  {
+    id: "agy",
+    label: "Antigravity",
+    shortLabel: "AG",
+    family: "subscription",
+    description: "Conta Antigravity reaproveitada pelo companion local.",
+    ownership: "Motor incluído no OkamiCode",
+    auth: "interactive",
+  },
+  {
+    id: "grok",
+    label: "Grok",
+    shortLabel: "GK",
+    family: "subscription",
+    description: "Assinatura SuperGrok por OAuth e device connection.",
+    ownership: "Motor incluído no OkamiCode",
+    auth: "device",
+  },
+  {
+    id: "mimo",
+    label: "MiMo",
+    shortLabel: "MI",
+    family: "token_plan",
+    description: "Token Plan fixo da Xiaomi, nunca uma chave comum de API.",
+    ownership: "Conexão HTTP do OkamiCode",
+    auth: "token_plan",
+  },
+  {
+    id: "minimax",
+    label: "MiniMax",
+    shortLabel: "MM",
+    family: "token_plan",
+    description: "Token Plan Coding da MiniMax, sem fallback de cobrança.",
+    ownership: "Conexão HTTP do OkamiCode",
+    auth: "token_plan",
+  },
+  {
+    id: "opencode",
+    label: "OpenCode",
+    shortLabel: "OC",
+    family: "orchestrator",
+    description: "Providers adicionais isolados atrás do adapter ACP.",
+    ownership: "Motor incluído no OkamiCode",
+    auth: "interactive",
+  },
+];
 
 const INTEGRATION_LABELS = {
-  ready: "Operacional",
-  needs_adapter: "Adapter incompleto",
+  ready: "Motor pronto",
+  needs_adapter: "Integração incompleta",
   update_required: "Atualização necessária",
-  unavailable: "Não encontrado",
-} as const;
-
-const TRANSPORT_LABELS = {
-  oauth: "OAuth do Okami",
-  api: "API do Okami",
-  cli: "CLI opcional",
-  acp: "ACP opcional",
-  embedded: "Nativo do Okami",
-} as const;
-
-const ENTITLEMENT_LABELS = {
-  subscription: "Incluído na assinatura",
-  token_plan: "Incluído no Token Plan",
-  provider_managed: "Gerenciado pelo provider",
-  payg: "Pay-as-you-go",
+  unavailable: "Motor indisponível",
 } as const;
 
 function statusTone(client: CliCapability): "ready" | "warning" | "offline" {
@@ -58,13 +131,74 @@ function statusTone(client: CliCapability): "ready" | "warning" | "offline" {
   return "warning";
 }
 
+function runtimeFor(
+  runtimes: RuntimeHealth[],
+  provider: ProviderId,
+): RuntimeHealth | undefined {
+  return runtimes.find((runtime) => runtime.runtime === provider);
+}
+
+function providerStatus(
+  provider: ProviderDefinition,
+  runtimes: RuntimeHealth[],
+  tokenPlans: IpcResponse<"providerAuth:list">,
+  connections: IpcResponse<"providerAuth:status">,
+): { tone: "ready" | "attention" | "offline"; label: string } {
+  const connection = connections.find(
+    (entry) => entry.provider === provider.id,
+  );
+  if (connection?.status === "connected") {
+    return {
+      tone: "ready",
+      label: connection.accountLabel
+        ? `Conectado · ${connection.accountLabel}`
+        : "Conectado",
+    };
+  }
+  if (connection?.status === "not_connected") {
+    return {
+      tone: "attention",
+      label:
+        provider.family === "token_plan"
+          ? "Configurar plano"
+          : "Conectar conta",
+    };
+  }
+  if (connection?.status === "unavailable") {
+    return { tone: "offline", label: "Indisponível" };
+  }
+  if (connection?.status === "unknown") {
+    return { tone: "attention", label: "Verificar conta" };
+  }
+  if (provider.family === "token_plan") {
+    const configured = tokenPlans.find(
+      (entry) => entry.provider === provider.id,
+    )?.configured;
+    return configured
+      ? { tone: "ready", label: "Conectado" }
+      : { tone: "attention", label: "Configurar plano" };
+  }
+  const runtime = runtimeFor(runtimes, provider.id);
+  if (!runtime || runtime.status === "unavailable") {
+    return { tone: "offline", label: "Indisponível" };
+  }
+  if (runtime.status === "degraded") {
+    return { tone: "attention", label: "Revisar integração" };
+  }
+  return { tone: "ready", label: "Pronto para autenticar" };
+}
+
 export function SettingsPage() {
   const queryClient = useQueryClient();
-  const selectedTaskId = useWorkbenchStore((state) => state.selectedTaskId);
-  const effortByLane = useWorkbenchStore((state) => state.effortByLane);
+  const [selectedProvider, setSelectedProvider] =
+    useState<ProviderId>("minimax");
+  const [diagnosticsOpen, setDiagnosticsOpen] = useState(false);
   const [inspectedClient, setInspectedClient] = useState<CliCapability | null>(
     null,
   );
+  const [interactiveProvider, setInteractiveProvider] = useState<
+    "claude" | "cursor" | "agy" | "opencode" | null
+  >(null);
   const [tokenPlanDrafts, setTokenPlanDrafts] = useState({
     mimoToken: "",
     mimoBaseUrl: "https://token-plan-ams.xiaomimimo.com/v1",
@@ -73,19 +207,11 @@ export function SettingsPage() {
   const [deviceChallenge, setDeviceChallenge] = useState<
     IpcResponse<"providerAuth:startDevice"> | undefined
   >();
-  const tasks = useQuery({
-    queryKey: ["workbench", "tasks"],
-    queryFn: () => workbenchClient.taskList(),
-  });
-  const task = (tasks.data ?? []).find((entry) => entry.id === selectedTaskId);
-  const lanes = useQuery({
-    queryKey: ["workbench", "lanes", task?.id],
-    queryFn: () => workbenchClient.laneList(task ? { taskId: task.id } : {}),
-    enabled: Boolean(task),
-  });
+
   const settings = useQuery({
     queryKey: ["eco", "settings"],
     queryFn: () => workbenchClient.ecoSettings(),
+    enabled: diagnosticsOpen,
   });
   const doctor = useQuery({
     queryKey: ["system", "doctor"],
@@ -94,6 +220,10 @@ export function SettingsPage() {
   const providerAuth = useQuery({
     queryKey: ["provider-auth"],
     queryFn: () => workbenchClient.providerAuthList(),
+  });
+  const providerConnections = useQuery({
+    queryKey: ["provider-connections"],
+    queryFn: () => workbenchClient.providerAuthStatus(),
   });
   const saveTokenPlan = useMutation({
     mutationFn: workbenchClient.providerAuthSetTokenPlan,
@@ -106,6 +236,7 @@ export function SettingsPage() {
       }));
       await Promise.all([
         queryClient.invalidateQueries({ queryKey: ["provider-auth"] }),
+        queryClient.invalidateQueries({ queryKey: ["provider-connections"] }),
         queryClient.invalidateQueries({ queryKey: ["system", "doctor"] }),
         queryClient.invalidateQueries({ queryKey: ["models"] }),
       ]);
@@ -116,6 +247,7 @@ export function SettingsPage() {
     onSuccess: async () => {
       await Promise.all([
         queryClient.invalidateQueries({ queryKey: ["provider-auth"] }),
+        queryClient.invalidateQueries({ queryKey: ["provider-connections"] }),
         queryClient.invalidateQueries({ queryKey: ["system", "doctor"] }),
         queryClient.invalidateQueries({ queryKey: ["models"] }),
       ]);
@@ -125,32 +257,63 @@ export function SettingsPage() {
     mutationFn: workbenchClient.providerAuthStartDevice,
     onSuccess: setDeviceChallenge,
   });
-  const checking = doctor.isFetching || settings.isFetching;
+
   const clients = doctor.data?.clients ?? [];
-  const readyCount = clients.filter(
-    (client) => client.integrationStatus === "ready",
+  const runtimes = useMemo(
+    () => doctor.data?.runtimes ?? [],
+    [doctor.data?.runtimes],
+  );
+  const tokenPlans = useMemo(
+    () => providerAuth.data ?? [],
+    [providerAuth.data],
+  );
+  const connections = useMemo(
+    () => providerConnections.data ?? [],
+    [providerConnections.data],
+  );
+  const provider = PROVIDERS.find(
+    (candidate) => candidate.id === selectedProvider,
+  )!;
+  const connectionStates = useMemo(
+    () =>
+      new Map(
+        PROVIDERS.map((candidate) => [
+          candidate.id,
+          providerStatus(candidate, runtimes, tokenPlans, connections),
+        ]),
+      ),
+    [connections, runtimes, tokenPlans],
+  );
+  const configuredCount = [...connectionStates.values()].filter(
+    (status) => status.tone === "ready",
   ).length;
-  const attentionCount = clients.filter((client) =>
-    ["needs_adapter", "update_required"].includes(client.integrationStatus),
-  ).length;
+  const runtime = runtimeFor(runtimes, provider.id);
+  const checking =
+    doctor.isFetching ||
+    providerAuth.isFetching ||
+    providerConnections.isFetching;
 
   const refresh = () => {
-    void Promise.all([doctor.refetch(), settings.refetch()]);
+    void Promise.all([
+      doctor.refetch(),
+      providerAuth.refetch(),
+      providerConnections.refetch(),
+    ]);
   };
 
   return (
-    <section aria-label="Configurações" className="control-page">
-      <header className="control-page__header">
+    <section aria-label="Configurações" className="control-page settings-hub">
+      <header className="control-page__header settings-hub__header">
         <div>
-          <span className="control-page__kicker">Diagnóstico local</span>
-          <h1>Configurações</h1>
+          <span className="control-page__kicker">Central de conexões</span>
+          <h1>Conecte seus agentes</h1>
           <p>
-            Saúde real dos CLIs, compatibilidade com os adapters e arquivos que
-            influenciam o comportamento do OkamiCode.
+            Entre com suas assinaturas e Token Plans em um só lugar. Nenhum
+            runtime usa cobrança pay-as-you-go ou troca de provider escondida.
           </p>
         </div>
         <button
-          className="control-button control-button--primary"
+          className="control-button"
           disabled={checking}
           onClick={refresh}
           type="button"
@@ -160,49 +323,33 @@ export function SettingsPage() {
             className={checking ? "is-spinning" : undefined}
             size={15}
           />
-          {checking ? "Verificando…" : "Verificar atualizações"}
+          {checking ? "Verificando…" : "Verificar conexões"}
         </button>
       </header>
 
-      <div className="settings-health" aria-label="Resumo da saúde do sistema">
-        <div data-tone="ready">
-          <CheckCircle2 aria-hidden="true" size={18} />
+      <div className="settings-hub__assurance" role="note">
+        <LockKeyhole aria-hidden="true" size={18} />
+        <div>
+          <strong>Seu plano continua sendo a fonte de acesso</strong>
           <span>
-            <strong>
-              {readyCount} de {clients.length}
-            </strong>
-            <small>CLIs operacionais</small>
+            {configuredCount} de {PROVIDERS.length} motores disponíveis ou
+            configurados · segredos criptografados no dispositivo
           </span>
         </div>
-        <div data-tone={attentionCount > 0 ? "warning" : "ready"}>
-          <AlertTriangle aria-hidden="true" size={18} />
-          <span>
-            <strong>{attentionCount}</strong>
-            <small>pedem atenção</small>
-          </span>
-        </div>
-        <div data-tone={doctor.data?.database === "ok" ? "ready" : "offline"}>
-          <Database aria-hidden="true" size={18} />
-          <span>
-            <strong>
-              {doctor.data?.database === "ok"
-                ? "SQLite íntegro"
-                : "Verificando banco"}
-            </strong>
-            <small>estado local do aplicativo</small>
-          </span>
-        </div>
+        <span className="settings-hub__database">
+          <Check aria-hidden="true" size={13} />
+          {doctor.data?.database === "ok"
+            ? "Cofre local íntegro"
+            : "Verificando"}
+        </span>
       </div>
 
       {doctor.isError && (
         <div className="settings-alert" role="alert">
           <AlertTriangle aria-hidden="true" size={18} />
           <div>
-            <strong>Não foi possível concluir o diagnóstico</strong>
-            <p>
-              O núcleo não respondeu. Reinicie o aplicativo e tente verificar
-              novamente.
-            </p>
+            <strong>O núcleo local não respondeu</strong>
+            <p>Reinicie o aplicativo e verifique as conexões novamente.</p>
           </div>
           <button onClick={refresh} type="button">
             Tentar novamente
@@ -210,446 +357,334 @@ export function SettingsPage() {
         </div>
       )}
 
-      <section className="control-section settings-clients">
-        <header>
-          <div>
-            <h2>CLIs e adapters</h2>
-            <p>
-              “Instalado” não significa “compatível”; o protocolo é verificado
-              separadamente.
-            </p>
+      <div className="provider-switchboard">
+        <nav aria-label="Providers" className="provider-switchboard__rail">
+          <div className="provider-switchboard__rail-heading">
+            <strong>Agentes e planos</strong>
+            <span>{PROVIDERS.length}</span>
           </div>
-          <span>{clients.length}</span>
-        </header>
-        {doctor.isLoading ? (
-          <div className="control-skeleton" aria-label="Verificando CLIs" />
-        ) : (
-          <ul className="settings-client-list">
-            {clients.map((client) => {
-              const tone = statusTone(client);
-              return (
-                <li key={client.client}>
-                  <div
-                    className={`settings-client__icon settings-client__icon--${tone}`}
-                  >
-                    <TerminalSquare aria-hidden="true" size={17} />
-                  </div>
-                  <div className="settings-client__identity">
-                    <strong>{client.label}</strong>
-                    <span>{client.version ?? "Versão indisponível"}</span>
-                    <code>
-                      {client.binaryPath ?? "Executável não localizado"}
-                    </code>
-                  </div>
-                  <div className="settings-client__status">
-                    <span
-                      className={`connection-status connection-status--${tone === "ready" ? "ready" : tone === "offline" ? "offline" : "attention"}`}
-                    >
-                      {tone === "ready" ? (
-                        <CheckCircle2 aria-hidden="true" size={13} />
-                      ) : tone === "offline" ? (
-                        <CircleDashed aria-hidden="true" size={13} />
-                      ) : (
-                        <AlertTriangle aria-hidden="true" size={13} />
-                      )}
-                      {INTEGRATION_LABELS[client.integrationStatus]}
-                    </span>
-                    <small>
-                      {client.capabilities.length} capacidades verificadas
-                    </small>
-                  </div>
-                  <button
-                    className="control-button"
-                    onClick={() => setInspectedClient(client)}
-                    type="button"
-                  >
-                    {client.integrationStatus === "update_required"
-                      ? "Revisar atualização"
-                      : "Ver detalhes"}
-                  </button>
-                </li>
-              );
-            })}
-          </ul>
-        )}
-      </section>
-
-      <div className="settings-grid">
-        <section className="control-section">
-          <header>
-            <div>
-              <h2>Runtimes ativos</h2>
-              <p>Resultado do handshake com cada adapter.</p>
-            </div>
-            <span>{doctor.data?.runtimes.length ?? 0}</span>
-          </header>
-          <ul className="settings-runtime-list">
-            {(doctor.data?.runtimes ?? []).map((runtime) => (
-              <li key={runtime.runtime}>
-                <span data-status={runtime.status} />
-                <div>
-                  <strong>{runtime.runtime}</strong>
-                  <small>{runtime.version ?? "versão indisponível"}</small>
-                  <span
-                    className="settings-runtime__transport"
-                    data-transport={runtime.transportKind ?? "unknown"}
-                  >
-                    <Cable aria-hidden="true" size={10} />
-                    {runtime.transportKind
-                      ? TRANSPORT_LABELS[runtime.transportKind]
-                      : "Transporte indisponível"}
-                    <code>{runtime.transportId ?? "sem transporte ativo"}</code>
-                  </span>
-                  {runtime.entitlement && (
-                    <span
-                      className="settings-runtime__entitlement"
-                      data-entitlement={runtime.entitlement}
-                    >
-                      {ENTITLEMENT_LABELS[runtime.entitlement]}
-                    </span>
-                  )}
-                </div>
-                <em>
-                  {runtime.status === "ready"
-                    ? "Pronto"
-                    : runtime.status === "degraded"
-                      ? "Protocolo incompatível"
-                      : "Indisponível"}
-                </em>
-              </li>
-            ))}
-          </ul>
-        </section>
-
-        <section className="control-section">
-          <header>
-            <div>
-              <h2>Conversa atual</h2>
-              <p>Workspace, modelo e política da tarefa aberta.</p>
-            </div>
-            <span>{task ? "Ativa" : "Sem tarefa"}</span>
-          </header>
-          {!task ? (
-            <div className="control-empty control-empty--small">
-              <FolderCog aria-hidden="true" size={19} />
-              <strong>Nenhuma tarefa selecionada</strong>
-              <p>Abra um projeto no Code para inspecionar suas lanes.</p>
-            </div>
-          ) : (
-            <dl className="settings-lane-facts">
-              <div>
-                <dt>Workspace</dt>
-                <dd>
-                  <code>{task.workspacePath ?? "Não vinculado"}</code>
-                </dd>
-              </div>
-              {(lanes.data ?? []).map((lane) => (
-                <div key={lane.laneId}>
-                  <dt>{lane.providerAccountLabel}</dt>
-                  <dd>
-                    <strong>{lane.model}</strong>
-                    <span>
-                      {lane.routeKind} ·{" "}
-                      {PERMISSION_LABELS[lane.permissionMode ?? "manual"] ??
-                        lane.permissionMode}
-                      {effortByLane[lane.laneId]
-                        ? ` · ${effortByLane[lane.laneId]}`
-                        : ""}
-                    </span>
-                  </dd>
-                </div>
-              ))}
-            </dl>
-          )}
-        </section>
-      </div>
-
-      <section className="control-section settings-subscriptions">
-        <header>
-          <div>
-            <h2>Assinaturas por OAuth</h2>
-            <p>
-              Conecte a assinatura diretamente pelo fluxo oficial de device
-              connection. Nenhuma API key e nenhuma cobrança pay-as-you-go.
-            </p>
-          </div>
-          <span>Codex · Grok</span>
-        </header>
-        <div className="settings-subscriptions__grid">
-          {(["codex", "grok"] as const).map((provider) => (
-            <div key={provider}>
-              <div>
-                <KeyRound aria-hidden="true" size={17} />
-                <span>
-                  <strong>
-                    {provider === "codex" ? "OpenAI Codex" : "xAI Grok"}
-                  </strong>
-                  <small>Binário oficial incluído no OkamiCode</small>
-                </span>
-              </div>
+          {PROVIDERS.map((candidate) => {
+            const state = connectionStates.get(candidate.id)!;
+            return (
               <button
-                className="control-button control-button--primary"
-                disabled={startDeviceAuth.isPending}
+                aria-current={selectedProvider === candidate.id}
+                aria-label={`${candidate.label}: ${state.label}`}
+                className="provider-switchboard__provider"
+                data-selected={selectedProvider === candidate.id}
+                key={candidate.id}
                 onClick={() => {
+                  setSelectedProvider(candidate.id);
                   setDeviceChallenge(undefined);
-                  startDeviceAuth.mutate({ provider });
+                  setInteractiveProvider(null);
                 }}
                 type="button"
               >
-                {startDeviceAuth.isPending &&
-                startDeviceAuth.variables?.provider === provider
-                  ? "Gerando código…"
-                  : "Conectar assinatura"}
+                <span data-provider={candidate.id}>{candidate.shortLabel}</span>
+                <span>
+                  <strong>{candidate.label}</strong>
+                  <small>{state.label}</small>
+                </span>
+                <i data-tone={state.tone} />
               </button>
+            );
+          })}
+        </nav>
+
+        <section
+          aria-label={`Configurar ${provider.label}`}
+          className="provider-switchboard__detail"
+        >
+          <header>
+            <div className="provider-switchboard__identity">
+              <span data-provider={provider.id}>{provider.shortLabel}</span>
+              <div>
+                <small>
+                  {provider.family === "subscription"
+                    ? "Assinatura"
+                    : provider.family === "token_plan"
+                      ? "Token Plan"
+                      : "Orquestrador"}
+                </small>
+                <h2>
+                  {provider.id === "mimo"
+                    ? "MiMo Token Plan"
+                    : provider.id === "minimax"
+                      ? "MiniMax Token Plan"
+                      : provider.label}
+                </h2>
+              </div>
             </div>
-          ))}
-        </div>
-        {deviceChallenge && (
-          <div className="settings-device-challenge" role="status">
-            <div>
-              <strong>
-                Conexão{" "}
-                {deviceChallenge.provider === "codex" ? "Codex" : "Grok"}
-              </strong>
-              <p>
-                Abra o endereço oficial
-                {deviceChallenge.userCode
-                  ? " e informe o código abaixo."
-                  : " para concluir a autorização."}
-              </p>
+            <span
+              className="provider-switchboard__status"
+              data-tone={connectionStates.get(provider.id)?.tone}
+            >
+              {connectionStates.get(provider.id)?.label}
+            </span>
+          </header>
+
+          <p className="provider-switchboard__description">
+            {provider.description}
+          </p>
+          <div className="provider-switchboard__ownership">
+            <Blocks aria-hidden="true" size={15} />
+            <span>
+              <strong>{provider.ownership}</strong>
+              <small>
+                {provider.id === "claude"
+                  ? "Se o Claude Code for removido do computador, somente este agente fica indisponível."
+                  : provider.family === "token_plan"
+                    ? "O OkamiCode conversa direto com o endpoint do plano fixo."
+                    : "Não depende de uma instalação global no seu computador."}
+              </small>
+            </span>
+          </div>
+
+          {provider.auth === "device" && (
+            <DeviceConnection
+              challenge={
+                deviceChallenge?.provider === provider.id
+                  ? deviceChallenge
+                  : undefined
+              }
+              error={
+                startDeviceAuth.isError ? startDeviceAuth.error : undefined
+              }
+              pending={
+                startDeviceAuth.isPending &&
+                startDeviceAuth.variables?.provider === provider.id
+              }
+              provider={provider.id as "codex" | "grok"}
+              onStart={() => {
+                setDeviceChallenge(undefined);
+                startDeviceAuth.mutate({
+                  provider: provider.id as "codex" | "grok",
+                });
+              }}
+            />
+          )}
+
+          {provider.auth === "interactive" && (
+            <div className="provider-interactive">
+              <div>
+                <h3>Conexão guiada</h3>
+                <p>
+                  A autenticação oficial abre dentro do OkamiCode. Quando o
+                  provider pedir navegador, conclua o login e volte para esta
+                  tela.
+                </p>
+              </div>
+              <button
+                className="control-button control-button--primary"
+                onClick={() =>
+                  setInteractiveProvider(
+                    provider.id as "claude" | "cursor" | "agy" | "opencode",
+                  )
+                }
+                type="button"
+              >
+                <KeyRound aria-hidden="true" size={15} />
+                {provider.id === "opencode"
+                  ? "Gerenciar providers"
+                  : "Conectar conta"}
+              </button>
+              {interactiveProvider === provider.id && (
+                <ProviderAuthTerminal
+                  key={provider.id}
+                  onClose={() => {
+                    setInteractiveProvider(null);
+                    refresh();
+                  }}
+                  provider={
+                    provider.id as "claude" | "cursor" | "agy" | "opencode"
+                  }
+                />
+              )}
             </div>
-            {deviceChallenge.userCode && (
-              <code>{deviceChallenge.userCode}</code>
-            )}
-            <button
-              className="control-button control-button--primary"
-              onClick={() =>
-                void workbenchClient.systemOpenExternal({
-                  url: deviceChallenge.verificationUrl,
+          )}
+
+          {provider.id === "mimo" && (
+            <TokenPlanForm
+              configured={
+                tokenPlans.find((entry) => entry.provider === "mimo")
+                  ?.configured ?? false
+              }
+              error={saveTokenPlan.isError ? saveTokenPlan.error : undefined}
+              endpoint={tokenPlanDrafts.mimoBaseUrl}
+              pending={saveTokenPlan.isPending || deleteTokenPlan.isPending}
+              provider="mimo"
+              token={tokenPlanDrafts.mimoToken}
+              onEndpointChange={(mimoBaseUrl) =>
+                setTokenPlanDrafts((current) => ({
+                  ...current,
+                  mimoBaseUrl,
+                }))
+              }
+              onRemove={() => deleteTokenPlan.mutate({ provider: "mimo" })}
+              onSave={() =>
+                saveTokenPlan.mutate({
+                  provider: "mimo",
+                  token: tokenPlanDrafts.mimoToken,
+                  baseUrl: tokenPlanDrafts.mimoBaseUrl,
                 })
               }
-              type="button"
-            >
-              <ExternalLink aria-hidden="true" size={14} />
-              Abrir página oficial
-            </button>
-          </div>
-        )}
-        {startDeviceAuth.isError && (
-          <p className="settings-token-plans__error" role="alert">
-            {startDeviceAuth.error instanceof Error
-              ? startDeviceAuth.error.message
-              : "Não foi possível iniciar a conexão da assinatura."}
-          </p>
-        )}
-      </section>
+              onTokenChange={(mimoToken) =>
+                setTokenPlanDrafts((current) => ({ ...current, mimoToken }))
+              }
+            />
+          )}
 
-      <section className="control-section settings-token-plans">
-        <header>
-          <div>
-            <h2>Credenciais de Token Plan</h2>
-            <p>
-              Chaves exclusivas do plano fixo, criptografadas neste dispositivo.
-              O Okami não aceita credenciais pay-as-you-go nestes campos.
-            </p>
-          </div>
+          {provider.id === "minimax" && (
+            <TokenPlanForm
+              configured={
+                tokenPlans.find((entry) => entry.provider === "minimax")
+                  ?.configured ?? false
+              }
+              error={saveTokenPlan.isError ? saveTokenPlan.error : undefined}
+              pending={saveTokenPlan.isPending || deleteTokenPlan.isPending}
+              provider="minimax"
+              token={tokenPlanDrafts.minimaxToken}
+              onRemove={() => deleteTokenPlan.mutate({ provider: "minimax" })}
+              onSave={() =>
+                saveTokenPlan.mutate({
+                  provider: "minimax",
+                  token: tokenPlanDrafts.minimaxToken,
+                })
+              }
+              onTokenChange={(minimaxToken) =>
+                setTokenPlanDrafts((current) => ({ ...current, minimaxToken }))
+              }
+            />
+          )}
+
+          <footer className="provider-switchboard__runtime">
+            <span>
+              Runtime
+              <strong>
+                {runtime?.version ??
+                  (provider.family === "token_plan"
+                    ? "Aguardando credencial"
+                    : "Versão não detectada")}
+              </strong>
+            </span>
+            <span>
+              Transporte
+              <strong>{runtime?.transportId ?? "Não iniciado"}</strong>
+            </span>
+            <span>
+              Cobrança
+              <strong>
+                {provider.family === "token_plan"
+                  ? "Plano fixo"
+                  : provider.family === "subscription"
+                    ? "Assinatura"
+                    : "Do provider escolhido"}
+              </strong>
+            </span>
+          </footer>
+        </section>
+      </div>
+
+      <section className="settings-diagnostics">
+        <button
+          aria-expanded={diagnosticsOpen}
+          className="settings-diagnostics__toggle"
+          onClick={() => setDiagnosticsOpen((current) => !current)}
+          type="button"
+        >
           <span>
-            {
-              (providerAuth.data ?? []).filter((entry) => entry.configured)
-                .length
-            }{" "}
-            de 2
+            <Wrench aria-hidden="true" size={16} />
+            <span>
+              <strong>Abrir diagnóstico técnico</strong>
+              <small>
+                Binários, versões, adapters e arquivos de configuração
+              </small>
+            </span>
           </span>
-        </header>
-        <div className="settings-token-plans__grid">
-          <form
-            onSubmit={(event) => {
-              event.preventDefault();
-              saveTokenPlan.mutate({
-                provider: "mimo",
-                token: tokenPlanDrafts.mimoToken,
-                baseUrl: tokenPlanDrafts.mimoBaseUrl,
-              });
-            }}
-          >
-            <div className="settings-token-plans__title">
-              <KeyRound aria-hidden="true" size={17} />
-              <div>
-                <strong>MiMo Token Plan</strong>
-                <small>Somente chave tp- e endpoint token-plan-*</small>
-              </div>
-              <span
-                data-configured={
-                  providerAuth.data?.find((item) => item.provider === "mimo")
-                    ?.configured ?? false
-                }
-              >
-                {providerAuth.data?.find((item) => item.provider === "mimo")
-                  ?.configured
-                  ? "Configurado"
-                  : "Não configurado"}
-              </span>
-            </div>
-            <label>
-              Endpoint do Token Plan
-              <input
-                onChange={(event) =>
-                  setTokenPlanDrafts((current) => ({
-                    ...current,
-                    mimoBaseUrl: event.target.value,
-                  }))
-                }
-                required
-                type="url"
-                value={tokenPlanDrafts.mimoBaseUrl}
-              />
-            </label>
-            <label>
-              Chave do Token Plan
-              <input
-                autoComplete="off"
-                onChange={(event) =>
-                  setTokenPlanDrafts((current) => ({
-                    ...current,
-                    mimoToken: event.target.value,
-                  }))
-                }
-                placeholder="tp-…"
-                required
-                type="password"
-                value={tokenPlanDrafts.mimoToken}
-              />
-            </label>
-            <div className="settings-token-plans__actions">
-              <button
-                className="control-button control-button--primary"
-                disabled={saveTokenPlan.isPending}
-                type="submit"
-              >
-                <Save aria-hidden="true" size={14} />
-                Salvar com criptografia
-              </button>
-              {providerAuth.data?.find((item) => item.provider === "mimo")
-                ?.configured && (
-                <button
-                  className="control-button"
-                  onClick={() => deleteTokenPlan.mutate({ provider: "mimo" })}
-                  type="button"
-                >
-                  Remover
-                </button>
-              )}
-            </div>
-          </form>
+          <ChevronDown
+            aria-hidden="true"
+            data-open={diagnosticsOpen}
+            size={17}
+          />
+        </button>
 
-          <form
-            onSubmit={(event) => {
-              event.preventDefault();
-              saveTokenPlan.mutate({
-                provider: "minimax",
-                token: tokenPlanDrafts.minimaxToken,
-              });
-            }}
-          >
-            <div className="settings-token-plans__title">
-              <KeyRound aria-hidden="true" size={17} />
+        {diagnosticsOpen && (
+          <div className="settings-diagnostics__body">
+            <header>
               <div>
-                <strong>MiniMax Token Plan</strong>
-                <small>Somente chave exclusiva sk-cp-</small>
+                <h2>Diagnóstico dos runtimes</h2>
+                <p>
+                  Aqui “pronto” mede o motor e o protocolo. A conexão da conta é
+                  tratada acima.
+                </p>
               </div>
-              <span
-                data-configured={
-                  providerAuth.data?.find((item) => item.provider === "minimax")
-                    ?.configured ?? false
-                }
-              >
-                {providerAuth.data?.find((item) => item.provider === "minimax")
-                  ?.configured
-                  ? "Configurado"
-                  : "Não configurado"}
-              </span>
-            </div>
-            <label>
-              Chave do Token Plan
-              <input
-                autoComplete="off"
-                onChange={(event) =>
-                  setTokenPlanDrafts((current) => ({
-                    ...current,
-                    minimaxToken: event.target.value,
-                  }))
-                }
-                placeholder="sk-cp-…"
-                required
-                type="password"
-                value={tokenPlanDrafts.minimaxToken}
-              />
-            </label>
-            <p className="settings-token-plans__note">
-              O endpoint oficial do Token Plan é configurado pelo Okami.
-            </p>
-            <div className="settings-token-plans__actions">
               <button
-                className="control-button control-button--primary"
-                disabled={saveTokenPlan.isPending}
-                type="submit"
+                className="control-button"
+                onClick={refresh}
+                type="button"
               >
-                <Save aria-hidden="true" size={14} />
-                Salvar com criptografia
+                <RefreshCw aria-hidden="true" size={14} /> Verificar novamente
               </button>
-              {providerAuth.data?.find((item) => item.provider === "minimax")
-                ?.configured && (
-                <button
-                  className="control-button"
-                  onClick={() =>
-                    deleteTokenPlan.mutate({ provider: "minimax" })
-                  }
-                  type="button"
-                >
-                  Remover
-                </button>
-              )}
-            </div>
-          </form>
-        </div>
-        {saveTokenPlan.isError && (
-          <p className="settings-token-plans__error" role="alert">
-            {saveTokenPlan.error instanceof Error
-              ? saveTokenPlan.error.message
-              : "Não foi possível salvar a credencial."}
-          </p>
-        )}
-      </section>
-
-      <section className="control-section settings-configs">
-        <header>
-          <div>
-            <h2>Fontes de configuração</h2>
-            <p>
-              Leitura somente: os próprios CLIs continuam sendo a fonte de
-              verdade.
-            </p>
+            </header>
+            <ul className="settings-client-list">
+              {clients.map((client) => {
+                const tone = statusTone(client);
+                const managed = client.client !== "claude";
+                return (
+                  <li key={client.client}>
+                    <div
+                      className={`settings-client__icon settings-client__icon--${tone}`}
+                    >
+                      <TerminalSquare aria-hidden="true" size={17} />
+                    </div>
+                    <div className="settings-client__identity">
+                      <strong>{client.label}</strong>
+                      <span>
+                        {managed
+                          ? "Distribuído e verificado pelo OkamiCode"
+                          : "Executável externo do Claude Code"}
+                      </span>
+                      <code>
+                        {client.binaryPath ?? "Executável não localizado"}
+                      </code>
+                    </div>
+                    <div className="settings-client__status">
+                      <span
+                        className={`connection-status connection-status--${tone === "ready" ? "ready" : tone === "offline" ? "offline" : "attention"}`}
+                      >
+                        {tone === "ready" ? (
+                          <CheckCircle2 aria-hidden="true" size={13} />
+                        ) : tone === "offline" ? (
+                          <CircleDashed aria-hidden="true" size={13} />
+                        ) : (
+                          <AlertTriangle aria-hidden="true" size={13} />
+                        )}
+                        {INTEGRATION_LABELS[client.integrationStatus]}
+                      </span>
+                      <small>
+                        {client.capabilities.length} capacidades verificadas
+                      </small>
+                    </div>
+                    <button
+                      className="control-button"
+                      onClick={() => setInspectedClient(client)}
+                      type="button"
+                    >
+                      Ver detalhes
+                    </button>
+                  </li>
+                );
+              })}
+            </ul>
+            {(settings.data?.length ?? 0) > 0 && (
+              <div className="settings-diagnostics__files">
+                <strong>Arquivos lidos</strong>
+                {(settings.data ?? []).map((file) => (
+                  <code key={file.path}>{file.path}</code>
+                ))}
+              </div>
+            )}
           </div>
-          <span>{settings.data?.length ?? 0}</span>
-        </header>
-        <ul>
-          {(settings.data ?? []).map((file) => (
-            <li key={file.path}>
-              <Wrench aria-hidden="true" size={15} />
-              <div>
-                <code>{file.path}</code>
-                <small>
-                  {file.exists
-                    ? `${file.keys.length} seções${file.effortLevel ? ` · effort ${file.effortLevel}` : ""}${file.theme ? ` · tema ${file.theme}` : ""}`
-                    : "Arquivo ausente"}
-                </small>
-              </div>
-              {file.enabledPlugins && (
-                <span>{file.enabledPlugins.length} plugins</span>
-              )}
-            </li>
-          ))}
-        </ul>
+        )}
       </section>
 
       {inspectedClient && (
@@ -690,71 +725,195 @@ export function SettingsPage() {
             </div>
             <div>
               <dt>Versão detectada</dt>
-              <dd>{inspectedClient.version ?? "O CLI não informou versão"}</dd>
+              <dd>{inspectedClient.version ?? "Versão não informada"}</dd>
             </div>
             <div>
-              <dt>Papel</dt>
+              <dt>Propriedade</dt>
               <dd>
-                {inspectedClient.role === "runtime"
-                  ? "Runtime de conversa"
-                  : "Launcher de recurso"}
+                {inspectedClient.client === "claude"
+                  ? "Instalação externa do usuário"
+                  : "Artefato gerenciado pelo OkamiCode"}
               </dd>
             </div>
           </dl>
           <section>
             <h3>Capacidades comprovadas</h3>
-            {inspectedClient.capabilities.length === 0 ? (
-              <p>Nenhuma capacidade foi comprovada pelo probe local.</p>
-            ) : (
-              <div className="settings-inspector__capabilities">
-                {inspectedClient.capabilities.map((capability) => (
-                  <span key={capability}>{capability}</span>
-                ))}
-              </div>
-            )}
-          </section>
-          <section className="settings-update-guard">
-            <h3>
-              <Cable aria-hidden="true" size={15} /> Atualização protegida
-            </h3>
-            {inspectedClient.integrationStatus === "update_required" ? (
-              <>
-                <ol>
-                  <li>Executável e versão foram detectados.</li>
-                  <li>O adapter atual marcou o protocolo como incompatível.</li>
-                  <li>
-                    O Okami não possui um atualizador oficial comprovado para
-                    este CLI.
-                  </li>
-                </ol>
-                <p>
-                  Nenhum comando será executado até existir um updater
-                  allowlisted com verificação pós-instalação. Atualizar às cegas
-                  seria só trocar um bug conhecido por outro surpresa.
-                </p>
-              </>
-            ) : (
-              <p>
-                O CLI não declarou uma atualização necessária. “Verificar
-                novamente” repete o probe local sem baixar ou instalar nada.
-              </p>
-            )}
+            <div className="settings-inspector__capabilities">
+              {inspectedClient.capabilities.map((capability) => (
+                <span key={capability}>{capability}</span>
+              ))}
+            </div>
           </section>
           <footer>
             <button className="control-button" onClick={refresh} type="button">
               <RefreshCw aria-hidden="true" size={14} /> Verificar novamente
             </button>
-            <button
-              className="control-button control-button--primary"
-              disabled
-              title="Atualizador oficial ainda não integrado"
-              type="button"
-            >
-              Atualizar CLI
-            </button>
           </footer>
         </aside>
       )}
     </section>
+  );
+}
+
+function DeviceConnection({
+  challenge,
+  error,
+  pending,
+  provider,
+  onStart,
+}: {
+  challenge?: IpcResponse<"providerAuth:startDevice">;
+  error?: unknown;
+  pending: boolean;
+  provider: "codex" | "grok";
+  onStart: () => void;
+}) {
+  return (
+    <div className="provider-device">
+      <div>
+        <h3>Conexão por dispositivo</h3>
+        <p>
+          O código é gerado pelo {provider === "codex" ? "OpenAI" : "xAI"} e
+          autoriza somente sua assinatura.
+        </p>
+      </div>
+      <button
+        className="control-button control-button--primary"
+        disabled={pending}
+        onClick={onStart}
+        type="button"
+      >
+        <KeyRound aria-hidden="true" size={15} />
+        {pending ? "Gerando código…" : "Conectar assinatura"}
+      </button>
+      {challenge && (
+        <div className="settings-device-challenge" role="status">
+          <div>
+            <strong>Código de conexão</strong>
+            <p>Abra a página oficial e confirme este código.</p>
+          </div>
+          {challenge.userCode && <code>{challenge.userCode}</code>}
+          <button
+            className="control-button"
+            onClick={() =>
+              void workbenchClient.systemOpenExternal({
+                url: challenge.verificationUrl,
+              })
+            }
+            type="button"
+          >
+            <ExternalLink aria-hidden="true" size={14} />
+            Abrir página oficial
+          </button>
+        </div>
+      )}
+      {error !== undefined && (
+        <p className="settings-token-plans__error" role="alert">
+          Não foi possível iniciar a conexão. Verifique o motor e tente
+          novamente.
+        </p>
+      )}
+    </div>
+  );
+}
+
+function TokenPlanForm({
+  configured,
+  endpoint,
+  error,
+  pending,
+  provider,
+  token,
+  onEndpointChange,
+  onRemove,
+  onSave,
+  onTokenChange,
+}: {
+  configured: boolean;
+  endpoint?: string;
+  error?: unknown;
+  pending: boolean;
+  provider: "mimo" | "minimax";
+  token: string;
+  onEndpointChange?: (value: string) => void;
+  onRemove: () => void;
+  onSave: () => void;
+  onTokenChange: (value: string) => void;
+}) {
+  return (
+    <form
+      className="provider-token-plan"
+      onSubmit={(event) => {
+        event.preventDefault();
+        onSave();
+      }}
+    >
+      <div className="provider-token-plan__intro">
+        <KeyRound aria-hidden="true" size={17} />
+        <div>
+          <strong>
+            {configured ? "Plano configurado" : "Informe os dados do seu plano"}
+          </strong>
+          <small>
+            {provider === "mimo"
+              ? "Aceita somente tp- no endpoint token-plan-*."
+              : "Aceita somente a chave Coding Plan sk-cp-."}
+          </small>
+        </div>
+      </div>
+      {endpoint !== undefined && (
+        <label>
+          Endpoint do Token Plan
+          <input
+            onChange={(event) => onEndpointChange?.(event.target.value)}
+            required
+            type="url"
+            value={endpoint}
+          />
+        </label>
+      )}
+      <label>
+        Chave do Token Plan
+        <input
+          autoComplete="off"
+          onChange={(event) => onTokenChange(event.target.value)}
+          placeholder={provider === "mimo" ? "tp-…" : "sk-cp-…"}
+          required
+          type="password"
+          value={token}
+        />
+      </label>
+      {provider === "minimax" && (
+        <p className="provider-token-plan__hint">
+          O endpoint oficial é aplicado pelo OkamiCode.
+        </p>
+      )}
+      <div className="provider-token-plan__actions">
+        <button
+          className="control-button control-button--primary"
+          disabled={pending}
+          type="submit"
+        >
+          <Save aria-hidden="true" size={14} />
+          {configured ? "Atualizar conexão" : "Salvar e conectar"}
+        </button>
+        {configured && (
+          <button
+            className="control-button"
+            disabled={pending}
+            onClick={onRemove}
+            type="button"
+          >
+            Remover conexão
+          </button>
+        )}
+      </div>
+      {error !== undefined && (
+        <p className="settings-token-plans__error" role="alert">
+          A credencial foi recusada. Confirme se ela pertence ao Token Plan fixo
+          deste provider.
+        </p>
+      )}
+    </form>
   );
 }

@@ -73,6 +73,24 @@ const providerAuthStatusSchema = z
     configured: z.boolean(),
   })
   .strict();
+const providerConnectionStatusSchema = z
+  .object({
+    provider: z.enum([
+      "claude",
+      "codex",
+      "cursor",
+      "agy",
+      "grok",
+      "mimo",
+      "minimax",
+      "opencode",
+    ]),
+    status: z.enum(["connected", "not_connected", "unavailable", "unknown"]),
+    accountLabel: z.string().min(1).nullable(),
+    detail: z.string().min(1),
+    ownership: z.enum(["okami", "host"]),
+  })
+  .strict();
 const providerAuthSetTokenPlanRequestSchema = z
   .object({
     provider: tokenPlanProviderSchema,
@@ -93,6 +111,41 @@ const providerAuthDeviceChallengeSchema = z
     verificationUrl: externalWebUrlSchema,
     userCode: z.string().min(1).nullable(),
   })
+  .strict();
+const interactiveAuthProviderSchema = z.enum([
+  "claude",
+  "cursor",
+  "agy",
+  "opencode",
+]);
+const providerAuthInteractiveOpenRequestSchema = z
+  .object({
+    provider: interactiveAuthProviderSchema,
+    columns: z.number().int().min(40).max(240).default(92),
+    rows: z.number().int().min(12).max(80).default(26),
+  })
+  .strict();
+const providerAuthInteractiveSessionSchema = z
+  .object({ sessionId: z.string().min(1) })
+  .strict();
+const providerAuthInteractiveWriteRequestSchema = z
+  .object({
+    sessionId: z.string().min(1),
+    data: z.string().min(1).max(8_192),
+  })
+  .strict();
+const providerAuthInteractiveResizeRequestSchema = z
+  .object({
+    sessionId: z.string().min(1),
+    columns: z.number().int().min(40).max(240),
+    rows: z.number().int().min(12).max(80),
+  })
+  .strict();
+const providerAuthInteractiveCloseRequestSchema = z
+  .object({ sessionId: z.string().min(1) })
+  .strict();
+const providerAuthInteractiveAckSchema = z
+  .object({ ok: z.literal(true) })
   .strict();
 
 const clientCapabilityRules = {
@@ -1799,9 +1852,14 @@ export const ipcRequestSchemas = {
   "system:openExternal": systemOpenExternalRequestSchema,
   "system:showItemInFolder": systemShowItemInFolderRequestSchema,
   "providerAuth:list": emptyRequestSchema,
+  "providerAuth:status": emptyRequestSchema,
   "providerAuth:setTokenPlan": providerAuthSetTokenPlanRequestSchema,
   "providerAuth:deleteTokenPlan": providerAuthDeleteTokenPlanRequestSchema,
   "providerAuth:startDevice": providerAuthStartDeviceRequestSchema,
+  "providerAuth:interactiveOpen": providerAuthInteractiveOpenRequestSchema,
+  "providerAuth:interactiveWrite": providerAuthInteractiveWriteRequestSchema,
+  "providerAuth:interactiveResize": providerAuthInteractiveResizeRequestSchema,
+  "providerAuth:interactiveClose": providerAuthInteractiveCloseRequestSchema,
   "models:list": emptyRequestSchema,
   "models:favorites:list": emptyRequestSchema,
   "models:favorites:set": modelFavoriteSetRequestSchema,
@@ -1898,9 +1956,14 @@ export const ipcResponseSchemas = {
   "system:openExternal": systemOpenExternalResultSchema,
   "system:showItemInFolder": systemShowItemInFolderResultSchema,
   "providerAuth:list": z.array(providerAuthStatusSchema),
+  "providerAuth:status": z.array(providerConnectionStatusSchema),
   "providerAuth:setTokenPlan": providerAuthStatusSchema,
   "providerAuth:deleteTokenPlan": providerAuthStatusSchema,
   "providerAuth:startDevice": providerAuthDeviceChallengeSchema,
+  "providerAuth:interactiveOpen": providerAuthInteractiveSessionSchema,
+  "providerAuth:interactiveWrite": providerAuthInteractiveAckSchema,
+  "providerAuth:interactiveResize": providerAuthInteractiveAckSchema,
+  "providerAuth:interactiveClose": providerAuthInteractiveAckSchema,
   "models:list": modelCatalogSchema,
   "models:favorites:list": modelFavoritesSchema,
   "models:favorites:set": modelFavoritesSchema,

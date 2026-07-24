@@ -14,9 +14,11 @@ import type {
   StartSessionRequest,
   UsageCapabilities,
 } from "../adapter";
+import { NativeSessionUnavailableError } from "../adapter";
 import { JsonlProcess } from "../transport";
 import {
   CodexClient,
+  CodexRpcError,
   type CodexApprovalPolicy,
   type CodexSandboxPolicy,
   type CodexServerMessage,
@@ -262,6 +264,12 @@ export class CodexAdapter implements RuntimeAdapter {
       };
     } catch (error) {
       await client.close();
+      if (resume && isMissingCodexRollout(error)) {
+        throw new NativeSessionUnavailableError(
+          "codex",
+          "provider_session_missing",
+        );
+      }
       throw error;
     }
   }
@@ -325,6 +333,13 @@ export function subscriptionEnvironment(
   delete environment.OPENAI_API_KEY;
   delete environment.ANTHROPIC_API_KEY;
   return environment;
+}
+
+export function isMissingCodexRollout(error: unknown): error is CodexRpcError {
+  return (
+    error instanceof CodexRpcError &&
+    /\bno rollout found for thread id\b/iu.test(error.message)
+  );
 }
 
 function requiredNestedId(value: unknown, key: string): string {

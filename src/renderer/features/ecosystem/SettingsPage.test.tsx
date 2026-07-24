@@ -1,13 +1,17 @@
 import { cleanup, render, screen } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
-import { afterEach, beforeEach, expect, it } from "vitest";
+import { afterEach, beforeEach, expect, it, vi } from "vitest";
 import { installOkamiMock } from "../../test/okami-mock";
 import {
   createWorkbenchStore,
   WorkbenchStoreContext,
 } from "../workbench/store";
 import { SettingsPage } from "./SettingsPage";
+
+vi.mock("./ProviderAuthTerminal", () => ({
+  ProviderAuthTerminal: () => <div data-testid="provider-auth-terminal" />,
+}));
 
 afterEach(cleanup);
 
@@ -18,6 +22,36 @@ beforeEach(() => {
     "providerAuth:list": [
       { provider: "mimo", entitlement: "token_plan", configured: true },
       { provider: "minimax", entitlement: "token_plan", configured: false },
+    ],
+    "providerAuth:status": [
+      {
+        provider: "claude",
+        status: "not_connected",
+        accountLabel: null,
+        detail: "Conta não conectada.",
+        ownership: "host",
+      },
+      {
+        provider: "codex",
+        status: "connected",
+        accountLabel: "marcos@example.com",
+        detail: "Conta conectada.",
+        ownership: "okami",
+      },
+      {
+        provider: "mimo",
+        status: "connected",
+        accountLabel: null,
+        detail: "Token Plan configurado.",
+        ownership: "okami",
+      },
+      {
+        provider: "minimax",
+        status: "not_connected",
+        accountLabel: null,
+        detail: "Token Plan não configurado.",
+        ownership: "okami",
+      },
     ],
     systemDoctor: {
       database: "ok",
@@ -113,7 +147,7 @@ beforeEach(() => {
   });
 });
 
-it("shows verified CLI health and exposes an honest diagnostic", async () => {
+it("puts provider connection ahead of runtime diagnostics", async () => {
   const user = userEvent.setup();
   const queryClient = new QueryClient({
     defaultOptions: { queries: { retry: false } },
@@ -127,44 +161,44 @@ it("shows verified CLI health and exposes an honest diagnostic", async () => {
   );
 
   expect(
-    await screen.findByRole("heading", { name: "CLIs e adapters" }),
+    await screen.findByRole("heading", { name: "Conecte seus agentes" }),
+  ).toBeVisible();
+  expect(
+    screen.getByText(/nenhum runtime usa cobrança pay-as-you-go/i),
+  ).toBeVisible();
+  expect(screen.getByRole("button", { name: /MiMo/i })).toBeVisible();
+  expect(screen.getByRole("button", { name: /MiniMax/i })).toBeVisible();
+  await user.click(screen.getByRole("button", { name: /OpenAI Codex/i }));
+  expect(screen.getByText("Motor incluído no OkamiCode")).toBeVisible();
+  expect(screen.queryByText("CLI opcional")).not.toBeInTheDocument();
+  expect(screen.queryByRole("heading", { name: "Conversa atual" })).toBeNull();
+
+  await user.click(screen.getByRole("button", { name: /MiMo/i }));
+  expect(
+    screen.getByRole("heading", { name: "MiMo Token Plan" }),
+  ).toBeVisible();
+  expect(screen.getByLabelText("Endpoint do Token Plan")).toHaveValue(
+    "https://token-plan-ams.xiaomimimo.com/v1",
+  );
+  expect(screen.getByLabelText("Chave do Token Plan")).toBeVisible();
+
+  expect(
+    screen.getByRole("button", { name: /Abrir diagnóstico técnico/ }),
+  ).toHaveAttribute("aria-expanded", "false");
+  await user.click(
+    screen.getByRole("button", { name: /Abrir diagnóstico técnico/ }),
+  );
+  expect(
+    await screen.findByRole("heading", { name: "Diagnóstico dos runtimes" }),
   ).toBeVisible();
   expect(await screen.findByText("/bin/codex")).toBeVisible();
-  expect(
-    screen.getByText((_, element) => element?.textContent === "2 de 4"),
-  ).toBeVisible();
-  expect(screen.getByText("1", { selector: "strong" })).toBeVisible();
-  expect(screen.getAllByText("Operacional")).toHaveLength(2);
-  expect(screen.getByText("Não encontrado")).toBeVisible();
-  expect(screen.getByText("Adapter incompleto")).toBeVisible();
-  expect(screen.getByText("Nativo do Okami")).toBeVisible();
-  expect(screen.getByText("CLI opcional")).toBeVisible();
-  expect(screen.getByText("codex-managed")).toBeVisible();
-  expect(screen.getAllByText("Incluído na assinatura")).toHaveLength(2);
-  expect(
-    await screen.findByRole("heading", { name: "Credenciais de Token Plan" }),
-  ).toBeVisible();
-  expect(
-    screen.getByRole("heading", { name: "Assinaturas por OAuth" }),
-  ).toBeVisible();
-  expect(
-    screen.getAllByRole("button", { name: "Conectar assinatura" }),
-  ).toHaveLength(2);
-  expect(screen.getAllByText("Configurado")).toHaveLength(1);
-  expect(screen.getAllByText("Não configurado")).toHaveLength(1);
-  expect(screen.getAllByLabelText("Chave do Token Plan")).toHaveLength(2);
-
   await user.click(screen.getAllByRole("button", { name: "Ver detalhes" })[0]);
   expect(
     screen.getByRole("complementary", { name: "Diagnóstico de Codex" }),
   ).toBeVisible();
-  expect(screen.getAllByText("codex-cli 1.0.0")).toHaveLength(2);
+  expect(screen.getByText("codex-cli 1.0.0")).toBeVisible();
   expect(screen.getByText("app_server")).toBeVisible();
-  expect(screen.getByRole("button", { name: "Atualizar CLI" })).toBeDisabled();
-  expect(
-    screen.getByText(/não declarou uma atualização necessária/i),
-  ).toBeVisible();
+  expect(screen.getByText("Artefato gerenciado pelo OkamiCode")).toBeVisible();
 
-  expect(screen.queryByRole("combobox")).not.toBeInTheDocument();
   expect(screen.queryByRole("radio")).not.toBeInTheDocument();
 });

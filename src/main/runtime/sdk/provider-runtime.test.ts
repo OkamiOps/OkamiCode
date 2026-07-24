@@ -12,6 +12,7 @@ import type {
   StartSessionRequest,
   UsageCapabilities,
 } from "../adapter";
+import { NativeSessionUnavailableError } from "../adapter";
 import {
   ProviderRuntimeAdapter,
   type RuntimeTransportCandidate,
@@ -268,6 +269,37 @@ describe("ProviderRuntimeAdapter", () => {
     expect(api.resumeRequests).toHaveLength(0);
   });
 
+  it("replaces a missing provider session and requests full rehydration", async () => {
+    const codex = new FakeTransport("codex", healthy("codex-1"));
+    codex.resumeError = new NativeSessionUnavailableError(
+      "codex",
+      "provider_session_missing",
+    );
+    const runtime = provider(
+      [candidate("codex-managed", "embedded", 10, codex, true)],
+      "codex",
+    );
+    const oldBinding = `okami:v1:codex-managed:${Buffer.from(
+      "missing-rollout",
+    ).toString("base64url")}`;
+
+    const resumed = await runtime.resume({
+      ...startRequest(),
+      nativeSessionId: oldBinding,
+    });
+
+    expect(codex.resumeRequests[0]?.nativeSessionId).toBe("missing-rollout");
+    expect(codex.startRequests).toHaveLength(1);
+    expect(resumed.nativeSessionId).toMatch(/^okami:v1:codex-managed:/u);
+    expect(resumed).toMatchObject({
+      migration: {
+        fromNativeSessionId: oldBinding,
+        toNativeSessionId: resumed.nativeSessionId,
+        rehydrationRequired: true,
+      },
+    });
+  });
+
   it("continues to reject malformed encoded transport bindings", async () => {
     const runtime = provider([
       candidate(
@@ -297,7 +329,7 @@ function provider(
 
 function candidate(
   id: string,
-  kind: "api" | "cli",
+  kind: "api" | "cli" | "embedded",
   priority: number,
   adapter: RuntimeAdapter,
   legacySessionOwner = false,
@@ -306,11 +338,21 @@ function candidate(
     descriptor: {
       id,
       kind,
-      authentication: kind === "api" ? "api_key" : "external_cli",
+      authentication:
+        kind === "api"
+          ? "api_key"
+          : kind === "embedded"
+            ? "provider_managed"
+            : "external_cli",
       entitlement: kind === "api" ? "token_plan" : "subscription",
       priority,
       optional: true,
-      protocolVersion: kind === "api" ? "responses-v1" : "stream-json",
+      protocolVersion:
+        kind === "api"
+          ? "responses-v1"
+          : kind === "embedded"
+            ? "app-server"
+            : "stream-json",
       executable: kind === "api" ? null : "fake-cli",
       legacySessionOwner,
     },
@@ -341,6 +383,7 @@ class FakeTransport implements RuntimeAdapter {
   readonly turnRequests: NativeTurnRequest[] = [];
   readonly respondToApproval = vi.fn(async () => undefined);
   readonly cancel = vi.fn(async () => undefined);
+  resumeError?: Error;
 
   constructor(
     readonly kind: RuntimeKind,
@@ -366,6 +409,7 @@ class FakeTransport implements RuntimeAdapter {
 
   resume(request: ResumeSessionRequest): Promise<NativeSession> {
     this.resumeRequests.push(request);
+    if (this.resumeError) return Promise.reject(this.resumeError);
     return Promise.resolve({
       laneId: request.laneId,
       bindingState: "authoritative",

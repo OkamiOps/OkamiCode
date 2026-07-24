@@ -64,6 +64,8 @@ import {
   type ManagedRuntimeCommands,
 } from "./runtime/managed-runtime";
 import { SubscriptionDeviceAuthService } from "./runtime/subscription-device-auth";
+import { ProviderAuthSessionService } from "./runtime/provider-auth-session";
+import { ProviderAuthStatusService } from "./runtime/provider-auth-status";
 import { AgyCompanionServer } from "./runtime/agy/companion-server";
 import { AgyPluginManager } from "./runtime/agy/plugin";
 import { createAgyPolicyAuthorizer } from "./runtime/agy/policy-authorizer";
@@ -74,6 +76,7 @@ import { bootstrapFailurePage } from "./bootstrap-failure";
 
 const execFileAsync = promisify(execFile);
 let subscriptionDeviceAuthService: SubscriptionDeviceAuthService | undefined;
+let providerAuthSessionService: ProviderAuthSessionService | undefined;
 
 // safeStorage uses the application identity as part of its macOS Keychain
 // lookup. Keep the original identity even though the visible product is now
@@ -313,6 +316,22 @@ async function bootstrap(): Promise<void> {
     locateLocalBinary,
     managedRuntimeCommands,
   );
+  providerAuthSessionService = new ProviderAuthSessionService({
+    commands: runtimeCommands,
+    onData: ({ sessionId, data, exited, exitCode }) => {
+      for (const window of BrowserWindow.getAllWindows()) {
+        window.webContents.send("terminal:data", {
+          termId: sessionId,
+          ...(data === undefined ? {} : { data }),
+          ...(exited === undefined ? {} : { exited }),
+          ...(exitCode === undefined ? {} : { exitCode }),
+        });
+      }
+    },
+  });
+  const providerAuthStatusService = new ProviderAuthStatusService({
+    commands: runtimeCommands,
+  });
   const agyCommand = runtimeCommands.agy;
   const agyPluginManager = new AgyPluginManager({
     command: agyCommand,
@@ -579,6 +598,8 @@ async function bootstrap(): Promise<void> {
     googleInboxOAuthService,
     calendarService,
     subscriptionDeviceAuthService,
+    providerAuthSessionService,
+    providerAuthStatusService,
     usageRuntimeCommands: runtimeCommands,
     openExternal: (url) => shell.openExternal(url),
     showItemInFolder: async (targetPath) => shell.showItemInFolder(targetPath),
@@ -620,5 +641,6 @@ app.on("window-all-closed", () => app.quit());
 app.on("before-quit", () => {
   inboxSyncScheduler?.stop();
   subscriptionDeviceAuthService?.close();
+  providerAuthSessionService?.closeAll();
   void memoryService?.close();
 });

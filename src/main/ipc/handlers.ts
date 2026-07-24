@@ -41,6 +41,11 @@ import type {
   SubscriptionDeviceAuthService,
   SubscriptionProvider,
 } from "../runtime/subscription-device-auth";
+import type { ProviderAuthSessionService } from "../runtime/provider-auth-session";
+import type {
+  ProviderAuthStatus,
+  ProviderAuthStatusService,
+} from "../runtime/provider-auth-status";
 import {
   createUsageCommands,
   type UsageCommands,
@@ -169,6 +174,11 @@ interface RegisterIpcHandlersOptions {
   showItemInFolder?: (path: string) => Promise<unknown>;
   openRouterPricingService?: Pick<OpenRouterPricingService, "list">;
   subscriptionDeviceAuthService?: Pick<SubscriptionDeviceAuthService, "start">;
+  providerAuthSessionService?: Pick<
+    ProviderAuthSessionService,
+    "open" | "write" | "resize" | "close"
+  >;
+  providerAuthStatusService?: Pick<ProviderAuthStatusService, "list">;
   usageRuntimeCommands?: UsageRuntimeCommands;
 }
 
@@ -219,6 +229,8 @@ export function registerIpcHandlers({
   },
   openRouterPricingService = new OpenRouterPricingService(),
   subscriptionDeviceAuthService,
+  providerAuthSessionService,
+  providerAuthStatusService,
   usageRuntimeCommands,
 }: RegisterIpcHandlersOptions): void {
   const openedLanes = new Map<string, OpenedLane>();
@@ -324,6 +336,8 @@ export function registerIpcHandlers({
         showItemInFolder,
         openRouterPricingService,
         subscriptionDeviceAuthService,
+        providerAuthSessionService,
+        providerAuthStatusService,
       );
       return ipcResponseSchemas[channel].parse(response);
     });
@@ -358,6 +372,11 @@ async function dispatch(
   openRouterPricingService: Pick<OpenRouterPricingService, "list">,
   subscriptionDeviceAuthService:
     Pick<SubscriptionDeviceAuthService, "start"> | undefined,
+  providerAuthSessionService:
+    | Pick<ProviderAuthSessionService, "open" | "write" | "resize" | "close">
+    | undefined,
+  providerAuthStatusService:
+    Pick<ProviderAuthStatusService, "list"> | undefined,
 ): Promise<unknown> {
   switch (channel) {
     case "system:doctor":
@@ -380,6 +399,27 @@ async function dispatch(
           configured: (await state.providerCredentials?.has(provider)) ?? false,
         })),
       );
+    case "providerAuth:status": {
+      const probed = (await providerAuthStatusService?.list()) ?? [];
+      const tokenPlans = await Promise.all(
+        (["mimo", "minimax"] as const).map(
+          async (provider): Promise<ProviderAuthStatus> => {
+            const configured =
+              (await state.providerCredentials?.has(provider)) ?? false;
+            return {
+              provider,
+              status: configured ? "connected" : "not_connected",
+              accountLabel: null,
+              detail: configured
+                ? "Token Plan configurado no cofre local."
+                : "Token Plan ainda não configurado.",
+              ownership: "okami",
+            };
+          },
+        ),
+      );
+      return [...probed, ...tokenPlans];
+    }
     case "providerAuth:setTokenPlan": {
       if (!state.providerCredentials) {
         throw new Error("Token Plan credential storage is unavailable.");
@@ -415,6 +455,44 @@ async function dispatch(
       return subscriptionDeviceAuthService.start(
         input.provider as SubscriptionProvider,
       ) satisfies Promise<DeviceAuthChallenge>;
+    }
+    case "providerAuth:interactiveOpen": {
+      if (!providerAuthSessionService) {
+        throw new Error("Interactive provider authentication is unavailable.");
+      }
+      const input = request as IpcRequest<"providerAuth:interactiveOpen">;
+      return providerAuthSessionService.open(input.provider, {
+        columns: input.columns ?? 92,
+        rows: input.rows ?? 26,
+      });
+    }
+    case "providerAuth:interactiveWrite": {
+      if (!providerAuthSessionService) {
+        throw new Error("Interactive provider authentication is unavailable.");
+      }
+      const input = request as IpcRequest<"providerAuth:interactiveWrite">;
+      providerAuthSessionService.write(input.sessionId, input.data);
+      return { ok: true as const };
+    }
+    case "providerAuth:interactiveResize": {
+      if (!providerAuthSessionService) {
+        throw new Error("Interactive provider authentication is unavailable.");
+      }
+      const input = request as IpcRequest<"providerAuth:interactiveResize">;
+      providerAuthSessionService.resize(
+        input.sessionId,
+        input.columns,
+        input.rows,
+      );
+      return { ok: true as const };
+    }
+    case "providerAuth:interactiveClose": {
+      if (!providerAuthSessionService) {
+        throw new Error("Interactive provider authentication is unavailable.");
+      }
+      const input = request as IpcRequest<"providerAuth:interactiveClose">;
+      providerAuthSessionService.close(input.sessionId);
+      return { ok: true as const };
     }
     case "models:list":
       return modelCatalog();

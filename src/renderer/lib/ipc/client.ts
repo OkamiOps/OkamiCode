@@ -57,6 +57,7 @@ export const workbenchClient = {
   systemShowItemInFolder: (request: IpcRequest<"system:showItemInFolder">) =>
     invokeCommand("system:showItemInFolder", request),
   providerAuthList: () => invokeCommand("providerAuth:list", {}),
+  providerAuthStatus: () => invokeCommand("providerAuth:status", {}),
   providerAuthSetTokenPlan: (
     request: IpcRequest<"providerAuth:setTokenPlan">,
   ) => invokeCommand("providerAuth:setTokenPlan", request),
@@ -65,6 +66,18 @@ export const workbenchClient = {
   ) => invokeCommand("providerAuth:deleteTokenPlan", request),
   providerAuthStartDevice: (request: IpcRequest<"providerAuth:startDevice">) =>
     invokeCommand("providerAuth:startDevice", request),
+  providerAuthInteractiveOpen: (
+    request: IpcRequest<"providerAuth:interactiveOpen">,
+  ) => invokeCommand("providerAuth:interactiveOpen", request),
+  providerAuthInteractiveWrite: (
+    request: IpcRequest<"providerAuth:interactiveWrite">,
+  ) => invokeCommand("providerAuth:interactiveWrite", request),
+  providerAuthInteractiveResize: (
+    request: IpcRequest<"providerAuth:interactiveResize">,
+  ) => invokeCommand("providerAuth:interactiveResize", request),
+  providerAuthInteractiveClose: (
+    request: IpcRequest<"providerAuth:interactiveClose">,
+  ) => invokeCommand("providerAuth:interactiveClose", request),
   taskCreate: (request: IpcRequest<"task:create">) =>
     invokeCommand("task:create", request),
   taskList: () => invokeCommand("task:list", {}),

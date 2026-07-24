@@ -10,6 +10,7 @@ import type {
   StartSessionRequest,
   UsageCapabilities,
 } from "../adapter";
+import { NativeSessionUnavailableError } from "../adapter";
 import type { RuntimeTransport } from "../manifest";
 import {
   decodeTransportSessionBinding,
@@ -106,10 +107,41 @@ export class ProviderRuntimeAdapter implements RuntimeAdapter {
     const candidate = decoded
       ? this.requireCandidate(decoded.transportId)
       : this.legacySessionOwner();
-    const session = await candidate.adapter.resume({
-      ...request,
-      nativeSessionId: decoded?.nativeSessionId ?? request.nativeSessionId,
-    });
+    let session: NativeSession;
+    try {
+      session = await candidate.adapter.resume({
+        ...request,
+        nativeSessionId: decoded?.nativeSessionId ?? request.nativeSessionId,
+      });
+    } catch (error) {
+      if (
+        !(error instanceof NativeSessionUnavailableError) ||
+        error.runtime !== this.kind ||
+        error.reason !== "provider_session_missing"
+      ) {
+        throw error;
+      }
+      const replacement = decoded
+        ? bindSession(
+            await candidate.adapter.start(request),
+            candidate.descriptor.id,
+          )
+        : await candidate.adapter.start(request);
+      if (replacement.bindingState !== "authoritative") {
+        throw new Error(
+          `${this.kind} session recovery requires an authoritative session`,
+        );
+      }
+      this.laneBindings.set(request.laneId, candidate);
+      return {
+        ...replacement,
+        migration: {
+          fromNativeSessionId: request.nativeSessionId,
+          toNativeSessionId: replacement.nativeSessionId,
+          rehydrationRequired: true,
+        },
+      };
+    }
     this.laneBindings.set(request.laneId, candidate);
     return decoded
       ? bindSession(session, candidate.descriptor.id)
