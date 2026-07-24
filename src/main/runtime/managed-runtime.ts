@@ -13,6 +13,7 @@ import { brotliDecompressSync } from "node:zlib";
 
 interface ManagedRuntimeOptions {
   runtimeDirectory: string;
+  resourcesDirectory?: string;
   platform?: NodeJS.Platform;
   arch?: string;
   resolvePackageJson?: (packageName: string) => string;
@@ -21,6 +22,9 @@ interface ManagedRuntimeOptions {
 export interface ManagedRuntimeCommands {
   codex: string;
   grok: string;
+  cursor: string;
+  agy: string;
+  opencode: string;
 }
 
 const CODEX_TRIPLES: Record<string, string> = {
@@ -42,6 +46,8 @@ export function resolveManagedRuntimeCommands(
   if (!triple) throw new Error(`Unsupported managed runtime target ${target}`);
   const resolvePackageJson =
     options.resolvePackageJson ?? defaultPackageResolver();
+  const resourcesDirectory =
+    options.resourcesDirectory ?? process.resourcesPath;
   const executableName = platform === "win32" ? "codex.exe" : "codex";
   const codexPackage = path.dirname(
     resolvePackageJson(`@openai/codex-${target}`),
@@ -61,7 +67,44 @@ export function resolveManagedRuntimeCommands(
     targetDirectory: path.join(options.runtimeDirectory, "grok", target),
     executableName: platform === "win32" ? "grok.exe" : "grok",
   });
-  return { codex, grok };
+  const managedTargetDirectory = path.join(
+    resourcesDirectory,
+    "managed-runtimes",
+    target,
+  );
+  const cursor = requiredManagedExecutable(
+    path.join(
+      managedTargetDirectory,
+      "cursor",
+      platform === "win32" ? "cursor-agent.exe" : "cursor-agent",
+    ),
+    "Cursor",
+    target,
+  );
+  const agy = requiredManagedExecutable(
+    path.join(
+      managedTargetDirectory,
+      "agy",
+      platform === "win32" ? "agy.exe" : "agy",
+    ),
+    "Antigravity",
+    target,
+  );
+  const opencodePackage = path.dirname(
+    resolvePackageJson(`opencode-${target}`),
+  );
+  const opencode = requiredManagedExecutable(
+    unpackedExecutablePath(
+      path.join(
+        opencodePackage,
+        "bin",
+        platform === "win32" ? "opencode.exe" : "opencode",
+      ),
+    ),
+    "OpenCode",
+    target,
+  );
+  return { codex, grok, cursor, agy, opencode };
 }
 
 function defaultPackageResolver(): (packageName: string) => string {
@@ -72,10 +115,27 @@ function defaultPackageResolver(): (packageName: string) => string {
   const grokRequire = createRequire(
     require.resolve("@xai-official/grok/package.json"),
   );
-  return (packageName) =>
-    packageName.startsWith("@openai/")
-      ? codexRequire.resolve(`${packageName}/package.json`)
-      : grokRequire.resolve(`${packageName}/package.json`);
+  const opencodeRequire = createRequire(
+    require.resolve("opencode-ai/package.json"),
+  );
+  return (packageName) => {
+    if (packageName.startsWith("@openai/"))
+      return codexRequire.resolve(`${packageName}/package.json`);
+    if (packageName.startsWith("@xai-official/"))
+      return grokRequire.resolve(`${packageName}/package.json`);
+    return opencodeRequire.resolve(`${packageName}/package.json`);
+  };
+}
+
+function requiredManagedExecutable(
+  executable: string,
+  runtime: string,
+  target: string,
+): string {
+  if (!path.isAbsolute(executable) || !existsSync(executable)) {
+    throw new Error(`Managed ${runtime} binary is missing for ${target}`);
+  }
+  return executable;
 }
 
 function materializeGrok(options: {

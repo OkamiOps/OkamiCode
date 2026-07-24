@@ -14,6 +14,13 @@ asarUnpack:
   - "**/*.node"
   - "node_modules/@openai/**/*"
   - "node_modules/@xai-official/**/*"
+  - "node_modules/**/opencode-*/**/*"
+
+extraResources:
+  - from: .cache/managed-runtimes/darwin-arm64
+    to: managed-runtimes/darwin-arm64
+    filter:
+      - "**/*"
 
 mac:
   category: public.app-category.developer-tools

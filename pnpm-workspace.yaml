@@ -6,4 +6,5 @@ allowBuilds:
   esbuild: true
   lzma-native: false
   node-pty: true
+  opencode-ai: false
 storeDir: .cache/pnpm

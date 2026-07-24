@@ -2,6 +2,7 @@ import path from "node:path";
 import type { CliClient } from "../ecosystem/cli-capabilities";
 
 type LocateCli = (client: CliClient) => string | null;
+type ManagedClient = "codex" | "grok" | "cursor" | "agy" | "opencode";
 
 const FALLBACKS = {
   claude: "claude",
@@ -16,14 +17,12 @@ const FALLBACKS = {
 
 export function resolveRuntimeCommands(
   locate: LocateCli,
-  managed: Partial<Pick<Record<CliClient, string>, "codex" | "grok">> = {},
+  managed: Partial<Pick<Record<CliClient, string>, ManagedClient>> = {},
 ) {
   return Object.fromEntries(
     (Object.keys(FALLBACKS) as CliClient[]).map((client) => [
       client,
-      managed[client as "codex" | "grok"] ??
-        locate(client) ??
-        FALLBACKS[client],
+      managed[client as ManagedClient] ?? locate(client) ?? FALLBACKS[client],
     ]),
   ) as Record<CliClient, string>;
 }

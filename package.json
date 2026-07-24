@@ -23,7 +23,8 @@
     "format:check": "prettier --check .",
     "test": "vitest run",
     "test:e2e": "playwright test",
-    "package": "pnpm rebuild:native && electron-vite build && electron-builder --mac --config electron-builder.yml",
+    "provision:runtimes": "node scripts/provision-managed-runtimes.mjs",
+    "package": "pnpm provision:runtimes && pnpm rebuild:native && electron-vite build && electron-builder --mac --config electron-builder.yml",
     "check": "pnpm typecheck && pnpm lint && pnpm format:check && pnpm test"
   },
   "dependencies": {
@@ -46,6 +47,7 @@
     "mailparser": "3.9.14",
     "node-pty": "1.1.0",
     "nodemailer": "9.0.3",
+    "opencode-ai": "1.18.3",
     "react": "19.2.7",
     "react-dom": "19.2.7",
     "react-markdown": "10.1.0",

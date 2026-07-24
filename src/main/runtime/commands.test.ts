@@ -18,10 +18,19 @@ it("prefers Okami-managed Codex and Grok runtimes over globally installed CLIs",
     resolveRuntimeCommands(locate, {
       codex: "/app/runtimes/codex",
       grok: "/app/runtimes/grok",
+      cursor: "/app/runtimes/cursor-agent",
+      agy: "/app/runtimes/agy",
+      opencode: "/app/runtimes/opencode",
     }),
   ).toMatchObject({
     codex: "/app/runtimes/codex",
     grok: "/app/runtimes/grok",
+    cursor: "/app/runtimes/cursor-agent",
+    agy: "/app/runtimes/agy",
+    opencode: "/app/runtimes/opencode",
     claude: "/global/claude",
   });
+  expect(locate.mock.calls.flat()).not.toEqual(
+    expect.arrayContaining(["codex", "grok", "cursor", "agy", "opencode"]),
+  );
 });
