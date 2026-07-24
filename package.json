@@ -25,6 +25,7 @@
     "test:e2e": "playwright test",
     "provision:runtimes": "node scripts/provision-managed-runtimes.mjs",
     "package": "pnpm provision:runtimes && pnpm rebuild:native && electron-vite build && electron-builder --mac --config electron-builder.yml",
+    "verify:managed-package": "node scripts/verify-managed-runtime-package.mjs",
     "check": "pnpm typecheck && pnpm lint && pnpm format:check && pnpm test"
   },
   "dependencies": {

@@ -9,9 +9,9 @@ Each provider-facing runtime selects an ordered transport:
 ```text
 OkamiCode lane
   -> ProviderRuntimeAdapter
-     -> bundled official subscription runtime
+     -> Okami-managed packaged subscription runtime
      -> Okami Token Plan transport
-     -> official CLI or ACP compatibility transport
+     -> external Claude compatibility transport
   -> canonical events, policy, persistence, and UI
 ```
 
@@ -22,10 +22,11 @@ cannot silently resume a conversation through a different harness.
 
 ## Subscription and Token Plan transports
 
-Codex and Grok use official, version-pinned binaries distributed with
-OkamiCode. Authentication stays provider-owned and uses the provider's
-subscription OAuth/device session. A global `codex` or `grok` executable is not
-required.
+Codex, Grok, Cursor Agent, Antigravity, and OpenCode use version-pinned
+artifacts distributed with OkamiCode. Their resolved commands are absolute and
+must remain inside the application bundle or OkamiCode user-data directory.
+Authentication and provider configuration stay provider-owned, but global
+executables are neither required nor accepted.
 
 MiMo and MiniMax use Okami-owned HTTP transports, but only with their dedicated
 Token Plan credentials. The encrypted vault rejects ordinary pay-as-you-go key
@@ -35,19 +36,21 @@ Model streaming, session continuation, token telemetry, tool calls where
 supported, workspace containment, approvals, and cancellation are normalized
 by Okami.
 
-## Optional compatibility transports
+## Executable ownership
 
-- Claude Code remains an official CLI transport because the subscription login
-  is not exposed as a public third-party OAuth integration.
-- Cursor Agent remains an official CLI transport so Cursor subscribers can use
-  their account without making Cursor a mandatory dependency for everyone.
-- Antigravity and OpenCode ACP remain optional transports while no equivalent
-  first-party Okami API integration is configured.
-- MiMo and MiniMax local adapters remain optional compatibility fallbacks.
+- Codex, Cursor Agent, Antigravity, and OpenCode execute directly from the
+  packaged application.
+- Grok is materialized atomically from its packaged compressed artifact into
+  OkamiCode user-data and executes only from there.
+- MiMo and MiniMax have no executable candidate. Their Okami-owned Token Plan
+  HTTP transports own both new and migrated legacy sessions.
+- Claude Code remains the sole external CLI exception because its subscription
+  login is not exposed as a public third-party OAuth integration.
 
-Removing an optional executable never deletes a project, task, conversation,
-worktree, database row, or session reference. A runtime is unavailable only
-when none of its configured transports can authenticate and pass health checks.
+The package acceptance gate runs with a minimal clean `PATH`, probes only
+executable versions, and emits machine-readable provider, version, absolute
+source, checksum, and ownership evidence. A non-Claude global path or symlink
+escape fails the gate. No acceptance probe sends a provider turn.
 
 ## OpenCode and BB
 

@@ -82,21 +82,23 @@ Read the complete [1.0.1 Beta release notes](docs/releases/v1.0.1-beta.md) or th
 
 ## Supported runtimes
 
-| Runtime             | Transport                   | Entitlement                       |
-| ------------------- | --------------------------- | --------------------------------- |
-| OpenAI / Codex      | bundled official app-server | ChatGPT subscription OAuth/device |
-| xAI / Grok          | bundled official agent      | Grok subscription OAuth/device    |
-| Xiaomi MiMo         | Okami Responses transport   | dedicated Token Plan key and URL  |
-| MiniMax             | Okami Chat Completions      | dedicated Token Plan key          |
-| Claude Code         | Claude CLI                  | Anthropic subscription login      |
-| Cursor Agent        | Cursor Agent                | Cursor subscription login         |
-| Antigravity (`agy`) | Native local adapter        | Google AI subscription login      |
-| OpenCode            | ACP                         | OpenCode-selected account         |
+| Runtime             | Transport                         | Entitlement                       |
+| ------------------- | --------------------------------- | --------------------------------- |
+| OpenAI / Codex      | packaged official app-server      | ChatGPT subscription OAuth/device |
+| xAI / Grok          | packaged official agent           | Grok subscription OAuth/device    |
+| Cursor Agent        | packaged Cursor Agent             | Cursor subscription login         |
+| Antigravity (`agy`) | packaged native adapter           | Google AI subscription login      |
+| OpenCode            | packaged ACP server               | OpenCode-selected account         |
+| Xiaomi MiMo         | Okami Responses; no executable    | dedicated Token Plan key and URL  |
+| MiniMax             | Okami Chat Completions; no binary | dedicated Token Plan key          |
+| Claude Code         | external Claude CLI               | Anthropic subscription login      |
 
-Settings shows both the active transport and its entitlement. Codex and Grok
-ship inside the application and do not depend on a global installation. MiMo
-and MiniMax accept only Token Plan credentials in the encrypted vault. There
-is no automatic pay-as-you-go fallback.
+Settings shows both the active transport and its entitlement. Codex, Grok,
+Cursor, Antigravity, and OpenCode resolve only versioned artifacts owned by the
+OkamiCode application bundle or its user-data directory. MiMo and MiniMax
+accept only Token Plan credentials in the encrypted vault and register no
+executable. Claude is the sole transport allowed to resolve a host executable.
+There is no automatic pay-as-you-go or global-binary fallback.
 
 OpenCode is integrated through its official ACP server. BB is an architectural
 reference for persistent, steerable threads and explicit handoff; it is not
@@ -113,9 +115,9 @@ flowchart LR
   MAIN --> DATA["encrypted SQLite\nFTS5 + local repositories"]
   MAIN --> ORCH["lane orchestration\nsessions + event projection"]
   ORCH --> SDK["Okami Runtime SDK\ntransport selection + session binding"]
-  SDK --> MANAGED["Bundled official runtimes\nCodex · Grok"]
+  SDK --> MANAGED["Managed packaged runtimes\nCodex · Grok · Cursor · AGY · OpenCode"]
   SDK --> TOKEN["Token Plan transports\nMiMo · MiniMax"]
-  SDK --> OPTIONAL["Compatibility transports\nClaude · Cursor · AGY · OpenCode ACP"]
+  SDK --> OPTIONAL["External compatibility transport\nClaude only"]
   MAIN --> CONNECTORS["IMAP/SMTP · Google OAuth\ncalendar · local memory"]
 ```
 
@@ -178,12 +180,20 @@ pnpm check
 
 ```bash
 pnpm package
+pnpm verify:managed-package release/mac-arm64/OkamiCode.app
 ```
 
 The command produces both the unpacked application and the Apple Silicon installer:
 
 - `release/mac-arm64/OkamiCode.app`
 - `release/OkamiCode-v1.0.1-beta-macOS-arm64.dmg`
+
+The verifier runs only executable `--version` probes with
+`PATH=/usr/bin:/bin`, an isolated `HOME`, and no inherited provider
+credentials. It emits JSON containing each provider, version, absolute source,
+SHA-256 checksum, and ownership. The command fails if a non-Claude executable
+escapes the application bundle or verifier user-data directory, including
+through a symlink. It does not send model turns.
 
 Open the DMG, drag **OkamiCode** to **Applications**, and launch it from Applications. The `1.0.1-beta` artifact is unsigned and non-notarized, so macOS may require an explicit approval in **Privacy & Security**. Production signing and notarization are intentionally not claimed by this beta.
 
@@ -193,9 +203,10 @@ Open the DMG, drag **OkamiCode** to **Applications**, and launch it from Applica
 - **IMAP/SMTP:** authentication requirements are controlled by the email provider. Prefer OAuth or provider-specific app credentials when required.
 - **OpenRouter:** used as pricing metadata for the equivalent-cost simulation, not as the default inference provider.
 - **Memory:** select the exact Obsidian or Markdown folders to index; no folder is imported automatically.
-- **Codex and Grok:** reuse the provider-owned subscription session; OkamiCode bundles the compatible official binary.
+- **Codex, Grok, Cursor, Antigravity, and OpenCode:** reuse their provider-owned configuration while OkamiCode owns the versioned executable path. Global installations are ignored.
 - **MiMo and MiniMax:** enter only dedicated Token Plan credentials in Settings. Ordinary API keys are rejected and secrets never return to the renderer.
-- **Updates:** runtime and transport capabilities are detected independently. Re-scan after changing credentials or upgrading an optional CLI.
+- **Claude:** the official host CLI is the only external executable exception.
+- **Updates:** runtime and transport capabilities are detected independently. Re-scan after changing credentials or updating Claude.
 
 ## Beta limitations
 

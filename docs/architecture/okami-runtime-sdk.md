@@ -8,8 +8,8 @@ removed and prevents one provider from being silently routed through another.
 
 1. `ProviderRuntimeAdapter` probes ordered transports and selects the first
    healthy one.
-2. Managed official runtimes provide Codex app-server and Grok without relying
-   on a binary installed globally.
+2. Managed, versioned artifacts provide Codex, Grok, Cursor, Antigravity, and
+   OpenCode without resolving a binary installed globally.
 3. The MiMo Responses transport implements streaming, continuation, exact
    provider usage, cancellation, and function-call continuation using Token
    Plan entitlement.
@@ -22,16 +22,16 @@ removed and prevents one provider from being silently routed through another.
 
 ## Transport matrix
 
-| Provider | Transport | Entitlement |
+| Provider | Transport | Executable ownership | Entitlement |
 | --- | --- | --- | --- |
-| OpenAI / Codex | `codex-managed` | ChatGPT subscription OAuth/device |
-| xAI / Grok | `grok-managed` | Grok subscription OAuth/device |
-| Xiaomi MiMo | `mimo-token-plan` | encrypted `tp-*` key and Token Plan URL |
-| MiniMax | `minimax-token-plan` | encrypted `sk-cp-*` key |
-| Anthropic / Claude | `claude-cli` | official Claude subscription login |
-| Cursor | `cursor-agent` | official Cursor subscription login |
-| Antigravity | `agy-cli` | official local subscription login |
-| OpenCode | `opencode-acp` | OpenCode configuration |
+| OpenAI / Codex | `codex-managed` | OkamiCode app bundle | ChatGPT subscription OAuth/device |
+| xAI / Grok | `grok-managed` | OkamiCode user-data, materialized from the bundle | Grok subscription OAuth/device |
+| Cursor | `cursor-agent` | OkamiCode app bundle | official Cursor subscription login |
+| Antigravity | `agy-cli` | OkamiCode app bundle | official local subscription login |
+| OpenCode | `opencode-acp` | OkamiCode app bundle | OpenCode configuration |
+| Xiaomi MiMo | `mimo-token-plan` | none | encrypted `tp-*` key and Token Plan URL |
+| MiniMax | `minimax-token-plan` | none | encrypted `sk-cp-*` key |
+| Anthropic / Claude | `claude-cli` | external host exception | official Claude subscription login |
 
 The built-in manifest contains no pay-as-you-go transport. Token Plan secrets
 are encrypted with Electron `safeStorage`, stored with restrictive file modes,
@@ -55,12 +55,15 @@ sent accidentally to another.
 - Known destructive shell patterns are rejected.
 - Automated tests use fixtures and injected fetch implementations; they do not
   consume provider quota.
+- The packaged acceptance gate resolves real paths, rejects symlink escape,
+  probes only `--version` with `PATH=/usr/bin:/bin` and an isolated `HOME`, and
+  reports provider, version, source, SHA-256 checksum, and ownership as JSON.
 
 ## Current limitations
 
 - MiniMax tool calling is not yet implemented in the Chat Completions
   transport, so its manifest does not advertise tools.
-- Claude, Cursor, Antigravity, and OpenCode still depend on their official local
-  transports.
+- Claude still depends on its official host CLI. It is the only executable
+  allowed outside OkamiCode-owned locations.
 - Subscription quota windows remain provider-specific. Token Plan transports report
   observed token usage but cannot infer a subscription's hidden quota.
