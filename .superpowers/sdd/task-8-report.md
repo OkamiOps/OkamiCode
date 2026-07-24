@@ -145,3 +145,70 @@ its own SHA.
 - Existing renderer tests emit unrelated `HTMLCanvasElement.getContext` and
   PressResponder warnings. They do not fail the suite and were not changed in
   this task.
+
+## Critical review follow-up — removed transport migration
+
+Status: RESOLVED.
+
+The review found that persisted encoded sessions still named the removed
+`mimo-cli` or `minimax-cli` transport. `ProviderRuntimeAdapter.resume` treated
+every encoded transport ID as permanently strict and therefore threw before
+the new Token Plan legacy owner could resume the lane.
+
+### Follow-up RED
+
+```text
+pnpm exec vitest run src/main/runtime/sdk/provider-runtime.test.ts
+```
+
+Observed result: exit 1; 1 failed, 7 passed. The new migration test failed with
+`Unknown grok transport binding mimo-cli`, directly reproducing the lost-lane
+regression.
+
+### Follow-up GREEN
+
+```text
+pnpm exec vitest run src/main/runtime/sdk/provider-runtime.test.ts src/main/runtime/registry.test.ts
+```
+
+Observed result after implementation and again after formatting: exit 0,
+2 files passed, 11 tests passed.
+
+```text
+pnpm typecheck
+pnpm lint
+pnpm format:check
+```
+
+Observed result: every command exited 0.
+
+```text
+pnpm exec vitest run --reporter=dot
+```
+
+Observed result: exit 0, 124 files passed, 4 skipped; 767 tests passed,
+9 skipped.
+
+### Follow-up implementation and contract
+
+- If an encoded binding names a transport still present in the provider, resume
+  remains strict and uses that exact transport even when another candidate is
+  the legacy owner.
+- If an encoded binding names a removed transport, resume decodes its native
+  session ID, hands it to the provider's single current legacy owner, and
+  returns a new Okami binding encoded with that owner's transport ID.
+- The migrated binding continues through `sendTurn` on the new transport.
+- Raw legacy IDs retain their historical no-rewrite behavior.
+- Malformed Okami bindings still fail during decoding.
+
+Follow-up files:
+
+- `.superpowers/sdd/task-8-report.md`
+- `src/main/runtime/sdk/provider-runtime.ts`
+- `src/main/runtime/sdk/provider-runtime.test.ts`
+
+Follow-up commit message:
+
+```text
+fix(runtime): migrate removed transport session bindings
+```

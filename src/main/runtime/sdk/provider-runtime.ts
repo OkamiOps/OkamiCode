@@ -85,7 +85,8 @@ export class ProviderRuntimeAdapter implements RuntimeAdapter {
   async resume(request: ResumeSessionRequest): Promise<NativeSession> {
     const decoded = decodeSession(request.nativeSessionId);
     const candidate = decoded
-      ? this.requireCandidate(decoded.transportId)
+      ? (this.candidatesById.get(decoded.transportId) ??
+        this.legacySessionOwner())
       : this.legacySessionOwner();
     const session = await candidate.adapter.resume({
       ...request,

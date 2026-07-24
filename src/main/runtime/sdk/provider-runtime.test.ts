@@ -129,6 +129,78 @@ describe("ProviderRuntimeAdapter", () => {
     expect(cli.resumeRequests[0]?.nativeSessionId).toBe("old-cli-session");
     expect(resumed.nativeSessionId).toBe("old-cli-session");
   });
+
+  it("migrates a binding from a removed CLI transport to the current legacy owner", async () => {
+    const tokenPlan = new FakeTransport("grok", healthy("token-plan-v1"));
+    const runtime = provider([
+      candidate("mimo-token-plan", "api", 10, tokenPlan, true),
+    ]);
+    const removedBinding = `okami:v1:mimo-cli:${Buffer.from(
+      "persisted-cli-session",
+    ).toString("base64url")}`;
+
+    const resumed = await runtime.resume({
+      ...startRequest(),
+      nativeSessionId: removedBinding,
+    });
+    await runtime.sendTurn({
+      runId,
+      laneId,
+      nativeSessionId: resumed.nativeSessionId,
+      input: "continue after migration",
+    });
+
+    expect(tokenPlan.resumeRequests[0]?.nativeSessionId).toBe(
+      "persisted-cli-session",
+    );
+    expect(resumed.nativeSessionId).toBe(
+      `okami:v1:mimo-token-plan:${Buffer.from("persisted-cli-session").toString(
+        "base64url",
+      )}`,
+    );
+    expect(tokenPlan.turnRequests[0]?.nativeSessionId).toBe(
+      "persisted-cli-session",
+    );
+  });
+
+  it("keeps an existing encoded transport binding strict", async () => {
+    const api = new FakeTransport("grok", healthy("api-1"));
+    const cli = new FakeTransport("grok", unavailable("removed executable"));
+    const runtime = provider([
+      candidate("xai-api", "api", 10, api, true),
+      candidate("grok-cli", "cli", 100, cli),
+    ]);
+    const cliBinding = `okami:v1:grok-cli:${Buffer.from(
+      "existing-cli-session",
+    ).toString("base64url")}`;
+
+    await runtime.resume({
+      ...startRequest(),
+      nativeSessionId: cliBinding,
+    });
+
+    expect(cli.resumeRequests[0]?.nativeSessionId).toBe("existing-cli-session");
+    expect(api.resumeRequests).toHaveLength(0);
+  });
+
+  it("continues to reject malformed encoded transport bindings", async () => {
+    const runtime = provider([
+      candidate(
+        "mimo-token-plan",
+        "api",
+        10,
+        new FakeTransport("grok", healthy("token-plan-v1")),
+        true,
+      ),
+    ]);
+
+    await expect(
+      runtime.resume({
+        ...startRequest(),
+        nativeSessionId: "okami:v1:mimo-cli:",
+      }),
+    ).rejects.toThrow("Invalid Okami transport session binding");
+  });
 });
 
 function provider(
