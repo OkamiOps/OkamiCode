@@ -177,3 +177,23 @@ The implementation and focused acceptance suite are green, and the real `.app`
 trust proof passes. The full `pnpm check` is not recorded green after the final
 mechanical formatting correction because doing so would exceed the explicit
 three-attempt validation cap. The DMG environment failure is unchanged.
+
+---
+
+## Root final acceptance
+
+The supervising agent assumed verification after the delegated three-attempt
+limit and recorded fresh final evidence:
+
+- `pnpm check`: exit 0.
+- `pnpm exec vitest run --reporter=dot`: exit 0; 126 test files passed, 4
+  skipped; 797 tests passed, 9 skipped.
+- `pnpm package` outside the restricted disk-device sandbox: exit 0; the
+  `.app`, DMG, and blockmap were produced.
+- `pnpm verify:managed-package release/mac-arm64/OkamiCode.app`: exit 0 with
+  status `pass`; every managed checksum matched, MiMo/MiniMax had no
+  executable, and absent Claude was reported honestly as optional/unavailable.
+- Final architecture review: Ready to merge, with no Critical or Important
+  findings.
+
+No provider turn or live inference request was executed during acceptance.

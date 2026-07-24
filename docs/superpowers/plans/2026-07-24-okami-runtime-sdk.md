@@ -19,7 +19,10 @@
 
 - No live provider turns in automated verification.
 - Never read or refresh credentials owned by another application.
-- Claude CLI and Cursor Agent may remain optional subscription transports.
+- Claude is the only runtime allowed to resolve an executable from the host.
+- Cursor, Antigravity, Codex, Grok, and OpenCode must resolve only Okami-managed
+  versioned artifacts.
+- MiMo and MiniMax must use only their Okami-owned Token Plan transports.
 - Provider manifests must not equate a provider with an executable.
 - Existing lanes and native session identifiers must remain resumable during migration.
 - Every behavioral change follows RED, GREEN, REFACTOR with fresh command output.
@@ -192,3 +195,147 @@ Run the SDK, registry, orchestration, gateway, IPC, and affected renderer tests.
 Run: `pnpm rebuild better-sqlite3-multiple-ciphers && pnpm check`
 
 Expected: exit 0 with typecheck, lint, format, and tests passing.
+
+---
+
+### Task 7: Complete managed subscription runtimes
+
+**Files:**
+- Create: `scripts/provision-managed-runtimes.mjs`
+- Create: `scripts/provision-managed-runtimes.test.ts`
+- Modify: `src/main/runtime/managed-runtime.ts`
+- Modify: `src/main/runtime/managed-runtime.test.ts`
+- Modify: `src/main/runtime/commands.ts`
+- Modify: `src/main/runtime/commands.test.ts`
+- Modify: `package.json`
+- Modify: `electron-builder.yml`
+
+**Interfaces:**
+- Consumes: official Cursor archive, official Antigravity release manifest and
+  archive, official `opencode-ai` platform package.
+- Produces: `ManagedRuntimeCommands` containing absolute `codex`, `grok`,
+  `cursor`, `agy`, and `opencode` paths owned by the packaged application.
+
+- [x] **Step 1: Write failing managed-runtime tests**
+
+Prove that a packaged resource directory resolves Cursor and Antigravity
+without consulting `PATH`, OpenCode resolves from its pinned platform package,
+and a missing managed artifact fails closed instead of falling back globally.
+
+- [x] **Step 2: Verify RED**
+
+Run:
+`pnpm vitest run src/main/runtime/managed-runtime.test.ts src/main/runtime/commands.test.ts scripts/provision-managed-runtimes.test.ts`
+
+Expected: FAIL because only Codex and Grok are currently managed.
+
+- [x] **Step 3: Implement verified provisioning**
+
+Pin the official Cursor version/archive SHA-512 for the packaged target,
+download the official Antigravity manifest and verify its declared SHA-512,
+extract both into a build cache, and package them as `extraResources`. Resolve
+OpenCode through the pinned `opencode-ai` platform dependency. Never execute a
+remote install script and never mutate shell profiles.
+
+- [x] **Step 4: Verify GREEN**
+
+Run the focused tests again and expect PASS.
+
+### Task 8: Remove every non-Claude host CLI route
+
+**Files:**
+- Modify: `src/main/runtime/registry.ts`
+- Modify: `src/main/runtime/registry.test.ts`
+- Modify: `src/main/runtime/manifest.ts`
+- Modify: `src/main/runtime/manifest.test.ts`
+- Modify: `src/main/index.ts`
+- Modify: `src/main/runtime/model-catalog.ts`
+- Modify: affected usage collector/service files.
+
+**Interfaces:**
+- Consumes: `ManagedRuntimeCommands` from Task 7 and existing Token Plan
+  transports.
+- Produces: a production registry where only Claude may use
+  `locateLocalBinary`.
+
+- [x] **Step 1: Write failing independence tests**
+
+Prove that all non-Claude runtime commands remain absolute and runnable when
+the local locator always returns `null`; prove MiMo and MiniMax register no CLI
+candidate; prove no production model-catalog or usage path resolves their
+global binaries.
+
+- [x] **Step 2: Verify RED**
+
+Run registry, manifest, command, model-catalog, and usage service tests.
+
+Expected: FAIL on Cursor, Antigravity, OpenCode, MiMo, and MiniMax host CLI
+lookups.
+
+- [x] **Step 3: Remove host routes**
+
+Use managed paths for Cursor, Antigravity, OpenCode, Codex, and Grok. Register
+MiMo only with `mimo-token-plan` and MiniMax only with
+`minimax-token-plan`. Make those Okami transports the legacy-session owners so
+existing lanes are resumed with the persisted Okami context instead of a
+missing executable.
+
+- [x] **Step 4: Verify GREEN**
+
+Run the focused tests again and expect PASS.
+
+### Task 9: PATH-clean packaged acceptance gate
+
+**Files:**
+- Create: `scripts/verify-managed-runtime-package.mjs`
+- Create: `scripts/verify-managed-runtime-package.test.ts`
+- Modify: `package.json`
+- Modify: `README.md`
+- Modify: `docs/architecture/okami-runtime-sdk.md`
+- Modify: `docs/architecture/runtime-harness-boundary.md`
+
+**Interfaces:**
+- Consumes: packaged `OkamiCode.app` and runtime manifests.
+- Produces: machine-readable proof that every non-Claude executable originates
+  inside the app bundle or Okami user-data directory.
+
+- [x] **Step 1: Write the failing package-verifier test**
+
+Create a synthetic package tree containing one escaped global path and prove
+the verifier rejects it, then create a fully managed fixture and prove it
+accepts only Claude as external.
+
+- [x] **Step 2: Verify RED**
+
+Run:
+`pnpm vitest run scripts/verify-managed-runtime-package.test.ts`
+
+Expected: FAIL because the verifier does not exist.
+
+- [x] **Step 3: Implement and document the gate**
+
+Inspect resolved commands and executable versions with a minimal `PATH`.
+Report provider, version, absolute source, checksum, and ownership. Update
+documentation so it no longer calls Cursor, Antigravity, OpenCode, MiMo, or
+MiniMax host-CLI exceptions.
+
+- [x] **Step 4: Build and verify**
+
+Run:
+`pnpm package`
+
+Then run:
+`pnpm verify:managed-package release/mac-arm64/OkamiCode.app`
+
+Expected: Codex, Grok, Cursor, Antigravity, and OpenCode pass from managed
+locations; MiMo and MiniMax report Token Plan with no executable; Claude is
+the sole allowed external runtime.
+
+### Task 10: Final regression and publication
+
+- [x] Run focused runtime, registry, model-catalog, usage, IPC, and renderer
+      suites.
+- [x] Run `pnpm rebuild better-sqlite3-multiple-ciphers && pnpm check`.
+- [x] Confirm the packaged application launches without using global runtime
+      binaries.
+- [x] Commit and push only after every gate above passes.
