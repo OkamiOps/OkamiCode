@@ -51,9 +51,17 @@ import { GoogleCalendarAdapter } from "./calendar/google-adapter";
 import { RemoteCalendarAdapter } from "./calendar/remote-adapter";
 import type { Capability } from "./policy/action";
 import type { TaskId } from "../shared/ids";
-import { locateLocalBinary } from "./ecosystem/cli-capabilities";
+import {
+  createCliCapabilityDetector,
+  executeProbe,
+  locateLocalBinary,
+  type CliClient,
+} from "./ecosystem/cli-capabilities";
 import { resolveRuntimeCommands } from "./runtime/commands";
-import { resolveManagedRuntimeCommands } from "./runtime/managed-runtime";
+import {
+  resolveManagedRuntimeCommands,
+  type ManagedRuntimeCommands,
+} from "./runtime/managed-runtime";
 import { SubscriptionDeviceAuthService } from "./runtime/subscription-device-auth";
 import { AgyCompanionServer } from "./runtime/agy/companion-server";
 import { AgyPluginManager } from "./runtime/agy/plugin";
@@ -84,6 +92,25 @@ if (userDataPath !== app.getPath("userData")) {
 }
 
 const GPT_BACKEND_MODEL = "gpt-5.6-sol";
+
+function managedCapabilityCommand(
+  client: CliClient,
+  commands: ManagedRuntimeCommands,
+): string | null {
+  switch (client) {
+    case "codex":
+    case "cursor":
+    case "agy":
+    case "grok":
+    case "opencode":
+      return commands[client];
+    case "claude":
+    case "mimo":
+    case "minimax":
+      return null;
+  }
+}
+
 const LEASED_CAPABILITIES: Capability[] = [
   "workspace.read",
   "workspace.write",
@@ -280,7 +307,6 @@ async function bootstrap(): Promise<void> {
     locateLocalBinary,
     managedRuntimeCommands,
   );
-  const agyBinary = locateLocalBinary("agy");
   const agyCommand = runtimeCommands.agy;
   const agyPluginManager = new AgyPluginManager({
     command: agyCommand,
@@ -295,14 +321,12 @@ async function bootstrap(): Promise<void> {
       return { stdout: String(stdout) };
     },
   });
-  if (agyBinary) {
-    try {
-      await agyPluginManager.ensureEnabled();
-    } catch {
-      // AGY remains visible with a protocol-health error; one optional runtime
-      // must never prevent the rest of the desktop from starting.
-      console.error("[okami] AGY companion provisioning failed");
-    }
+  try {
+    await agyPluginManager.ensureEnabled();
+  } catch {
+    // AGY remains visible with a protocol-health error; one optional runtime
+    // must never prevent the rest of the desktop from starting.
+    console.error("[okami] AGY companion provisioning failed");
   }
   const runtimes = createRuntimeRegistry({
     claude: {
@@ -345,14 +369,6 @@ async function bootstrap(): Promise<void> {
     grok: {
       taskIdForRun,
       command: runtimeCommands.grok,
-    },
-    mimo: {
-      taskIdForRun,
-      command: runtimeCommands.mimo,
-    },
-    minimax: {
-      taskIdForRun,
-      command: runtimeCommands.minimax,
     },
     opencode: {
       taskIdForRun,
@@ -408,16 +424,12 @@ async function bootstrap(): Promise<void> {
       ],
     },
     cursorCachePath: path.join(app.getPath("userData"), "cursor-models.json"),
-    cursorBinary: locateLocalBinary("cursor"),
+    cursorBinary: runtimeCommands.cursor,
     agyCachePath: path.join(app.getPath("userData"), "agy-models.json"),
     agyBinary: agyCommand,
     grokCachePath: path.join(app.getPath("userData"), "grok-models.json"),
     grokBinary: runtimeCommands.grok,
-    minimaxCachePath: path.join(app.getPath("userData"), "minimax-models.json"),
-    minimaxBinary: locateLocalBinary("minimax"),
-    mimoCachePath: path.join(app.getPath("userData"), "mimo-models.json"),
-    mimoBinary: locateLocalBinary("mimo"),
-    opencodeBinary: locateLocalBinary("opencode"),
+    opencodeBinary: runtimeCommands.opencode,
     opencodeAcpReady:
       opencodeHealth.available && opencodeHealth.protocolSupported,
   });
@@ -429,8 +441,6 @@ async function bootstrap(): Promise<void> {
     void modelCatalogService.refreshCursor();
     void modelCatalogService.refreshAgy();
     void modelCatalogService.refreshGrok();
-    void modelCatalogService.refreshMiniMax();
-    void modelCatalogService.refreshMimo();
   }
 
   const state = createAppState({
@@ -542,6 +552,13 @@ async function bootstrap(): Promise<void> {
     });
   }
   registerIpcHandlers({
+    clientCapabilities: createCliCapabilityDetector({
+      locate: (client) =>
+        client === "claude"
+          ? runtimeCommands.claude
+          : managedCapabilityCommand(client, managedRuntimeCommands),
+      execute: executeProbe,
+    }),
     ipcMain,
     laneEffort,
     modelCatalog: () => modelCatalogService.list(),
@@ -556,6 +573,7 @@ async function bootstrap(): Promise<void> {
     googleInboxOAuthService,
     calendarService,
     subscriptionDeviceAuthService,
+    usageRuntimeCommands: runtimeCommands,
     openExternal: (url) => shell.openExternal(url),
     showItemInFolder: async (targetPath) => shell.showItemInFolder(targetPath),
   });

@@ -11,6 +11,10 @@ import {
   parseNamedModelsFromCli,
 } from "./model-catalog";
 
+const locateLocalBinary = vi.hoisted(() => vi.fn(() => null));
+
+vi.mock("../ecosystem/cli-capabilities", () => ({ locateLocalBinary }));
+
 function cachePaths() {
   const directory = mkdtempSync(path.join(tmpdir(), "okami-model-catalog-"));
   return {
@@ -24,15 +28,29 @@ function cachePaths() {
 }
 
 describe("Cursor model catalog", () => {
+  it("never rediscovers host binaries when managed commands or HTTP catalogs are supplied", () => {
+    const paths = cachePaths();
+
+    createModelCatalogService({
+      cachePath: paths.claude,
+      cursorBinary: "/managed/cursor-agent",
+      agyBinary: "/managed/agy",
+      grokBinary: "/managed/grok",
+      opencodeBinary: "/managed/opencode",
+      apiCatalogs: {
+        mimo: [{ id: "mimo-v2.5-pro", label: "MiMo V2.5 Pro" }],
+        minimax: [{ id: "MiniMax-M3", label: "MiniMax M3" }],
+      },
+    });
+
+    expect(locateLocalBinary).not.toHaveBeenCalled();
+  });
+
   it("keeps API-backed providers selectable without probing or installing their CLIs", () => {
     const paths = cachePaths();
     const service = createModelCatalogService({
       cachePath: paths.claude,
       grokBinary: null,
-      minimaxBinary: null,
-      minimaxCodeBundlePath: null,
-      minimaxConfigPath: null,
-      mimoBinary: null,
       apiCatalogs: {
         codex: [{ id: "gpt-test", label: "GPT Test" }],
         grok: [{ id: "grok-test", label: "Grok Test" }],
@@ -246,100 +264,34 @@ describe("Cursor model catalog", () => {
     ]);
   });
 
-  it("merges models enabled by the installed MiniMax Code profile", async () => {
+  it("keeps MiMo and MiniMax catalogs on their configured HTTP transports", () => {
     const paths = cachePaths();
-    const bundlePath = path.join(path.dirname(paths.minimax), "app.asar");
-    const configPath = path.join(path.dirname(paths.minimax), "config.yaml");
-    writeFileSync(
-      bundlePath,
-      String.raw`\"minimax\": { \"MiniMax-M2.7\": {}, \"MiniMax-M2.7-highspeed\": {} }`,
-    );
-    writeFileSync(
-      configPath,
-      [
-        "provider:",
-        "  minimax:",
-        "    models:",
-        "      MiniMax-M3:",
-        "        reasoning: true",
-        "    whitelist:",
-        "      - MiniMax-M2.7",
-        "      - MiniMax-M2.7-highspeed",
-        "      - MiniMax-M3",
-      ].join("\n"),
-    );
+    const executeNative = vi.fn();
     const service = createModelCatalogService({
       cachePath: paths.claude,
-      cursorBinary: null,
-      agyBinary: null,
-      grokBinary: null,
-      minimaxBinary: "/real/mmx",
-      minimaxCachePath: paths.minimax,
-      minimaxCodeBundlePath: bundlePath,
-      minimaxConfigPath: configPath,
-      mimoBinary: null,
-    });
-
-    await service.refreshMiniMax();
-
-    expect(
-      service
-        .list()
-        .find((entry) => entry.runtimeKind === "minimax")
-        ?.models.map((model) => model.id),
-    ).toEqual(["MiniMax-M2.7", "MiniMax-M2.7-highspeed", "MiniMax-M3"]);
-  });
-
-  it("refreshes MiMo and MiniMax from their own installed products", async () => {
-    const paths = cachePaths();
-    const minimaxBundlePath = path.join(
-      path.dirname(paths.minimax),
-      "app.asar",
-    );
-    writeFileSync(
-      minimaxBundlePath,
-      String.raw`\"minimax\": { \"MiniMax-M2.7\": {}, \"MiniMax-M3\": {} }, \"minimax-cn\": {}`,
-    );
-    const executeNative = vi.fn().mockImplementation((binary, args) => {
-      if (binary === "/real/mimo" && args[0] === "models") {
-        return Promise.resolve("mimo/mimo-auto\nxiaomi/mimo-v2.5-pro\n");
-      }
-      return Promise.reject(new Error("unexpected command"));
-    });
-    const service = createModelCatalogService({
-      cachePath: paths.claude,
-      cursorBinary: null,
-      agyBinary: null,
-      grokBinary: null,
-      minimaxCachePath: paths.minimax,
-      minimaxBinary: "/real/mmx",
-      minimaxCodeBundlePath: minimaxBundlePath,
-      minimaxConfigPath: null,
-      mimoCachePath: paths.mimo,
-      mimoBinary: "/real/mimo",
+      apiCatalogs: {
+        minimax: [{ id: "MiniMax-M3", label: "MiniMax M3" }],
+        mimo: [{ id: "mimo-v2.5-pro", label: "MiMo V2.5 Pro" }],
+      },
       executeNative,
-      now: () => new Date("2026-07-22T09:00:00.000Z"),
     });
 
-    await service.refreshMiniMax();
-    await service.refreshMimo();
-
-    expect(executeNative).toHaveBeenCalledWith("/real/mimo", ["models"]);
+    expect(executeNative).not.toHaveBeenCalled();
     expect(
       service.list().find((entry) => entry.runtimeKind === "minimax"),
     ).toMatchObject({
       providerLabel: "MiniMax",
       routeKind: "native",
-      source: "MiniMax Token Plan via mmx · 2026-07-22T09:00:00.000Z",
-      models: [{ id: "MiniMax-M2.7" }, { id: "MiniMax-M3" }],
+      source: "API do Okami · catálogo configurado",
+      models: [{ id: "MiniMax-M3" }],
     });
     expect(
       service.list().find((entry) => entry.runtimeKind === "mimo"),
     ).toMatchObject({
-      providerLabel: "MiMo Code",
+      providerLabel: "MiMo",
       routeKind: "native",
-      source: "mimo models · 2026-07-22T09:00:00.000Z",
-      models: [{ id: "mimo/mimo-auto" }, { id: "xiaomi/mimo-v2.5-pro" }],
+      source: "API do Okami · catálogo configurado",
+      models: [{ id: "mimo-v2.5-pro" }],
     });
   });
 

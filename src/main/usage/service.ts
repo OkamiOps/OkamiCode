@@ -4,10 +4,8 @@ import { UsageActivityService } from "./activity";
 import { AgyUsageCollector } from "./agy-collector";
 import { ClaudeUsageCollector } from "./claude-collector";
 import { CodexUsageCollector } from "./codex-collector";
-import { MiniMaxUsageCollector } from "./minimax-collector";
 import { CursorUsageCollector } from "./cursor-collector";
 import { GrokUsageCollector } from "./grok-collector";
-import { locateLocalBinary } from "../ecosystem/cli-capabilities";
 import {
   UsageSourceKind,
   UsageSnapshotRepository,
@@ -81,8 +79,20 @@ export interface UsageCommands {
   setAlert(request: IpcRequest<"usage:alertSet">): UsageAlert;
 }
 
-export function createUsageCommands(state: AppState): UsageCommands {
+export interface UsageRuntimeCommands {
+  claude: string | null;
+  codex: string;
+  cursor: string;
+  agy: string;
+  grok: string;
+}
+
+export function createUsageCommands(
+  state: AppState,
+  commands?: UsageRuntimeCommands,
+): UsageCommands {
   if (
+    !commands ||
     typeof (state.database as unknown as { transaction?: unknown })
       .transaction !== "function"
   ) {
@@ -92,16 +102,24 @@ export function createUsageCommands(state: AppState): UsageCommands {
   const activity = new UsageActivityService(state.database);
   const codex = new CodexUsageCollector({
     clock: state.clock,
-    command: locateLocalBinary("codex") ?? undefined,
+    command: commands.codex,
   });
   const claude = new ClaudeUsageCollector({
     clock: state.clock,
-    command: locateLocalBinary("claude") ?? undefined,
+    command: commands.claude ?? undefined,
   });
-  const agy = new AgyUsageCollector({ clock: state.clock });
-  const cursor = new CursorUsageCollector({ clock: state.clock });
-  const grok = new GrokUsageCollector({ clock: state.clock });
-  const minimax = new MiniMaxUsageCollector({ clock: state.clock });
+  const agy = new AgyUsageCollector({
+    clock: state.clock,
+    command: commands.agy,
+  });
+  const cursor = new CursorUsageCollector({
+    clock: state.clock,
+    command: commands.cursor,
+  });
+  const grok = new GrokUsageCollector({
+    clock: state.clock,
+    command: commands.grok,
+  });
   return {
     async overview(reason) {
       const previous = snapshots.readLatest();
@@ -111,7 +129,6 @@ export function createUsageCommands(state: AppState): UsageCommands {
         agySnapshot,
         cursorSnapshot,
         grokSnapshot,
-        minimaxSnapshot,
       ] = await Promise.all([
         codex.collect({
           previous: previous.find((entry) => entry.provider === "chatgpt"),
@@ -133,14 +150,12 @@ export function createUsageCommands(state: AppState): UsageCommands {
           previous: previous.find((entry) => entry.provider === "grok"),
           reason,
         }),
-        minimax.collect(),
       ]);
       snapshots.save(codexSnapshot);
       snapshots.save(claudeSnapshot);
       snapshots.save(agySnapshot);
       snapshots.save(cursorSnapshot);
       snapshots.save(grokSnapshot);
-      snapshots.save(minimaxSnapshot);
       activity.rebuild();
       const latest = snapshots.readLatest();
       const localContext = activity.readSessionContext();

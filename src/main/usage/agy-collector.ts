@@ -1,7 +1,6 @@
 import { spawn as nativeSpawnPty } from "node-pty";
 import { homedir } from "node:os";
 import path from "node:path";
-import { locateLocalBinary } from "../ecosystem/cli-capabilities";
 import { UsageSourceKind, type UsageSnapshot } from "./model";
 import { compactScreen } from "./native-usage-screen";
 
@@ -120,10 +119,7 @@ export class AgyUsageCollector {
         (this.dependencies.ttlMs ?? 10 * 60_000)
     )
       return options.previous;
-    const command =
-      this.dependencies.command === undefined
-        ? locateLocalBinary("agy")
-        : this.dependencies.command;
+    const command = this.dependencies.command ?? null;
     if (!command)
       return unavailable(now.toISOString(), "Antigravity CLI não encontrado.");
     try {
@@ -148,29 +144,23 @@ export class AgyUsageCollector {
   }
 }
 
-export function runAgyUsageScreen(
-  options: {
-    command?: string;
-    cwd?: string;
-    env?: NodeJS.ProcessEnv;
-    spawnPty?: SpawnUsagePty;
-    timeoutMs?: number;
-  } = {},
-): Promise<AgyUsageResult> {
+export function runAgyUsageScreen(options: {
+  command: string;
+  cwd?: string;
+  env?: NodeJS.ProcessEnv;
+  spawnPty?: SpawnUsagePty;
+  timeoutMs?: number;
+}): Promise<AgyUsageResult> {
   return new Promise((resolve) => {
-    const terminal = (options.spawnPty ?? nativeSpawnPty)(
-      options.command ?? locateLocalBinary("agy") ?? "agy",
-      [],
-      {
-        cols: 140,
-        cwd: options.cwd ?? path.join(homedir(), "OkamiWorkspace"),
-        env: options.env ?? process.env,
-        name: "xterm-256color",
-        // The quota view is 30 lines. Keeping it on one screen avoids a
-        // second, scroll-dependent scrape of the presentational CLI.
-        rows: 52,
-      },
-    );
+    const terminal = (options.spawnPty ?? nativeSpawnPty)(options.command, [], {
+      cols: 140,
+      cwd: options.cwd ?? path.join(homedir(), "OkamiWorkspace"),
+      env: options.env ?? process.env,
+      name: "xterm-256color",
+      // The quota view is 30 lines. Keeping it on one screen avoids a
+      // second, scroll-dependent scrape of the presentational CLI.
+      rows: 52,
+    });
     let output = "";
     let asked = false;
     let settled = false;

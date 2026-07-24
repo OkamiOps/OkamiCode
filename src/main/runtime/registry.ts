@@ -16,11 +16,6 @@ import {
 } from "./cursor/adapter";
 import { AgyAdapter, type AgyAdapterDependencies } from "./agy/adapter";
 import { GrokAdapter, type GrokAdapterDependencies } from "./grok/adapter";
-import { MimoAdapter, type MimoAdapterDependencies } from "./mimo/adapter";
-import {
-  MiniMaxAdapter,
-  type MiniMaxAdapterDependencies,
-} from "./minimax/adapter";
 import {
   OpenCodeAdapter,
   type OpenCodeAdapterDependencies,
@@ -96,14 +91,12 @@ export interface RuntimeRegistryDependencies {
   cursor: CursorAdapterDependencies;
   agy: AgyAdapterDependencies;
   grok: GrokAdapterDependencies;
-  mimo: MimoAdapterDependencies;
-  minimax: MiniMaxAdapterDependencies;
   opencode: OpenCodeAdapterDependencies;
-  responses?: {
-    mimo?: ResponsesTransportDependencies;
+  responses: {
+    mimo: ResponsesTransportDependencies;
   };
-  chatCompletions?: {
-    minimax?: ChatCompletionsTransportDependencies;
+  chatCompletions: {
+    minimax: ChatCompletionsTransportDependencies;
   };
 }
 
@@ -127,28 +120,16 @@ export function createRuntimeRegistry(
     ["grok-managed", new GrokAdapter(dependencies.grok)],
   ]);
   registerProvider(registry, builtInRuntimeManifests.mimo, [
-    ...(dependencies.responses?.mimo
-      ? [
-          [
-            "mimo-token-plan",
-            new ResponsesTransportAdapter(dependencies.responses.mimo),
-          ] as const,
-        ]
-      : []),
-    ["mimo-cli", new MimoAdapter(dependencies.mimo)],
+    [
+      "mimo-token-plan",
+      new ResponsesTransportAdapter(dependencies.responses.mimo),
+    ],
   ]);
   registerProvider(registry, builtInRuntimeManifests.minimax, [
-    ...(dependencies.chatCompletions?.minimax
-      ? [
-          [
-            "minimax-token-plan",
-            new ChatCompletionsTransportAdapter(
-              dependencies.chatCompletions.minimax,
-            ),
-          ] as const,
-        ]
-      : []),
-    ["minimax-cli", new MiniMaxAdapter(dependencies.minimax)],
+    [
+      "minimax-token-plan",
+      new ChatCompletionsTransportAdapter(dependencies.chatCompletions.minimax),
+    ],
   ]);
   registerProvider(registry, builtInRuntimeManifests.opencode, [
     ["opencode-acp", new OpenCodeAdapter(dependencies.opencode)],

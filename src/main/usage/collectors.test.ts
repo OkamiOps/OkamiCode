@@ -328,6 +328,7 @@ describe("usage collectors", () => {
     }));
     const collector = new AgyUsageCollector({
       clock: () => new Date("2026-07-22T11:15:00.000Z"),
+      command: "/managed/agy",
       readScreen,
     });
 

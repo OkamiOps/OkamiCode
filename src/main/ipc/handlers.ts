@@ -41,7 +41,11 @@ import type {
   SubscriptionDeviceAuthService,
   SubscriptionProvider,
 } from "../runtime/subscription-device-auth";
-import { createUsageCommands, type UsageCommands } from "../usage/service";
+import {
+  createUsageCommands,
+  type UsageCommands,
+  type UsageRuntimeCommands,
+} from "../usage/service";
 import { OpenRouterPricingService } from "../usage/openrouter-pricing";
 import type { AppState } from "./app-state";
 import {
@@ -165,6 +169,7 @@ interface RegisterIpcHandlersOptions {
   showItemInFolder?: (path: string) => Promise<unknown>;
   openRouterPricingService?: Pick<OpenRouterPricingService, "list">;
   subscriptionDeviceAuthService?: Pick<SubscriptionDeviceAuthService, "start">;
+  usageRuntimeCommands?: UsageRuntimeCommands;
 }
 
 interface TaskRow {
@@ -214,6 +219,7 @@ export function registerIpcHandlers({
   },
   openRouterPricingService = new OpenRouterPricingService(),
   subscriptionDeviceAuthService,
+  usageRuntimeCommands,
 }: RegisterIpcHandlersOptions): void {
   const openedLanes = new Map<string, OpenedLane>();
   let memory = memoryService;
@@ -233,7 +239,8 @@ export function registerIpcHandlers({
     }));
   let usage: UsageCommands | undefined;
   const usageService = () => {
-    if (usage === undefined) usage = createUsageCommands(state);
+    if (usage === undefined)
+      usage = createUsageCommands(state, usageRuntimeCommands);
     return usage;
   };
   let kanban: KanbanCardService | undefined;

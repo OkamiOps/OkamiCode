@@ -1,4 +1,3 @@
-import { locateLocalBinary } from "../ecosystem/cli-capabilities";
 import { UsageSourceKind, withFreshness, type UsageSnapshot } from "./model";
 import { compactScreen, runNativeUsageScreen } from "./native-usage-screen";
 
@@ -75,10 +74,7 @@ export class GrokUsageCollector {
         (this.dependencies.ttlMs ?? 10 * 60_000)
     )
       return options.previous;
-    const command =
-      this.dependencies.command === undefined
-        ? locateLocalBinary("grok")
-        : this.dependencies.command;
+    const command = this.dependencies.command ?? null;
     if (!command)
       return unavailable(now.toISOString(), "Grok CLI não encontrado.");
     try {

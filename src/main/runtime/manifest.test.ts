@@ -82,7 +82,9 @@ describe("Okami runtime manifest", () => {
       entitlement: "token_plan",
       executable: null,
       protocolVersion: "responses-v1",
+      legacySessionOwner: true,
     });
+    expect(builtInRuntimeManifests.mimo.transports).toHaveLength(1);
     expect(builtInRuntimeManifests.minimax.transports[0]).toMatchObject({
       id: "minimax-token-plan",
       kind: "api",
@@ -90,7 +92,9 @@ describe("Okami runtime manifest", () => {
       entitlement: "token_plan",
       executable: null,
       protocolVersion: "chat-completions-v1",
+      legacySessionOwner: true,
     });
+    expect(builtInRuntimeManifests.minimax.transports).toHaveLength(1);
   });
 
   it("advertises canonical turn usage for every adapter that emits it", () => {

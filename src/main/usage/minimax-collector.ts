@@ -1,5 +1,4 @@
 import { execFile } from "node:child_process";
-import { locateLocalBinary } from "../ecosystem/cli-capabilities";
 import { UsageSourceKind, type UsageSnapshot } from "./model";
 
 interface MiniMaxQuota {
@@ -23,10 +22,7 @@ export class MiniMaxUsageCollector {
 
   async collect(): Promise<UsageSnapshot> {
     const collectedAt = this.dependencies.clock().toISOString();
-    const command =
-      this.dependencies.command === undefined
-        ? locateLocalBinary("minimax")
-        : this.dependencies.command;
+    const command = this.dependencies.command ?? null;
     if (!command)
       return unavailable(collectedAt, "MiniMax mmx não encontrado.");
     try {

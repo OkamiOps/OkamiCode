@@ -3,6 +3,33 @@ import type { TaskId } from "../../shared/ids";
 import { ProviderRuntimeAdapter } from "./sdk/provider-runtime";
 import { createRuntimeRegistry } from "./registry";
 
+function tokenPlanDependencies() {
+  return {
+    responses: {
+      mimo: {
+        kind: "mimo" as const,
+        transportId: "mimo-token-plan",
+        baseUrl: "https://token-plan-ams.xiaomimimo.com/v1",
+        credentialReference: "MIMO_TOKEN_PLAN_KEY",
+        credential: { get: async () => "tp-okami-mimo" },
+        taskIdForRun: async () =>
+          "33333333-3333-4333-8333-333333333333" as TaskId,
+      },
+    },
+    chatCompletions: {
+      minimax: {
+        kind: "minimax" as const,
+        transportId: "minimax-token-plan",
+        baseUrl: "https://api.minimax.io/v1",
+        credentialReference: "MINIMAX_TOKEN_PLAN_KEY",
+        credential: { get: async () => "sk-cp-okami-minimax" },
+        taskIdForRun: async () =>
+          "33333333-3333-4333-8333-333333333333" as TaskId,
+      },
+    },
+  };
+}
+
 it("registers provider runtimes instead of exposing CLI adapters as providers", () => {
   const registry = createRuntimeRegistry({
     claude: {} as never,
@@ -10,9 +37,8 @@ it("registers provider runtimes instead of exposing CLI adapters as providers", 
     cursor: {} as never,
     agy: {} as never,
     grok: {} as never,
-    mimo: {} as never,
-    minimax: {} as never,
     opencode: {} as never,
+    ...tokenPlanDependencies(),
   });
 
   expect(registry.lookup("agy")).toBeInstanceOf(ProviderRuntimeAdapter);
@@ -41,31 +67,8 @@ describe("RuntimeRegistry health", () => {
       cursor: {} as never,
       agy: {} as never,
       grok: {} as never,
-      mimo: {} as never,
-      minimax: {} as never,
       opencode: {} as never,
-      responses: {
-        mimo: {
-          kind: "mimo",
-          transportId: "mimo-token-plan",
-          baseUrl: "https://token-plan-ams.xiaomimimo.com/v1",
-          credentialReference: "MIMO_TOKEN_PLAN_KEY",
-          credential: { get: async () => "tp-okami-mimo" },
-          taskIdForRun: async () =>
-            "33333333-3333-4333-8333-333333333333" as TaskId,
-        },
-      },
-      chatCompletions: {
-        minimax: {
-          kind: "minimax",
-          transportId: "minimax-token-plan",
-          baseUrl: "https://api.minimax.io/v1",
-          credentialReference: "MINIMAX_TOKEN_PLAN_KEY",
-          credential: { get: async () => "sk-cp-okami-minimax" },
-          taskIdForRun: async () =>
-            "33333333-3333-4333-8333-333333333333" as TaskId,
-        },
-      },
+      ...tokenPlanDependencies(),
     });
 
     expect(registry.manifest("codex")?.transports).toEqual([
@@ -80,22 +83,20 @@ describe("RuntimeRegistry health", () => {
         entitlement: "subscription",
       }),
     ]);
-    expect(registry.manifest("mimo")?.transports).toEqual(
-      expect.arrayContaining([
-        expect.objectContaining({
-          id: "mimo-token-plan",
-          entitlement: "token_plan",
-        }),
-      ]),
-    );
-    expect(registry.manifest("minimax")?.transports).toEqual(
-      expect.arrayContaining([
-        expect.objectContaining({
-          id: "minimax-token-plan",
-          entitlement: "token_plan",
-        }),
-      ]),
-    );
+    expect(registry.manifest("mimo")?.transports).toEqual([
+      expect.objectContaining({
+        id: "mimo-token-plan",
+        entitlement: "token_plan",
+        legacySessionOwner: true,
+      }),
+    ]);
+    expect(registry.manifest("minimax")?.transports).toEqual([
+      expect.objectContaining({
+        id: "minimax-token-plan",
+        entitlement: "token_plan",
+        legacySessionOwner: true,
+      }),
+    ]);
     await expect(registry.health("mimo")).resolves.toMatchObject({
       health: {
         available: true,
@@ -119,9 +120,8 @@ describe("RuntimeRegistry health", () => {
       cursor: {} as never,
       agy: {} as never,
       grok: {} as never,
-      mimo: {} as never,
-      minimax: {} as never,
       opencode: {} as never,
+      ...tokenPlanDependencies(),
     });
     const detected = vi.fn(async () => ({
       available: true,

@@ -1,4 +1,3 @@
-import { locateLocalBinary } from "../ecosystem/cli-capabilities";
 import { UsageSourceKind, withFreshness, type UsageSnapshot } from "./model";
 import { compactScreen, runNativeUsageScreen } from "./native-usage-screen";
 
@@ -88,10 +87,7 @@ export class CursorUsageCollector {
     ) {
       return options.previous;
     }
-    const command =
-      this.dependencies.command === undefined
-        ? locateLocalBinary("cursor")
-        : this.dependencies.command;
+    const command = this.dependencies.command ?? null;
     if (!command)
       return unavailable(now.toISOString(), "Cursor CLI não encontrado.");
     try {

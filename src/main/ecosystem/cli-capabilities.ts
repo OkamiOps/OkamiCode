@@ -584,7 +584,8 @@ async function detectClient(
 
 export function createCliCapabilityDetector(
   dependencies: CliCapabilityDetectorDependencies = {
-    locate: locateLocalBinary,
+    locate: (client) =>
+      client === "claude" ? locateLocalBinary("claude") : null,
     execute: executeProbe,
   },
 ): () => Promise<CliCapability[]> {

@@ -10,12 +10,16 @@ it("resolves absolute launch commands for every CLI-backed runtime", () => {
     agy: "/managed/agy",
     opencode: "/managed/opencode",
   };
+  const commands = resolveRuntimeCommands(locate, managed);
 
-  expect(resolveRuntimeCommands(locate, managed)).toMatchObject({
+  expect(commands).toMatchObject({
     claude: "/resolved/claude",
     cursor: "/managed/cursor-agent",
-    minimax: "/resolved/minimax",
   });
+  expect(commands).not.toHaveProperty("mimo");
+  expect(commands).not.toHaveProperty("minimax");
+  expect(locate).toHaveBeenCalledOnce();
+  expect(locate).toHaveBeenCalledWith("claude");
 });
 
 it("never consults the locator for an Okami-managed runtime", () => {
@@ -49,4 +53,26 @@ it("never consults the locator for an Okami-managed runtime", () => {
     opencode: "/app/runtimes/opencode",
     claude: "/global/claude",
   });
+});
+
+it("keeps every non-Claude runtime independent from the host locator", () => {
+  const locate = vi.fn(() => null);
+  const commands = resolveRuntimeCommands(locate, {
+    codex: "/app/runtimes/codex",
+    grok: "/app/runtimes/grok",
+    cursor: "/app/runtimes/cursor-agent",
+    agy: "/app/runtimes/agy",
+    opencode: "/app/runtimes/opencode",
+  });
+
+  expect(commands).toEqual({
+    claude: "claude",
+    codex: "/app/runtimes/codex",
+    grok: "/app/runtimes/grok",
+    cursor: "/app/runtimes/cursor-agent",
+    agy: "/app/runtimes/agy",
+    opencode: "/app/runtimes/opencode",
+  });
+  expect(locate).toHaveBeenCalledOnce();
+  expect(locate).toHaveBeenCalledWith("claude");
 });
