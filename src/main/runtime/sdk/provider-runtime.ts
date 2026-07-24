@@ -13,6 +13,16 @@ import type {
 import type { RuntimeTransport } from "../manifest";
 
 const SESSION_PREFIX = "okami:v1:";
+const RETIRED_TRANSPORT_ALIASES = {
+  claude: [],
+  codex: [],
+  cursor: [],
+  agy: [],
+  grok: [],
+  mimo: ["mimo-cli"],
+  minimax: ["minimax-cli"],
+  opencode: [],
+} as const satisfies Record<RuntimeKind, readonly string[]>;
 
 export interface RuntimeTransportCandidate {
   descriptor: RuntimeTransport;
@@ -85,8 +95,7 @@ export class ProviderRuntimeAdapter implements RuntimeAdapter {
   async resume(request: ResumeSessionRequest): Promise<NativeSession> {
     const decoded = decodeSession(request.nativeSessionId);
     const candidate = decoded
-      ? (this.candidatesById.get(decoded.transportId) ??
-        this.legacySessionOwner())
+      ? this.resumeCandidate(decoded.transportId)
       : this.legacySessionOwner();
     const session = await candidate.adapter.resume({
       ...request,
@@ -180,6 +189,17 @@ export class ProviderRuntimeAdapter implements RuntimeAdapter {
       throw new Error(`Unknown ${this.kind} transport binding ${transportId}`);
     }
     return candidate;
+  }
+
+  private resumeCandidate(transportId: string): RuntimeTransportCandidate {
+    const candidate = this.candidatesById.get(transportId);
+    if (candidate) return candidate;
+    const retiredAliases = RETIRED_TRANSPORT_ALIASES[
+      this.kind
+    ] as readonly string[];
+    return retiredAliases.includes(transportId)
+      ? this.legacySessionOwner()
+      : this.requireCandidate(transportId);
   }
 
   private legacySessionOwner(): RuntimeTransportCandidate {

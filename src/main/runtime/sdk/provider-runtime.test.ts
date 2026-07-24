@@ -1,4 +1,5 @@
 import { describe, expect, it, vi } from "vitest";
+import type { RuntimeKind } from "../../../shared/contracts/lane";
 import type { LaneId, RunId } from "../../../shared/ids";
 import type {
   ApprovalResponse,
@@ -131,10 +132,11 @@ describe("ProviderRuntimeAdapter", () => {
   });
 
   it("migrates a binding from a removed CLI transport to the current legacy owner", async () => {
-    const tokenPlan = new FakeTransport("grok", healthy("token-plan-v1"));
-    const runtime = provider([
-      candidate("mimo-token-plan", "api", 10, tokenPlan, true),
-    ]);
+    const tokenPlan = new FakeTransport("mimo", healthy("token-plan-v1"));
+    const runtime = provider(
+      [candidate("mimo-token-plan", "api", 10, tokenPlan, true)],
+      "mimo",
+    );
     const removedBinding = `okami:v1:mimo-cli:${Buffer.from(
       "persisted-cli-session",
     ).toString("base64url")}`;
@@ -161,6 +163,77 @@ describe("ProviderRuntimeAdapter", () => {
     expect(tokenPlan.turnRequests[0]?.nativeSessionId).toBe(
       "persisted-cli-session",
     );
+  });
+
+  it("migrates the retired MiniMax CLI binding only for MiniMax", async () => {
+    const tokenPlan = new FakeTransport("minimax", healthy("token-plan-v1"));
+    const runtime = provider(
+      [candidate("minimax-token-plan", "api", 10, tokenPlan, true)],
+      "minimax",
+    );
+    const removedBinding = `okami:v1:minimax-cli:${Buffer.from(
+      "persisted-minimax-session",
+    ).toString("base64url")}`;
+
+    const resumed = await runtime.resume({
+      ...startRequest(),
+      nativeSessionId: removedBinding,
+    });
+
+    expect(tokenPlan.resumeRequests[0]?.nativeSessionId).toBe(
+      "persisted-minimax-session",
+    );
+    expect(resumed.nativeSessionId).toMatch(/^okami:v1:minimax-token-plan:/u);
+  });
+
+  it("rejects an unknown encoded transport instead of migrating it", async () => {
+    const runtime = provider(
+      [
+        candidate(
+          "mimo-token-plan",
+          "api",
+          10,
+          new FakeTransport("mimo", healthy("token-plan-v1")),
+          true,
+        ),
+      ],
+      "mimo",
+    );
+    const unknownBinding = `okami:v1:unexpected-cli:${Buffer.from(
+      "unknown-session",
+    ).toString("base64url")}`;
+
+    await expect(
+      runtime.resume({
+        ...startRequest(),
+        nativeSessionId: unknownBinding,
+      }),
+    ).rejects.toThrow("Unknown mimo transport binding unexpected-cli");
+  });
+
+  it("rejects a retired alias that belongs to another provider", async () => {
+    const runtime = provider(
+      [
+        candidate(
+          "mimo-token-plan",
+          "api",
+          10,
+          new FakeTransport("mimo", healthy("token-plan-v1")),
+          true,
+        ),
+      ],
+      "mimo",
+    );
+    const crossProviderBinding = `okami:v1:minimax-cli:${Buffer.from(
+      "cross-provider-session",
+    ).toString("base64url")}`;
+
+    await expect(
+      runtime.resume({
+        ...startRequest(),
+        nativeSessionId: crossProviderBinding,
+      }),
+    ).rejects.toThrow("Unknown mimo transport binding minimax-cli");
   });
 
   it("keeps an existing encoded transport binding strict", async () => {
@@ -205,8 +278,9 @@ describe("ProviderRuntimeAdapter", () => {
 
 function provider(
   candidates: RuntimeTransportCandidate[],
+  kind: RuntimeKind = "grok",
 ): ProviderRuntimeAdapter {
-  return new ProviderRuntimeAdapter("grok", candidates);
+  return new ProviderRuntimeAdapter(kind, candidates);
 }
 
 function candidate(
@@ -257,7 +331,7 @@ class FakeTransport implements RuntimeAdapter {
   readonly cancel = vi.fn(async () => undefined);
 
   constructor(
-    readonly kind: "grok",
+    readonly kind: RuntimeKind,
     private readonly health: RuntimeHealth,
   ) {}
 

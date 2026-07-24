@@ -212,3 +212,73 @@ Follow-up commit message:
 ```text
 fix(runtime): migrate removed transport session bindings
 ```
+
+## Important review follow-up — fail-closed retired aliases
+
+Status: RESOLVED.
+
+The first migration fallback treated every unknown encoded transport ID as a
+removed transport. That was too permissive: a typo, corrupted-but-decodable
+binding, or an alias belonging to another provider could silently migrate to
+the current legacy owner.
+
+### Important follow-up RED
+
+```text
+pnpm exec vitest run src/main/runtime/sdk/provider-runtime.test.ts
+```
+
+Observed result: exit 1; 2 failed, 9 passed. Both new fail-closed tests resolved
+instead of rejecting:
+
+- unknown `unexpected-cli` on MiMo;
+- cross-provider `minimax-cli` on MiMo.
+
+### Important follow-up GREEN
+
+```text
+pnpm exec vitest run src/main/runtime/sdk/provider-runtime.test.ts src/main/runtime/registry.test.ts
+```
+
+Observed result after implementation and again after formatting: exit 0,
+2 files passed, 14 tests passed.
+
+```text
+pnpm typecheck
+pnpm lint
+pnpm format:check
+```
+
+Observed result: every command exited 0.
+
+```text
+pnpm exec vitest run --reporter=dot
+```
+
+Observed result: exit 0, 124 files passed, 4 skipped; 770 tests passed,
+9 skipped.
+
+### Important follow-up implementation and contract
+
+- `RETIRED_TRANSPORT_ALIASES` is exhaustive typed metadata keyed by
+  `RuntimeKind`; it does not use a broad regex.
+- Only `mimo-cli` may migrate for runtime MiMo.
+- Only `minimax-cli` may migrate for runtime MiniMax.
+- Existing transport IDs remain strict and route to their exact candidate.
+- Unknown transport IDs and cross-provider retired aliases fail through the
+  existing `Unknown <runtime> transport binding <id>` error.
+- Malformed encoded bindings still fail during decode.
+- Both allowed migrations preserve the decoded native session, re-encode the
+  new Token Plan binding, and retain turn continuity.
+
+Important follow-up files:
+
+- `.superpowers/sdd/task-8-report.md`
+- `src/main/runtime/sdk/provider-runtime.ts`
+- `src/main/runtime/sdk/provider-runtime.test.ts`
+
+Important follow-up commit message:
+
+```text
+fix(runtime): restrict retired transport migration aliases
+```
