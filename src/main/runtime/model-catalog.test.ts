@@ -297,6 +297,95 @@ describe("Cursor model catalog", () => {
     );
   });
 
+  it("keeps the Token Plan catalog in a refreshing state until provider discovery finishes", async () => {
+    const paths = cachePaths();
+    let resolveModels:
+      ((models: Array<{ id: string; label: string }>) => void) | undefined;
+    const service = createModelCatalogService({
+      cachePath: paths.claude,
+      tokenPlanCredentials: {
+        get: vi.fn(async (provider: "mimo" | "minimax") =>
+          provider === "mimo"
+            ? {
+                token: "tp-live",
+                baseUrl: "https://token-plan-ams.xiaomimimo.com/v1",
+              }
+            : null,
+        ),
+      },
+      fetchModels: vi.fn(
+        () =>
+          new Promise<Array<{ id: string; label: string }>>((resolve) => {
+            resolveModels = resolve;
+          }),
+      ),
+    });
+
+    const refresh = service.refreshTokenPlans();
+    await vi.waitFor(() => expect(resolveModels).toBeTypeOf("function"));
+
+    expect(
+      service.list().find((entry) => entry.runtimeKind === "mimo"),
+    ).toMatchObject({
+      routeKind: "unavailable",
+      source: expect.stringMatching(/^consultando/iu),
+      models: [],
+    });
+
+    resolveModels?.([{ id: "mimo-live", label: "MiMo Live" }]);
+    await refresh;
+
+    expect(
+      service.list().find((entry) => entry.runtimeKind === "mimo"),
+    ).toMatchObject({
+      routeKind: "native",
+      models: [{ id: "mimo-live", label: "MiMo Live" }],
+    });
+  });
+
+  it("serves the last provider-discovered Token Plan catalogs while a fresh lookup is pending", () => {
+    const paths = cachePaths();
+    writeFileSync(
+      paths.mimo,
+      JSON.stringify({
+        cliPath: "https://token-plan-ams.xiaomimimo.com/v1/models",
+        fetchedAt: "2026-07-24T12:00:00.000Z",
+        models: [{ id: "mimo-provider-live", label: "MiMo Provider Live" }],
+      }),
+    );
+    writeFileSync(
+      paths.minimax,
+      JSON.stringify({
+        cliPath: "https://api.minimax.io/v1/models",
+        fetchedAt: "2026-07-24T12:00:00.000Z",
+        models: [
+          { id: "MiniMax-Provider-Live", label: "MiniMax Provider Live" },
+        ],
+      }),
+    );
+
+    const service = createModelCatalogService({
+      cachePath: paths.claude,
+      ...({
+        mimoCachePath: paths.mimo,
+        minimaxCachePath: paths.minimax,
+      } as Record<string, string>),
+    });
+
+    expect(
+      service.list().find((entry) => entry.runtimeKind === "mimo"),
+    ).toMatchObject({
+      routeKind: "native",
+      models: [{ id: "mimo-provider-live" }],
+    });
+    expect(
+      service.list().find((entry) => entry.runtimeKind === "minimax"),
+    ).toMatchObject({
+      routeKind: "native",
+      models: [{ id: "MiniMax-Provider-Live" }],
+    });
+  });
+
   it("reads only the MiniMax provider models bundled by the installed MiniMax Code app", () => {
     const bundle = String.raw`
       \"minimax\": {

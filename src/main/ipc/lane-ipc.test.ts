@@ -18,7 +18,7 @@ afterEach(() => {
   for (const fixture of openFixtures.splice(0)) fixture.db.close();
 });
 
-function harness() {
+function harness(modelCatalog: () => never[] = () => []) {
   const fixture = createTestDatabase();
   openFixtures.push(fixture);
   const state = createAppState({
@@ -36,6 +36,7 @@ function harness() {
     },
     rendererUrl: "http://127.0.0.1:5173/index.html",
     state,
+    modelCatalog,
     clientCapabilities: async () => [],
   });
   const senderFrame = { url: "http://127.0.0.1:5173/workbench" };
@@ -88,6 +89,32 @@ function configureDeferredRun(
 }
 
 describe("lane IPC safety", () => {
+  it("does not report a stored Token Plan credential as connected without a usable model catalog", async () => {
+    const { event, handlers, state } = harness();
+    state.providerCredentials = {
+      has: vi.fn(async (provider) => provider === "mimo"),
+    } as unknown as AppState["providerCredentials"];
+
+    const result = (await handlers.get("providerAuth:status")?.(
+      event,
+      {},
+    )) as Array<{ provider: string; status: string; detail: string }>;
+
+    expect(result).toContainEqual(
+      expect.objectContaining({
+        provider: "mimo",
+        status: "unknown",
+        detail: expect.stringMatching(/catálogo/iu),
+      }),
+    );
+    expect(result).toContainEqual(
+      expect.objectContaining({
+        provider: "minimax",
+        status: "not_connected",
+      }),
+    );
+  });
+
   it("includes Antigravity in the runtime health projection", async () => {
     const { event, handlers, state } = harness();
     state.runtimes.register({

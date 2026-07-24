@@ -258,6 +258,8 @@ export interface ModelCatalogServiceOptions {
   agyBinary?: string | null;
   grokCachePath?: string;
   grokBinary?: string | null;
+  mimoCachePath?: string;
+  minimaxCachePath?: string;
   opencodeBinary?: string | null;
   opencodeAcpReady?: boolean;
   executeNative?: CursorModelListExecutor;
@@ -781,12 +783,26 @@ export function createModelCatalogService(
   let refreshingAgy: Promise<void> | null = null;
   let refreshingGrok: Promise<void> | null = null;
   let refreshingTokenPlans: Promise<void> | null = null;
-  let mimoModels = apiCatalogs.mimo ?? [];
-  let minimaxModels = apiCatalogs.minimax ?? [];
+  const mimoCachePath =
+    options.mimoCachePath ??
+    path.join(path.dirname(options.cachePath), "mimo-models.json");
+  const minimaxCachePath =
+    options.minimaxCachePath ??
+    path.join(path.dirname(options.cachePath), "minimax-models.json");
+  const cachedMimo = readNamedCatalog(mimoCachePath);
+  const cachedMiniMax = readNamedCatalog(minimaxCachePath);
+  let mimoModels = mergeCatalogModels(
+    apiCatalogs.mimo ?? [],
+    cachedMimo?.models ?? [],
+  );
+  let minimaxModels = mergeCatalogModels(
+    apiCatalogs.minimax ?? [],
+    cachedMiniMax?.models ?? [],
+  );
   let liveCodexModels = apiCatalogs.codex ?? [];
   let codexFetchedAt: string | null = null;
-  let mimoFetchedAt: string | null = null;
-  let minimaxFetchedAt: string | null = null;
+  let mimoFetchedAt: string | null = cachedMimo?.fetchedAt ?? null;
+  let minimaxFetchedAt: string | null = cachedMiniMax?.fetchedAt ?? null;
   const cursorCachePath =
     options.cursorCachePath ??
     path.join(path.dirname(options.cachePath), "cursor-models.json");
@@ -944,7 +960,7 @@ export function createModelCatalogService(
           options.tokenPlanCredentials.get("mimo"),
           options.tokenPlanCredentials.get("minimax"),
         ]);
-        await Promise.all([
+        const results = await Promise.allSettled([
           (async () => {
             if (!mimoCredential?.baseUrl) {
               mimoModels = [];
@@ -958,6 +974,19 @@ export function createModelCatalogService(
             if (models.length > 0) {
               mimoModels = models;
               mimoFetchedAt = now().toISOString();
+              mkdirSync(path.dirname(mimoCachePath), { recursive: true });
+              writeFileSync(
+                mimoCachePath,
+                JSON.stringify(
+                  {
+                    cliPath: `${mimoCredential.baseUrl.replace(/\/$/u, "")}/models`,
+                    fetchedAt: mimoFetchedAt,
+                    models,
+                  },
+                  null,
+                  2,
+                ),
+              );
             }
           })(),
           (async () => {
@@ -973,9 +1002,27 @@ export function createModelCatalogService(
             if (models.length > 0) {
               minimaxModels = models;
               minimaxFetchedAt = now().toISOString();
+              mkdirSync(path.dirname(minimaxCachePath), { recursive: true });
+              writeFileSync(
+                minimaxCachePath,
+                JSON.stringify(
+                  {
+                    cliPath: `${(minimaxCredential.baseUrl ?? "https://api.minimax.io/v1").replace(/\/$/u, "")}/models`,
+                    fetchedAt: minimaxFetchedAt,
+                    models,
+                  },
+                  null,
+                  2,
+                ),
+              );
             }
           })(),
         ]);
+        if (results.some((result) => result.status === "rejected")) {
+          console.error(
+            "[okami] One or more Token Plan model catalogs could not be refreshed",
+          );
+        }
       } catch {
         console.error("[okami] Token Plan model catalog refresh failed");
       } finally {
@@ -1067,8 +1114,9 @@ export function createModelCatalogService(
           runtimeKind: "minimax",
           providerLabel: "MiniMax",
           routeKind: apiMiniMaxModels.length > 0 ? "native" : "unavailable",
-          source:
-            apiMiniMaxModels.length > 0
+          source: refreshingTokenPlans
+            ? "consultando catálogo da MiniMax…"
+            : apiMiniMaxModels.length > 0
               ? minimaxFetchedAt
                 ? `MiniMax /v1/models · ${minimaxFetchedAt}`
                 : "API do Okami · catálogo configurado"
@@ -1079,8 +1127,9 @@ export function createModelCatalogService(
           runtimeKind: "mimo",
           providerLabel: "MiMo",
           routeKind: apiMimoModels.length > 0 ? "native" : "unavailable",
-          source:
-            apiMimoModels.length > 0
+          source: refreshingTokenPlans
+            ? "consultando catálogo do MiMo…"
+            : apiMimoModels.length > 0
               ? mimoFetchedAt
                 ? `MiMo /models · ${mimoFetchedAt}`
                 : "API do Okami · catálogo configurado"

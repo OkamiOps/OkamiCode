@@ -410,12 +410,22 @@ async function dispatch(
           async (provider): Promise<ProviderAuthStatus> => {
             const configured =
               (await state.providerCredentials?.has(provider)) ?? false;
+            const catalog = modelCatalog().find(
+              (entry) => entry.runtimeKind === provider,
+            );
+            const catalogReady = (catalog?.models.length ?? 0) > 0;
             return {
               provider,
-              status: configured ? "connected" : "not_connected",
+              status: configured
+                ? catalogReady
+                  ? "connected"
+                  : "unknown"
+                : "not_connected",
               accountLabel: null,
               detail: configured
-                ? "Token Plan configurado no cofre local."
+                ? catalogReady
+                  ? "Token Plan configurado e catálogo de modelos disponível."
+                  : "Credencial salva, mas o catálogo de modelos ainda não está disponível."
                 : "Token Plan ainda não configurado.",
               ownership: "okami",
             };

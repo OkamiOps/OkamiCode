@@ -442,6 +442,8 @@ async function bootstrap(): Promise<void> {
     agyBinary: agyCommand,
     grokCachePath: path.join(app.getPath("userData"), "grok-models.json"),
     grokBinary: runtimeCommands.grok,
+    mimoCachePath: path.join(app.getPath("userData"), "mimo-models.json"),
+    minimaxCachePath: path.join(app.getPath("userData"), "minimax-models.json"),
     opencodeBinary: runtimeCommands.opencode,
     opencodeAcpReady:
       opencodeHealth.available && opencodeHealth.protocolSupported,
