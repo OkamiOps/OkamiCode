@@ -38,7 +38,7 @@ export function modelLabel(lane: WorkbenchLane): string {
 export function modelDetail(lane: WorkbenchLane): string {
   const via =
     lane.harness === "claude" && lane.runtimeKind !== "claude"
-      ? " · via harness Claude"
+      ? " · sessão legada via Claude"
       : "";
   return `${lane.displayQuotaAccount}${via}`;
 }
@@ -193,8 +193,8 @@ export function ModelPicker({
                         {entry.routeKind === "unavailable"
                           ? "catálogo apenas"
                           : entry.routeKind === "bridged"
-                            ? "via harness Claude"
-                            : "nativo"}
+                            ? "sessão legada"
+                            : "runtime Okami"}
                         {" · "}
                         {entry.models.length}
                       </small>

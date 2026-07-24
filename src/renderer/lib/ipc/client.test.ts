@@ -37,6 +37,14 @@ interface TestAppState {
   createId: () => string;
   clock: () => Date;
   reportBackgroundError: (error: unknown) => void;
+  providerCredentials?: {
+    set(
+      provider: "mimo" | "minimax",
+      credential: { token: string; baseUrl?: string },
+    ): Promise<void>;
+    has(provider: "mimo" | "minimax"): Promise<boolean>;
+    delete(provider: "mimo" | "minimax"): Promise<void>;
+  };
 }
 
 const sharedContract = (await vi.importActual(
@@ -181,12 +189,50 @@ it("opens only validated web URLs through the trusted main process boundary", as
   expect(openExternal).toHaveBeenCalledTimes(1);
 });
 
+it("stores Token Plan secrets without returning them to the renderer", async () => {
+  const providerCredentials = {
+    set: vi.fn(async () => undefined),
+    has: vi.fn(async (provider: "mimo" | "minimax") => provider === "mimo"),
+    delete: vi.fn(async () => undefined),
+  };
+  const handlers = ipcHarness(stateFixture({ providerCredentials }));
+
+  await expect(
+    handlers.get("providerAuth:list")?.(trustedEvent(), {}),
+  ).resolves.toEqual([
+    { provider: "mimo", entitlement: "token_plan", configured: true },
+    { provider: "minimax", entitlement: "token_plan", configured: false },
+  ]);
+  const result = await handlers.get("providerAuth:setTokenPlan")?.(
+    trustedEvent(),
+    {
+      provider: "mimo",
+      token: "tp-test-secret",
+      baseUrl: "https://token-plan-ams.xiaomimimo.com/v1",
+    },
+  );
+  expect(providerCredentials.set).toHaveBeenCalledWith("mimo", {
+    token: "tp-test-secret",
+    baseUrl: "https://token-plan-ams.xiaomimimo.com/v1",
+  });
+  expect(result).toEqual({
+    provider: "mimo",
+    entitlement: "token_plan",
+    configured: true,
+  });
+  expect(JSON.stringify(result)).not.toContain("tp-test-secret");
+});
+
 it("exposes exactly the enumerated command surface", () => {
   expect(ipcChannels).toEqual(ipcChannels);
   expect(ipcChannels).toEqual([
     "system:doctor",
     "system:openExternal",
     "system:showItemInFolder",
+    "providerAuth:list",
+    "providerAuth:setTokenPlan",
+    "providerAuth:deleteTokenPlan",
+    "providerAuth:startDevice",
     "models:list",
     "models:favorites:list",
     "models:favorites:set",
@@ -838,6 +884,24 @@ it("runs doctor and task handlers through real state dependencies", async () => 
       },
       {
         runtime: "grok",
+        status: "ready",
+        version: "1.2.3",
+        detail: null,
+      },
+      {
+        runtime: "mimo",
+        status: "ready",
+        version: "1.2.3",
+        detail: null,
+      },
+      {
+        runtime: "minimax",
+        status: "ready",
+        version: "1.2.3",
+        detail: null,
+      },
+      {
+        runtime: "opencode",
         status: "ready",
         version: "1.2.3",
         detail: null,

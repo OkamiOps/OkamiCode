@@ -1,16 +1,13 @@
 import type { LaneId } from "../../shared/ids";
 import type { AuditRepository } from "../db/repositories/audit";
 import type { LaneRecord, LaneRepository } from "../db/repositories/lanes";
-import {
-  resolveRoute,
-  type GatewayAccount,
-  type GatewayHealthStatus,
-  type ResolvedRoute,
+import type {
+  GatewayAccount,
+  GatewayHealthStatus,
+  ResolvedRoute,
 } from "../gateway/route-resolver";
 import type { RunHandle } from "../runtime/adapter";
 import type { RuntimeKind } from "../../shared/contracts/lane";
-import path from "node:path";
-import { claudeGatewayEnvironment } from "../runtime/claude/command";
 import type { RuntimeRegistry } from "../runtime/registry";
 import {
   type DeltaPackage,
@@ -170,26 +167,10 @@ export class LaneService {
       laneId: lane.id as LaneId,
       cwd: lane.workspacePath ?? options.workspaceFallbackPath ?? process.cwd(),
       model: lane.model,
-      // The lane's stored mode is what the CLI is spawned with; "manual"
-      // stays the default for lanes that never chose one.
+      // Permission policy belongs to Okami. A transport may translate this
+      // value, but provider routing must never inject another provider's
+      // credentials or harness environment.
       permissionMode: lane.permissionMode ?? "manual",
-      ...(route.kind === "compatible" || route.kind === "bridged"
-        ? {
-            env: claudeGatewayEnvironment({
-              profile: route.profile,
-              port: this.dependencies.gateway!.port,
-              bearerToken: `${this.dependencies.gateway!.bearerToken}.${lane.id}`,
-              model: lane.model,
-              stableConfigDirectory: this.dependencies.gateway!
-                .gatewayConfigRoot
-                ? path.join(
-                    this.dependencies.gateway!.gatewayConfigRoot,
-                    lane.id,
-                  )
-                : undefined,
-            }),
-          }
-        : {}),
     };
     const session = binding
       ? await runtime.resume({
@@ -366,61 +347,34 @@ export class LaneService {
   }
 
   private resolveLaneRoute(lane: LaneRecord): ResolvedRoute {
-    // Cursor owns its model routing and subscription. A Claude/GPT model name
-    // selected inside Cursor must never be mistaken for a gateway request.
-    if (
-      lane.runtimeKind === "cursor" ||
-      lane.runtimeKind === "agy" ||
-      lane.runtimeKind === "grok" ||
-      lane.runtimeKind === "mimo" ||
-      lane.runtimeKind === "minimax" ||
-      lane.runtimeKind === "opencode"
-    ) {
+    if (lane.runtimeKind !== "claude") {
       return {
         harness: "native",
         kind: "native",
         runtime: lane.runtimeKind,
         reason: "native_requested",
-        displayQuotaAccount:
-          lane.runtimeKind === "agy"
-            ? "Antigravity subscription"
-            : lane.runtimeKind === "grok"
-              ? "Grok subscription"
-              : lane.runtimeKind === "mimo"
-                ? "MiMo subscription"
-                : lane.runtimeKind === "minimax"
-                  ? "MiniMax Token Plan"
-                  : lane.runtimeKind === "opencode"
-                    ? "OpenCode provider account"
-                    : "Cursor subscription",
-      };
-    }
-    const gateway = this.dependencies.gateway;
-    if (gateway) {
-      return resolveRoute({
-        model: lane.model,
-        accounts: gateway.accounts,
-        health: gateway.health,
-        preferNative: gateway.preferNative?.(lane),
-      });
-    }
-    if (lane.runtimeKind === "claude") {
-      return {
-        harness: "claude",
-        kind: "direct",
-        runtime: "claude",
-        reason: "claude_model",
-        displayQuotaAccount: "Claude subscription",
+        displayQuotaAccount: transportAccountLabel(lane.runtimeKind),
       };
     }
     return {
-      harness: "native",
-      kind: "native",
-      runtime: lane.runtimeKind,
-      reason: "native_requested",
-      displayQuotaAccount: "ChatGPT subscription",
+      harness: "claude",
+      kind: "direct",
+      runtime: "claude",
+      reason: "claude_model",
+      displayQuotaAccount: "Claude subscription",
     };
   }
+}
+
+function transportAccountLabel(runtime: RuntimeKind): string {
+  if (runtime === "codex") return "OpenAI / Codex transport";
+  if (runtime === "cursor") return "Cursor subscription";
+  if (runtime === "agy") return "Antigravity subscription";
+  if (runtime === "grok") return "xAI / Grok transport";
+  if (runtime === "mimo") return "MiMo transport";
+  if (runtime === "minimax") return "MiniMax transport";
+  if (runtime === "opencode") return "OpenCode provider account";
+  return "Claude subscription";
 }
 
 function providerAccountLabel(lane: LaneRecord): string {

@@ -88,7 +88,7 @@ describe("ModelsPage", () => {
     expect(screen.queryByText("GPT Deep")).not.toBeInTheDocument();
 
     const chatGptSummary = screen
-      .getAllByRole("button", { name: /ChatGPT.*Harness Claude/i })
+      .getAllByRole("button", { name: /ChatGPT.*Sessão legada/i })
       .find((button) => button.getAttribute("aria-expanded") === "false");
     expect(chatGptSummary).toBeDefined();
     await userEvent.click(chatGptSummary!);

@@ -107,7 +107,8 @@ export function ModelsPage() {
           <p className="pane-kicker">Catálogo local</p>
           <h1 id="models-heading">Modelos</h1>
           <p>
-            Escolha pelo provider, saúde do CLI e harness que realmente executa.
+            Escolha pelo provider, saúde do runtime e transporte que realmente
+            executa.
           </p>
         </div>
         <div className="models-page__summary" aria-label="Resumo do catálogo">
@@ -341,8 +342,8 @@ function providerGlyph(runtime: string): string {
 }
 
 function routeLabel(route: CatalogEntry["routeKind"]): string {
-  if (route === "bridged" || route === "compatible") return "Harness Claude";
-  if (route === "native") return "Harness nativo";
+  if (route === "bridged" || route === "compatible") return "Sessão legada";
+  if (route === "native") return "Runtime Okami";
   if (route === "direct") return "Direto";
   return "Catálogo apenas";
 }

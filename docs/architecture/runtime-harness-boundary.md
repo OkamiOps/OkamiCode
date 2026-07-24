@@ -1,57 +1,61 @@
 # Runtime and harness boundary
 
-OkamiCode owns the desktop experience, task state, lane orchestration, policy,
-auditing, bounded handoff, and canonical events. It does not embed another
-agentic IDE as its core and it does not silently replace a provider's native
-harness with a paid API.
+OkamiCode owns provider routing, task state, context, tool execution, policy,
+approvals, auditing, usage normalization, cancellation, and canonical events.
+A provider is no longer synonymous with an executable installed on the host.
 
-## What we reuse from OpenCode
-
-OpenCode is integrated as a runtime through its official ACP server:
+Each provider-facing runtime selects an ordered transport:
 
 ```text
-OkamiCode lane -> ACP client -> opencode acp -> configured OpenCode provider
+OkamiCode lane
+  -> ProviderRuntimeAdapter
+     -> bundled official subscription runtime
+     -> Okami Token Plan transport
+     -> official CLI or ACP compatibility transport
+  -> canonical events, policy, persistence, and UI
 ```
 
-The runtime is selectable only after `opencode acp --help` proves ACP support.
-OpenCode remains responsible for provider authentication, model selection,
-tool loops, and native sessions. OkamiCode translates ACP updates and
-permission requests into the same canonical event and approval contracts used
-by the other runtimes.
+The selected transport is bound to the native session identifier. Existing
+unprefixed sessions continue through their legacy transport; new sessions use
+an `okami:v1:<transport>:<session>` binding so a later configuration change
+cannot silently resume a conversation through a different harness.
 
-Source: [anomalyco/opencode](https://github.com/anomalyco/opencode).
+## Subscription and Token Plan transports
 
-## What we reuse from BB
+Codex and Grok use official, version-pinned binaries distributed with
+OkamiCode. Authentication stays provider-owned and uses the provider's
+subscription OAuth/device session. A global `codex` or `grok` executable is not
+required.
 
-BB describes work as persistent threads that can be followed, steered, and
-handed from one agent to another. It also reuses provider CLIs that the user has
-already authenticated. OkamiCode adopts those product boundaries:
+MiMo and MiniMax use Okami-owned HTTP transports, but only with their dedicated
+Token Plan credentials. The encrypted vault rejects ordinary pay-as-you-go key
+families. No provider silently falls back to metered API billing.
 
-- a task is persistent and provider lanes can be resumed;
-- a user can steer a running task explicitly;
-- a provider handoff carries bounded task state instead of replaying everything;
-- provider authentication remains owned by the provider CLI.
+Model streaming, session continuation, token telemetry, tool calls where
+supported, workspace containment, approvals, and cancellation are normalized
+by Okami.
 
-Source: [ymichael/bb](https://github.com/ymichael/bb).
+## Optional compatibility transports
 
-## What we deliberately do not embed
+- Claude Code remains an official CLI transport because the subscription login
+  is not exposed as a public third-party OAuth integration.
+- Cursor Agent remains an official CLI transport so Cursor subscribers can use
+  their account without making Cursor a mandatory dependency for everyone.
+- Antigravity and OpenCode ACP remain optional transports while no equivalent
+  first-party Okami API integration is configured.
+- MiMo and MiniMax local adapters remain optional compatibility fallbacks.
 
-BB is not registered as another OkamiCode runtime. Doing that would put one
-multi-agent IDE inside another, duplicate thread/worktree state, and make it
-unclear which orchestrator owns approvals and cancellation. We also do not copy
-BB telemetry, daemon state, plugins, or HTTP API.
+Removing an optional executable never deletes a project, task, conversation,
+worktree, database row, or session reference. A runtime is unavailable only
+when none of its configured transports can authenticate and pass health checks.
 
-This is a deliberate boundary, not an unfinished adapter:
+## OpenCode and BB
 
-- OpenCode is a runtime because ACP exposes a focused agent protocol.
-- BB is an architectural reference because its public product is a complete
-  orchestrator around the same provider CLIs OkamiCode already manages.
+OpenCode remains available through its official ACP server as one selectable
+transport. BB is an architectural reference for persistent, steerable threads
+and bounded handoff. It is not embedded as a second orchestrator.
 
-## Dependency behavior
+Sources: [anomalyco/opencode](https://github.com/anomalyco/opencode) and
+[ymichael/bb](https://github.com/ymichael/bb).
 
-Every built-in runtime remains explicit. If its executable disappears,
-OkamiCode marks that runtime unavailable and keeps all task and lane data.
-Removing a CLI never deletes a project, conversation, worktree, or encrypted
-database row. Reinstalling and authenticating the CLI makes the runtime
-available again; session resumption still depends on the provider preserving
-the referenced native session.
+See the detailed [Okami Runtime SDK](okami-runtime-sdk.md) design.

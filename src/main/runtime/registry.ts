@@ -25,6 +25,18 @@ import {
   OpenCodeAdapter,
   type OpenCodeAdapterDependencies,
 } from "./opencode/adapter";
+import {
+  ProviderRuntimeAdapter,
+  type RuntimeTransportCandidate,
+} from "./sdk/provider-runtime";
+import {
+  ResponsesTransportAdapter,
+  type ResponsesTransportDependencies,
+} from "./sdk/responses-transport";
+import {
+  ChatCompletionsTransportAdapter,
+  type ChatCompletionsTransportDependencies,
+} from "./sdk/chat-completions-transport";
 
 export class RuntimeRegistry {
   private readonly adapters = new Map<RuntimeKind, RuntimeAdapter>();
@@ -87,43 +99,85 @@ export interface RuntimeRegistryDependencies {
   mimo: MimoAdapterDependencies;
   minimax: MiniMaxAdapterDependencies;
   opencode: OpenCodeAdapterDependencies;
+  responses?: {
+    mimo?: ResponsesTransportDependencies;
+  };
+  chatCompletions?: {
+    minimax?: ChatCompletionsTransportDependencies;
+  };
 }
 
 export function createRuntimeRegistry(
   dependencies: RuntimeRegistryDependencies,
 ): RuntimeRegistry {
   const registry = new RuntimeRegistry();
-  registry.register(
-    new ClaudeAdapter(dependencies.claude),
-    builtInRuntimeManifests.claude,
-  );
-  registry.register(
-    new CodexAdapter(dependencies.codex),
-    builtInRuntimeManifests.codex,
-  );
-  registry.register(
-    new CursorAdapter(dependencies.cursor),
-    builtInRuntimeManifests.cursor,
-  );
-  registry.register(
-    new AgyAdapter(dependencies.agy),
-    builtInRuntimeManifests.agy,
-  );
-  registry.register(
-    new GrokAdapter(dependencies.grok),
-    builtInRuntimeManifests.grok,
-  );
-  registry.register(
-    new MimoAdapter(dependencies.mimo),
-    builtInRuntimeManifests.mimo,
-  );
-  registry.register(
-    new MiniMaxAdapter(dependencies.minimax),
-    builtInRuntimeManifests.minimax,
-  );
-  registry.register(
-    new OpenCodeAdapter(dependencies.opencode),
-    builtInRuntimeManifests.opencode,
-  );
+  registerProvider(registry, builtInRuntimeManifests.claude, [
+    ["claude-cli", new ClaudeAdapter(dependencies.claude)],
+  ]);
+  registerProvider(registry, builtInRuntimeManifests.codex, [
+    ["codex-managed", new CodexAdapter(dependencies.codex)],
+  ]);
+  registerProvider(registry, builtInRuntimeManifests.cursor, [
+    ["cursor-agent", new CursorAdapter(dependencies.cursor)],
+  ]);
+  registerProvider(registry, builtInRuntimeManifests.agy, [
+    ["agy-cli", new AgyAdapter(dependencies.agy)],
+  ]);
+  registerProvider(registry, builtInRuntimeManifests.grok, [
+    ["grok-managed", new GrokAdapter(dependencies.grok)],
+  ]);
+  registerProvider(registry, builtInRuntimeManifests.mimo, [
+    ...(dependencies.responses?.mimo
+      ? [
+          [
+            "mimo-token-plan",
+            new ResponsesTransportAdapter(dependencies.responses.mimo),
+          ] as const,
+        ]
+      : []),
+    ["mimo-cli", new MimoAdapter(dependencies.mimo)],
+  ]);
+  registerProvider(registry, builtInRuntimeManifests.minimax, [
+    ...(dependencies.chatCompletions?.minimax
+      ? [
+          [
+            "minimax-token-plan",
+            new ChatCompletionsTransportAdapter(
+              dependencies.chatCompletions.minimax,
+            ),
+          ] as const,
+        ]
+      : []),
+    ["minimax-cli", new MiniMaxAdapter(dependencies.minimax)],
+  ]);
+  registerProvider(registry, builtInRuntimeManifests.opencode, [
+    ["opencode-acp", new OpenCodeAdapter(dependencies.opencode)],
+  ]);
   return registry;
+}
+
+function registerProvider(
+  registry: RuntimeRegistry,
+  manifest: RuntimeManifest,
+  transports: ReadonlyArray<
+    readonly [transportId: string, adapter: RuntimeAdapter]
+  >,
+): void {
+  const candidates: RuntimeTransportCandidate[] = transports.map(
+    ([transportId, adapter]) => {
+      const descriptor = manifest.transports.find(
+        (transport) => transport.id === transportId,
+      );
+      if (!descriptor) {
+        throw new Error(
+          `Manifest ${manifest.runtimeId} does not declare transport ${transportId}`,
+        );
+      }
+      return { descriptor, adapter };
+    },
+  );
+  registry.register(
+    new ProviderRuntimeAdapter(manifest.runtimeId as RuntimeKind, candidates),
+    manifest,
+  );
 }

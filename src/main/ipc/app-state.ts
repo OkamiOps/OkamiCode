@@ -15,6 +15,7 @@ import { ApprovalRepository } from "../policy/approval";
 import { PolicyEngine } from "../policy/engine";
 import { LeaseRepository } from "../policy/lease";
 import type { RuntimeRegistry } from "../runtime/registry";
+import type { ProviderCredentialVault } from "../runtime/sdk/provider-credential-vault";
 
 export interface AppState {
   database: Database;
@@ -30,6 +31,10 @@ export interface AppState {
   createId: () => string;
   clock: () => Date;
   reportBackgroundError: (error: unknown) => void;
+  providerCredentials?: Pick<
+    ProviderCredentialVault,
+    "set" | "get" | "has" | "delete"
+  >;
 }
 
 export interface CreateAppStateOptions {
@@ -39,6 +44,10 @@ export interface CreateAppStateOptions {
   createId?: () => string;
   clock?: () => Date;
   reportBackgroundError?: (error: unknown) => void;
+  providerCredentials?: Pick<
+    ProviderCredentialVault,
+    "set" | "get" | "has" | "delete"
+  >;
 }
 
 export function createAppState(options: CreateAppStateOptions): AppState {
@@ -97,5 +106,6 @@ export function createAppState(options: CreateAppStateOptions): AppState {
     reportBackgroundError:
       options.reportBackgroundError ??
       (() => console.error("Workbench IPC event forwarding failed")),
+    providerCredentials: options.providerCredentials,
   };
 }

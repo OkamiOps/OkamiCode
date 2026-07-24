@@ -12,13 +12,13 @@
   <strong>English</strong> · <a href="README.pt-BR.md">Português do Brasil</a>
 </p>
 
-> **Beta software.** OkamiCode `1.0.1-beta` is usable for local evaluation and active development, but provider parity, quota collection, account connectors, and packaging still depend on the capabilities exposed by each installed CLI and service.
+> **Beta software.** OkamiCode `1.0.1-beta` is usable for local evaluation and active development, but provider parity, credential setup, quota collection, account connectors, and packaging still vary by transport and service.
 
 ## Why OkamiCode exists
 
 Developers who already pay for several AI subscriptions should not need to keep five terminals and desktop apps open—or pay for a second API bill—just to use the right model for each job.
 
-OkamiCode provides one visual workspace around the CLIs and subscriptions already available on your Mac. A project stays attached to its folder, each provider keeps its own native session, and switching models does not silently ask one paid agent to drive another paid agent.
+OkamiCode provides one visual workspace around an Okami-owned multi-provider runtime, documented provider APIs, and optional subscription-backed transports. A project stays attached to its folder, each session stays bound to the transport that created it, and switching models does not silently ask one paid agent to drive another paid agent.
 
 The product also brings the rest of the workday into the same local cockpit: independent chat, multi-account email, calendars, Kanban tasks, usage and equivalent API-cost analysis, local memory, runtime diagnostics, Git changes, files, terminals, browser previews, and background activity.
 
@@ -82,20 +82,21 @@ Read the complete [1.0.1 Beta release notes](docs/releases/v1.0.1-beta.md) or th
 
 ## Supported runtimes
 
-| Runtime             | Adapter                  | Typical account source    | Notes                                                                                |
-| ------------------- | ------------------------ | ------------------------- | ------------------------------------------------------------------------------------ |
-| Claude Code         | Native                   | Anthropic subscription    | Sessions, hooks, tools, approvals, usage, and model discovery where exposed          |
-| Codex               | Native app-server        | OpenAI subscription       | Sessions, models, effort, approvals, tools, usage, and background work               |
-| Cursor Agent        | Native                   | Cursor subscription       | Turn tokens appear only when `cursor-agent` reports them; quota is version-dependent |
-| Antigravity (`agy`) | Native + local companion | Google AI subscription    | Hook companion is local; the CLI does not reliably expose per-turn token accounting  |
-| Grok CLI            | Native                   | xAI subscription          | Native sessions and structured output where supported by the CLI                     |
-| MiMo Code           | Native                   | Xiaomi MiMo token plan    | Execution and model discovery are supported; quota may remain web-console-only       |
-| MiniMax (`mmx`)     | Native                   | MiniMax token plan        | Text execution, model discovery, and native usage windows where exposed              |
-| OpenCode            | ACP                      | OpenCode-selected account | ACP exposes context occupancy, not provider turn spend; readiness is verified        |
+| Runtime             | Transport                   | Entitlement                       |
+| ------------------- | --------------------------- | --------------------------------- |
+| OpenAI / Codex      | bundled official app-server | ChatGPT subscription OAuth/device |
+| xAI / Grok          | bundled official agent      | Grok subscription OAuth/device    |
+| Xiaomi MiMo         | Okami Responses transport   | dedicated Token Plan key and URL  |
+| MiniMax             | Okami Chat Completions      | dedicated Token Plan key          |
+| Claude Code         | Claude CLI                  | Anthropic subscription login      |
+| Cursor Agent        | Cursor Agent                | Cursor subscription login         |
+| Antigravity (`agy`) | Native local adapter        | Google AI subscription login      |
+| OpenCode            | ACP                         | OpenCode-selected account         |
 
-OkamiCode does not ship or authenticate these CLIs for you. Install each provider CLI separately, sign in through its official flow, and use **Settings** to verify the exact binary, version, and capabilities detected on the machine.
-Removing an executable marks its runtime unavailable without deleting the
-project, task, conversation, worktree, database, or native-session reference.
+Settings shows both the active transport and its entitlement. Codex and Grok
+ship inside the application and do not depend on a global installation. MiMo
+and MiniMax accept only Token Plan credentials in the encrypted vault. There
+is no automatic pay-as-you-go fallback.
 
 OpenCode is integrated through its official ACP server. BB is an architectural
 reference for persistent, steerable threads and explicit handoff; it is not
@@ -111,18 +112,14 @@ flowchart LR
   MAIN --> POLICY["policy engine\napprovals + leases + audit"]
   MAIN --> DATA["encrypted SQLite\nFTS5 + local repositories"]
   MAIN --> ORCH["lane orchestration\nsessions + event projection"]
-  ORCH --> CLAUDE["Claude Code"]
-  ORCH --> CODEX["Codex"]
-  ORCH --> CURSOR["Cursor Agent"]
-  ORCH --> AGY["Antigravity"]
-  ORCH --> GROK["Grok CLI"]
-  ORCH --> MIMO["MiMo Code"]
-  ORCH --> MINIMAX["MiniMax mmx"]
-  ORCH --> OPENCODE["OpenCode ACP"]
+  ORCH --> SDK["Okami Runtime SDK\ntransport selection + session binding"]
+  SDK --> MANAGED["Bundled official runtimes\nCodex · Grok"]
+  SDK --> TOKEN["Token Plan transports\nMiMo · MiniMax"]
+  SDK --> OPTIONAL["Compatibility transports\nClaude · Cursor · AGY · OpenCode ACP"]
   MAIN --> CONNECTORS["IMAP/SMTP · Google OAuth\ncalendar · local memory"]
 ```
 
-Provider output is normalized into canonical events for presentation and persistence. The model still runs through its own CLI and native harness; the UI does not replace those runtimes with a generic OpenRouter execution layer.
+Provider output is normalized into canonical events for presentation and persistence. OkamiCode owns API streaming, context continuation, workspace tools, policy, approvals, cancellation, and usage normalization for its first-party transports. OpenRouter remains pricing metadata, not the default inference layer.
 
 ## Security and privacy model
 
@@ -143,7 +140,7 @@ No security boundary is magic: an authenticated local agent can still modify fil
 - Node.js `24.17.0` (see `.nvmrc`).
 - pnpm `11.5.2` through Corepack.
 - Xcode Command Line Tools for native Node modules.
-- At least one supported, separately installed and authenticated AI CLI.
+- At least one authenticated subscription or configured Token Plan.
 
 ## Run from source
 
@@ -196,14 +193,16 @@ Open the DMG, drag **OkamiCode** to **Applications**, and launch it from Applica
 - **IMAP/SMTP:** authentication requirements are controlled by the email provider. Prefer OAuth or provider-specific app credentials when required.
 - **OpenRouter:** used as pricing metadata for the equivalent-cost simulation, not as the default inference provider.
 - **Memory:** select the exact Obsidian or Markdown folders to index; no folder is imported automatically.
-- **Updates:** runtime capabilities are detected from the installed CLI version. Re-scan after upgrading a CLI.
+- **Codex and Grok:** reuse the provider-owned subscription session; OkamiCode bundles the compatible official binary.
+- **MiMo and MiniMax:** enter only dedicated Token Plan credentials in Settings. Ordinary API keys are rejected and secrets never return to the renderer.
+- **Updates:** runtime and transport capabilities are detected independently. Re-scan after changing credentials or upgrading an optional CLI.
 
 ## Beta limitations
 
 - macOS Apple Silicon is the only packaged target in this release.
 - Provider capabilities are not identical. Missing structured output, quota, token, or model data is shown as unavailable.
 - OAuth credentials and calendar/email behavior still depend on provider configuration and account policy.
-- MiMo quota is not exposed by the current CLI and may only be visible in the official web console.
+- MiniMax function tools are not yet implemented in the Okami Chat Completions transport.
 - Equivalent API pricing can drift until the next OpenRouter metadata refresh.
 - The beta is not signed or notarized and has not yet gone through a third-party security audit.
 

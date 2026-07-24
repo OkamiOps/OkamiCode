@@ -10,3 +10,18 @@ it("resolves absolute launch commands for every CLI-backed runtime", () => {
     minimax: "/resolved/minimax",
   });
 });
+
+it("prefers Okami-managed Codex and Grok runtimes over globally installed CLIs", () => {
+  const locate = vi.fn((client: string) => `/global/${client}`);
+
+  expect(
+    resolveRuntimeCommands(locate, {
+      codex: "/app/runtimes/codex",
+      grok: "/app/runtimes/grok",
+    }),
+  ).toMatchObject({
+    codex: "/app/runtimes/codex",
+    grok: "/app/runtimes/grok",
+    claude: "/global/claude",
+  });
+});

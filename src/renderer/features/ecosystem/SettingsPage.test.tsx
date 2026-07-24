@@ -15,9 +15,32 @@ beforeEach(() => {
   installOkamiMock({
     "task:list": [],
     "eco:settings": [],
+    "providerAuth:list": [
+      { provider: "mimo", entitlement: "token_plan", configured: true },
+      { provider: "minimax", entitlement: "token_plan", configured: false },
+    ],
     systemDoctor: {
       database: "ok",
-      runtimes: [],
+      runtimes: [
+        {
+          runtime: "codex",
+          status: "ready",
+          version: "responses-v1",
+          detail: null,
+          transportId: "codex-managed",
+          transportKind: "embedded",
+          entitlement: "subscription",
+        },
+        {
+          runtime: "claude",
+          status: "ready",
+          version: "2.1.0",
+          detail: null,
+          transportId: "claude-cli",
+          transportKind: "cli",
+          entitlement: "subscription",
+        },
+      ],
       clients: [
         {
           client: "codex",
@@ -114,6 +137,22 @@ it("shows verified CLI health and exposes an honest diagnostic", async () => {
   expect(screen.getAllByText("Operacional")).toHaveLength(2);
   expect(screen.getByText("Não encontrado")).toBeVisible();
   expect(screen.getByText("Adapter incompleto")).toBeVisible();
+  expect(screen.getByText("Nativo do Okami")).toBeVisible();
+  expect(screen.getByText("CLI opcional")).toBeVisible();
+  expect(screen.getByText("codex-managed")).toBeVisible();
+  expect(screen.getAllByText("Incluído na assinatura")).toHaveLength(2);
+  expect(
+    await screen.findByRole("heading", { name: "Credenciais de Token Plan" }),
+  ).toBeVisible();
+  expect(
+    screen.getByRole("heading", { name: "Assinaturas por OAuth" }),
+  ).toBeVisible();
+  expect(
+    screen.getAllByRole("button", { name: "Conectar assinatura" }),
+  ).toHaveLength(2);
+  expect(screen.getAllByText("Configurado")).toHaveLength(1);
+  expect(screen.getAllByText("Não configurado")).toHaveLength(1);
+  expect(screen.getAllByLabelText("Chave do Token Plan")).toHaveLength(2);
 
   await user.click(screen.getAllByRole("button", { name: "Ver detalhes" })[0]);
   expect(

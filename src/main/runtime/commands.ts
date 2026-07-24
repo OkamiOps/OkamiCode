@@ -14,11 +14,16 @@ const FALLBACKS = {
   opencode: "opencode",
 } as const satisfies Record<CliClient, string>;
 
-export function resolveRuntimeCommands(locate: LocateCli) {
+export function resolveRuntimeCommands(
+  locate: LocateCli,
+  managed: Partial<Pick<Record<CliClient, string>, "codex" | "grok">> = {},
+) {
   return Object.fromEntries(
     (Object.keys(FALLBACKS) as CliClient[]).map((client) => [
       client,
-      locate(client) ?? FALLBACKS[client],
+      managed[client as "codex" | "grok"] ??
+        locate(client) ??
+        FALLBACKS[client],
     ]),
   ) as Record<CliClient, string>;
 }

@@ -96,6 +96,8 @@ describe("lane IPC safety", () => {
         available: true,
         protocolSupported: true,
         version: "1.1.5",
+        transportId: "agy-cli",
+        transportKind: "cli",
       }),
     } as never);
 
@@ -108,6 +110,8 @@ describe("lane IPC safety", () => {
           status: "ready",
           version: "1.1.5",
           detail: null,
+          transportId: "agy-cli",
+          transportKind: "cli",
         },
       ]),
     });

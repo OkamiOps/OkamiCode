@@ -32,7 +32,12 @@ Premium, precise, calm, and elegant. Operational enough for long technical sessi
 - Reveal operational detail progressively and keep the primary task obvious.
 - Preserve explicit control over providers, workspaces, agents, approvals, and outbound communication.
 - Represent unavailable or stale data honestly, with an actionable recovery path.
-- Prefer local-first storage and subscription-backed CLIs; do not create hidden API spend.
+- Prefer local-first storage and explicit user-selected transports. API spend,
+  subscription-backed CLIs, and fallbacks must remain visible; never create
+  hidden provider spend.
+- Built-in inference must never fall back to pay-as-you-go billing. Codex and
+  Grok use subscription OAuth/device sessions; MiMo and MiniMax accept only
+  dedicated Token Plan credentials.
 
 ## Accessibility & Inclusion
 

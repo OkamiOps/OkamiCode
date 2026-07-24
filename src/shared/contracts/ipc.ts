@@ -53,6 +53,45 @@ export const runtimeHealthSchema = z
     status: z.enum(["ready", "degraded", "unavailable"]),
     version: z.string().min(1).nullable(),
     detail: z.enum(["protocol_unsupported", "runtime_unavailable"]).nullable(),
+    transportId: z.string().min(1).nullable().optional(),
+    transportKind: z
+      .enum(["oauth", "api", "cli", "acp", "embedded"])
+      .nullable()
+      .optional(),
+    entitlement: z
+      .enum(["subscription", "token_plan", "provider_managed", "payg"])
+      .nullable()
+      .optional(),
+  })
+  .strict();
+
+const tokenPlanProviderSchema = z.enum(["mimo", "minimax"]);
+const providerAuthStatusSchema = z
+  .object({
+    provider: tokenPlanProviderSchema,
+    entitlement: z.literal("token_plan"),
+    configured: z.boolean(),
+  })
+  .strict();
+const providerAuthSetTokenPlanRequestSchema = z
+  .object({
+    provider: tokenPlanProviderSchema,
+    token: z.string().min(8).max(4_096),
+    baseUrl: z.url().optional(),
+  })
+  .strict();
+const providerAuthDeleteTokenPlanRequestSchema = z
+  .object({ provider: tokenPlanProviderSchema })
+  .strict();
+const subscriptionProviderSchema = z.enum(["codex", "grok"]);
+const providerAuthStartDeviceRequestSchema = z
+  .object({ provider: subscriptionProviderSchema })
+  .strict();
+const providerAuthDeviceChallengeSchema = z
+  .object({
+    provider: subscriptionProviderSchema,
+    verificationUrl: externalWebUrlSchema,
+    userCode: z.string().min(1).nullable(),
   })
   .strict();
 
@@ -1759,6 +1798,10 @@ export const ipcRequestSchemas = {
   "system:doctor": emptyRequestSchema,
   "system:openExternal": systemOpenExternalRequestSchema,
   "system:showItemInFolder": systemShowItemInFolderRequestSchema,
+  "providerAuth:list": emptyRequestSchema,
+  "providerAuth:setTokenPlan": providerAuthSetTokenPlanRequestSchema,
+  "providerAuth:deleteTokenPlan": providerAuthDeleteTokenPlanRequestSchema,
+  "providerAuth:startDevice": providerAuthStartDeviceRequestSchema,
   "models:list": emptyRequestSchema,
   "models:favorites:list": emptyRequestSchema,
   "models:favorites:set": modelFavoriteSetRequestSchema,
@@ -1854,6 +1897,10 @@ export const ipcResponseSchemas = {
   "system:doctor": systemDoctorSchema,
   "system:openExternal": systemOpenExternalResultSchema,
   "system:showItemInFolder": systemShowItemInFolderResultSchema,
+  "providerAuth:list": z.array(providerAuthStatusSchema),
+  "providerAuth:setTokenPlan": providerAuthStatusSchema,
+  "providerAuth:deleteTokenPlan": providerAuthStatusSchema,
+  "providerAuth:startDevice": providerAuthDeviceChallengeSchema,
   "models:list": modelCatalogSchema,
   "models:favorites:list": modelFavoritesSchema,
   "models:favorites:set": modelFavoritesSchema,

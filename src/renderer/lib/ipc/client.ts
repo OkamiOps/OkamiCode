@@ -56,6 +56,15 @@ export const workbenchClient = {
     invokeCommand("system:openExternal", request),
   systemShowItemInFolder: (request: IpcRequest<"system:showItemInFolder">) =>
     invokeCommand("system:showItemInFolder", request),
+  providerAuthList: () => invokeCommand("providerAuth:list", {}),
+  providerAuthSetTokenPlan: (
+    request: IpcRequest<"providerAuth:setTokenPlan">,
+  ) => invokeCommand("providerAuth:setTokenPlan", request),
+  providerAuthDeleteTokenPlan: (
+    request: IpcRequest<"providerAuth:deleteTokenPlan">,
+  ) => invokeCommand("providerAuth:deleteTokenPlan", request),
+  providerAuthStartDevice: (request: IpcRequest<"providerAuth:startDevice">) =>
+    invokeCommand("providerAuth:startDevice", request),
   taskCreate: (request: IpcRequest<"task:create">) =>
     invokeCommand("task:create", request),
   taskList: () => invokeCommand("task:list", {}),

@@ -36,6 +36,11 @@ import type { OpenedLane } from "../orchestration/lane-service";
 import { QuickChatService } from "../orchestration/quick-chat";
 import { MemoryService } from "../memory/indexer";
 import type { RunHandle, RuntimeHealth } from "../runtime/adapter";
+import type {
+  DeviceAuthChallenge,
+  SubscriptionDeviceAuthService,
+  SubscriptionProvider,
+} from "../runtime/subscription-device-auth";
 import { createUsageCommands, type UsageCommands } from "../usage/service";
 import { OpenRouterPricingService } from "../usage/openrouter-pricing";
 import type { AppState } from "./app-state";
@@ -159,6 +164,7 @@ interface RegisterIpcHandlersOptions {
   openExternal?: (url: string) => Promise<unknown>;
   showItemInFolder?: (path: string) => Promise<unknown>;
   openRouterPricingService?: Pick<OpenRouterPricingService, "list">;
+  subscriptionDeviceAuthService?: Pick<SubscriptionDeviceAuthService, "start">;
 }
 
 interface TaskRow {
@@ -172,7 +178,16 @@ interface TaskRow {
   updated_at: string;
 }
 
-const runtimeKinds = ["claude", "codex", "cursor", "agy", "grok"] as const;
+const runtimeKinds = [
+  "claude",
+  "codex",
+  "cursor",
+  "agy",
+  "grok",
+  "mimo",
+  "minimax",
+  "opencode",
+] as const;
 
 export function registerIpcHandlers({
   ipcMain,
@@ -198,6 +213,7 @@ export function registerIpcHandlers({
     throw new Error("Finder integration is unavailable.");
   },
   openRouterPricingService = new OpenRouterPricingService(),
+  subscriptionDeviceAuthService,
 }: RegisterIpcHandlersOptions): void {
   const openedLanes = new Map<string, OpenedLane>();
   let memory = memoryService;
@@ -300,6 +316,7 @@ export function registerIpcHandlers({
         openExternal,
         showItemInFolder,
         openRouterPricingService,
+        subscriptionDeviceAuthService,
       );
       return ipcResponseSchemas[channel].parse(response);
     });
@@ -332,6 +349,8 @@ async function dispatch(
   openExternal: (url: string) => Promise<unknown>,
   showItemInFolder: (path: string) => Promise<unknown>,
   openRouterPricingService: Pick<OpenRouterPricingService, "list">,
+  subscriptionDeviceAuthService:
+    Pick<SubscriptionDeviceAuthService, "start"> | undefined,
 ): Promise<unknown> {
   switch (channel) {
     case "system:doctor":
@@ -345,6 +364,50 @@ async function dispatch(
       const target = request as IpcRequest<"system:showItemInFolder">;
       await showItemInFolder(target.path);
       return { shown: true as const };
+    }
+    case "providerAuth:list":
+      return Promise.all(
+        (["mimo", "minimax"] as const).map(async (provider) => ({
+          provider,
+          entitlement: "token_plan" as const,
+          configured: (await state.providerCredentials?.has(provider)) ?? false,
+        })),
+      );
+    case "providerAuth:setTokenPlan": {
+      if (!state.providerCredentials) {
+        throw new Error("Token Plan credential storage is unavailable.");
+      }
+      const input = request as IpcRequest<"providerAuth:setTokenPlan">;
+      await state.providerCredentials.set(input.provider, {
+        token: input.token,
+        ...(input.baseUrl ? { baseUrl: input.baseUrl } : {}),
+      });
+      return {
+        provider: input.provider,
+        entitlement: "token_plan" as const,
+        configured: true,
+      };
+    }
+    case "providerAuth:deleteTokenPlan": {
+      if (!state.providerCredentials) {
+        throw new Error("Token Plan credential storage is unavailable.");
+      }
+      const input = request as IpcRequest<"providerAuth:deleteTokenPlan">;
+      await state.providerCredentials.delete(input.provider);
+      return {
+        provider: input.provider,
+        entitlement: "token_plan" as const,
+        configured: false,
+      };
+    }
+    case "providerAuth:startDevice": {
+      if (!subscriptionDeviceAuthService) {
+        throw new Error("Subscription device authentication is unavailable.");
+      }
+      const input = request as IpcRequest<"providerAuth:startDevice">;
+      return subscriptionDeviceAuthService.start(
+        input.provider as SubscriptionProvider,
+      ) satisfies Promise<DeviceAuthChallenge>;
     }
     case "models:list":
       return modelCatalog();
@@ -820,6 +883,9 @@ function runtimeProjection(runtime: RuntimeKind, health: RuntimeHealth) {
       status: "unavailable" as const,
       version: health.version,
       detail: "runtime_unavailable" as const,
+      ...(health.transportId ? { transportId: health.transportId } : {}),
+      ...(health.transportKind ? { transportKind: health.transportKind } : {}),
+      ...(health.entitlement ? { entitlement: health.entitlement } : {}),
     };
   }
   if (!health.protocolSupported) {
@@ -828,6 +894,9 @@ function runtimeProjection(runtime: RuntimeKind, health: RuntimeHealth) {
       status: "degraded" as const,
       version: health.version,
       detail: "protocol_unsupported" as const,
+      ...(health.transportId ? { transportId: health.transportId } : {}),
+      ...(health.transportKind ? { transportKind: health.transportKind } : {}),
+      ...(health.entitlement ? { entitlement: health.entitlement } : {}),
     };
   }
   return {
@@ -835,6 +904,9 @@ function runtimeProjection(runtime: RuntimeKind, health: RuntimeHealth) {
     status: "ready" as const,
     version: health.version,
     detail: null,
+    ...(health.transportId ? { transportId: health.transportId } : {}),
+    ...(health.transportKind ? { transportKind: health.transportKind } : {}),
+    ...(health.entitlement ? { entitlement: health.entitlement } : {}),
   };
 }
 

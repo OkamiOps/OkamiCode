@@ -12,6 +12,8 @@ files:
 
 asarUnpack:
   - "**/*.node"
+  - "node_modules/@openai/**/*"
+  - "node_modules/@xai-official/**/*"
 
 mac:
   category: public.app-category.developer-tools

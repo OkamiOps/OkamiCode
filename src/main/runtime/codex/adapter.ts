@@ -25,7 +25,7 @@ import {
 import { CodexProjector } from "./projector";
 
 const execFileAsync = promisify(execFile);
-const SUPPORTED_CODEX_VERSION = "0.144.5";
+const SUPPORTED_CODEX_VERSION = "0.145.0";
 
 export interface ApprovalBroker {
   resolvedDecision(

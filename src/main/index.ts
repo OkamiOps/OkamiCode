@@ -22,16 +22,16 @@ import {
 import { openDatabase } from "./db/connection";
 import { createAppState, type AppState } from "./ipc/app-state";
 import { registerIpcHandlers } from "./ipc/handlers";
-import { createChatGptBridge } from "./gateway/bridges/chatgpt";
-import { TurnUsageAccumulator } from "./gateway/turn-usage";
-import { createCodexChatGptBackend } from "./gateway/bridges/chatgpt-backend";
-import { createGatewayProfile } from "./gateway/profile";
-import { startGatewayServer } from "./gateway/server";
 import { LeaseRepository, type CapabilityLease } from "./policy/lease";
 import { RepositoryApprovalBroker } from "./runtime/codex/adapter";
 import { createModelCatalogService } from "./runtime/model-catalog";
 import { ModelFavoritesService } from "./runtime/model-favorites";
 import { createRuntimeRegistry } from "./runtime/registry";
+import {
+  ProviderCredentialVault,
+  VaultTokenPlanSource,
+} from "./runtime/sdk/provider-credential-vault";
+import { WorkspaceToolExecutor } from "./runtime/sdk/workspace-tools";
 import { RuntimeSupervisor } from "./runtime/supervisor";
 import { getOrCreateDatabaseKey } from "./secrets";
 import { MemoryService } from "./memory/indexer";
@@ -53,6 +53,8 @@ import type { Capability } from "./policy/action";
 import type { TaskId } from "../shared/ids";
 import { locateLocalBinary } from "./ecosystem/cli-capabilities";
 import { resolveRuntimeCommands } from "./runtime/commands";
+import { resolveManagedRuntimeCommands } from "./runtime/managed-runtime";
+import { SubscriptionDeviceAuthService } from "./runtime/subscription-device-auth";
 import { AgyCompanionServer } from "./runtime/agy/companion-server";
 import { AgyPluginManager } from "./runtime/agy/plugin";
 import { createAgyPolicyAuthorizer } from "./runtime/agy/policy-authorizer";
@@ -62,6 +64,7 @@ import { resolveAppStorageIdentity, resolveUserDataPath } from "./user-data";
 import { bootstrapFailurePage } from "./bootstrap-failure";
 
 const execFileAsync = promisify(execFile);
+let subscriptionDeviceAuthService: SubscriptionDeviceAuthService | undefined;
 
 // safeStorage uses the application identity as part of its macOS Keychain
 // lookup. Keep the original identity even though the visible product is now
@@ -236,7 +239,47 @@ async function bootstrap(): Promise<void> {
     stateRef,
     () => leaseRepository,
   );
-  const runtimeCommands = resolveRuntimeCommands(locateLocalBinary);
+  const okamiWorkspaceTools = new WorkspaceToolExecutor({
+    authorize: async (request) => {
+      const leases = await leaseIdsForRun(request.runId);
+      return stateRef().policyEngine.authorize({
+        leaseId: leases[request.capability],
+        actor: { kind: "runtime", runtime: request.runtime },
+        taskId: request.taskId,
+        laneId: request.laneId,
+        runId: request.runId,
+        capability: request.capability,
+        resource: request.resource,
+        risk: request.risk,
+        destructive: request.destructive,
+        outsideWorkspace: request.outsideWorkspace,
+        now: new Date().toISOString(),
+      });
+    },
+  });
+  const providerCredentialVault = new ProviderCredentialVault(
+    path.join(userDataPath, "provider-credentials"),
+    safeStorage,
+  );
+  const mimoTokenPlan = new VaultTokenPlanSource(
+    "mimo",
+    providerCredentialVault,
+  );
+  const minimaxTokenPlan = new VaultTokenPlanSource(
+    "minimax",
+    providerCredentialVault,
+  );
+  const managedRuntimeDirectory = path.join(userDataPath, "managed-runtimes");
+  const managedRuntimeCommands = resolveManagedRuntimeCommands({
+    runtimeDirectory: managedRuntimeDirectory,
+  });
+  subscriptionDeviceAuthService = new SubscriptionDeviceAuthService({
+    commands: managedRuntimeCommands,
+  });
+  const runtimeCommands = resolveRuntimeCommands(
+    locateLocalBinary,
+    managedRuntimeCommands,
+  );
   const agyBinary = locateLocalBinary("agy");
   const agyCommand = runtimeCommands.agy;
   const agyPluginManager = new AgyPluginManager({
@@ -261,7 +304,6 @@ async function bootstrap(): Promise<void> {
       console.error("[okami] AGY companion provisioning failed");
     }
   }
-  const bridgedTurnUsage = new TurnUsageAccumulator();
   const runtimes = createRuntimeRegistry({
     claude: {
       policyEngine: {
@@ -272,11 +314,11 @@ async function bootstrap(): Promise<void> {
       leaseIdsForRun,
       hookScriptPath: path.resolve(app.getAppPath(), "bin/okami-hook.mjs"),
       command: runtimeCommands.claude,
-      providerUsageForLane: (laneId) => bridgedTurnUsage.drain(laneId),
     },
     codex: {
       approvalBroker,
       taskIdForRun,
+      command: runtimeCommands.codex,
     },
     cursor: {
       taskIdForRun,
@@ -316,28 +358,30 @@ async function bootstrap(): Promise<void> {
       taskIdForRun,
       command: runtimeCommands.opencode,
     },
-  });
-
-  const chatgptProfile = createGatewayProfile({
-    id: "chatgpt",
-    provider: "chatgpt",
-    kind: "bridged",
-    env: {},
-    displayQuotaAccount: "ChatGPT",
+    responses: {
+      mimo: {
+        kind: "mimo",
+        transportId: "mimo-token-plan",
+        baseUrl: () => mimoTokenPlan.baseUrl(),
+        credentialReference: "MiMo Token Plan",
+        credential: mimoTokenPlan,
+        taskIdForRun,
+        tools: okamiWorkspaceTools,
+      },
+    },
+    chatCompletions: {
+      minimax: {
+        kind: "minimax",
+        transportId: "minimax-token-plan",
+        baseUrl: "https://api.minimax.io/v1",
+        credentialReference: "MiniMax Token Plan",
+        credential: minimaxTokenPlan,
+        taskIdForRun,
+      },
+    },
   });
   const laneEffort = new Map<string, string>();
-  const gateway = await startGatewayServer({
-    effortResolver: (laneId) => laneEffort.get(laneId),
-    profiles: [
-      {
-        profile: chatgptProfile,
-        bridge: createChatGptBridge(createCodexChatGptBackend(), {
-          model: GPT_BACKEND_MODEL,
-          onUsage: (laneId, usage) => bridgedTurnUsage.record(laneId, usage),
-        }),
-      },
-    ],
-  });
+
   const opencodeHealth = await runtimes
     .health("opencode")
     .then(({ health }) => health)
@@ -349,12 +393,26 @@ async function bootstrap(): Promise<void> {
 
   const modelCatalogService = createModelCatalogService({
     cachePath: path.join(app.getPath("userData"), "claude-models.json"),
+    apiCatalogs: {
+      mimo: [
+        {
+          id: process.env.MIMO_MODEL?.trim() || "mimo-v2.5-pro",
+          label: process.env.MIMO_MODEL?.trim() || "mimo-v2.5-pro",
+        },
+      ],
+      minimax: [
+        {
+          id: process.env.MINIMAX_MODEL?.trim() || "MiniMax-M3",
+          label: process.env.MINIMAX_MODEL?.trim() || "MiniMax-M3",
+        },
+      ],
+    },
     cursorCachePath: path.join(app.getPath("userData"), "cursor-models.json"),
     cursorBinary: locateLocalBinary("cursor"),
     agyCachePath: path.join(app.getPath("userData"), "agy-models.json"),
     agyBinary: agyCommand,
     grokCachePath: path.join(app.getPath("userData"), "grok-models.json"),
-    grokBinary: locateLocalBinary("grok"),
+    grokBinary: runtimeCommands.grok,
     minimaxCachePath: path.join(app.getPath("userData"), "minimax-models.json"),
     minimaxBinary: locateLocalBinary("minimax"),
     mimoCachePath: path.join(app.getPath("userData"), "mimo-models.json"),
@@ -378,18 +436,7 @@ async function bootstrap(): Promise<void> {
   const state = createAppState({
     database,
     runtimes,
-    gateway: {
-      port: gateway.port,
-      bearerToken: gateway.bearerToken,
-      gatewayConfigRoot: path.join(app.getPath("userData"), "gateway-config"),
-      accounts: [
-        {
-          provider: "chatgpt",
-          bridgedProfile: chatgptProfile,
-          nativeRuntime: "codex",
-        },
-      ],
-    },
+    providerCredentials: providerCredentialVault,
     reportBackgroundError: (error) => {
       console.error("[okami] background error", error);
     },
@@ -508,6 +555,7 @@ async function bootstrap(): Promise<void> {
     inboxReplyDispatchService,
     googleInboxOAuthService,
     calendarService,
+    subscriptionDeviceAuthService,
     openExternal: (url) => shell.openExternal(url),
     showItemInFolder: async (targetPath) => shell.showItemInFolder(targetPath),
   });
@@ -547,5 +595,6 @@ app.whenReady().then(async () => {
 app.on("window-all-closed", () => app.quit());
 app.on("before-quit", () => {
   inboxSyncScheduler?.stop();
+  subscriptionDeviceAuthService?.close();
   void memoryService?.close();
 });

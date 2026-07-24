@@ -7,6 +7,9 @@ export interface RuntimeHealth {
   protocolSupported: boolean;
   version: string | null;
   detail?: string;
+  transportId?: string;
+  transportKind?: "oauth" | "api" | "cli" | "acp" | "embedded";
+  entitlement?: "subscription" | "token_plan" | "provider_managed" | "payg";
 }
 
 export interface StartSessionRequest {

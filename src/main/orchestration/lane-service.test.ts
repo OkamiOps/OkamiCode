@@ -1,4 +1,3 @@
-import { rm } from "node:fs/promises";
 import { describe, expect, it } from "vitest";
 import { createGatewayProfile } from "../gateway/profile";
 import { createLaneHarness } from "./test-harness";
@@ -34,12 +33,12 @@ describe("LaneService", () => {
       expect.objectContaining({
         laneId: h.fx.laneId,
         taskId: h.fx.taskId,
-        harness: "claude",
-        runtimeKind: "claude",
+        harness: "native",
+        runtimeKind: "codex",
         providerAccountLabel: "ChatGPT",
         model: "gpt-test",
-        routeKind: "bridged",
-        displayQuotaAccount: "ChatGPT Plus",
+        routeKind: "native",
+        displayQuotaAccount: "OpenAI / Codex transport",
         // Lanes report the mode the CLI will actually be spawned with.
         permissionMode: "manual",
         workspacePath: null,
@@ -53,7 +52,7 @@ describe("LaneService", () => {
     expect(h.runtimes.codex.startCalls).toBe(0);
   });
 
-  it("launches a GPT lane on the Claude harness with gateway env", async () => {
+  it("keeps a GPT lane on the Okami provider runtime even when a legacy bridge is configured", async () => {
     const h = createLaneHarness({
       runtime: "codex",
       gateway: {
@@ -69,32 +68,18 @@ describe("LaneService", () => {
       },
     });
 
-    try {
-      const opened = await h.openExisting();
+    const opened = await h.openExisting();
 
-      expect(opened).toMatchObject({
-        routeKind: "bridged",
-        routeReason: "subscription_bridge",
-        displayQuotaAccount: "ChatGPT Plus",
-      });
-      expect(h.runtimes.claude.startRequests).toHaveLength(1);
-      expect(h.runtimes.codex.startRequests).toHaveLength(0);
-      expect(h.runtimes.claude.startRequests[0]?.env).toMatchObject({
-        ANTHROPIC_BASE_URL: "http://127.0.0.1:43123/chatgpt-lane",
-      });
-      // The bearer carries the lane id as a suffix so the gateway can resolve
-      // per-lane options such as reasoning effort.
-      expect(
-        h.runtimes.claude.startRequests[0]?.env?.ANTHROPIC_AUTH_TOKEN,
-      ).toMatch(/^gateway-session-token\.[0-9a-f-]{36}$/u);
-      expect(
-        h.runtimes.claude.startRequests[0]?.env?.ANTHROPIC_API_KEY,
-      ).toBeUndefined();
-    } finally {
-      await removeGatewayConfigDirectory(
-        h.runtimes.claude.startRequests[0]?.env,
-      );
-    }
+    expect(opened).toMatchObject({
+      harness: "native",
+      runtimeKind: "codex",
+      routeKind: "native",
+      routeReason: "native_requested",
+      displayQuotaAccount: "OpenAI / Codex transport",
+    });
+    expect(h.runtimes.codex.startRequests).toHaveLength(1);
+    expect(h.runtimes.codex.startRequests[0]?.env).toBeUndefined();
+    expect(h.runtimes.claude.startRequests).toHaveLength(0);
   });
 
   it("launches the native adapter unchanged when the bridge is unhealthy", async () => {
@@ -118,8 +103,8 @@ describe("LaneService", () => {
 
     expect(opened).toMatchObject({
       routeKind: "native",
-      routeReason: "bridge_unhealthy",
-      displayQuotaAccount: "ChatGPT Plus",
+      routeReason: "native_requested",
+      displayQuotaAccount: "OpenAI / Codex transport",
     });
     expect(h.runtimes.codex.startRequests).toHaveLength(1);
     expect(h.runtimes.codex.startRequests[0]?.env).toBeUndefined();
@@ -174,35 +159,29 @@ describe("LaneService", () => {
         ],
       },
     });
-    try {
-      const opened = await h.openExisting();
-      const run = await h.service.sendTurn(opened, "hello");
+    const opened = await h.openExisting();
+    const run = await h.service.sendTurn(opened, "hello");
 
-      expect(h.runtimes.claude.sentTurns).toHaveLength(1);
-      expect(h.runtimes.codex.sentTurns).toHaveLength(0);
+    expect(h.runtimes.claude.sentTurns).toHaveLength(0);
+    expect(h.runtimes.codex.sentTurns).toHaveLength(1);
 
-      const audit = h.fx.db
-        .prepare(
-          `SELECT run_id, action, metadata_json
+    const audit = h.fx.db
+      .prepare(
+        `SELECT run_id, action, metadata_json
            FROM audit_entries WHERE action = 'lane_route_resolved'`,
-        )
-        .get() as
-        { run_id: string; action: string; metadata_json: string } | undefined;
-      expect(audit).toEqual({
-        run_id: run.runId,
-        action: "lane_route_resolved",
-        metadata_json: JSON.stringify({
-          harness: "claude",
-          routeKind: "bridged",
-          routeReason: "subscription_bridge",
-          displayQuotaAccount: "ChatGPT Plus",
-        }),
-      });
-    } finally {
-      await removeGatewayConfigDirectory(
-        h.runtimes.claude.startRequests[0]?.env,
-      );
-    }
+      )
+      .get() as
+      { run_id: string; action: string; metadata_json: string } | undefined;
+    expect(audit).toEqual({
+      run_id: run.runId,
+      action: "lane_route_resolved",
+      metadata_json: JSON.stringify({
+        harness: "native",
+        routeKind: "native",
+        routeReason: "native_requested",
+        displayQuotaAccount: "OpenAI / Codex transport",
+      }),
+    });
   });
 
   it("resumes a hot lane without bootstrap", async () => {
@@ -550,10 +529,3 @@ describe("LaneService", () => {
     });
   });
 });
-
-async function removeGatewayConfigDirectory(
-  environment: NodeJS.ProcessEnv | undefined,
-): Promise<void> {
-  const directory = environment?.CLAUDE_CONFIG_DIR;
-  if (directory) await rm(directory, { recursive: true, force: true });
-}

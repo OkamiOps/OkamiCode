@@ -1,11 +1,13 @@
-import { BridgeUnhealthyError } from "./chatgpt-backend";
 import { canonicalTurnUsage, tokenCount } from "../../runtime/usage";
 
-export {
-  BridgeUnhealthyError,
-  createCodexChatGptBackend,
-  type CodexBackendOptions,
-} from "./chatgpt-backend";
+export class BridgeUnhealthyError extends Error {
+  readonly code = "bridge_unhealthy";
+
+  constructor(message: string, options?: ErrorOptions) {
+    super(message, options);
+    this.name = "BridgeUnhealthyError";
+  }
+}
 
 type JsonRecord = Record<string, unknown>;
 

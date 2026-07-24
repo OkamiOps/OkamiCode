@@ -24,6 +24,37 @@ function cachePaths() {
 }
 
 describe("Cursor model catalog", () => {
+  it("keeps API-backed providers selectable without probing or installing their CLIs", () => {
+    const paths = cachePaths();
+    const service = createModelCatalogService({
+      cachePath: paths.claude,
+      grokBinary: null,
+      minimaxBinary: null,
+      minimaxCodeBundlePath: null,
+      minimaxConfigPath: null,
+      mimoBinary: null,
+      apiCatalogs: {
+        codex: [{ id: "gpt-test", label: "GPT Test" }],
+        grok: [{ id: "grok-test", label: "Grok Test" }],
+        mimo: [{ id: "mimo-test", label: "MiMo Test" }],
+        minimax: [{ id: "MiniMax-Test", label: "MiniMax Test" }],
+      },
+    });
+
+    for (const runtimeKind of ["codex", "grok", "mimo", "minimax"] as const) {
+      expect(
+        service.list().find((entry) => entry.runtimeKind === runtimeKind),
+      ).toMatchObject({
+        routeKind: "native",
+        source: expect.stringMatching(/API do Okami/u),
+      });
+      expect(
+        service.list().find((entry) => entry.runtimeKind === runtimeKind)
+          ?.models[0]?.id,
+      ).toBeTruthy();
+    }
+  });
+
   it("offers OpenCode only after the ACP command is verified", () => {
     const paths = cachePaths();
     const unavailable = createModelCatalogService({

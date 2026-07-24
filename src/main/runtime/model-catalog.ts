@@ -241,6 +241,9 @@ export type CursorModelListExecutor = (
 
 export interface ModelCatalogServiceOptions {
   cachePath: string;
+  apiCatalogs?: Partial<
+    Record<"codex" | "grok" | "mimo" | "minimax", CatalogModel[]>
+  >;
   cursorCachePath?: string;
   cursorBinary?: string | null;
   executeCursor?: CursorModelListExecutor;
@@ -717,6 +720,7 @@ export interface ModelCatalogService {
 export function createModelCatalogService(
   options: ModelCatalogServiceOptions,
 ): ModelCatalogService {
+  const apiCatalogs = options.apiCatalogs ?? {};
   let claude: PersistedClaudeCatalog | null = null;
   let cursor: PersistedCursorCatalog | null = null;
   let agy: PersistedCursorCatalog | null = null;
@@ -968,6 +972,10 @@ export function createModelCatalogService(
     refreshMimo,
     list() {
       const codexModels = readCodexModelsCache();
+      const apiCodexModels = apiCatalogs.codex ?? [];
+      const apiGrokModels = apiCatalogs.grok ?? [];
+      const apiMimoModels = apiCatalogs.mimo ?? [];
+      const apiMiniMaxModels = apiCatalogs.minimax ?? [];
       return [
         {
           runtimeKind: "claude",
@@ -981,12 +989,19 @@ export function createModelCatalogService(
         {
           runtimeKind: "codex",
           providerLabel: "ChatGPT",
-          routeKind: "bridged",
+          routeKind:
+            apiCodexModels.length > 0 || codexModels.length > 0
+              ? "native"
+              : "unavailable",
           source:
-            codexModels.length > 0
-              ? "catálogo do Codex CLI (models_cache.json)"
-              : "indisponível — cache do Codex não encontrado",
-          models: codexModels,
+            apiCodexModels.length > 0
+              ? codexModels.length > 0
+                ? "API do Okami · catálogo complementado pelo cache do Codex"
+                : "API do Okami · catálogo configurado"
+              : codexModels.length > 0
+                ? "catálogo do transporte Codex app-server"
+                : "indisponível — cache do Codex não encontrado",
+          models: mergeCatalogModels(apiCodexModels, codexModels),
         },
         {
           runtimeKind: "cursor",
@@ -1013,39 +1028,53 @@ export function createModelCatalogService(
         {
           runtimeKind: "grok",
           providerLabel: "Grok",
-          routeKind: grokBinary ? "native" : "unavailable",
-          source: grok
-            ? `grok models · ${grok.fetchedAt}`
-            : grokBinary
-              ? "consultando grok models…"
-              : "Grok CLI não encontrado",
-          models: grok?.models ?? [],
+          routeKind:
+            apiGrokModels.length > 0 || grokBinary ? "native" : "unavailable",
+          source:
+            apiGrokModels.length > 0
+              ? "API do Okami · catálogo configurado"
+              : grok
+                ? `grok models · ${grok.fetchedAt}`
+                : grokBinary
+                  ? "consultando grok models…"
+                  : "Grok CLI não encontrado",
+          models: mergeCatalogModels(apiGrokModels, grok?.models ?? []),
         },
         {
           runtimeKind: "minimax",
           providerLabel: "MiniMax",
-          routeKind: minimaxBinary ? "native" : "unavailable",
-          source: minimax
-            ? minimaxBinary
-              ? `MiniMax Token Plan via mmx · ${minimax.fetchedAt}`
-              : `MiniMax Code instalado · mmx não encontrado · ${minimax.fetchedAt}`
-            : minimaxCodeBundlePath
-              ? minimaxBinary
-                ? "MiniMax Token Plan via mmx"
-                : "MiniMax Code instalado · mmx não encontrado"
-              : "MiniMax Code não encontrado",
-          models: minimax?.models ?? [],
+          routeKind:
+            apiMiniMaxModels.length > 0 || minimaxBinary
+              ? "native"
+              : "unavailable",
+          source:
+            apiMiniMaxModels.length > 0
+              ? "API do Okami · catálogo configurado"
+              : minimax
+                ? minimaxBinary
+                  ? `MiniMax Token Plan via mmx · ${minimax.fetchedAt}`
+                  : `MiniMax Code instalado · mmx não encontrado · ${minimax.fetchedAt}`
+                : minimaxCodeBundlePath
+                  ? minimaxBinary
+                    ? "MiniMax Token Plan via mmx"
+                    : "MiniMax Code instalado · mmx não encontrado"
+                  : "MiniMax Code não encontrado",
+          models: mergeCatalogModels(apiMiniMaxModels, minimax?.models ?? []),
         },
         {
           runtimeKind: "mimo",
           providerLabel: "MiMo Code",
-          routeKind: mimoBinary ? "native" : "unavailable",
-          source: mimo
-            ? `mimo models · ${mimo.fetchedAt}`
-            : mimoBinary
-              ? "consultando mimo models…"
-              : "MiMo Code CLI não encontrado",
-          models: mimo?.models ?? [],
+          routeKind:
+            apiMimoModels.length > 0 || mimoBinary ? "native" : "unavailable",
+          source:
+            apiMimoModels.length > 0
+              ? "API do Okami · catálogo configurado"
+              : mimo
+                ? `mimo models · ${mimo.fetchedAt}`
+                : mimoBinary
+                  ? "consultando mimo models…"
+                  : "MiMo Code CLI não encontrado",
+          models: mergeCatalogModels(apiMimoModels, mimo?.models ?? []),
         },
         {
           runtimeKind: "opencode",
