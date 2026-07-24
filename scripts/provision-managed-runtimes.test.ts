@@ -1,6 +1,6 @@
 import { createHash } from "node:crypto";
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
-import { mkdtemp } from "node:fs/promises";
+import { mkdtemp, rename } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import { expect, it, vi } from "vitest";
@@ -319,4 +319,142 @@ it("rejects traversal members before extraction and preserves the installed runt
   expect(extractArchive).not.toHaveBeenCalled();
   expect(readFileSync(installedCursor, "utf8")).toBe("known-good");
   expect(existsSync(path.join(outputDirectory, "escaped"))).toBe(false);
+});
+
+it("preserves and reports the recoverable backup when rollback restore fails", async () => {
+  expect(provisioner.provisionManagedRuntimes).toBeTypeOf("function");
+  const outputDirectory = await mkdtemp(
+    path.join(tmpdir(), "okami-runtime-provision-"),
+  );
+  const cursorDirectory = path.join(outputDirectory, "darwin-arm64", "cursor");
+  const installedCursor = path.join(cursorDirectory, "cursor-agent");
+  mkdirSync(cursorDirectory, { recursive: true });
+  writeFileSync(installedCursor, "known-good");
+  const cursorArchive = Buffer.from("replacement-cursor");
+  const cursorUrl = "https://official.example/cursor.tar.gz";
+  const manifestUrl = "https://official.example/manifest.json";
+  const agyArchive = Buffer.from("official-antigravity");
+  const antigravity = {
+    version: "1.0.0",
+    url: "https://official.example/agy.tar.gz",
+    sha512: createHash("sha512").update(agyArchive).digest("hex"),
+  };
+  const renamePath = vi.fn(async (source: string, target: string) => {
+    if (
+      path.basename(source).includes("-staging-") &&
+      target === cursorDirectory
+    ) {
+      throw new Error("atomic swap failed");
+    }
+    if (source.includes("-backup-") && target === cursorDirectory) {
+      throw new Error("rollback restore failed");
+    }
+    await rename(source, target);
+  });
+
+  let failure: Error | undefined;
+  try {
+    await provisioner.provisionManagedRuntimes!({
+      outputDirectory,
+      platform: "darwin",
+      arch: "arm64",
+      cursor: {
+        version: "test",
+        url: cursorUrl,
+        sha512: createHash("sha512").update(cursorArchive).digest("hex"),
+      },
+      antigravity,
+      antigravityManifestUrl: manifestUrl,
+      download: async (url: string) => {
+        if (url === cursorUrl) return cursorArchive;
+        if (url === manifestUrl)
+          return Buffer.from(JSON.stringify(antigravity));
+        return agyArchive;
+      },
+      listArchive: async (archivePath: string) =>
+        archivePath.includes("cursor-")
+          ? ["dist-package/cursor-agent"]
+          : ["antigravity"],
+      extractArchive: async (
+        archivePath: string,
+        targetDirectory: string,
+        options: { stripComponents?: number; member?: string },
+      ) => {
+        mkdirSync(targetDirectory, { recursive: true });
+        writeFileSync(
+          path.join(targetDirectory, options.member ?? "cursor-agent"),
+          readFileSync(archivePath),
+        );
+      },
+      fileOperations: { rename: renamePath },
+    });
+  } catch (error) {
+    failure = error as Error;
+  }
+
+  expect(failure?.message).toContain("rollback restore failed");
+  expect(failure?.message).toContain("Recoverable backup:");
+  const recoverableBackup = failure?.message.match(
+    /Recoverable backup: (.+)$/u,
+  )?.[1];
+  expect(recoverableBackup).toBeTruthy();
+  expect(existsSync(recoverableBackup!)).toBe(true);
+  expect(
+    readFileSync(path.join(recoverableBackup!, "cursor-agent"), "utf8"),
+  ).toBe("known-good");
+});
+
+it.each([
+  {
+    label: "symlink with traversal target",
+    maliciousEntry: {
+      name: "dist-package/link",
+      type: "symlink",
+      linkTarget: "../escaped",
+    },
+    expected: "unsafe link target ../escaped",
+  },
+  {
+    label: "hardlink with contained target",
+    maliciousEntry: {
+      name: "dist-package/hardlink",
+      type: "hardlink",
+      linkTarget: "dist-package/cursor-agent",
+    },
+    expected: "unsupported member type hardlink",
+  },
+])("rejects a malicious tar $label", async ({ maliciousEntry, expected }) => {
+  expect(provisioner.provisionManagedRuntimes).toBeTypeOf("function");
+  const outputDirectory = await mkdtemp(
+    path.join(tmpdir(), "okami-runtime-provision-"),
+  );
+  const cursorArchive = Buffer.from("malicious-cursor-archive");
+  const extractArchive = vi.fn();
+
+  await expect(
+    provisioner.provisionManagedRuntimes!({
+      outputDirectory,
+      platform: "darwin",
+      arch: "arm64",
+      cursor: {
+        version: "test",
+        url: "https://official.example/cursor.tar.gz",
+        sha512: createHash("sha512").update(cursorArchive).digest("hex"),
+      },
+      antigravity: {
+        version: "1.0.0",
+        url: "https://official.example/agy.tar.gz",
+        sha512: "0".repeat(128),
+      },
+      antigravityManifestUrl: "https://official.example/manifest.json",
+      download: async () => cursorArchive,
+      listArchive: async () => ["dist-package/cursor-agent"],
+      inspectArchive: async () => [
+        { name: "dist-package/cursor-agent", type: "file" },
+        maliciousEntry,
+      ],
+      extractArchive,
+    }),
+  ).rejects.toThrow(`Cursor archive contains ${expected}`);
+  expect(extractArchive).not.toHaveBeenCalled();
 });

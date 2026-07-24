@@ -53,8 +53,19 @@ export async function provisionManagedRuntimes(options = {}) {
   const antigravityManifestUrl =
     options.antigravityManifestUrl ?? ANTIGRAVITY_DARWIN_ARM64_MANIFEST_URL;
   const download = options.download ?? downloadBuffer;
-  const listArchive = options.listArchive ?? listTarGzip;
+  const inspectArchive =
+    options.inspectArchive ??
+    (options.listArchive
+      ? async (archivePath) =>
+          (await options.listArchive(archivePath)).map((name) => ({
+            name,
+            type: "file",
+          }))
+      : inspectTarGzip);
   const extractArchive = options.extractArchive ?? extractTarGzip;
+  const fileOperations = {
+    rename: options.fileOperations?.rename ?? rename,
+  };
 
   validateHttpsUrl(cursor.url, "Cursor archive");
   validateSha512(cursor.sha512, "Cursor");
@@ -69,7 +80,7 @@ export async function provisionManagedRuntimes(options = {}) {
     `cursor-${cursor.version}.tar.gz`,
   );
   await writeFile(cursorArchivePath, cursorArchive);
-  validateArchiveMembers(await listArchive(cursorArchivePath), "Cursor");
+  validateArchiveEntries(await inspectArchive(cursorArchivePath), "Cursor");
   const cursorExecutable = await installRuntimeAtomically({
     targetDirectory: path.join(targetDirectory, "cursor"),
     runtime: "Cursor",
@@ -78,6 +89,7 @@ export async function provisionManagedRuntimes(options = {}) {
       extractArchive(cursorArchivePath, stagingDirectory, {
         stripComponents: 1,
       }),
+    fileOperations,
   });
 
   const manifestPayload = await download(antigravityManifestUrl);
@@ -89,7 +101,7 @@ export async function provisionManagedRuntimes(options = {}) {
     `antigravity-${manifest.version}.tar.gz`,
   );
   await writeFile(agyArchivePath, agyArchive);
-  validateArchiveMembers(await listArchive(agyArchivePath), "Antigravity");
+  validateArchiveEntries(await inspectArchive(agyArchivePath), "Antigravity");
   const agyExecutable = await installRuntimeAtomically({
     targetDirectory: path.join(targetDirectory, "agy"),
     runtime: "Antigravity",
@@ -98,11 +110,12 @@ export async function provisionManagedRuntimes(options = {}) {
       await extractArchive(agyArchivePath, stagingDirectory, {
         member: "antigravity",
       });
-      await rename(
+      await fileOperations.rename(
         path.join(stagingDirectory, "antigravity"),
         path.join(stagingDirectory, "agy"),
       );
     },
+    fileOperations,
   });
 
   return {
@@ -157,24 +170,70 @@ async function extractTarGzip(archivePath, targetDirectory, options) {
   await execFileAsync("tar", args, { windowsHide: true });
 }
 
-async function listTarGzip(archivePath) {
-  const { stdout } = await execFileAsync("tar", ["-tzf", archivePath], {
+async function inspectTarGzip(archivePath) {
+  const { stdout } = await execFileAsync("tar", ["-tvzf", archivePath], {
     encoding: "utf8",
     windowsHide: true,
   });
-  return stdout.split("\n").filter(Boolean);
+  return stdout.split("\n").filter(Boolean).map(parseTarVerboseEntry);
 }
 
-function validateArchiveMembers(members, runtime) {
-  for (const member of members) {
-    const segments = member.split(/[\\/]/u);
-    if (
-      path.posix.isAbsolute(member) ||
-      path.win32.isAbsolute(member) ||
-      segments.includes("..")
-    ) {
-      throw new Error(`${runtime} archive contains unsafe member ${member}`);
+function parseTarVerboseEntry(line) {
+  const match =
+    /^([bcdhlps-])[rwxStTs-]{9}\s+\d+\s+\S+\s+\S+\s+\d+\s+\S+\s+\S+\s+\S+\s+(.+)$/u.exec(
+      line,
+    );
+  if (!match) {
+    throw new Error(`Tar archive metadata is invalid: ${line}`);
+  }
+  const type = tarEntryType(match[1]);
+  let name = match[2];
+  let linkTarget;
+  if (type === "symlink" || type === "hardlink") {
+    const separator = type === "symlink" ? " -> " : " link to ";
+    const separatorIndex = name.lastIndexOf(separator);
+    if (separatorIndex < 1) {
+      throw new Error(`Tar link metadata is invalid: ${line}`);
     }
+    linkTarget = name.slice(separatorIndex + separator.length);
+    name = name.slice(0, separatorIndex);
+  }
+  return { name, type, linkTarget };
+}
+
+function tarEntryType(type) {
+  if (type === "-") return "file";
+  if (type === "d") return "directory";
+  if (type === "l") return "symlink";
+  if (type === "h") return "hardlink";
+  return "special";
+}
+
+function validateArchiveEntries(entries, runtime) {
+  for (const entry of entries) {
+    validateArchivePath(entry.name, runtime, "member");
+    if (entry.linkTarget !== undefined) {
+      validateArchivePath(entry.linkTarget, runtime, "link target");
+    }
+    if (entry.type !== "file" && entry.type !== "directory") {
+      throw new Error(
+        `${runtime} archive contains unsupported member type ${entry.type}`,
+      );
+    }
+  }
+}
+
+function validateArchivePath(candidate, runtime, label) {
+  if (typeof candidate !== "string" || candidate.length === 0) {
+    throw new Error(`${runtime} archive contains invalid ${label}`);
+  }
+  const segments = candidate.split(/[\\/]/u);
+  if (
+    path.posix.isAbsolute(candidate) ||
+    path.win32.isAbsolute(candidate) ||
+    segments.includes("..")
+  ) {
+    throw new Error(`${runtime} archive contains unsafe ${label} ${candidate}`);
   }
 }
 
@@ -189,6 +248,7 @@ async function installRuntimeAtomically(options) {
   );
   let backupDirectory;
   let backupTarget;
+  let preserveBackup = false;
   try {
     await options.prepare(stagingDirectory);
     const stagingExecutable = path.join(
@@ -213,20 +273,37 @@ async function installRuntimeAtomically(options) {
         backupDirectory,
         path.basename(options.targetDirectory),
       );
-      await rename(options.targetDirectory, backupTarget);
+      await options.fileOperations.rename(
+        options.targetDirectory,
+        backupTarget,
+      );
     }
 
     try {
-      await rename(stagingDirectory, options.targetDirectory);
-    } catch (error) {
+      await options.fileOperations.rename(
+        stagingDirectory,
+        options.targetDirectory,
+      );
+    } catch (swapError) {
       if (backupTarget && !(await pathExists(options.targetDirectory))) {
-        await rename(backupTarget, options.targetDirectory);
+        try {
+          await options.fileOperations.rename(
+            backupTarget,
+            options.targetDirectory,
+          );
+        } catch (restoreError) {
+          preserveBackup = true;
+          throw new Error(
+            `Managed runtime swap failed: ${errorMessage(swapError)}; rollback restore failed: ${errorMessage(restoreError)}. Recoverable backup: ${backupTarget}`,
+            { cause: new AggregateError([swapError, restoreError]) },
+          );
+        }
       }
-      throw error;
+      throw swapError;
     }
   } finally {
     await rm(stagingDirectory, { recursive: true, force: true });
-    if (backupDirectory) {
+    if (backupDirectory && !preserveBackup) {
       await rm(backupDirectory, { recursive: true, force: true });
     }
   }
@@ -282,6 +359,10 @@ async function requireContainedFile(root, candidate, runtime) {
 
 async function pathExists(candidate) {
   return Boolean(await stat(candidate).catch(() => null));
+}
+
+function errorMessage(error) {
+  return error instanceof Error ? error.message : String(error);
 }
 
 const invokedPath = process.argv[1] ? path.resolve(process.argv[1]) : null;
