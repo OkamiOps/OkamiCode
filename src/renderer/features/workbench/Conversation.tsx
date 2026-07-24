@@ -18,6 +18,7 @@ import {
 } from "./events/EventCardRegistry";
 import { laneDisplayName } from "./LaneSelector";
 import { runtimePresentation as presentRuntime } from "./runtime-presentation";
+import type { RuntimeIdentity } from "./runtime-presentation";
 import { useWorkbenchStore } from "./store";
 
 const TEXT_EVENT_KINDS = new Set(["message_delta", "message_completed"]);
@@ -105,6 +106,7 @@ interface TimelineAgentItem {
   runId: string;
   laneId: string;
   text: string;
+  identity?: RuntimeIdentity;
 }
 
 interface TimelineAgentActivityItem {
@@ -593,6 +595,15 @@ export function Conversation({
       runId: key.split(":", 1)[0] ?? key,
       laneId: entry.laneId,
       text: entry.text,
+      ...(entry.runtimeKind && entry.providerAccountLabel && entry.model
+        ? {
+            identity: {
+              runtimeKind: entry.runtimeKind,
+              providerAccountLabel: entry.providerAccountLabel,
+              model: entry.model,
+            },
+          }
+        : {}),
     };
     const group = agentsByRun.get(agent.runId) ?? [];
     group.push(agent);
@@ -779,7 +790,7 @@ export function Conversation({
               );
             }
             if (item.type === "agent") {
-              const owner = laneById.get(item.laneId) ?? lane;
+              const owner = item.identity ?? laneById.get(item.laneId);
               const runtime = runtimePresentation(owner);
               const isLiveTail = isRunning && item.key === lastAgent?.key;
               const provider = owner ? laneDisplayName(owner) : "Agente";
@@ -984,7 +995,9 @@ export function Conversation({
   );
 }
 
-function runtimePresentation(lane: WorkbenchLane | null | undefined) {
+function runtimePresentation(
+  lane: RuntimeIdentity | WorkbenchLane | null | undefined,
+) {
   if (!lane) return { glyph: "CL", tone: "claude" } as const;
   return presentRuntime(lane);
 }

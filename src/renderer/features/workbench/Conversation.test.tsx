@@ -15,6 +15,22 @@ const agyLane = {
   pendingDeltaEvents: 0,
 } as WorkbenchLane;
 
+const mimoLane = {
+  ...agyLane,
+  laneId: "mimo-lane",
+  runtimeKind: "mimo",
+  providerAccountLabel: "MiMo",
+  model: "mimo-v2.5",
+} as WorkbenchLane;
+
+const minimaxLane = {
+  ...agyLane,
+  laneId: "minimax-lane",
+  runtimeKind: "minimax",
+  providerAccountLabel: "MiniMax",
+  model: "MiniMax-M3",
+} as WorkbenchLane;
+
 afterEach(() => {
   document.body.innerHTML = "";
 });
@@ -58,6 +74,36 @@ function renderConversation(
 }
 
 describe("Conversation", () => {
+  it("keeps the provider snapshot on an old answer after the selected lane changes", () => {
+    const store = createWorkbenchStore();
+    store.setState({
+      streams: {
+        "run-mimo:answer": {
+          laneId: mimoLane.laneId,
+          at: "2026-07-24T12:00:00.000Z",
+          text: "Resposta produzida pelo MiMo",
+          runtimeKind: "mimo",
+          providerAccountLabel: "MiMo",
+          model: "mimo-v2.5",
+        },
+      } as never,
+    });
+
+    render(
+      <WorkbenchStoreContext.Provider value={store}>
+        <Conversation lane={minimaxLane} lanes={[minimaxLane]} />
+      </WorkbenchStoreContext.Provider>,
+    );
+
+    const answer = screen
+      .getByText("Resposta produzida pelo MiMo")
+      .closest(".message-group--agent");
+    expect(answer).not.toBeNull();
+    expect(answer).toHaveTextContent("MiMo Code");
+    expect(answer).toHaveTextContent("Mimo-v2.5");
+    expect(answer).not.toHaveTextContent("MiniMax");
+  });
+
   it("identifies the provider and model on every non-Claude response", () => {
     renderConversation();
 

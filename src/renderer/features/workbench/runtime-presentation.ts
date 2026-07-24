@@ -1,6 +1,11 @@
 import type { ProviderKind, RuntimeKind } from "../../../shared/contracts/lane";
 import type { WorkbenchLane } from "./api";
 
+export type RuntimeIdentity = Pick<
+  WorkbenchLane,
+  "runtimeKind" | "providerAccountLabel" | "model"
+>;
+
 export type RuntimeGlyph =
   "CL" | "GP" | "GK" | "CU" | "AG" | "MI" | "MM" | "OC";
 
@@ -15,7 +20,7 @@ export function runtimeGlyph(runtime: RuntimeKind): RuntimeGlyph {
   return "CU";
 }
 
-export function runtimePresentation(lane: WorkbenchLane) {
+export function runtimePresentation(lane: RuntimeIdentity) {
   if (lane.runtimeKind === "cursor") {
     return { glyph: "CU", tone: "cursor" } as const;
   }
@@ -42,7 +47,7 @@ export function runtimePresentation(lane: WorkbenchLane) {
   return { glyph: "CL", tone: "claude" } as const;
 }
 
-export function providerKindForLane(lane: WorkbenchLane): ProviderKind {
+export function providerKindForLane(lane: RuntimeIdentity): ProviderKind {
   if (lane.runtimeKind === "cursor") return "cursor";
   if (lane.runtimeKind === "agy") return "antigravity";
   if (lane.runtimeKind === "grok") return "grok";
@@ -53,7 +58,7 @@ export function providerKindForLane(lane: WorkbenchLane): ProviderKind {
   return /chatgpt|\bgpt|\bo[134]/u.test(account) ? "chatgpt" : "claude_max";
 }
 
-export function laneDisplayName(lane: WorkbenchLane): string {
+export function laneDisplayName(lane: RuntimeIdentity): string {
   if (lane.runtimeKind === "cursor") return "Cursor";
   if (lane.runtimeKind === "agy") return "Antigravity";
   if (lane.runtimeKind === "grok") return "Grok";

@@ -3,6 +3,7 @@ import { useStore } from "zustand";
 import { createStore, type StoreApi } from "zustand/vanilla";
 import type { CanonicalEvent } from "../../../shared/contracts/event";
 import type { WorkbenchLane } from "./api";
+import type { RuntimeIdentity } from "./runtime-presentation";
 
 export type WorkbenchRunStatus =
   "running" | "completed" | "failed" | "cancelled";
@@ -14,7 +15,7 @@ export interface SentMessage {
   at: string;
 }
 
-export interface StreamEntry {
+export interface StreamEntry extends Partial<RuntimeIdentity> {
   text: string;
   laneId: string;
   at: string;
@@ -90,6 +91,10 @@ export function reduceCanonicalEvent(
     const anchor = event.payload.messageAnchor ?? event.nativeEventId;
     const key = `${event.runId}:${String(anchor)}`;
     const existing = state.streams[key];
+    const identity = frozenStreamIdentity(
+      existing,
+      state.openedLanes?.[event.laneId],
+    );
     next.streams = {
       ...state.streams,
       [key]: {
@@ -98,6 +103,7 @@ export function reduceCanonicalEvent(
         // never relabels what another model produced.
         laneId: existing?.laneId ?? event.laneId,
         at: existing?.at ?? event.occurredAt,
+        ...identity,
       },
     };
   }
@@ -114,12 +120,17 @@ export function reduceCanonicalEvent(
     if (text.trim().length > 0 && !alreadyStreamed) {
       const anchor = event.payload.messageAnchor ?? event.nativeEventId;
       const key = `${event.runId}:${String(anchor)}`;
+      const identity = frozenStreamIdentity(
+        state.streams[key],
+        state.openedLanes?.[event.laneId],
+      );
       next.streams = {
         ...state.streams,
         [key]: {
           text,
           laneId: event.laneId,
           at: event.occurredAt,
+          ...identity,
         },
       };
     }
@@ -218,6 +229,30 @@ export function reduceCanonicalEvent(
     }
   }
   return next;
+}
+
+function frozenStreamIdentity(
+  existing: StreamEntry | undefined,
+  lane: WorkbenchLane | undefined,
+): RuntimeIdentity | Record<string, never> {
+  if (
+    existing?.runtimeKind &&
+    existing.providerAccountLabel &&
+    existing.model
+  ) {
+    return {
+      runtimeKind: existing.runtimeKind,
+      providerAccountLabel: existing.providerAccountLabel,
+      model: existing.model,
+    };
+  }
+  return lane
+    ? {
+        runtimeKind: lane.runtimeKind,
+        providerAccountLabel: lane.providerAccountLabel,
+        model: lane.model,
+      }
+    : {};
 }
 
 function dedicatedContextReading(
