@@ -97,3 +97,83 @@ The only incomplete artifact is the DMG container. The real `.app` and its
 runtime trust proof are valid; this environment could not attach/configure the
 disk-image device required by `hdiutil`. No code or runtime-integrity failure
 was observed.
+
+---
+
+## Final rereview — completion-aware acceptance and restart recovery
+
+Status: **DONE_WITH_CONCERNS**
+
+No provider turn or live inference request was executed.
+
+### Findings closed
+
+- **C1 — acceptance only after persisted completion**
+  - `RunService` and `LaneService` no longer advance native-event cursors,
+    conversation cursors, or rehydration acknowledgement when a `RunHandle` is
+    allocated.
+  - a shared completion-aware event wrapper commits those projections only
+    after the matching `run_completed` event has been consumed by the IPC
+    forwarding loop; at that point the event and terminal run status have
+    already been persisted and forwarded.
+  - `run_failed`, `run_cancelled`, generator errors, and stream/process death
+    leave the marker and cursors unchanged, so the handoff remains replayable.
+  - real MiMo Responses failure and MiniMax cancellation integration tests pass
+    through `LaneService` and the IPC forwarding path, then reopen the database
+    and verify the lane remains cold.
+
+- **I1 — restart-aware Token Plan rehydration**
+  - MiMo Responses and MiniMax Chat Completions preserve native continuation
+    only while the same adapter instance owns the in-memory state.
+  - after adapter reconstruction, `resume()` signals
+    `transport_continuation_unavailable`.
+  - `LaneService` marks only the exact current native-session binding
+    `rehydration_required`, via repository compare-and-set, and sends bounded
+    full persisted Okami context again.
+  - same-process resume remains native and does not force an unnecessary
+    replay.
+
+- **M1 — verifier transport ownership**
+  - verifier contracts now derive every transport in each shipped runtime
+    manifest.
+  - trust and runtime inventories are keyed by provider plus transport, so a
+    provider may own multiple transports without collapsing their artifact
+    contracts.
+  - the current one-transport-per-provider package remains valid.
+
+### TDD evidence
+
+- RED: 9 expected failures across completion acknowledgement, CAS restart
+  state, adapter reconstruction, and multi-transport verifier derivation.
+- GREEN: 6 focused files, 48/48 tests.
+- real IPC forwarding integration: 2/2 tests for MiMo failure and MiniMax
+  cancellation, including reopen behavior and full-context request assertions.
+- no focused validation loop exceeded three attempts.
+
+### Final gates
+
+- `pnpm package`
+  - exit 1 only at DMG creation:
+    `hdiutil: create failed - Device not configured`.
+  - provisioning, native Electron rebuild, production builds, `.app`
+    packaging, and trust-manifest generation completed.
+- `pnpm verify:managed-package release/mac-arm64/OkamiCode.app`
+  - exit 0 against the newly packaged real app; all checksum, ownership, Token
+    Plan, and external-Claude contracts passed.
+- `pnpm rebuild better-sqlite3-multiple-ciphers`
+  - exit 0 for Node 24.17.0 after Electron packaging.
+- `pnpm check`
+  - attempt 1 reached typecheck and exposed test-only branded-id/mock typing;
+    fixed.
+  - attempt 2 passed typecheck and exposed four test-only lint errors; fixed.
+  - attempt 3 passed typecheck and lint, then exposed Prettier changes in three
+    modified tests. Those files were formatted mechanically, but the gate was
+    not run a fourth time because the requested three-attempt limit was
+    reached.
+
+### Remaining concern
+
+The implementation and focused acceptance suite are green, and the real `.app`
+trust proof passes. The full `pnpm check` is not recorded green after the final
+mechanical formatting correction because doing so would exceed the explicit
+three-attempt validation cap. The DMG environment failure is unchanged.

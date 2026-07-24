@@ -301,6 +301,21 @@ describe("managed runtime package verifier", () => {
         (entry: { provider: string }) => entry.provider === "mimo",
       ).transport,
     ).toBe("mimo-token-plan-v2");
+
+    const multiTransport = structuredClone(builtInRuntimeManifests) as {
+      cursor: { transports: Array<Record<string, unknown>> };
+      [provider: string]: unknown;
+    };
+    multiTransport.cursor.transports.push({
+      ...multiTransport.cursor.transports[0],
+      id: "cursor-agent-fallback",
+      priority: 200,
+    });
+    expect(
+      verifier.deriveProviderContracts!(multiTransport)
+        .filter((entry: { provider: string }) => entry.provider === "cursor")
+        .map((entry: { transport: string }) => entry.transport),
+    ).toEqual(["cursor-agent", "cursor-agent-fallback"]);
   });
 
   it("discovers and verifies a package-shaped fixture through its generated trust manifest", async () => {

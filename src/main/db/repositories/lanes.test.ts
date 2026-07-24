@@ -99,4 +99,37 @@ describe("LaneRepository native session binding", () => {
     ).toThrow("not a retired minimax transport binding");
     fixture.db.close();
   });
+
+  it("marks continuation rehydration only for the exact current binding", () => {
+    const fixture = createTestDatabase();
+    fixture.lanes.bindNativeSession({
+      laneId: fixture.laneId,
+      nativeSessionId: "current-token-plan-session",
+      runtimeVersion: "responses-v1",
+      boundAt: "2026-07-24T12:00:00.000Z",
+      updatedAt: "2026-07-24T12:00:00.000Z",
+    });
+
+    expect(() =>
+      fixture.lanes.markNativeSessionRehydrationRequired(
+        fixture.laneId,
+        "stale-token-plan-session",
+        "2026-07-24T12:01:00.000Z",
+      ),
+    ).toThrow("Native session rehydration conflict");
+    fixture.lanes.markNativeSessionRehydrationRequired(
+      fixture.laneId,
+      "current-token-plan-session",
+      "2026-07-24T12:02:00.000Z",
+    );
+
+    expect(
+      fixture.lanes.findNativeSessionBinding(fixture.laneId),
+    ).toMatchObject({
+      nativeSessionId: "current-token-plan-session",
+      rehydrationRequired: true,
+      updatedAt: "2026-07-24T12:02:00.000Z",
+    });
+    fixture.db.close();
+  });
 });

@@ -205,6 +205,25 @@ export class LaneRepository {
     }
   }
 
+  markNativeSessionRehydrationRequired(
+    laneId: string,
+    nativeSessionId: string,
+    updatedAt: string,
+  ): void {
+    const result = this.db
+      .prepare(
+        `UPDATE native_session_bindings
+         SET rehydration_required = 1,
+             updated_at = ?
+         WHERE lane_id = ?
+           AND native_session_id = ?`,
+      )
+      .run(updatedAt, laneId, nativeSessionId);
+    if (result.changes !== 1) {
+      throw new Error("Native session rehydration conflict");
+    }
+  }
+
   advanceCursor(
     id: string,
     fromSequenceExclusive: number,

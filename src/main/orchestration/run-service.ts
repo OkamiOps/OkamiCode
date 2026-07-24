@@ -6,6 +6,7 @@ import type { RunHandle } from "../runtime/adapter";
 import type { RuntimeRegistry } from "../runtime/registry";
 import { ContextCompiler } from "./context-compiler";
 import type { DeltaPackage } from "./delta";
+import { afterSuccessfulRunCompletion } from "./successful-run";
 
 interface RunServiceDependencies {
   lanes: Pick<LaneRepository, "advanceCursor" | "findById">;
@@ -105,10 +106,11 @@ export class RunService {
       throw error;
     }
 
-    if (request.delta) {
-      this.advanceAcceptedDelta(lane.id, request.delta);
-    }
-    return handle;
+    return request.delta
+      ? afterSuccessfulRunCompletion(handle, lane.id, () =>
+          this.advanceAcceptedDelta(lane.id, request.delta as DeltaPackage),
+        )
+      : handle;
   }
 
   private advanceAcceptedDelta(laneId: string, delta: DeltaPackage): void {

@@ -37,6 +37,10 @@ export interface AuthoritativeNativeSession extends NativeSessionBase {
     toNativeSessionId: string;
     rehydrationRequired: true;
   };
+  rehydration?: {
+    required: true;
+    reason: "transport_continuation_unavailable";
+  };
 }
 
 export interface DeferredNativeSession extends NativeSessionBase {

@@ -65,10 +65,10 @@ export function deriveProviderContracts(runtimeManifests) {
       !manifest ||
       typeof manifest.runtimeId !== "string" ||
       !Array.isArray(manifest.transports) ||
-      manifest.transports.length !== 1
+      manifest.transports.length === 0
     ) {
       throw new Error(
-        "Each shipped runtime manifest must declare exactly one transport",
+        "Each shipped runtime manifest must declare at least one transport",
       );
     }
     const provider = manifest.runtimeId;
@@ -80,26 +80,30 @@ export function deriveProviderContracts(runtimeManifests) {
     if (!policy) {
       throw new Error(`No verifier artifact policy for ${provider}`);
     }
-    const transport = manifest.transports[0];
-    const executableExpected = policy.ownership !== "token-plan";
-    if (
-      executableExpected !==
-      (typeof transport.executable === "string" &&
-        transport.executable.length > 0)
-    ) {
-      throw new Error(
-        `Shipped runtime executable contract mismatch for ${provider}`,
+    for (const transport of manifest.transports) {
+      const executableExpected = policy.ownership !== "token-plan";
+      if (
+        !transport ||
+        typeof transport.id !== "string" ||
+        transport.id.length === 0 ||
+        executableExpected !==
+          (typeof transport.executable === "string" &&
+            transport.executable.length > 0)
+      ) {
+        throw new Error(
+          `Shipped runtime executable contract mismatch for ${provider}`,
+        );
+      }
+      contracts.push(
+        Object.freeze({
+          provider,
+          transport: transport.id,
+          entitlement: transport.entitlement,
+          ownership: policy.ownership,
+          artifactEncoding: policy.artifactEncoding,
+        }),
       );
     }
-    contracts.push(
-      Object.freeze({
-        provider,
-        transport: transport.id,
-        entitlement: transport.entitlement,
-        ownership: policy.ownership,
-        artifactEncoding: policy.artifactEncoding,
-      }),
-    );
   }
   for (const provider of Object.keys(PROVIDER_ARTIFACT_POLICIES)) {
     if (!providers.has(provider)) {
@@ -126,13 +130,16 @@ export async function verifyRuntimeOwnership(options) {
   }
 
   const runtimes = [];
-  const providers = new Set();
+  const runtimesByTransport = new Set();
   for (const manifest of options.runtimes) {
     validateManifest(manifest);
-    if (providers.has(manifest.provider)) {
-      throw new Error(`Duplicate runtime manifest for ${manifest.provider}`);
+    const key = contractKey(manifest.provider, manifest.transport);
+    if (runtimesByTransport.has(key)) {
+      throw new Error(
+        `Duplicate runtime manifest for ${manifest.provider}/${manifest.transport}`,
+      );
     }
-    providers.add(manifest.provider);
+    runtimesByTransport.add(key);
 
     if (isUnavailableExternalClaude(manifest)) {
       runtimes.push({
@@ -262,7 +269,10 @@ export async function discoverPackagedRuntimes(options) {
     (await readManagedRuntimeTrustManifest(appPath)).manifest;
   validateTrustManifest(trustManifest);
   const entries = new Map(
-    trustManifest.providers.map((entry) => [entry.provider, entry]),
+    trustManifest.providers.map((entry) => [
+      contractKey(entry.provider, entry.transport),
+      entry,
+    ]),
   );
   const sources = new Map();
   for (const contract of PROVIDER_CONTRACTS) {
@@ -272,7 +282,8 @@ export async function discoverPackagedRuntimes(options) {
     ) {
       continue;
     }
-    const entry = entries.get(contract.provider);
+    const key = contractKey(contract.provider, contract.transport);
+    const entry = entries.get(key);
     const artifact = await requireTrustedArtifact(resourcesDirectory, entry);
     const packagedPayload = await readFile(artifact);
     const executablePayload =
@@ -285,7 +296,7 @@ export async function discoverPackagedRuntimes(options) {
     }
     if (contract.provider === "grok") {
       sources.set(
-        contract.provider,
+        key,
         materializeVerifiedArtifactSync({
           runtimeDirectory: path.join(
             options.userDataDirectory,
@@ -303,16 +314,16 @@ export async function discoverPackagedRuntimes(options) {
         }),
       );
     } else {
-      sources.set(contract.provider, artifact);
+      sources.set(key, artifact);
     }
   }
   const expectedManagedProviders = PROVIDER_CONTRACTS.filter(
     (contract) =>
       contract.ownership !== "token-plan" && contract.ownership !== "external",
-  ).map((contract) => contract.provider);
+  ).map((contract) => contractKey(contract.provider, contract.transport));
   if (
     sources.size !== expectedManagedProviders.length ||
-    expectedManagedProviders.some((provider) => !sources.has(provider))
+    expectedManagedProviders.some((key) => !sources.has(key))
   ) {
     throw new Error(
       "Resolved managed runtime inventory does not match shipped runtime manifests",
@@ -321,7 +332,8 @@ export async function discoverPackagedRuntimes(options) {
   const claude = options.claudeSource ?? null;
 
   return PROVIDER_CONTRACTS.map((contract) => {
-    const entry = entries.get(contract.provider);
+    const key = contractKey(contract.provider, contract.transport);
+    const entry = entries.get(key);
     if (contract.ownership === "token-plan") {
       return tokenPlanManifest(contract.provider, contract.transport);
     }
@@ -350,7 +362,7 @@ export async function discoverPackagedRuntimes(options) {
       ...executableManifest(
         contract.provider,
         contract.transport,
-        sources.get(contract.provider),
+        sources.get(key),
         contract.entitlement,
       ),
       expectedSha256: entry.sha256,
@@ -548,36 +560,47 @@ function validateTrustManifest(manifest) {
   }
   const providers = new Map();
   for (const entry of manifest.providers) {
-    if (!entry || typeof entry.provider !== "string") {
+    if (
+      !entry ||
+      typeof entry.provider !== "string" ||
+      typeof entry.transport !== "string"
+    ) {
       throw new Error(
         "Managed runtime trust manifest contains an invalid provider",
       );
     }
-    if (providers.has(entry.provider)) {
+    const key = contractKey(entry.provider, entry.transport);
+    if (providers.has(key)) {
       throw new Error(
-        `Managed runtime trust manifest duplicates provider ${entry.provider}`,
+        `Managed runtime trust manifest duplicates provider transport ${entry.provider}/${entry.transport}`,
       );
     }
-    providers.set(entry.provider, entry);
+    providers.set(key, entry);
   }
   for (const contract of PROVIDER_CONTRACTS) {
-    if (!providers.has(contract.provider)) {
+    const key = contractKey(contract.provider, contract.transport);
+    if (!providers.has(key)) {
       throw new Error(
-        `Managed runtime trust manifest is missing provider ${contract.provider}`,
+        `Managed runtime trust manifest is missing provider transport ${contract.provider}/${contract.transport}`,
       );
     }
   }
-  for (const provider of providers.keys()) {
+  for (const key of providers.keys()) {
     if (
-      !PROVIDER_CONTRACTS.some((contract) => contract.provider === provider)
+      !PROVIDER_CONTRACTS.some(
+        (contract) =>
+          contractKey(contract.provider, contract.transport) === key,
+      )
     ) {
       throw new Error(
-        `Managed runtime trust manifest contains unexpected provider ${provider}`,
+        `Managed runtime trust manifest contains unexpected provider transport ${key}`,
       );
     }
   }
   for (const contract of PROVIDER_CONTRACTS) {
-    const entry = providers.get(contract.provider);
+    const entry = providers.get(
+      contractKey(contract.provider, contract.transport),
+    );
     if (
       entry.transport !== contract.transport ||
       entry.entitlement !== contract.entitlement ||
@@ -603,6 +626,10 @@ function validateTrustManifest(manifest) {
       );
     }
   }
+}
+
+function contractKey(provider, transport) {
+  return `${provider}\u0000${transport}`;
 }
 
 async function requireTrustedArtifact(resourcesDirectory, entry) {

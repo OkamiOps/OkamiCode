@@ -140,6 +140,42 @@ describe("ResponsesTransportAdapter", () => {
     ]);
   });
 
+  it("signals lost continuation only after adapter reconstruction", async () => {
+    const first = createAdapter("mimo", vi.fn());
+    const started = await first.start({
+      laneId,
+      cwd: "/workspace",
+      model: "mimo-v2-pro",
+    });
+    if (started.bindingState !== "authoritative") {
+      throw new Error("Expected authoritative Responses session");
+    }
+
+    await expect(
+      first.resume({
+        laneId,
+        cwd: "/workspace",
+        model: "mimo-v2-pro",
+        nativeSessionId: started.nativeSessionId,
+      }),
+    ).resolves.not.toHaveProperty("rehydration");
+
+    const reconstructed = createAdapter("mimo", vi.fn());
+    await expect(
+      reconstructed.resume({
+        laneId,
+        cwd: "/workspace",
+        model: "mimo-v2-pro",
+        nativeSessionId: started.nativeSessionId,
+      }),
+    ).resolves.toMatchObject({
+      rehydration: {
+        required: true,
+        reason: "transport_continuation_unavailable",
+      },
+    });
+  });
+
   it("executes Okami tools and continues the response with function output", async () => {
     const bodies: Array<Record<string, unknown>> = [];
     const fetchRequest = vi.fn(

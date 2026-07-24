@@ -29,7 +29,7 @@ interface ToolCall {
 }
 
 interface ResponsesSession {
-  laneId: string;
+  laneId: StartSessionRequest["laneId"];
   nativeSessionId: string;
   model?: string;
   cwd: string;
@@ -102,7 +102,17 @@ export class ResponsesTransportAdapter implements RuntimeAdapter {
 
   async resume(request: ResumeSessionRequest): Promise<NativeSession> {
     await this.requireCredential();
-    return this.recordSession(request, request.nativeSessionId, true);
+    const existing = this.sessions.get(request.nativeSessionId);
+    if (existing) {
+      if (existing.laneId !== request.laneId) {
+        throw new Error(`${this.kind} API session belongs to another lane`);
+      }
+      existing.model = request.model;
+      existing.cwd = request.cwd;
+      existing.permissionMode = request.permissionMode;
+      return this.nativeSession(existing);
+    }
+    return this.recordSession(request, request.nativeSessionId, true, true);
   }
 
   async sendTurn(request: NativeTurnRequest): Promise<RunHandle> {
@@ -439,20 +449,37 @@ export class ResponsesTransportAdapter implements RuntimeAdapter {
     request: StartSessionRequest,
     nativeSessionId: string,
     resumed: boolean,
+    continuationUnavailable = false,
   ): NativeSession {
-    this.sessions.set(nativeSessionId, {
+    const session: ResponsesSession = {
       laneId: request.laneId,
       nativeSessionId,
       model: request.model,
       cwd: request.cwd,
       permissionMode: request.permissionMode,
       resumed,
-    });
+    };
+    this.sessions.set(nativeSessionId, session);
+    return this.nativeSession(session, continuationUnavailable);
+  }
+
+  private nativeSession(
+    session: ResponsesSession,
+    continuationUnavailable = false,
+  ): NativeSession {
     return {
-      laneId: request.laneId,
+      laneId: session.laneId,
       bindingState: "authoritative",
-      nativeSessionId,
+      nativeSessionId: session.nativeSessionId,
       runtimeVersion: "responses-v1",
+      ...(continuationUnavailable
+        ? {
+            rehydration: {
+              required: true as const,
+              reason: "transport_continuation_unavailable" as const,
+            },
+          }
+        : {}),
     };
   }
 }

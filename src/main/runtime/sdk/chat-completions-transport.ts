@@ -26,7 +26,7 @@ type ChatMessage = {
 };
 
 interface ChatSession {
-  laneId: string;
+  laneId: StartSessionRequest["laneId"];
   nativeSessionId: string;
   model?: string;
   history: ChatMessage[];
@@ -79,7 +79,15 @@ export class ChatCompletionsTransportAdapter implements RuntimeAdapter {
 
   async resume(request: ResumeSessionRequest): Promise<NativeSession> {
     await this.requireCredential();
-    return this.record(request, request.nativeSessionId, true);
+    const existing = this.sessions.get(request.nativeSessionId);
+    if (existing) {
+      if (existing.laneId !== request.laneId) {
+        throw new Error(`${this.kind} chat session belongs to another lane`);
+      }
+      existing.model = request.model;
+      return this.nativeSession(existing);
+    }
+    return this.record(request, request.nativeSessionId, true, true);
   }
 
   async sendTurn(request: NativeTurnRequest): Promise<RunHandle> {
@@ -272,19 +280,36 @@ export class ChatCompletionsTransportAdapter implements RuntimeAdapter {
     request: StartSessionRequest,
     nativeSessionId: string,
     resumed: boolean,
+    historyUnavailable = false,
   ): NativeSession {
-    this.sessions.set(nativeSessionId, {
+    const session: ChatSession = {
       laneId: request.laneId,
       nativeSessionId,
       model: request.model,
       history: [],
       resumed,
-    });
+    };
+    this.sessions.set(nativeSessionId, session);
+    return this.nativeSession(session, historyUnavailable);
+  }
+
+  private nativeSession(
+    session: ChatSession,
+    historyUnavailable = false,
+  ): NativeSession {
     return {
-      laneId: request.laneId,
+      laneId: session.laneId,
       bindingState: "authoritative",
-      nativeSessionId,
+      nativeSessionId: session.nativeSessionId,
       runtimeVersion: "chat-completions-v1",
+      ...(historyUnavailable
+        ? {
+            rehydration: {
+              required: true as const,
+              reason: "transport_continuation_unavailable" as const,
+            },
+          }
+        : {}),
     };
   }
 }

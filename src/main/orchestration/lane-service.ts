@@ -15,6 +15,7 @@ import {
   type LaneTemperature,
 } from "./delta";
 import type { RunService } from "./run-service";
+import { afterSuccessfulRunCompletion } from "./successful-run";
 
 export interface LaneGatewayRouting {
   port: number;
@@ -30,6 +31,7 @@ interface LaneServiceDependencies {
     LaneRepository,
     | "bindNativeSessionIfAbsentOrEqual"
     | "compareAndMigrateNativeSession"
+    | "markNativeSessionRehydrationRequired"
     | "acknowledgeNativeSessionRehydration"
     | "findById"
     | "findNativeSessionBinding"
@@ -185,6 +187,10 @@ export class LaneService {
       session.bindingState === "authoritative" ? session.nativeSessionId : null;
     const migration =
       session.bindingState === "authoritative" ? session.migration : undefined;
+    const lostContinuation =
+      session.bindingState === "authoritative"
+        ? session.rehydration
+        : undefined;
     if (nativeSessionId) {
       const now = this.clock().toISOString();
       if (migration) {
@@ -212,10 +218,21 @@ export class LaneService {
           updatedAt: now,
         });
       }
+      if (lostContinuation?.required === true) {
+        if (!binding || binding.nativeSessionId !== nativeSessionId) {
+          throw new Error("Native session rehydration signal is inconsistent");
+        }
+        this.dependencies.lanes.markNativeSessionRehydrationRequired(
+          lane.id,
+          nativeSessionId,
+          now,
+        );
+      }
     }
     const rehydrationRequired =
       session.bindingState === "authoritative" &&
       (migration?.rehydrationRequired === true ||
+        lostContinuation?.required === true ||
         binding?.rehydrationRequired === true);
     const temperature: LaneTemperature = rehydrationRequired
       ? "cold"
@@ -281,30 +298,6 @@ export class LaneService {
       runtimeKind: opened.runtimeKind,
       ...(effort ? { effort } : {}),
     });
-    // The opened projection is retained by the renderer between turns. Once
-    // its delta is accepted, keeping it here would replay an obsolete cursor
-    // on the next Enter press and correctly trigger a conflict in RunService.
-    if (delta) {
-      this.dependencies.deltaBuilder.advanceConversationCursors(
-        opened.laneId,
-        delta.conversationCursors,
-        this.clock().toISOString(),
-      );
-      opened.delta = null;
-      opened.pendingDeltaEvents = 0;
-      opened.temperature = "hot";
-    }
-    if (opened.rehydrationRequired) {
-      if (!opened.nativeSessionId) {
-        throw new Error("Migrated lane is missing an authoritative session");
-      }
-      this.dependencies.lanes.acknowledgeNativeSessionRehydration(
-        opened.laneId,
-        opened.nativeSessionId,
-        this.clock().toISOString(),
-      );
-      opened.rehydrationRequired = false;
-    }
     const lane = this.dependencies.lanes.findById(opened.laneId);
     if (!lane) throw new Error(`Unknown lane ${opened.laneId}`);
     this.dependencies.audit.record({
@@ -325,7 +318,34 @@ export class LaneService {
       },
       occurredAt: this.clock().toISOString(),
     });
-    return run;
+    if (!delta && !opened.rehydrationRequired) return run;
+
+    return afterSuccessfulRunCompletion(run, opened.laneId, () => {
+      // A handle only proves allocation. The generator wrapper runs after the
+      // matching run_completed event was consumed by the forwarding loop, so
+      // failures, cancellation, or process death retain replayable cursors.
+      if (delta) {
+        this.dependencies.deltaBuilder.advanceConversationCursors(
+          opened.laneId,
+          delta.conversationCursors,
+          this.clock().toISOString(),
+        );
+        opened.delta = null;
+        opened.pendingDeltaEvents = 0;
+        opened.temperature = "hot";
+      }
+      if (opened.rehydrationRequired) {
+        if (!opened.nativeSessionId) {
+          throw new Error("Migrated lane is missing an authoritative session");
+        }
+        this.dependencies.lanes.acknowledgeNativeSessionRehydration(
+          opened.laneId,
+          opened.nativeSessionId,
+          this.clock().toISOString(),
+        );
+        opened.rehydrationRequired = false;
+      }
+    });
   }
 
   promoteNativeSession(

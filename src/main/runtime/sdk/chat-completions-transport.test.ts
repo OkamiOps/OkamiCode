@@ -117,6 +117,42 @@ describe("ChatCompletionsTransportAdapter", () => {
       { role: "user", content: "two" },
     ]);
   });
+
+  it("signals lost history only after adapter reconstruction", async () => {
+    const first = createAdapter(vi.fn());
+    const started = await first.start({
+      laneId,
+      cwd: "/workspace",
+      model: "MiniMax-M2.7",
+    });
+    if (started.bindingState !== "authoritative") {
+      throw new Error("Expected authoritative MiniMax session");
+    }
+
+    await expect(
+      first.resume({
+        laneId,
+        cwd: "/workspace",
+        model: "MiniMax-M2.7",
+        nativeSessionId: started.nativeSessionId,
+      }),
+    ).resolves.not.toHaveProperty("rehydration");
+
+    const reconstructed = createAdapter(vi.fn());
+    await expect(
+      reconstructed.resume({
+        laneId,
+        cwd: "/workspace",
+        model: "MiniMax-M2.7",
+        nativeSessionId: started.nativeSessionId,
+      }),
+    ).resolves.toMatchObject({
+      rehydration: {
+        required: true,
+        reason: "transport_continuation_unavailable",
+      },
+    });
+  });
 });
 
 function createAdapter(

@@ -345,8 +345,10 @@ describe("LaneService", () => {
     );
 
     const opened = await h.openExisting();
-    await h.service.sendTurn(opened, "continue");
-    await h.service.sendTurn(opened, "continue de novo");
+    await collectEvents((await h.service.sendTurn(opened, "continue")).events);
+    await collectEvents(
+      (await h.service.sendTurn(opened, "continue de novo")).events,
+    );
 
     expect(h.fakeRuntime.sentTurns[0]?.input).toContain(
       "Primeira decisão compartilhada",
@@ -405,8 +407,10 @@ describe("LaneService", () => {
       );
 
     const opened = await h.openExisting();
-    await h.service.sendTurn(opened, "revise o resultado");
-    await h.service.sendTurn(opened, "continue");
+    await collectEvents(
+      (await h.service.sendTurn(opened, "revise o resultado")).events,
+    );
+    await collectEvents((await h.service.sendTurn(opened, "continue")).events);
 
     expect(h.fakeRuntime.sentTurns[0]?.input).toContain(
       "Arquivos alterados: src/a.ts",
@@ -459,7 +463,7 @@ describe("LaneService", () => {
     expect(h.fakeRuntime.sendTurnCalls).toBe(0);
   });
 
-  it("advances the cursor only after the runtime accepts the delta", async () => {
+  it("advances the cursor only after the matching stream completes successfully", async () => {
     const h = createLaneHarness({ events: [1, 2] });
     const opened = await h.openExisting();
     expect(h.fx.lanes.findById(h.fx.laneId)?.lastEventCursor).toBe(0);
@@ -488,7 +492,9 @@ describe("LaneService", () => {
       message: "runtime rejected delta",
     });
 
-    await h.service.sendTurn(opened, "continue");
+    const accepted = await h.service.sendTurn(opened, "continue");
+    expect(h.fx.lanes.findById(h.fx.laneId)?.lastEventCursor).toBe(0);
+    await collectEvents(accepted.events);
     expect(h.fx.lanes.findById(h.fx.laneId)?.lastEventCursor).toBe(2);
   });
 
@@ -496,7 +502,7 @@ describe("LaneService", () => {
     const h = createLaneHarness({ events: [1, 2] });
     const opened = await h.openExisting();
 
-    await h.service.sendTurn(opened, "first");
+    await collectEvents((await h.service.sendTurn(opened, "first")).events);
     await expect(h.service.sendTurn(opened, "second")).resolves.toBeDefined();
 
     expect(h.fakeRuntime.sentTurns.map((turn) => turn.input)).toEqual([
@@ -587,7 +593,7 @@ describe("LaneService", () => {
         rehydrationRequired: true,
       });
 
-      await h.service.sendTurn(opened, "primeiro turno novo");
+      const firstRun = await h.service.sendTurn(opened, "primeiro turno novo");
 
       expect(tokenPlan.sentTurns[0]?.input).toContain(
         "Contexto histórico do usuário já consumido",
@@ -597,12 +603,55 @@ describe("LaneService", () => {
       );
       expect(tokenPlan.sentTurns[0]?.input).toContain("primeiro turno novo");
       expect(h.fx.lanes.findNativeSessionBinding(h.fx.laneId)).toMatchObject({
+        rehydrationRequired: true,
+      });
+
+      await collectEvents(firstRun.events);
+      expect(h.fx.lanes.findNativeSessionBinding(h.fx.laneId)).toMatchObject({
         rehydrationRequired: false,
       });
 
-      await h.service.sendTurn(opened, "segundo turno novo");
+      const secondRun = await h.service.sendTurn(opened, "segundo turno novo");
+      await collectEvents(secondRun.events);
 
       expect(tokenPlan.sentTurns[1]?.input).toBe("segundo turno novo");
+    },
+  );
+
+  it.each(["run_failed", "run_cancelled"] as const)(
+    "keeps migrated cursors and rehydration replayable after %s",
+    async (terminalKind) => {
+      const tokenPlan = new FakeRuntimeAdapter("mimo");
+      tokenPlan.terminalKind = terminalKind;
+      const runtime = new ProviderRuntimeAdapter("mimo", [
+        {
+          descriptor: tokenPlanDescriptor("mimo-token-plan"),
+          adapter: tokenPlan,
+        },
+      ]);
+      const oldBinding = `okami:v1:mimo-cli:${Buffer.from(
+        "retired-native-session",
+      ).toString("base64url")}`;
+      const h = createLaneHarness({
+        runtime: "mimo",
+        nativeSession: oldBinding,
+        events: [1, 2],
+        runtimeAdapter: runtime,
+      });
+      const opened = await h.openExisting();
+      const run = await h.service.sendTurn(opened, "retryable handoff");
+
+      await collectEvents(run.events);
+
+      expect(h.fx.lanes.findById(h.fx.laneId)?.lastEventCursor).toBe(0);
+      expect(h.fx.lanes.findNativeSessionBinding(h.fx.laneId)).toMatchObject({
+        rehydrationRequired: true,
+      });
+      const reopened = await h.openExisting();
+      expect(reopened).toMatchObject({
+        temperature: "cold",
+        rehydrationRequired: true,
+      });
     },
   );
 
@@ -646,4 +695,10 @@ function tokenPlanDescriptor(id: string): RuntimeTransport {
     executable: null,
     legacySessionOwner: true,
   };
+}
+
+async function collectEvents<T>(events: AsyncIterable<T>): Promise<T[]> {
+  const collected: T[] = [];
+  for await (const event of events) collected.push(event);
+  return collected;
 }

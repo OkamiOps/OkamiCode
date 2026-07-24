@@ -38,6 +38,8 @@ export class FakeRuntimeAdapter implements RuntimeAdapter {
   readonly resumeRequests: ResumeSessionRequest[] = [];
   rejectNextTurn = false;
   deferredStart = false;
+  terminalKind: "run_completed" | "run_failed" | "run_cancelled" =
+    "run_completed";
 
   constructor(readonly kind: RuntimeKind) {}
 
@@ -89,7 +91,7 @@ export class FakeRuntimeAdapter implements RuntimeAdapter {
     }
     return Promise.resolve({
       runId: request.runId,
-      events: emptyEvents(),
+      events: terminalEvents(request, this.terminalKind),
     });
   }
 
@@ -289,7 +291,23 @@ function appendEvent(
   );
 }
 
-async function* emptyEvents(): AsyncIterable<CanonicalEvent> {}
+async function* terminalEvents(
+  request: NativeTurnRequest,
+  kind: "run_completed" | "run_failed" | "run_cancelled",
+): AsyncIterable<CanonicalEvent> {
+  yield {
+    schemaVersion: 1,
+    id: randomUUID(),
+    taskId: "33333333-3333-4333-8333-333333333333",
+    laneId: request.laneId,
+    runId: request.runId,
+    sequence: 0,
+    occurredAt: new Date().toISOString(),
+    kind,
+    nativeEventId: null,
+    payload: {},
+  };
+}
 
 function required<T>(value: T | undefined): T {
   if (value === undefined) throw new Error("Missing harness fixture");
