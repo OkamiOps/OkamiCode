@@ -152,9 +152,16 @@ cd OkamiCode
 nvm use
 corepack enable
 pnpm install
+pnpm provision:runtimes
 pnpm rebuild:native
 pnpm dev
 ```
+
+`pnpm provision:runtimes` downloads the pinned Cursor and Antigravity
+artifacts, verifies their SHA-512 checksums and archive contents, and installs
+them under `.cache/managed-runtimes/<target>`. Development bootstrap resolves
+that verified cache; packaged builds resolve the copy under
+`process.resourcesPath`.
 
 The database and credentials are created under Electron's macOS application data directory. For isolated development or tests, set `OKAMI_USER_DATA_DIR` to a dedicated local path.
 
@@ -189,14 +196,19 @@ The command produces both the unpacked application and the Apple Silicon install
 - `release/OkamiCode-v1.0.1-beta-macOS-arm64.dmg`
 
 During `afterPack`, the build writes an exact managed-runtime trust manifest
-inside the application. The verifier requires that inventory and compares its
-expected SHA-256 with the observed Codex, Grok, Cursor, Antigravity, and
-OpenCode payloads before probing a version. MiMo, MiniMax, and external Claude
-must not carry an expected executable hash. Version probes use only
-`--version`, `PATH=/usr/bin:/bin`, an isolated `HOME`, and no inherited
-provider credentials. The JSON proof includes expected and observed checksums,
-absolute sources, ownership, and the trust-manifest checksum. A missing,
-modified, extra, or symlink-escaped artifact fails closed without a model turn.
+inside the application. Its transport and entitlement contract comes from the
+shipped runtime manifests and is cross-checked against the resolved executable
+inventory. The verifier compares expected SHA-256 with the observed Codex,
+Grok, Cursor, Antigravity, and OpenCode payloads before probing a version.
+MiMo, MiniMax, and external Claude must not carry an expected executable hash.
+Claude is optional: without `--claude <executable>` it is reported as
+`external/unavailable` and is not probed. Version probes use only `--version`,
+`PATH=/usr/bin:/bin`, a temporary isolated `HOME`, and no inherited provider
+credentials. Temporary verifier user-data is removed in `finally`; pass
+`--user-data <directory>` only to preserve it for debugging. The JSON proof
+includes expected and observed checksums, absolute sources, ownership, and the
+trust-manifest checksum. A missing, modified, extra, or symlink-escaped managed
+artifact fails closed without a model turn.
 
 Open the DMG, drag **OkamiCode** to **Applications**, and launch it from Applications. The `1.0.1-beta` artifact is unsigned and non-notarized, so macOS may require an explicit approval in **Privacy & Security**. Production signing and notarization are intentionally not claimed by this beta.
 

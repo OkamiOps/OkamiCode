@@ -48,12 +48,16 @@ by Okami.
   login is not exposed as a public third-party OAuth integration.
 
 The `afterPack` hook creates an exact trust manifest from the packaged
-artifacts. The package acceptance gate requires that manifest, runs with a
-minimal clean `PATH`, compares expected and observed SHA-256 before probing
-only executable versions, and emits machine-readable provider, version,
-absolute source, checksum, and ownership evidence. A missing, extra, modified,
-global, or symlink-escaped non-Claude artifact fails the gate. No acceptance
-probe sends a provider turn.
+artifacts. Transport and entitlement values come from the shipped runtime
+manifests and are cross-checked against the resolved executable inventory. The
+package acceptance gate requires that manifest, runs with a minimal clean
+`PATH`, compares expected and observed SHA-256 before probing only executable
+versions, and emits machine-readable provider, version, absolute source,
+checksum, and ownership evidence. Missing Claude is reported as the optional
+external/unavailable exception without a probe; `--claude` enables the
+explicit host probe. Default verifier user-data is temporary and removed in
+`finally`. A missing, extra, modified, global, or symlink-escaped non-Claude
+artifact fails the gate. No acceptance probe sends a provider turn.
 
 ## OpenCode and BB
 

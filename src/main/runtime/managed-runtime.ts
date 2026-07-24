@@ -12,6 +12,12 @@ interface ManagedRuntimeOptions {
   resolvePackageJson?: (packageName: string) => string;
 }
 
+interface ManagedRuntimeResourcesOptions {
+  isPackaged: boolean;
+  appPath: string;
+  resourcesPath: string;
+}
+
 export interface ManagedRuntimeCommands {
   codex: string;
   grok: string;
@@ -28,6 +34,14 @@ const CODEX_TRIPLES: Record<string, string> = {
   "win32-arm64": "aarch64-pc-windows-msvc",
   "win32-x64": "x86_64-pc-windows-msvc",
 };
+
+export function resolveManagedRuntimeResourcesDirectory(
+  options: ManagedRuntimeResourcesOptions,
+): string {
+  return options.isPackaged
+    ? path.resolve(options.resourcesPath)
+    : path.resolve(options.appPath, ".cache");
+}
 
 export function resolveManagedRuntimeCommands(
   options: ManagedRuntimeOptions,

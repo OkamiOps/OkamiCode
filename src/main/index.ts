@@ -60,6 +60,7 @@ import {
 import { resolveRuntimeCommands } from "./runtime/commands";
 import {
   resolveManagedRuntimeCommands,
+  resolveManagedRuntimeResourcesDirectory,
   type ManagedRuntimeCommands,
 } from "./runtime/managed-runtime";
 import { SubscriptionDeviceAuthService } from "./runtime/subscription-device-auth";
@@ -299,6 +300,11 @@ async function bootstrap(): Promise<void> {
   const managedRuntimeDirectory = path.join(userDataPath, "managed-runtimes");
   const managedRuntimeCommands = resolveManagedRuntimeCommands({
     runtimeDirectory: managedRuntimeDirectory,
+    resourcesDirectory: resolveManagedRuntimeResourcesDirectory({
+      isPackaged: app.isPackaged,
+      appPath: app.getAppPath(),
+      resourcesPath: process.resourcesPath,
+    }),
   });
   subscriptionDeviceAuthService = new SubscriptionDeviceAuthService({
     commands: managedRuntimeCommands,

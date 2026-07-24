@@ -45,6 +45,14 @@ are routed through the provider's designated legacy transport. This preserves
 existing tasks while preventing a session created by one harness from being
 sent accidentally to another.
 
+The retired `mimo-cli` and `minimax-cli` bindings are the narrow exception:
+each is atomically replaced only within its own provider by a fresh Token Plan
+session. Its first accepted turn receives a bounded, full persisted Okami
+handoff even when native and conversation cursors were already advanced. The
+one-shot rehydration marker is cleared only after acceptance; the HTTP
+transport never claims that a CLI response id or provider-native history was
+resumed.
+
 ## Security boundary
 
 - Provider secrets are never included in diagnostics or renderer payloads.
@@ -60,7 +68,12 @@ sent accidentally to another.
   reports provider, version, source, expected and observed SHA-256, and
   ownership as JSON. An `afterPack` trust manifest inventories every provider:
   five managed executable payloads have expected hashes, MiMo and MiniMax have
-  no executable, and external Claude has no package-owned expected hash.
+  no executable, and external Claude has no package-owned expected hash. Its
+  transport and entitlement values come from the shipped runtime manifests and
+  are cross-checked against the resolved inventory. Claude is optional during
+  acceptance: without `--claude` it is external/unavailable and receives no
+  probe. Default verifier user-data is temporary and removed in `finally`;
+  explicit `--user-data` is preserved for diagnostics.
 
 ## Current limitations
 

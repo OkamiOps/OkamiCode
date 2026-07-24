@@ -1,6 +1,8 @@
 import { describe, expect, it } from "vitest";
 import { createGatewayProfile } from "../gateway/profile";
-import { createLaneHarness } from "./test-harness";
+import type { RuntimeTransport } from "../runtime/manifest";
+import { ProviderRuntimeAdapter } from "../runtime/sdk/provider-runtime";
+import { createLaneHarness, FakeRuntimeAdapter } from "./test-harness";
 
 const chatGptProfile = createGatewayProfile({
   id: "chatgpt-lane",
@@ -503,6 +505,107 @@ describe("LaneService", () => {
     ]);
   });
 
+  it.each([
+    ["mimo", "mimo-cli", "mimo-token-plan"],
+    ["minimax", "minimax-cli", "minimax-token-plan"],
+  ] as const)(
+    "cold-rehydrates fully advanced %s history once after CLI migration",
+    async (runtimeKind, retiredTransport, tokenPlanTransport) => {
+      const tokenPlan = new FakeRuntimeAdapter(runtimeKind);
+      const runtime = new ProviderRuntimeAdapter(runtimeKind, [
+        {
+          descriptor: tokenPlanDescriptor(tokenPlanTransport),
+          adapter: tokenPlan,
+        },
+      ]);
+      const oldBinding = `okami:v1:${retiredTransport}:${Buffer.from(
+        "retired-native-session",
+      ).toString("base64url")}`;
+      const h = createLaneHarness({
+        runtime: runtimeKind,
+        nativeSession: oldBinding,
+        cursor: 2,
+        events: [1, 2],
+        runtimeAdapter: runtime,
+      });
+      const conversationId = crypto.randomUUID();
+      const now = new Date().toISOString();
+      h.fx.db
+        .prepare(
+          `INSERT INTO conversations (id, task_id, kind, created_at, updated_at)
+           VALUES (?, ?, 'workbench', ?, ?)`,
+        )
+        .run(conversationId, h.fx.taskId, now, now);
+      const insert = h.fx.db.prepare(
+        `INSERT INTO messages
+         (id, conversation_id, sequence, role, content_json, created_at)
+         VALUES (?, ?, ?, ?, ?, ?)`,
+      );
+      insert.run(
+        crypto.randomUUID(),
+        conversationId,
+        1,
+        "user",
+        JSON.stringify({
+          body: "Contexto histórico do usuário já consumido",
+          laneId: h.fx.laneId,
+        }),
+        now,
+      );
+      insert.run(
+        crypto.randomUUID(),
+        conversationId,
+        2,
+        "assistant",
+        JSON.stringify({
+          body: "Resposta histórica do assistente já consumida",
+          laneId: h.fx.laneId,
+          providerLabel: runtimeKind,
+          model: "legacy-model",
+        }),
+        new Date(Date.parse(now) + 1).toISOString(),
+      );
+      h.fx.db
+        .prepare(
+          `INSERT INTO event_cursors
+           (lane_id, source_lane_id, last_sequence, updated_at)
+           VALUES (?, ?, 2, ?)`,
+        )
+        .run(h.fx.laneId, h.fx.laneId, now);
+
+      const opened = await h.openExisting();
+
+      expect(opened).toMatchObject({
+        temperature: "cold",
+        rehydrationRequired: true,
+      });
+      expect(tokenPlan.startRequests).toHaveLength(1);
+      expect(tokenPlan.resumeRequests).toHaveLength(0);
+      expect(h.fx.lanes.findNativeSessionBinding(h.fx.laneId)).toMatchObject({
+        nativeSessionId: opened.nativeSessionId,
+        migrationFromNativeSessionId: oldBinding,
+        rehydrationRequired: true,
+      });
+
+      await h.service.sendTurn(opened, "primeiro turno novo");
+
+      expect(tokenPlan.sentTurns[0]?.input).toContain(
+        "Contexto histórico do usuário já consumido",
+      );
+      expect(tokenPlan.sentTurns[0]?.input).toContain(
+        "Resposta histórica do assistente já consumida",
+      );
+      expect(tokenPlan.sentTurns[0]?.input).toContain("primeiro turno novo");
+      expect(h.fx.lanes.findNativeSessionBinding(h.fx.laneId)).toMatchObject({
+        rehydrationRequired: false,
+      });
+
+      await h.service.sendTurn(opened, "segundo turno novo");
+
+      expect(tokenPlan.sentTurns[1]?.input).toBe("segundo turno novo");
+    },
+  );
+
   it("switches lanes with an audit record and leaves the source open", async () => {
     const h = createLaneHarness({ nativeSession: "source-session" });
     const targetLaneId = h.addLane({ nativeSession: "target-session" });
@@ -529,3 +632,18 @@ describe("LaneService", () => {
     });
   });
 });
+
+function tokenPlanDescriptor(id: string): RuntimeTransport {
+  return {
+    id,
+    kind: "api",
+    authentication: "okami_vault",
+    entitlement: "token_plan",
+    priority: 10,
+    optional: true,
+    protocolVersion:
+      id === "mimo-token-plan" ? "responses-v1" : "chat-completions-v1",
+    executable: null,
+    legacySessionOwner: true,
+  };
+}

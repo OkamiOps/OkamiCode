@@ -11,7 +11,18 @@ describe("openDatabase", () => {
     const key = Buffer.alloc(32, 7);
     const db = openDatabase(file, key);
     expect(db.prepare("SELECT sqlite3mc_version()").pluck().get()).toBeTruthy();
-    expect(db.pragma("user_version", { simple: true })).toBe(25);
+    expect(db.pragma("user_version", { simple: true })).toBe(26);
+    expect(
+      db
+        .prepare("PRAGMA table_info(native_session_bindings)")
+        .all()
+        .map((column) => (column as { name: string }).name),
+    ).toEqual(
+      expect.arrayContaining([
+        "migration_from_native_session_id",
+        "rehydration_required",
+      ]),
+    );
     expect(
       db
         .prepare("PRAGMA table_info(inbox_messages)")
@@ -160,6 +171,11 @@ describe("openDatabase", () => {
          '2026-07-23T10:01:00.000Z', 'message_completed', NULL,
          '{"text":"Resposta histórica preservada"}');
     `);
+    db.exec(`
+      ALTER TABLE native_session_bindings DROP COLUMN rehydration_required;
+      ALTER TABLE native_session_bindings
+        DROP COLUMN migration_from_native_session_id;
+    `);
     db.pragma("user_version = 24");
     db.close();
 
@@ -214,6 +230,9 @@ describe("openDatabase", () => {
       DROP TRIGGER calendar_inbox_source_delete_source;
       DROP TABLE calendar_inbox_sources;
       ALTER TABLE calendar_linked_sources DROP COLUMN authentication;
+      ALTER TABLE native_session_bindings DROP COLUMN rehydration_required;
+      ALTER TABLE native_session_bindings
+        DROP COLUMN migration_from_native_session_id;
     `);
     db.pragma("user_version = 16");
     db.close();

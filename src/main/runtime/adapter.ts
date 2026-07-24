@@ -32,6 +32,11 @@ interface NativeSessionBase {
 export interface AuthoritativeNativeSession extends NativeSessionBase {
   bindingState: "authoritative";
   nativeSessionId: string;
+  migration?: {
+    fromNativeSessionId: string;
+    toNativeSessionId: string;
+    rehydrationRequired: true;
+  };
 }
 
 export interface DeferredNativeSession extends NativeSessionBase {

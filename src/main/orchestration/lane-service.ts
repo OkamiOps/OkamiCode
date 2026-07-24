@@ -29,6 +29,8 @@ interface LaneServiceDependencies {
   lanes: Pick<
     LaneRepository,
     | "bindNativeSessionIfAbsentOrEqual"
+    | "compareAndMigrateNativeSession"
+    | "acknowledgeNativeSessionRehydration"
     | "findById"
     | "findNativeSessionBinding"
     | "list"
@@ -68,6 +70,7 @@ export interface OpenedLane {
   workspacePath: string | null;
   status: LaneRecord["status"];
   inheritTask?: boolean;
+  rehydrationRequired?: boolean;
 }
 
 export interface LaneSummary {
@@ -103,9 +106,11 @@ export class LaneService {
       const pendingDeltaEvents = this.dependencies.deltaBuilder.build(lane.id)
         .events.length;
       const temperature: LaneTemperature = binding
-        ? pendingDeltaEvents > 0
-          ? "stale"
-          : "hot"
+        ? binding.rehydrationRequired
+          ? "cold"
+          : pendingDeltaEvents > 0
+            ? "stale"
+            : "hot"
         : "cold";
       const runtimeKind =
         route.kind === "unavailable"
@@ -154,15 +159,13 @@ export class LaneService {
     const candidateDelta = this.dependencies.deltaBuilder.build(lane.id);
     const hasPendingEvents = candidateDelta.events.length > 0;
     const inheritTask = options.inheritTask ?? true;
-    const temperature: LaneTemperature = binding
+    const initialTemperature: LaneTemperature = binding
       ? hasPendingEvents
         ? "stale"
         : "hot"
       : inheritTask
         ? "cold"
         : "clean";
-    const delta =
-      temperature === "stale" || temperature === "cold" ? candidateDelta : null;
     const request = {
       laneId: lane.id as LaneId,
       cwd: lane.workspacePath ?? options.workspaceFallbackPath ?? process.cwd(),
@@ -180,16 +183,50 @@ export class LaneService {
       : await runtime.start(request);
     const nativeSessionId =
       session.bindingState === "authoritative" ? session.nativeSessionId : null;
+    const migration =
+      session.bindingState === "authoritative" ? session.migration : undefined;
     if (nativeSessionId) {
       const now = this.clock().toISOString();
-      this.dependencies.lanes.bindNativeSessionIfAbsentOrEqual({
-        laneId: lane.id,
-        nativeSessionId,
-        runtimeVersion: session.runtimeVersion,
-        boundAt: binding?.boundAt ?? now,
-        updatedAt: now,
-      });
+      if (migration) {
+        if (
+          !binding ||
+          migration.fromNativeSessionId !== binding.nativeSessionId ||
+          migration.toNativeSessionId !== nativeSessionId
+        ) {
+          throw new Error("Native session migration signal is inconsistent");
+        }
+        this.dependencies.lanes.compareAndMigrateNativeSession({
+          laneId: lane.id,
+          runtimeKind,
+          fromNativeSessionId: migration.fromNativeSessionId,
+          toNativeSessionId: migration.toNativeSessionId,
+          runtimeVersion: session.runtimeVersion,
+          updatedAt: now,
+        });
+      } else {
+        this.dependencies.lanes.bindNativeSessionIfAbsentOrEqual({
+          laneId: lane.id,
+          nativeSessionId,
+          runtimeVersion: session.runtimeVersion,
+          boundAt: binding?.boundAt ?? now,
+          updatedAt: now,
+        });
+      }
     }
+    const rehydrationRequired =
+      session.bindingState === "authoritative" &&
+      (migration?.rehydrationRequired === true ||
+        binding?.rehydrationRequired === true);
+    const temperature: LaneTemperature = rehydrationRequired
+      ? "cold"
+      : initialTemperature;
+    const delta = rehydrationRequired
+      ? this.dependencies.deltaBuilder.build(lane.id, {
+          forceFullContext: true,
+        })
+      : temperature === "stale" || temperature === "cold"
+        ? candidateDelta
+        : null;
 
     return {
       laneId: lane.id,
@@ -214,6 +251,7 @@ export class LaneService {
       workspacePath: lane.workspacePath,
       status: lane.status,
       inheritTask,
+      rehydrationRequired,
     };
   }
 
@@ -225,7 +263,9 @@ export class LaneService {
     const refreshedDelta =
       opened.inheritTask === false
         ? null
-        : this.dependencies.deltaBuilder.build(opened.laneId);
+        : this.dependencies.deltaBuilder.build(opened.laneId, {
+            forceFullContext: opened.rehydrationRequired,
+          });
     const delta =
       refreshedDelta &&
       (opened.temperature === "cold" ||
@@ -253,6 +293,17 @@ export class LaneService {
       opened.delta = null;
       opened.pendingDeltaEvents = 0;
       opened.temperature = "hot";
+    }
+    if (opened.rehydrationRequired) {
+      if (!opened.nativeSessionId) {
+        throw new Error("Migrated lane is missing an authoritative session");
+      }
+      this.dependencies.lanes.acknowledgeNativeSessionRehydration(
+        opened.laneId,
+        opened.nativeSessionId,
+        this.clock().toISOString(),
+      );
+      opened.rehydrationRequired = false;
     }
     const lane = this.dependencies.lanes.findById(opened.laneId);
     if (!lane) throw new Error(`Unknown lane ${opened.laneId}`);

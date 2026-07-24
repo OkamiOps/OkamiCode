@@ -17,12 +17,14 @@ describe("LaneRepository native session binding", () => {
       ...first,
       runtimeVersion: "runtime-2",
       updatedAt: "2026-07-21T12:01:00.000Z",
+      rehydrationRequired: false,
     });
 
     expect(fixture.lanes.findNativeSessionBinding(fixture.laneId)).toEqual({
       ...first,
       runtimeVersion: "runtime-2",
       updatedAt: "2026-07-21T12:01:00.000Z",
+      rehydrationRequired: false,
     });
     expect(() =>
       fixture.lanes.bindNativeSessionIfAbsentOrEqual({
@@ -34,7 +36,67 @@ describe("LaneRepository native session binding", () => {
       ...first,
       runtimeVersion: "runtime-2",
       updatedAt: "2026-07-21T12:01:00.000Z",
+      rehydrationRequired: false,
     });
+    fixture.db.close();
+  });
+
+  it("atomically migrates only the exact provider-scoped retired binding", () => {
+    const fixture = createTestDatabase();
+    const fromNativeSessionId = `okami:v1:mimo-cli:${Buffer.from(
+      "legacy-session",
+    ).toString("base64url")}`;
+    const toNativeSessionId = `okami:v1:mimo-token-plan:${Buffer.from(
+      "new-session",
+    ).toString("base64url")}`;
+    fixture.lanes.bindNativeSession({
+      laneId: fixture.laneId,
+      nativeSessionId: fromNativeSessionId,
+      runtimeVersion: "mimo-cli-v1",
+      boundAt: "2026-07-21T12:00:00.000Z",
+      updatedAt: "2026-07-21T12:00:00.000Z",
+    });
+
+    fixture.lanes.compareAndMigrateNativeSession({
+      laneId: fixture.laneId,
+      runtimeKind: "mimo",
+      fromNativeSessionId,
+      toNativeSessionId,
+      runtimeVersion: "responses-v1",
+      updatedAt: "2026-07-24T12:00:00.000Z",
+    });
+
+    expect(fixture.lanes.findNativeSessionBinding(fixture.laneId)).toEqual({
+      laneId: fixture.laneId,
+      nativeSessionId: toNativeSessionId,
+      runtimeVersion: "responses-v1",
+      boundAt: "2026-07-21T12:00:00.000Z",
+      updatedAt: "2026-07-24T12:00:00.000Z",
+      migrationFromNativeSessionId: fromNativeSessionId,
+      rehydrationRequired: true,
+    });
+    expect(() =>
+      fixture.lanes.compareAndMigrateNativeSession({
+        laneId: fixture.laneId,
+        runtimeKind: "mimo",
+        fromNativeSessionId,
+        toNativeSessionId: `${toNativeSessionId}-again`,
+        runtimeVersion: "responses-v1",
+        updatedAt: "2026-07-24T12:01:00.000Z",
+      }),
+    ).toThrow("Native session migration conflict");
+    expect(() =>
+      fixture.lanes.compareAndMigrateNativeSession({
+        laneId: fixture.laneId,
+        runtimeKind: "minimax",
+        fromNativeSessionId: `okami:v1:mimo-cli:${Buffer.from("other").toString(
+          "base64url",
+        )}`,
+        toNativeSessionId,
+        runtimeVersion: "chat-completions-v1",
+        updatedAt: "2026-07-24T12:02:00.000Z",
+      }),
+    ).toThrow("not a retired minimax transport binding");
     fixture.db.close();
   });
 });

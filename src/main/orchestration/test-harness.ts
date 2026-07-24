@@ -26,6 +26,7 @@ interface LaneHarnessOptions {
   cursor?: number;
   events?: number[];
   gateway?: LaneGatewayRouting;
+  runtimeAdapter?: RuntimeAdapter;
 }
 
 export class FakeRuntimeAdapter implements RuntimeAdapter {
@@ -171,13 +172,13 @@ export function createLaneHarness(
   const fakeRuntime = runtimes[runtime];
   fakeRuntime.deferredStart = options.deferredStart ?? false;
   const registry = new RuntimeRegistry();
-  registry.register(runtimes.claude);
-  registry.register(runtimes.codex);
-  registry.register(runtimes.cursor);
-  registry.register(runtimes.grok);
-  registry.register(runtimes.mimo);
-  registry.register(runtimes.minimax);
-  registry.register(runtimes.opencode);
+  for (const adapter of Object.values(runtimes)) {
+    registry.register(
+      adapter.kind === runtime && options.runtimeAdapter
+        ? options.runtimeAdapter
+        : adapter,
+    );
+  }
   const deltaBuilder = new DeltaBuilder({
     db: fx.db,
     tasks: fx.tasks,

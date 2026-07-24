@@ -30,6 +30,11 @@ export interface DeltaPackage {
     contextKind?: string;
   }>;
   events: Array<{ sequence: number; kind: string; summary: string }>;
+  handoffReason?: "runtime_transport_migration";
+}
+
+export interface DeltaBuildOptions {
+  forceFullContext?: boolean;
 }
 
 interface DeltaBuilderDependencies {
@@ -63,16 +68,16 @@ interface PersistedProjections {
 export class DeltaBuilder {
   constructor(private readonly dependencies: DeltaBuilderDependencies) {}
 
-  build(laneId: string): DeltaPackage {
+  build(laneId: string, options: DeltaBuildOptions = {}): DeltaPackage {
     const lane = this.dependencies.lanes.findById(laneId);
     if (!lane) throw new Error(`Unknown lane ${laneId}`);
     const task = this.dependencies.tasks.findById(lane.taskId);
     if (!task) throw new Error(`Unknown task ${lane.taskId}`);
 
     const allLaneEvents = this.dependencies.events.afterCursor(lane.id, -1);
-    const deltaEvents = allLaneEvents.filter(
-      (event) => event.sequence > lane.lastEventCursor,
-    );
+    const deltaEvents = options.forceFullContext
+      ? allLaneEvents
+      : allLaneEvents.filter((event) => event.sequence > lane.lastEventCursor);
     const projections = projectPersistedState(allLaneEvents);
     const artifacts = this.dependencies.db
       .prepare(
@@ -112,8 +117,9 @@ export class DeltaBuilder {
       const sourceLaneId =
         typeof content.laneId === "string" ? content.laneId : null;
       if (
-        sourceLaneId === lane.id ||
-        (sourceLaneId && row.sequence <= (cursors.get(sourceLaneId) ?? 0))
+        !options.forceFullContext &&
+        (sourceLaneId === lane.id ||
+          (sourceLaneId && row.sequence <= (cursors.get(sourceLaneId) ?? 0)))
       ) {
         return [];
       }
@@ -166,6 +172,9 @@ export class DeltaBuilder {
         kind: event.kind,
         summary: eventSummary(event),
       })),
+      ...(options.forceFullContext
+        ? { handoffReason: "runtime_transport_migration" as const }
+        : {}),
     };
   }
 

@@ -4,6 +4,7 @@ import type {
   RuntimeKind,
 } from "../../../shared/contracts/lane";
 import type { Database } from "../connection";
+import { isRetiredTransportBinding } from "../../runtime/sdk/session-binding";
 import { OptimisticConcurrencyError } from "./tasks";
 
 export interface LaneRecord {
@@ -25,6 +26,17 @@ export interface NativeSessionBindingRecord {
   nativeSessionId: string;
   runtimeVersion: string;
   boundAt: string;
+  updatedAt: string;
+  migrationFromNativeSessionId?: string;
+  rehydrationRequired?: boolean;
+}
+
+export interface NativeSessionMigrationRecord {
+  laneId: string;
+  runtimeKind: RuntimeKind;
+  fromNativeSessionId: string;
+  toNativeSessionId: string;
+  runtimeVersion: string;
   updatedAt: string;
 }
 
@@ -48,6 +60,8 @@ interface NativeSessionBindingRow {
   runtime_version: string;
   bound_at: string;
   updated_at: string;
+  migration_from_native_session_id: string | null;
+  rehydration_required: 0 | 1;
 }
 
 export class LaneRepository {
@@ -116,7 +130,9 @@ export class LaneRepository {
          ON CONFLICT(lane_id) DO UPDATE SET
            native_session_id = excluded.native_session_id,
            runtime_version = excluded.runtime_version,
-           updated_at = excluded.updated_at`,
+           updated_at = excluded.updated_at,
+           migration_from_native_session_id = NULL,
+           rehydration_required = 0`,
       )
       .run(binding);
   }
@@ -135,6 +151,57 @@ export class LaneRepository {
       .run(binding);
     if (result.changes === 0) {
       throw new Error("Native session binding conflict");
+    }
+  }
+
+  compareAndMigrateNativeSession(
+    migration: NativeSessionMigrationRecord,
+  ): void {
+    if (
+      !isRetiredTransportBinding(
+        migration.runtimeKind,
+        migration.fromNativeSessionId,
+      )
+    ) {
+      throw new Error(
+        `Native session migration source is not a retired ${migration.runtimeKind} transport binding`,
+      );
+    }
+    const result = this.db
+      .prepare(
+        `UPDATE native_session_bindings
+         SET native_session_id = @toNativeSessionId,
+             runtime_version = @runtimeVersion,
+             updated_at = @updatedAt,
+             migration_from_native_session_id = @fromNativeSessionId,
+             rehydration_required = 1
+         WHERE lane_id = @laneId
+           AND native_session_id = @fromNativeSessionId`,
+      )
+      .run(migration);
+    if (result.changes !== 1) {
+      throw new Error("Native session migration conflict");
+    }
+  }
+
+  acknowledgeNativeSessionRehydration(
+    laneId: string,
+    nativeSessionId: string,
+    updatedAt: string,
+  ): void {
+    const result = this.db
+      .prepare(
+        `UPDATE native_session_bindings
+         SET migration_from_native_session_id = NULL,
+             rehydration_required = 0,
+             updated_at = ?
+         WHERE lane_id = ?
+           AND native_session_id = ?
+           AND rehydration_required = 1`,
+      )
+      .run(updatedAt, laneId, nativeSessionId);
+    if (result.changes !== 1) {
+      throw new Error("Native session rehydration acknowledgement conflict");
     }
   }
 
@@ -202,5 +269,11 @@ function rowToNativeSessionBinding(
     runtimeVersion: row.runtime_version,
     boundAt: row.bound_at,
     updatedAt: row.updated_at,
+    rehydrationRequired: row.rehydration_required === 1,
+    ...(row.migration_from_native_session_id
+      ? {
+          migrationFromNativeSessionId: row.migration_from_native_session_id,
+        }
+      : {}),
   };
 }

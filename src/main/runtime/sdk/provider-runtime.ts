@@ -11,27 +11,15 @@ import type {
   UsageCapabilities,
 } from "../adapter";
 import type { RuntimeTransport } from "../manifest";
-
-const SESSION_PREFIX = "okami:v1:";
-const RETIRED_TRANSPORT_ALIASES = {
-  claude: [],
-  codex: [],
-  cursor: [],
-  agy: [],
-  grok: [],
-  mimo: ["mimo-cli"],
-  minimax: ["minimax-cli"],
-  opencode: [],
-} as const satisfies Record<RuntimeKind, readonly string[]>;
+import {
+  decodeTransportSessionBinding,
+  encodeTransportSessionBinding,
+  isRetiredTransportAlias,
+} from "./session-binding";
 
 export interface RuntimeTransportCandidate {
   descriptor: RuntimeTransport;
   adapter: RuntimeAdapter;
-}
-
-interface DecodedBinding {
-  transportId: string;
-  nativeSessionId: string;
 }
 
 export class ProviderRuntimeAdapter implements RuntimeAdapter {
@@ -93,9 +81,30 @@ export class ProviderRuntimeAdapter implements RuntimeAdapter {
   }
 
   async resume(request: ResumeSessionRequest): Promise<NativeSession> {
-    const decoded = decodeSession(request.nativeSessionId);
+    const decoded = decodeTransportSessionBinding(request.nativeSessionId);
+    if (decoded && isRetiredTransportAlias(this.kind, decoded.transportId)) {
+      const candidate = this.legacySessionOwner();
+      const session = bindSession(
+        await candidate.adapter.start(request),
+        candidate.descriptor.id,
+      );
+      if (session.bindingState !== "authoritative") {
+        throw new Error(
+          `Retired ${this.kind} transport migration requires an authoritative session`,
+        );
+      }
+      this.laneBindings.set(request.laneId, candidate);
+      return {
+        ...session,
+        migration: {
+          fromNativeSessionId: request.nativeSessionId,
+          toNativeSessionId: session.nativeSessionId,
+          rehydrationRequired: true,
+        },
+      };
+    }
     const candidate = decoded
-      ? this.resumeCandidate(decoded.transportId)
+      ? this.requireCandidate(decoded.transportId)
       : this.legacySessionOwner();
     const session = await candidate.adapter.resume({
       ...request,
@@ -109,7 +118,7 @@ export class ProviderRuntimeAdapter implements RuntimeAdapter {
 
   async sendTurn(request: NativeTurnRequest): Promise<RunHandle> {
     const decoded = request.nativeSessionId
-      ? decodeSession(request.nativeSessionId)
+      ? decodeTransportSessionBinding(request.nativeSessionId)
       : undefined;
     const candidate = decoded
       ? this.requireCandidate(decoded.transportId)
@@ -191,17 +200,6 @@ export class ProviderRuntimeAdapter implements RuntimeAdapter {
     return candidate;
   }
 
-  private resumeCandidate(transportId: string): RuntimeTransportCandidate {
-    const candidate = this.candidatesById.get(transportId);
-    if (candidate) return candidate;
-    const retiredAliases = RETIRED_TRANSPORT_ALIASES[
-      this.kind
-    ] as readonly string[];
-    return retiredAliases.includes(transportId)
-      ? this.legacySessionOwner()
-      : this.requireCandidate(transportId);
-  }
-
   private legacySessionOwner(): RuntimeTransportCandidate {
     const owners = this.candidates.filter(
       ({ descriptor }) => descriptor.legacySessionOwner,
@@ -222,7 +220,10 @@ function bindSession(
   if (session.bindingState === "deferred") return session;
   return {
     ...session,
-    nativeSessionId: encodeSession(transportId, session.nativeSessionId),
+    nativeSessionId: encodeTransportSessionBinding(
+      transportId,
+      session.nativeSessionId,
+    ),
   };
 }
 
@@ -233,26 +234,6 @@ function preserveLegacySession(
   return session.bindingState === "deferred"
     ? session
     : { ...session, nativeSessionId };
-}
-
-function encodeSession(transportId: string, nativeSessionId: string): string {
-  return `${SESSION_PREFIX}${transportId}:${Buffer.from(nativeSessionId).toString("base64url")}`;
-}
-
-function decodeSession(value: string): DecodedBinding | undefined {
-  if (!value.startsWith(SESSION_PREFIX)) return undefined;
-  const binding = value.slice(SESSION_PREFIX.length);
-  const separator = binding.indexOf(":");
-  if (separator <= 0 || separator === binding.length - 1) {
-    throw new Error("Invalid Okami transport session binding");
-  }
-  const transportId = binding.slice(0, separator);
-  const nativeSessionId = Buffer.from(
-    binding.slice(separator + 1),
-    "base64url",
-  ).toString("utf8");
-  if (!nativeSessionId) throw new Error("Empty native session binding");
-  return { transportId, nativeSessionId };
 }
 
 async function safeDetect(adapter: RuntimeAdapter): Promise<RuntimeHealth> {

@@ -9,7 +9,62 @@ import {
 import { tmpdir } from "node:os";
 import path from "node:path";
 import { expect, it } from "vitest";
-import { resolveManagedRuntimeCommands } from "./managed-runtime";
+import {
+  resolveManagedRuntimeCommands,
+  resolveManagedRuntimeResourcesDirectory,
+} from "./managed-runtime";
+
+it("selects the provisioned workspace cache in development and packaged resources in production", () => {
+  expect(
+    resolveManagedRuntimeResourcesDirectory({
+      isPackaged: false,
+      appPath: "/workspace/OkamiCode",
+      resourcesPath: "/Applications/OkamiCode.app/Contents/Resources",
+    }),
+  ).toBe(path.resolve("/workspace/OkamiCode", ".cache"));
+  expect(
+    resolveManagedRuntimeResourcesDirectory({
+      isPackaged: true,
+      appPath: "/workspace/OkamiCode",
+      resourcesPath: "/Applications/OkamiCode.app/Contents/Resources",
+    }),
+  ).toBe("/Applications/OkamiCode.app/Contents/Resources");
+});
+
+it("resolves the real provisioner layout during development bootstrap", () => {
+  const fixture = createCompleteManagedRuntimeFixture(".cache");
+  const resourcesDirectory = resolveManagedRuntimeResourcesDirectory({
+    isPackaged: false,
+    appPath: fixture.root,
+    resourcesPath: path.join(fixture.root, "packaged-resources"),
+  });
+
+  const commands = resolveManagedRuntimeCommands({
+    ...fixture.options,
+    resourcesDirectory,
+  });
+
+  expect(commands.cursor).toBe(
+    path.join(
+      fixture.root,
+      ".cache",
+      "managed-runtimes",
+      "darwin-arm64",
+      "cursor",
+      "cursor-agent",
+    ),
+  );
+  expect(commands.agy).toBe(
+    path.join(
+      fixture.root,
+      ".cache",
+      "managed-runtimes",
+      "darwin-arm64",
+      "agy",
+      "agy",
+    ),
+  );
+});
 
 it("materializes pinned official runtimes inside Okami-owned storage", () => {
   const root = mkdtempSync(path.join(tmpdir(), "okami-managed-runtime-"));
@@ -154,7 +209,7 @@ it("rejects a pre-existing Grok executable that diverges from the packaged paylo
   );
 });
 
-function createCompleteManagedRuntimeFixture(): {
+function createCompleteManagedRuntimeFixture(resourcesName = "resources"): {
   root: string;
   grokTarget: string;
   options: Parameters<typeof resolveManagedRuntimeCommands>[0];
@@ -163,7 +218,7 @@ function createCompleteManagedRuntimeFixture(): {
   const codexPackage = path.join(root, "codex-platform");
   const grokPackage = path.join(root, "grok-platform");
   const opencodePackage = path.join(root, "opencode-platform");
-  const resourcesDirectory = path.join(root, "resources");
+  const resourcesDirectory = path.join(root, resourcesName);
   const runtimeDirectory = path.join(root, "okami");
   const files = [
     path.join(codexPackage, "vendor", "aarch64-apple-darwin", "bin", "codex"),

@@ -152,16 +152,22 @@ describe("ProviderRuntimeAdapter", () => {
       input: "continue after migration",
     });
 
-    expect(tokenPlan.resumeRequests[0]?.nativeSessionId).toBe(
-      "persisted-cli-session",
-    );
+    expect(tokenPlan.resumeRequests).toHaveLength(0);
+    expect(tokenPlan.startRequests).toHaveLength(1);
     expect(resumed.nativeSessionId).toBe(
-      `okami:v1:mimo-token-plan:${Buffer.from("persisted-cli-session").toString(
+      `okami:v1:mimo-token-plan:${Buffer.from("cli-native-session").toString(
         "base64url",
       )}`,
     );
+    expect(resumed).toMatchObject({
+      migration: {
+        fromNativeSessionId: removedBinding,
+        toNativeSessionId: resumed.nativeSessionId,
+        rehydrationRequired: true,
+      },
+    });
     expect(tokenPlan.turnRequests[0]?.nativeSessionId).toBe(
-      "persisted-cli-session",
+      "cli-native-session",
     );
   });
 
@@ -180,10 +186,16 @@ describe("ProviderRuntimeAdapter", () => {
       nativeSessionId: removedBinding,
     });
 
-    expect(tokenPlan.resumeRequests[0]?.nativeSessionId).toBe(
-      "persisted-minimax-session",
-    );
+    expect(tokenPlan.resumeRequests).toHaveLength(0);
+    expect(tokenPlan.startRequests).toHaveLength(1);
     expect(resumed.nativeSessionId).toMatch(/^okami:v1:minimax-token-plan:/u);
+    expect(resumed).toMatchObject({
+      migration: {
+        fromNativeSessionId: removedBinding,
+        toNativeSessionId: resumed.nativeSessionId,
+        rehydrationRequired: true,
+      },
+    });
   });
 
   it("rejects an unknown encoded transport instead of migrating it", async () => {

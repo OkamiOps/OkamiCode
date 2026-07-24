@@ -28,6 +28,7 @@ const MIGRATIONS = [
   "schema/023-inbox-flows-and-ownership.sql",
   "schema/024-kanban-card-updates.sql",
   "schema/025-shared-conversation-history.sql",
+  "schema/026-native-session-rehydration.sql",
 ];
 
 export function latestMigrationVersion(): number {

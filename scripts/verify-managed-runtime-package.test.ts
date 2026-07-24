@@ -4,6 +4,7 @@ import {
   mkdtemp,
   readFile,
   realpath,
+  stat,
   symlink,
   writeFile,
 } from "node:fs/promises";
@@ -11,6 +12,7 @@ import { tmpdir } from "node:os";
 import path from "node:path";
 import { brotliCompressSync } from "node:zlib";
 import { describe, expect, it } from "vitest";
+import { builtInRuntimeManifests } from "../src/main/runtime/manifest";
 
 const verifier = await import("./verify-managed-runtime-package.mjs").catch(
   () => ({ verifyRuntimeOwnership: undefined }),
@@ -224,6 +226,83 @@ describe("managed runtime package verifier", () => {
     ).rejects.toThrow(/only Claude may be external/iu);
   });
 
+  it("reports absent Claude as external and unavailable without probing it", async () => {
+    expect(verifier.verifyRuntimeOwnership).toBeTypeOf("function");
+    const fixture = await createPackageFixture();
+    let probes = 0;
+
+    const proof = await verifier.verifyRuntimeOwnership!({
+      appPath: fixture.appPath,
+      userDataDirectory: fixture.userDataDirectory,
+      runtimes: [
+        {
+          provider: "claude",
+          transport: "claude-cli",
+          entitlement: "subscription",
+          source: null,
+          external: true,
+          unavailable: true,
+        },
+      ],
+      execute: async () => {
+        probes += 1;
+        return { stdout: "must-not-run", stderr: "" };
+      },
+    });
+
+    expect(probes).toBe(0);
+    expect(proof.runtimes).toEqual([
+      {
+        provider: "claude",
+        transport: "claude-cli",
+        entitlement: "subscription",
+        version: null,
+        source: null,
+        checksum: null,
+        ownership: "external",
+        status: "unavailable",
+      },
+    ]);
+  });
+
+  it("derives verifier transport and entitlement contracts from shipped runtime manifests", () => {
+    expect(verifier.deriveProviderContracts).toBeTypeOf("function");
+    const contracts = verifier.deriveProviderContracts!(
+      builtInRuntimeManifests,
+    );
+
+    expect(
+      contracts.map(
+        (entry: {
+          provider: string;
+          transport: string;
+          entitlement: string;
+        }) => ({
+          provider: entry.provider,
+          transport: entry.transport,
+          entitlement: entry.entitlement,
+        }),
+      ),
+    ).toEqual(
+      Object.values(builtInRuntimeManifests).map((manifest) => ({
+        provider: manifest.runtimeId,
+        transport: manifest.transports[0].id,
+        entitlement: manifest.transports[0].entitlement,
+      })),
+    );
+
+    const drifted = structuredClone(builtInRuntimeManifests) as {
+      mimo: { transports: Array<{ id: string }> };
+      [provider: string]: unknown;
+    };
+    drifted.mimo.transports[0].id = "mimo-token-plan-v2";
+    expect(
+      verifier.deriveProviderContracts!(drifted).find(
+        (entry: { provider: string }) => entry.provider === "mimo",
+      ).transport,
+    ).toBe("mimo-token-plan-v2");
+  });
+
   it("discovers and verifies a package-shaped fixture through its generated trust manifest", async () => {
     expect(trustGenerator.generateManagedRuntimeTrustManifest).toBeTypeOf(
       "function",
@@ -243,14 +322,14 @@ describe("managed runtime package verifier", () => {
     expect(
       trust.providers.map((entry: { provider: string }) => entry.provider),
     ).toEqual([
+      "claude",
       "codex",
-      "grok",
       "cursor",
       "agy",
-      "opencode",
+      "grok",
       "mimo",
       "minimax",
-      "claude",
+      "opencode",
     ]);
     expect(proof.status).toBe("pass");
     expect(proof.trustManifest).toMatchObject({
@@ -276,6 +355,32 @@ describe("managed runtime package verifier", () => {
           (entry: { provider: string }) => entry.provider === "grok",
         ).sha256,
       },
+    });
+  });
+
+  it("cleans default temporary verifier user-data but preserves explicit user-data", async () => {
+    expect(trustGenerator.generateManagedRuntimeTrustManifest).toBeTypeOf(
+      "function",
+    );
+    expect(verifier.verifyManagedRuntimePackage).toBeTypeOf("function");
+    const fixture = await createPackageShapedFixture();
+    await trustGenerator.generateManagedRuntimeTrustManifest!({
+      appPath: fixture.appPath,
+    });
+
+    const temporaryProof = await verifier.verifyManagedRuntimePackage!({
+      appPath: fixture.appPath,
+    });
+    await expect(stat(temporaryProof.userDataDirectory)).rejects.toMatchObject({
+      code: "ENOENT",
+    });
+
+    await verifier.verifyManagedRuntimePackage!({
+      appPath: fixture.appPath,
+      userDataDirectory: fixture.userDataDirectory,
+    });
+    await expect(stat(fixture.userDataDirectory)).resolves.toMatchObject({
+      isDirectory: expect.any(Function),
     });
   });
 
@@ -316,7 +421,7 @@ describe("managed runtime package verifier", () => {
     {
       label: "missing",
       mutate: (providers: unknown[]) => providers.slice(1),
-      expected: /trust manifest.*missing.*codex/iu,
+      expected: /trust manifest.*missing.*claude/iu,
     },
     {
       label: "extra",

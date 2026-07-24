@@ -6,9 +6,11 @@ import {
   access,
   lstat,
   mkdir,
+  mkdtemp,
   opendir,
   readFile,
   realpath,
+  rm,
   stat,
 } from "node:fs/promises";
 import { constants as fsConstants } from "node:fs";
@@ -18,6 +20,7 @@ import { promisify } from "node:util";
 import { pathToFileURL } from "node:url";
 import { brotliDecompress } from "node:zlib";
 import { materializeVerifiedArtifactSync } from "../src/main/runtime/managed-artifact.mjs";
+import { builtInRuntimeManifests } from "../src/main/runtime/manifest.ts";
 
 const execFileAsync = promisify(execFile);
 const brotliDecompressAsync = promisify(brotliDecompress);
@@ -25,64 +28,88 @@ const brotliDecompressAsync = promisify(brotliDecompress);
 export const MINIMAL_PATH = "/usr/bin:/bin";
 export const TRUST_MANIFEST_NAME = "managed-runtime-trust-manifest.json";
 
-const PROVIDER_CONTRACTS = Object.freeze([
-  Object.freeze({
-    provider: "codex",
-    transport: "codex-managed",
-    entitlement: "subscription",
+const PROVIDER_ARTIFACT_POLICIES = Object.freeze({
+  claude: Object.freeze({ ownership: "external", artifactEncoding: null }),
+  codex: Object.freeze({
     ownership: "app-bundle",
     artifactEncoding: "identity",
   }),
-  Object.freeze({
-    provider: "grok",
-    transport: "grok-managed",
-    entitlement: "subscription",
+  cursor: Object.freeze({
+    ownership: "app-bundle",
+    artifactEncoding: "identity",
+  }),
+  agy: Object.freeze({
+    ownership: "app-bundle",
+    artifactEncoding: "identity",
+  }),
+  grok: Object.freeze({
     ownership: "okami-user-data",
     artifactEncoding: "brotli",
   }),
-  Object.freeze({
-    provider: "cursor",
-    transport: "cursor-agent",
-    entitlement: "subscription",
+  mimo: Object.freeze({ ownership: "token-plan", artifactEncoding: null }),
+  minimax: Object.freeze({ ownership: "token-plan", artifactEncoding: null }),
+  opencode: Object.freeze({
     ownership: "app-bundle",
     artifactEncoding: "identity",
   }),
-  Object.freeze({
-    provider: "agy",
-    transport: "agy-cli",
-    entitlement: "subscription",
-    ownership: "app-bundle",
-    artifactEncoding: "identity",
-  }),
-  Object.freeze({
-    provider: "opencode",
-    transport: "opencode-acp",
-    entitlement: "provider_managed",
-    ownership: "app-bundle",
-    artifactEncoding: "identity",
-  }),
-  Object.freeze({
-    provider: "mimo",
-    transport: "mimo-token-plan",
-    entitlement: "token_plan",
-    ownership: "token-plan",
-    artifactEncoding: null,
-  }),
-  Object.freeze({
-    provider: "minimax",
-    transport: "minimax-token-plan",
-    entitlement: "token_plan",
-    ownership: "token-plan",
-    artifactEncoding: null,
-  }),
-  Object.freeze({
-    provider: "claude",
-    transport: "claude-cli",
-    entitlement: "subscription",
-    ownership: "external",
-    artifactEncoding: null,
-  }),
-]);
+});
+
+export function deriveProviderContracts(runtimeManifests) {
+  if (!runtimeManifests || typeof runtimeManifests !== "object") {
+    throw new Error("Shipped runtime manifests are required");
+  }
+  const contracts = [];
+  const providers = new Set();
+  for (const manifest of Object.values(runtimeManifests)) {
+    if (
+      !manifest ||
+      typeof manifest.runtimeId !== "string" ||
+      !Array.isArray(manifest.transports) ||
+      manifest.transports.length !== 1
+    ) {
+      throw new Error(
+        "Each shipped runtime manifest must declare exactly one transport",
+      );
+    }
+    const provider = manifest.runtimeId;
+    if (providers.has(provider)) {
+      throw new Error(`Duplicate shipped runtime manifest for ${provider}`);
+    }
+    providers.add(provider);
+    const policy = PROVIDER_ARTIFACT_POLICIES[provider];
+    if (!policy) {
+      throw new Error(`No verifier artifact policy for ${provider}`);
+    }
+    const transport = manifest.transports[0];
+    const executableExpected = policy.ownership !== "token-plan";
+    if (
+      executableExpected !==
+      (typeof transport.executable === "string" &&
+        transport.executable.length > 0)
+    ) {
+      throw new Error(
+        `Shipped runtime executable contract mismatch for ${provider}`,
+      );
+    }
+    contracts.push(
+      Object.freeze({
+        provider,
+        transport: transport.id,
+        entitlement: transport.entitlement,
+        ownership: policy.ownership,
+        artifactEncoding: policy.artifactEncoding,
+      }),
+    );
+  }
+  for (const provider of Object.keys(PROVIDER_ARTIFACT_POLICIES)) {
+    if (!providers.has(provider)) {
+      throw new Error(`Shipped runtime manifests are missing ${provider}`);
+    }
+  }
+  return Object.freeze(contracts);
+}
+
+const PROVIDER_CONTRACTS = deriveProviderContracts(builtInRuntimeManifests);
 
 /**
  * Validate resolved runtime manifests against the real filesystem, probe
@@ -106,6 +133,20 @@ export async function verifyRuntimeOwnership(options) {
       throw new Error(`Duplicate runtime manifest for ${manifest.provider}`);
     }
     providers.add(manifest.provider);
+
+    if (isUnavailableExternalClaude(manifest)) {
+      runtimes.push({
+        provider: manifest.provider,
+        transport: manifest.transport,
+        entitlement: manifest.entitlement,
+        version: null,
+        source: null,
+        checksum: null,
+        ownership: "external",
+        status: "unavailable",
+      });
+      continue;
+    }
 
     if (manifest.entitlement === "token_plan") {
       if (manifest.source !== null) {
@@ -265,17 +306,19 @@ export async function discoverPackagedRuntimes(options) {
       sources.set(contract.provider, artifact);
     }
   }
-  const claude =
-    options.claudeSource ??
-    (await findExecutableOnPath(
-      "claude",
-      options.hostPath ?? process.env.PATH,
-    ));
-  if (!claude) {
+  const expectedManagedProviders = PROVIDER_CONTRACTS.filter(
+    (contract) =>
+      contract.ownership !== "token-plan" && contract.ownership !== "external",
+  ).map((contract) => contract.provider);
+  if (
+    sources.size !== expectedManagedProviders.length ||
+    expectedManagedProviders.some((provider) => !sources.has(provider))
+  ) {
     throw new Error(
-      "Claude is the sole allowed external runtime, but no Claude executable was found",
+      "Resolved managed runtime inventory does not match shipped runtime manifests",
     );
   }
+  const claude = options.claudeSource ?? null;
 
   return PROVIDER_CONTRACTS.map((contract) => {
     const entry = entries.get(contract.provider);
@@ -283,6 +326,16 @@ export async function discoverPackagedRuntimes(options) {
       return tokenPlanManifest(contract.provider, contract.transport);
     }
     if (contract.ownership === "external") {
+      if (!claude) {
+        return {
+          provider: contract.provider,
+          transport: contract.transport,
+          entitlement: contract.entitlement,
+          source: null,
+          external: true,
+          unavailable: true,
+        };
+      }
       return {
         ...executableManifest(
           contract.provider,
@@ -307,36 +360,43 @@ export async function discoverPackagedRuntimes(options) {
 
 export async function verifyManagedRuntimePackage(options) {
   const appPath = path.resolve(options.appPath);
-  const userDataDirectory = path.resolve(
-    options.userDataDirectory ??
-      path.join(path.dirname(appPath), ".managed-runtime-verifier-user-data"),
-  );
-  await mkdir(userDataDirectory, { recursive: true, mode: 0o700 });
-  const trust = await readManagedRuntimeTrustManifest(appPath);
-  const runtimes = await discoverPackagedRuntimes({
-    appPath,
-    userDataDirectory,
-    claudeSource: options.claudeSource,
-    hostPath: options.hostPath,
-    target: options.target,
-    trustManifest: trust.manifest,
-  });
-  const proof = await verifyRuntimeOwnership({
-    appPath,
-    userDataDirectory,
-    runtimes,
-    requireExpectedChecksums: true,
-  });
-  return {
-    ...proof,
-    trustManifest: {
-      source: trust.source,
-      checksum: {
-        algorithm: "sha256",
-        value: trust.checksum,
+  const preserveUserData = options.userDataDirectory !== undefined;
+  const userDataDirectory = preserveUserData
+    ? path.resolve(options.userDataDirectory)
+    : await mkdtemp(path.join(tmpdir(), "okami-runtime-verifier-"));
+  if (preserveUserData) {
+    await mkdir(userDataDirectory, { recursive: true, mode: 0o700 });
+  }
+  try {
+    const trust = await readManagedRuntimeTrustManifest(appPath);
+    const runtimes = await discoverPackagedRuntimes({
+      appPath,
+      userDataDirectory,
+      claudeSource: options.claudeSource,
+      target: options.target,
+      trustManifest: trust.manifest,
+    });
+    const proof = await verifyRuntimeOwnership({
+      appPath,
+      userDataDirectory,
+      runtimes,
+      requireExpectedChecksums: true,
+    });
+    return {
+      ...proof,
+      trustManifest: {
+        source: trust.source,
+        checksum: {
+          algorithm: "sha256",
+          value: trust.checksum,
+        },
       },
-    },
-  };
+    };
+  } finally {
+    if (!preserveUserData) {
+      await rm(userDataDirectory, { recursive: true, force: true });
+    }
+  }
 }
 
 export async function buildManagedRuntimeTrustManifest(options) {
@@ -607,10 +667,20 @@ function validateManifest(manifest) {
   ) {
     throw new Error(`${manifest.provider} runtime transport is required`);
   }
+  if (isUnavailableExternalClaude(manifest)) return;
   if (manifest.entitlement === "token_plan") return;
   if (typeof manifest.source !== "string" || manifest.source.length === 0) {
     throw new Error(`${manifest.provider} executable source is required`);
   }
+}
+
+function isUnavailableExternalClaude(manifest) {
+  return (
+    manifest?.provider === "claude" &&
+    manifest.external === true &&
+    manifest.unavailable === true &&
+    manifest.source === null
+  );
 }
 
 async function requireDirectory(candidate, label) {
@@ -758,20 +828,6 @@ async function findUniqueFile(root, predicate, label) {
     );
   }
   return matches[0];
-}
-
-async function findExecutableOnPath(executableName, searchPath) {
-  for (const directory of String(searchPath ?? "").split(path.delimiter)) {
-    if (!directory || !path.isAbsolute(directory)) continue;
-    const candidate = path.join(directory, executableName);
-    try {
-      await access(candidate, fsConstants.X_OK);
-      return realpath(candidate);
-    } catch {
-      // Continue to the next explicit host PATH entry. This lookup is Claude-only.
-    }
-  }
-  return null;
 }
 
 function errorMessage(error) {
