@@ -158,6 +158,7 @@ interface RegisterIpcHandlersOptions {
   rendererUrl: string;
   state: AppState;
   modelCatalog?: () => ModelCatalogEntry[];
+  refreshTokenPlanModels?: () => Promise<void>;
   modelFavoritesService?: Pick<ModelFavoritesService, "list" | "set">;
   laneEffort?: Map<string, string>;
   clientCapabilities?: () => Promise<CliCapability[]>;
@@ -209,6 +210,7 @@ export function registerIpcHandlers({
   rendererUrl,
   state,
   modelCatalog = () => [],
+  refreshTokenPlanModels,
   modelFavoritesService,
   laneEffort = new Map<string, string>(),
   clientCapabilities = createCliCapabilityDetector(),
@@ -338,6 +340,7 @@ export function registerIpcHandlers({
         subscriptionDeviceAuthService,
         providerAuthSessionService,
         providerAuthStatusService,
+        refreshTokenPlanModels,
       );
       return ipcResponseSchemas[channel].parse(response);
     });
@@ -377,6 +380,7 @@ async function dispatch(
     | undefined,
   providerAuthStatusService:
     Pick<ProviderAuthStatusService, "list"> | undefined,
+  refreshTokenPlanModels: (() => Promise<void>) | undefined,
 ): Promise<unknown> {
   switch (channel) {
     case "system:doctor":
@@ -429,6 +433,7 @@ async function dispatch(
         token: input.token,
         ...(input.baseUrl ? { baseUrl: input.baseUrl } : {}),
       });
+      await refreshTokenPlanModels?.();
       return {
         provider: input.provider,
         entitlement: "token_plan" as const,
@@ -441,6 +446,7 @@ async function dispatch(
       }
       const input = request as IpcRequest<"providerAuth:deleteTokenPlan">;
       await state.providerCredentials.delete(input.provider);
+      await refreshTokenPlanModels?.();
       return {
         provider: input.provider,
         entitlement: "token_plan" as const,

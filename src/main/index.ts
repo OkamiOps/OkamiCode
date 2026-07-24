@@ -434,20 +434,8 @@ async function bootstrap(): Promise<void> {
 
   const modelCatalogService = createModelCatalogService({
     cachePath: path.join(app.getPath("userData"), "claude-models.json"),
-    apiCatalogs: {
-      mimo: [
-        {
-          id: process.env.MIMO_MODEL?.trim() || "mimo-v2.5-pro",
-          label: process.env.MIMO_MODEL?.trim() || "mimo-v2.5-pro",
-        },
-      ],
-      minimax: [
-        {
-          id: process.env.MINIMAX_MODEL?.trim() || "MiniMax-M3",
-          label: process.env.MINIMAX_MODEL?.trim() || "MiniMax-M3",
-        },
-      ],
-    },
+    tokenPlanCredentials: providerCredentialVault,
+    codexBinary: runtimeCommands.codex,
     cursorCachePath: path.join(app.getPath("userData"), "cursor-models.json"),
     cursorBinary: runtimeCommands.cursor,
     agyCachePath: path.join(app.getPath("userData"), "agy-models.json"),
@@ -463,9 +451,11 @@ async function bootstrap(): Promise<void> {
   });
   if (process.env.OKAMI_RUN_LIVE_CLI_TESTS !== "0") {
     void modelCatalogService.refreshClaude();
+    void modelCatalogService.refreshCodex();
     void modelCatalogService.refreshCursor();
     void modelCatalogService.refreshAgy();
     void modelCatalogService.refreshGrok();
+    void modelCatalogService.refreshTokenPlans();
   }
 
   const state = createAppState({
@@ -587,6 +577,7 @@ async function bootstrap(): Promise<void> {
     ipcMain,
     laneEffort,
     modelCatalog: () => modelCatalogService.list(),
+    refreshTokenPlanModels: () => modelCatalogService.refreshTokenPlans(),
     modelFavoritesService,
     rendererUrl:
       process.env.ELECTRON_RENDERER_URL ??

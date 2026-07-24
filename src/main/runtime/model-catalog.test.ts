@@ -73,6 +73,32 @@ describe("Cursor model catalog", () => {
     }
   });
 
+  it("refreshes Codex from the account-aware app-server model list", async () => {
+    const paths = cachePaths();
+    const fetchCodexModels = vi.fn(async () => [
+      {
+        id: "gpt-provider-new",
+        label: "GPT Provider New",
+        efforts: ["low", "high"],
+        defaultEffort: "high",
+      },
+    ]);
+    const service = createModelCatalogService({
+      cachePath: paths.claude,
+      codexBinary: "/managed/codex",
+      fetchCodexModels,
+    });
+
+    await service.refreshCodex();
+
+    expect(fetchCodexModels).toHaveBeenCalledWith("/managed/codex");
+    const codex = service.list().find((entry) => entry.runtimeKind === "codex");
+    expect(codex?.routeKind).toBe("native");
+    expect(codex?.models).toContainEqual(
+      expect.objectContaining({ id: "gpt-provider-new" }),
+    );
+  });
+
   it("offers OpenCode only after the ACP command is verified", () => {
     const paths = cachePaths();
     const unavailable = createModelCatalogService({
@@ -223,6 +249,52 @@ describe("Cursor model catalog", () => {
         label: "MiMo V2.5 Pro Ultraspeed",
       },
     ]);
+  });
+
+  it("refreshes Token Plan catalogs from each provider instead of seeded models", async () => {
+    const paths = cachePaths();
+    const fetchModels = vi.fn(async (baseUrl: string, token: string) => {
+      expect(token).toMatch(/^(tp-|sk-cp-)/u);
+      return baseUrl.includes("xiaomimimo")
+        ? [
+            { id: "mimo-v2.5", label: "mimo-v2.5" },
+            { id: "mimo-v2.5-pro", label: "mimo-v2.5-pro" },
+          ]
+        : [
+            { id: "MiniMax-M2.7", label: "MiniMax-M2.7" },
+            {
+              id: "MiniMax-M2.7-highspeed",
+              label: "MiniMax-M2.7-highspeed",
+            },
+          ];
+    });
+    const service = createModelCatalogService({
+      cachePath: paths.claude,
+      tokenPlanCredentials: {
+        get: vi.fn(async (provider: "mimo" | "minimax") =>
+          provider === "mimo"
+            ? {
+                token: "tp-live",
+                baseUrl: "https://token-plan-ams.xiaomimimo.com/v1",
+              }
+            : { token: "sk-cp-live" },
+        ),
+      },
+      fetchModels,
+    });
+
+    await service.refreshTokenPlans();
+
+    expect(
+      service.list().find((entry) => entry.runtimeKind === "mimo")?.models,
+    ).toHaveLength(2);
+    expect(
+      service.list().find((entry) => entry.runtimeKind === "minimax")?.models,
+    ).toHaveLength(2);
+    expect(fetchModels).toHaveBeenCalledWith(
+      "https://api.minimax.io/v1",
+      "sk-cp-live",
+    );
   });
 
   it("reads only the MiniMax provider models bundled by the installed MiniMax Code app", () => {

@@ -102,9 +102,13 @@ const cursorLane: IpcResponse<"lane:list">[number] = {
 function renderWorkbenchFixture({
   lanes,
   history = { userMessages: [], events: [] },
+  ensureLane: ensureLaneImplementation,
 }: {
   lanes: IpcResponse<"lane:list">;
   history?: IpcResponse<"conversation:history">;
+  ensureLane?: (
+    request: IpcRequest<"lane:ensure">,
+  ) => Promise<IpcResponse<"lane:ensure">>;
 }) {
   let eventListener: ((event: CanonicalEvent) => void) | undefined;
   const calls = {
@@ -167,7 +171,9 @@ function renderWorkbenchFixture({
     ]),
     ensureLane: vi.fn(async (request: IpcRequest<"lane:ensure">) => {
       calls.laneEnsure.push(request);
-      return { ...codexLane, model: request.model };
+      return ensureLaneImplementation
+        ? ensureLaneImplementation(request)
+        : { ...codexLane, model: request.model };
     }),
     listLanes: vi.fn(async () => lanes),
     openLane: vi.fn(async (request) => {
@@ -409,6 +415,40 @@ describe("WorkbenchPage", () => {
       model: "gpt-5.6-sol",
     });
     expect(runtime.calls.laneClose).toHaveLength(0);
+  });
+
+  it("cannot send through the previous provider while a model switch is pending", async () => {
+    let finishSwitch: ((lane: IpcResponse<"lane:ensure">) => void) | undefined;
+    const runtime = renderWorkbenchFixture({
+      lanes: [claudeLane],
+      ensureLane: () =>
+        new Promise((resolve) => {
+          finishSwitch = resolve;
+        }),
+    });
+    const user = userEvent.setup();
+
+    await user.click(
+      await screen.findByRole("button", { name: "Selecionar modelo" }),
+    );
+    await user.click(screen.getByRole("tab", { name: /ChatGPT/i }));
+    await user.click(screen.getByRole("option", { name: /GPT-5\.6-sol/i }));
+    await user.type(screen.getByRole("textbox", { name: "Mensagem" }), "teste");
+
+    expect(screen.getByRole("button", { name: "Enviar" })).toBeDisabled();
+    fireEvent.submit(
+      screen.getByRole("button", { name: "Enviar" }).closest("form")!,
+    );
+    expect(runtime.calls.laneSendTurn).toHaveLength(0);
+
+    finishSwitch?.({ ...codexLane, model: "gpt-5.6-sol" });
+    await waitFor(() =>
+      expect(screen.getByRole("button", { name: "Enviar" })).toBeEnabled(),
+    );
+    await user.click(screen.getByRole("button", { name: "Enviar" }));
+    expect(runtime.calls.laneSendTurn).toEqual([
+      { laneId: codexLaneId, input: "teste" },
+    ]);
   });
 
   it("shows the effective route before send and cancels the active run", async () => {

@@ -472,7 +472,7 @@ export function Composer({
 
   async function submit() {
     const outgoing = composeOutgoing();
-    if (!lane || !outgoing || isSending) return;
+    if (!lane || !outgoing || isSending || isOpeningLane) return;
     const goalText = /^\/goal\s+(.+)$/isu.exec(outgoing)?.[1]?.trim();
     if (goalText) {
       const nextGoal: ComposerGoal = {
@@ -828,7 +828,7 @@ export function Composer({
         <ModelPicker
           catalog={catalog}
           favorites={favorites}
-          disabled={isSending}
+          disabled={isSending || isOpeningLane}
           isOpening={isOpeningLane}
           onSelectModel={(runtimeKind, model) => {
             onSelectModel(runtimeKind, model);
@@ -937,7 +937,10 @@ export function Composer({
             aria-label="Enviar"
             className="chat-send"
             disabled={
-              !lane || (!input.trim() && attachments.length === 0) || isSending
+              !lane ||
+              (!input.trim() && attachments.length === 0) ||
+              isSending ||
+              isOpeningLane
             }
             type="submit"
           >

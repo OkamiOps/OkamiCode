@@ -4,7 +4,10 @@ import type {
   RuntimeKind,
 } from "../../../shared/contracts/lane";
 import type { Database } from "../connection";
-import { isRetiredTransportBinding } from "../../runtime/sdk/session-binding";
+import {
+  decodeTransportSessionBinding,
+  isRetiredTransportBinding,
+} from "../../runtime/sdk/session-binding";
 import { OptimisticConcurrencyError } from "./tasks";
 
 export interface LaneRecord {
@@ -157,7 +160,14 @@ export class LaneRepository {
   compareAndMigrateNativeSession(
     migration: NativeSessionMigrationRecord,
   ): void {
+    const from = decodeTransportSessionBinding(migration.fromNativeSessionId);
+    const to = decodeTransportSessionBinding(migration.toNativeSessionId);
+    const sameCurrentTransport =
+      from !== undefined &&
+      to !== undefined &&
+      from.transportId === to.transportId;
     if (
+      !sameCurrentTransport &&
       !isRetiredTransportBinding(
         migration.runtimeKind,
         migration.fromNativeSessionId,

@@ -224,6 +224,7 @@ export function SettingsPage() {
   const providerConnections = useQuery({
     queryKey: ["provider-connections"],
     queryFn: () => workbenchClient.providerAuthStatus(),
+    refetchInterval: interactiveProvider ? 3_000 : false,
   });
   const saveTokenPlan = useMutation({
     mutationFn: workbenchClient.providerAuthSetTokenPlan,
@@ -288,6 +289,10 @@ export function SettingsPage() {
     (status) => status.tone === "ready",
   ).length;
   const runtime = runtimeFor(runtimes, provider.id);
+  const selectedConnection = connections.find(
+    (entry) => entry.provider === provider.id,
+  );
+  const selectedConnected = selectedConnection?.status === "connected";
   const checking =
     doctor.isFetching ||
     providerAuth.isFetching ||
@@ -454,6 +459,7 @@ export function SettingsPage() {
                 startDeviceAuth.variables?.provider === provider.id
               }
               provider={provider.id as "codex" | "grok"}
+              connected={selectedConnected}
               onStart={() => {
                 setDeviceChallenge(undefined);
                 startDeviceAuth.mutate({
@@ -485,7 +491,9 @@ export function SettingsPage() {
                 <KeyRound aria-hidden="true" size={15} />
                 {provider.id === "opencode"
                   ? "Gerenciar providers"
-                  : "Conectar conta"}
+                  : selectedConnected
+                    ? "Reconectar conta"
+                    : "Conectar conta"}
               </button>
               {interactiveProvider === provider.id && (
                 <ProviderAuthTerminal
@@ -757,12 +765,14 @@ export function SettingsPage() {
 
 function DeviceConnection({
   challenge,
+  connected,
   error,
   pending,
   provider,
   onStart,
 }: {
   challenge?: IpcResponse<"providerAuth:startDevice">;
+  connected: boolean;
   error?: unknown;
   pending: boolean;
   provider: "codex" | "grok";
@@ -784,7 +794,11 @@ function DeviceConnection({
         type="button"
       >
         <KeyRound aria-hidden="true" size={15} />
-        {pending ? "Gerando código…" : "Conectar assinatura"}
+        {pending
+          ? "Gerando código…"
+          : connected
+            ? "Reconectar assinatura"
+            : "Conectar assinatura"}
       </button>
       {challenge && (
         <div className="settings-device-challenge" role="status">

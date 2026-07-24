@@ -314,6 +314,11 @@ export function WorkbenchPage({ api = workbenchApi }: WorkbenchPageProps) {
     (activeRunLaneId !== null && activeRunLaneId === selectedLane?.laneId
       ? activeRunId
       : null);
+  const activeRunLane = laneActiveRunId
+    ? (lanes.find(
+        (candidate) => candidate.laneId === runningRuns[laneActiveRunId],
+      ) ?? selectedLane)
+    : null;
   const openUrlInternally = (url: string) => {
     setPreviewUrl(url);
     focusPanel("browser");
@@ -563,6 +568,7 @@ export function WorkbenchPage({ api = workbenchApi }: WorkbenchPageProps) {
             <div className="chat-column">
               <FileOpenContext.Provider value={fileOpener}>
                 <Conversation
+                  activeLane={activeRunLane}
                   initialEvents={historyData?.events ?? []}
                   isRunning={laneActiveRunId !== null}
                   key={effectiveTaskId ?? "none"}

@@ -1,6 +1,7 @@
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import {
   parseProviderAuthProbe,
+  ProviderAuthStatusService,
   type ProviderAuthProbe,
 } from "./provider-auth-status";
 
@@ -60,4 +61,32 @@ describe("parseProviderAuthProbe", () => {
       accountLabel: "marcos@example.com",
     });
   });
+});
+
+it("probes Antigravity through the terminal-aware model command", async () => {
+  const executeAgy = vi.fn(async () => "gemini-3.6-flash-low");
+  const service = new ProviderAuthStatusService({
+    commands: {
+      claude: "/managed/claude",
+      codex: "/managed/codex",
+      cursor: "/managed/cursor",
+      agy: "/managed/agy",
+      grok: "/managed/grok",
+      opencode: "/managed/opencode",
+    },
+    executeAgy,
+    execute: vi.fn(async () => ({
+      stdout: "not logged in",
+      stderr: "",
+      exitCode: 1,
+    })),
+  });
+
+  await expect(service.list()).resolves.toContainEqual(
+    expect.objectContaining({
+      provider: "agy",
+      status: "connected",
+    }),
+  );
+  expect(executeAgy).toHaveBeenCalledWith("/managed/agy");
 });

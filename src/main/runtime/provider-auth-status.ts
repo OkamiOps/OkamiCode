@@ -2,6 +2,7 @@ import { execFile } from "node:child_process";
 import { promisify } from "node:util";
 import { executableEnvironment } from "./commands";
 import { subscriptionEnvironment } from "./codex/adapter";
+import { executeAgyModelList } from "./model-catalog";
 import type { ProviderAuthCommands } from "./provider-auth-session";
 
 const execFileAsync = promisify(execFile);
@@ -25,6 +26,7 @@ export interface ProviderAuthStatus {
 
 interface ProviderAuthStatusDependencies {
   commands: ProviderAuthCommands;
+  executeAgy?: (command: string) => Promise<string>;
   execute?: (
     command: string,
     args: string[],
@@ -48,6 +50,16 @@ export class ProviderAuthStatusService {
   ): Promise<ProviderAuthStatus> {
     const command = this.dependencies.commands[provider];
     try {
+      if (provider === "agy") {
+        const stdout = await (
+          this.dependencies.executeAgy ?? executeAgyModelList
+        )(command);
+        return parseProviderAuthProbe(provider, {
+          stdout,
+          stderr: "",
+          exitCode: 0,
+        });
+      }
       const probe = await (this.dependencies.execute ?? executeProbe)(
         command,
         providerStatusArgs(provider),

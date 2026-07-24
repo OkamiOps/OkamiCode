@@ -7,6 +7,9 @@ import readline from "node:readline";
 import { promisify } from "node:util";
 import { spawn as spawnPty } from "node-pty";
 import type { CatalogRuntimeKind } from "../../shared/contracts/lane";
+import { JsonlProcess } from "./transport";
+import { subscriptionEnvironment } from "./codex/adapter";
+import { CodexClient } from "./codex/client";
 
 const execFileAsync = promisify(execFile);
 
@@ -232,6 +235,15 @@ export type CursorModelListExecutor = (
   args: string[],
 ) => Promise<string>;
 
+export type ProviderModelListExecutor = (
+  baseUrl: string,
+  token: string,
+) => Promise<CatalogModel[]>;
+
+export type CodexModelListExecutor = (
+  binaryPath: string,
+) => Promise<CatalogModel[]>;
+
 export interface ModelCatalogServiceOptions {
   cachePath: string;
   apiCatalogs?: Partial<
@@ -239,6 +251,8 @@ export interface ModelCatalogServiceOptions {
   >;
   cursorCachePath?: string;
   cursorBinary?: string | null;
+  codexBinary?: string | null;
+  fetchCodexModels?: CodexModelListExecutor;
   executeCursor?: CursorModelListExecutor;
   agyCachePath?: string;
   agyBinary?: string | null;
@@ -247,6 +261,12 @@ export interface ModelCatalogServiceOptions {
   opencodeBinary?: string | null;
   opencodeAcpReady?: boolean;
   executeNative?: CursorModelListExecutor;
+  tokenPlanCredentials?: {
+    get(
+      provider: "mimo" | "minimax",
+    ): Promise<{ token: string; baseUrl?: string } | null>;
+  };
+  fetchModels?: ProviderModelListExecutor;
   now?: () => Date;
 }
 
@@ -400,7 +420,7 @@ async function executeCursorModelList(
   return `${stdout}\n${stderr}`;
 }
 
-function executeAgyModelList(binaryPath: string): Promise<string> {
+export function executeAgyModelList(binaryPath: string): Promise<string> {
   return new Promise((resolve, reject) => {
     const terminal = spawnPty(binaryPath, ["models"], {
       cols: 120,
@@ -639,10 +659,110 @@ function mergeCatalogModels(...catalogs: CatalogModel[][]): CatalogModel[] {
 
 export interface ModelCatalogService {
   list(): ModelCatalogEntry[];
+  refreshCodex(): Promise<void>;
   refreshClaude(): Promise<void>;
   refreshCursor(): Promise<void>;
   refreshAgy(): Promise<void>;
   refreshGrok(): Promise<void>;
+  refreshTokenPlans(): Promise<void>;
+}
+
+interface CodexModelListResponse {
+  data?: Array<{
+    id?: unknown;
+    model?: unknown;
+    displayName?: unknown;
+    description?: unknown;
+    hidden?: unknown;
+    defaultReasoningEffort?: unknown;
+    supportedReasoningEfforts?: Array<{ reasoningEffort?: unknown }>;
+  }>;
+  nextCursor?: unknown;
+}
+
+export async function fetchCodexModelsFromAppServer(
+  binaryPath: string,
+): Promise<CatalogModel[]> {
+  const process = await JsonlProcess.spawn(
+    binaryPath,
+    ["app-server", "--stdio"],
+    {
+      cwd: globalThis.process.cwd(),
+      env: subscriptionEnvironment(),
+    },
+  );
+  const client = new CodexClient(process);
+  try {
+    await client.initialize();
+    const models: CatalogModel[] = [];
+    let cursor: string | null = null;
+    do {
+      const response: CodexModelListResponse =
+        await client.request<CodexModelListResponse>("model/list", {
+          cursor,
+          limit: 100,
+          includeHidden: false,
+        });
+      for (const entry of response.data ?? []) {
+        const id =
+          typeof entry.id === "string"
+            ? entry.id
+            : typeof entry.model === "string"
+              ? entry.model
+              : null;
+        if (!id || entry.hidden === true) continue;
+        const efforts = (entry.supportedReasoningEfforts ?? [])
+          .map((option) => option.reasoningEffort)
+          .filter((effort): effort is string => typeof effort === "string");
+        models.push({
+          id,
+          label: typeof entry.displayName === "string" ? entry.displayName : id,
+          ...(typeof entry.description === "string"
+            ? { description: entry.description }
+            : {}),
+          ...(efforts.length > 0 ? { efforts } : {}),
+          ...(typeof entry.defaultReasoningEffort === "string"
+            ? { defaultEffort: entry.defaultReasoningEffort }
+            : {}),
+        });
+      }
+      cursor =
+        typeof response.nextCursor === "string" ? response.nextCursor : null;
+    } while (cursor);
+    return mergeCatalogModels(models);
+  } finally {
+    await client.close();
+  }
+}
+
+async function fetchProviderModels(
+  baseUrl: string,
+  token: string,
+): Promise<CatalogModel[]> {
+  const response = await fetch(`${baseUrl.replace(/\/$/u, "")}/models`, {
+    headers: { Authorization: `Bearer ${token}` },
+    signal: AbortSignal.timeout(10_000),
+  });
+  if (!response.ok) {
+    throw new Error(`Provider model catalog returned HTTP ${response.status}`);
+  }
+  const payload = (await response.json()) as {
+    data?: Array<{ id?: unknown; display_name?: unknown }>;
+  };
+  const seen = new Set<string>();
+  return (payload.data ?? []).flatMap((entry) => {
+    if (typeof entry.id !== "string" || seen.has(entry.id)) return [];
+    seen.add(entry.id);
+    return [
+      {
+        id: entry.id,
+        label:
+          typeof entry.display_name === "string"
+            ? entry.display_name
+            : entry.id,
+      },
+    ];
+  });
 }
 
 // Serves the catalog instantly from cache while a background refresh asks the
@@ -656,13 +776,22 @@ export function createModelCatalogService(
   let agy: PersistedCursorCatalog | null = null;
   let grok: PersistedCursorCatalog | null = null;
   let refreshingClaude: Promise<void> | null = null;
+  let refreshingCodex: Promise<void> | null = null;
   let refreshingCursor: Promise<void> | null = null;
   let refreshingAgy: Promise<void> | null = null;
   let refreshingGrok: Promise<void> | null = null;
+  let refreshingTokenPlans: Promise<void> | null = null;
+  let mimoModels = apiCatalogs.mimo ?? [];
+  let minimaxModels = apiCatalogs.minimax ?? [];
+  let liveCodexModels = apiCatalogs.codex ?? [];
+  let codexFetchedAt: string | null = null;
+  let mimoFetchedAt: string | null = null;
+  let minimaxFetchedAt: string | null = null;
   const cursorCachePath =
     options.cursorCachePath ??
     path.join(path.dirname(options.cachePath), "cursor-models.json");
   const cursorBinary = options.cursorBinary ?? null;
+  const codexBinary = options.codexBinary ?? null;
   const agyCachePath =
     options.agyCachePath ??
     path.join(path.dirname(options.cachePath), "agy-models.json");
@@ -674,7 +803,10 @@ export function createModelCatalogService(
   const opencodeBinary = options.opencodeBinary ?? null;
   const opencodeAcpReady = options.opencodeAcpReady ?? false;
   const executeCursor = options.executeCursor ?? executeCursorModelList;
+  const executeCodex =
+    options.fetchCodexModels ?? fetchCodexModelsFromAppServer;
   const executeNative = options.executeNative ?? executeCursorModelList;
+  const executeProviderModels = options.fetchModels ?? fetchProviderModels;
   const now = options.now ?? (() => new Date());
   try {
     claude = JSON.parse(
@@ -710,6 +842,24 @@ export function createModelCatalogService(
       }
     })();
     await refreshingClaude;
+  };
+
+  const refreshCodex = async () => {
+    refreshingCodex ??= (async () => {
+      try {
+        if (!codexBinary) return;
+        const models = await executeCodex(codexBinary);
+        if (models.length === 0) return;
+        liveCodexModels = models;
+        codexFetchedAt = now().toISOString();
+        console.log("[okami] Codex model catalog refreshed");
+      } catch {
+        console.error("[okami] Codex model catalog refresh failed");
+      } finally {
+        refreshingCodex = null;
+      }
+    })();
+    await refreshingCodex;
   };
 
   const refreshCursor = async () => {
@@ -786,17 +936,68 @@ export function createModelCatalogService(
     await refreshingGrok;
   };
 
+  const refreshTokenPlans = async () => {
+    refreshingTokenPlans ??= (async () => {
+      try {
+        if (!options.tokenPlanCredentials) return;
+        const [mimoCredential, minimaxCredential] = await Promise.all([
+          options.tokenPlanCredentials.get("mimo"),
+          options.tokenPlanCredentials.get("minimax"),
+        ]);
+        await Promise.all([
+          (async () => {
+            if (!mimoCredential?.baseUrl) {
+              mimoModels = [];
+              mimoFetchedAt = null;
+              return;
+            }
+            const models = await executeProviderModels(
+              mimoCredential.baseUrl,
+              mimoCredential.token,
+            );
+            if (models.length > 0) {
+              mimoModels = models;
+              mimoFetchedAt = now().toISOString();
+            }
+          })(),
+          (async () => {
+            if (!minimaxCredential) {
+              minimaxModels = [];
+              minimaxFetchedAt = null;
+              return;
+            }
+            const models = await executeProviderModels(
+              minimaxCredential.baseUrl ?? "https://api.minimax.io/v1",
+              minimaxCredential.token,
+            );
+            if (models.length > 0) {
+              minimaxModels = models;
+              minimaxFetchedAt = now().toISOString();
+            }
+          })(),
+        ]);
+      } catch {
+        console.error("[okami] Token Plan model catalog refresh failed");
+      } finally {
+        refreshingTokenPlans = null;
+      }
+    })();
+    await refreshingTokenPlans;
+  };
+
   return {
+    refreshCodex,
     refreshClaude,
     refreshCursor,
     refreshAgy,
     refreshGrok,
+    refreshTokenPlans,
     list() {
-      const codexModels = readCodexModelsCache();
-      const apiCodexModels = apiCatalogs.codex ?? [];
+      const cachedCodexModels = readCodexModelsCache();
+      const apiCodexModels = liveCodexModels;
       const apiGrokModels = apiCatalogs.grok ?? [];
-      const apiMimoModels = apiCatalogs.mimo ?? [];
-      const apiMiniMaxModels = apiCatalogs.minimax ?? [];
+      const apiMimoModels = mimoModels;
+      const apiMiniMaxModels = minimaxModels;
       return [
         {
           runtimeKind: "claude",
@@ -811,18 +1012,19 @@ export function createModelCatalogService(
           runtimeKind: "codex",
           providerLabel: "ChatGPT",
           routeKind:
-            apiCodexModels.length > 0 || codexModels.length > 0
+            apiCodexModels.length > 0 || cachedCodexModels.length > 0
               ? "native"
               : "unavailable",
-          source:
-            apiCodexModels.length > 0
-              ? codexModels.length > 0
+          source: codexFetchedAt
+            ? `Codex app-server model/list · ${codexFetchedAt}`
+            : apiCodexModels.length > 0
+              ? cachedCodexModels.length > 0
                 ? "API do Okami · catálogo complementado pelo cache do Codex"
                 : "API do Okami · catálogo configurado"
-              : codexModels.length > 0
+              : cachedCodexModels.length > 0
                 ? "catálogo do transporte Codex app-server"
                 : "indisponível — cache do Codex não encontrado",
-          models: mergeCatalogModels(apiCodexModels, codexModels),
+          models: mergeCatalogModels(apiCodexModels, cachedCodexModels),
         },
         {
           runtimeKind: "cursor",
@@ -867,7 +1069,9 @@ export function createModelCatalogService(
           routeKind: apiMiniMaxModels.length > 0 ? "native" : "unavailable",
           source:
             apiMiniMaxModels.length > 0
-              ? "API do Okami · catálogo configurado"
+              ? minimaxFetchedAt
+                ? `MiniMax /v1/models · ${minimaxFetchedAt}`
+                : "API do Okami · catálogo configurado"
               : "MiniMax Token Plan não configurado no Okami",
           models: apiMiniMaxModels,
         },
@@ -877,7 +1081,9 @@ export function createModelCatalogService(
           routeKind: apiMimoModels.length > 0 ? "native" : "unavailable",
           source:
             apiMimoModels.length > 0
-              ? "API do Okami · catálogo configurado"
+              ? mimoFetchedAt
+                ? `MiMo /models · ${mimoFetchedAt}`
+                : "API do Okami · catálogo configurado"
               : "MiMo Token Plan não configurado no Okami",
           models: apiMimoModels,
         },

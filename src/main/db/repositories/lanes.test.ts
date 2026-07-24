@@ -100,6 +100,41 @@ describe("LaneRepository native session binding", () => {
     fixture.db.close();
   });
 
+  it("migrates a missing provider session within the same current transport", () => {
+    const fixture = createTestDatabase();
+    const fromNativeSessionId = `okami:v1:codex-managed:${Buffer.from(
+      "missing-thread",
+    ).toString("base64url")}`;
+    const toNativeSessionId = `okami:v1:codex-managed:${Buffer.from(
+      "replacement-thread",
+    ).toString("base64url")}`;
+    fixture.lanes.bindNativeSession({
+      laneId: fixture.laneId,
+      nativeSessionId: fromNativeSessionId,
+      runtimeVersion: "0.145.0",
+      boundAt: "2026-07-24T12:00:00.000Z",
+      updatedAt: "2026-07-24T12:00:00.000Z",
+    });
+
+    fixture.lanes.compareAndMigrateNativeSession({
+      laneId: fixture.laneId,
+      runtimeKind: "codex",
+      fromNativeSessionId,
+      toNativeSessionId,
+      runtimeVersion: "0.145.0",
+      updatedAt: "2026-07-24T12:01:00.000Z",
+    });
+
+    expect(
+      fixture.lanes.findNativeSessionBinding(fixture.laneId),
+    ).toMatchObject({
+      nativeSessionId: toNativeSessionId,
+      migrationFromNativeSessionId: fromNativeSessionId,
+      rehydrationRequired: true,
+    });
+    fixture.db.close();
+  });
+
   it("marks continuation rehydration only for the exact current binding", () => {
     const fixture = createTestDatabase();
     fixture.lanes.bindNativeSession({

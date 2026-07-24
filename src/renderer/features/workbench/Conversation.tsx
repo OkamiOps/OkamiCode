@@ -542,6 +542,7 @@ export function LaneHealth({
 }
 
 export function Conversation({
+  activeLane,
   initialEvents = [],
   isRunning = false,
   lane,
@@ -549,6 +550,7 @@ export function Conversation({
   onOpenExternal,
   onOpenUrl,
 }: {
+  activeLane?: WorkbenchLane | null;
   initialEvents?: EventCardEvent[];
   isRunning?: boolean;
   lane: WorkbenchLane | null;
@@ -700,7 +702,8 @@ export function Conversation({
       : null;
   const isEmpty = timeline.length === 0;
   const liveOwner =
-    (lastAgent?.type === "agent" && laneById.get(lastAgent.laneId)) || lane;
+    activeLane ??
+    ((lastAgent?.type === "agent" && laneById.get(lastAgent.laneId)) || lane);
   const liveRuntime = runtimePresentation(liveOwner);
   const liveProvider = liveOwner ? laneDisplayName(liveOwner) : "Agente";
   const liveModel = liveOwner ? shortModel(liveOwner.model) : "Modelo ativo";

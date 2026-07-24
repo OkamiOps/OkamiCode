@@ -39,6 +39,13 @@ beforeEach(() => {
         ownership: "okami",
       },
       {
+        provider: "agy",
+        status: "connected",
+        accountLabel: "marcos@example.com",
+        detail: "Conta conectada.",
+        ownership: "okami",
+      },
+      {
         provider: "mimo",
         status: "connected",
         accountLabel: null,
@@ -170,8 +177,16 @@ it("puts provider connection ahead of runtime diagnostics", async () => {
   expect(screen.getByRole("button", { name: /MiniMax/i })).toBeVisible();
   await user.click(screen.getByRole("button", { name: /OpenAI Codex/i }));
   expect(screen.getByText("Motor incluído no OkamiCode")).toBeVisible();
+  expect(
+    screen.getByRole("button", { name: "Reconectar assinatura" }),
+  ).toBeVisible();
   expect(screen.queryByText("CLI opcional")).not.toBeInTheDocument();
   expect(screen.queryByRole("heading", { name: "Conversa atual" })).toBeNull();
+
+  await user.click(screen.getByRole("button", { name: /Antigravity/i }));
+  expect(
+    screen.getByRole("button", { name: "Reconectar conta" }),
+  ).toBeVisible();
 
   await user.click(screen.getByRole("button", { name: /MiMo/i }));
   expect(

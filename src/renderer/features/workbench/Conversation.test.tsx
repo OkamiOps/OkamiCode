@@ -132,6 +132,36 @@ describe("Conversation", () => {
     );
   });
 
+  it("uses the running lane identity while another provider is selected", () => {
+    const store = createWorkbenchStore();
+    store.setState({
+      sentMessages: [
+        {
+          id: "user-running",
+          laneId: mimoLane.laneId,
+          at: "2026-07-24T12:00:00.000Z",
+          body: "teste",
+        },
+      ],
+    });
+    render(
+      <WorkbenchStoreContext.Provider value={store}>
+        <Conversation
+          activeLane={mimoLane}
+          isRunning
+          lane={agyLane}
+          lanes={[agyLane, mimoLane]}
+        />
+      </WorkbenchStoreContext.Provider>,
+    );
+
+    expect(screen.getByRole("status")).toHaveTextContent(
+      "MiMo Code está trabalhando",
+    );
+    expect(screen.getByRole("status")).toHaveTextContent("Mimo-v2.5");
+    expect(screen.getByRole("status")).not.toHaveTextContent("Antigravity");
+  });
+
   it("summarizes lane health without hiding provider limitations", () => {
     renderConversation(false, [
       {
