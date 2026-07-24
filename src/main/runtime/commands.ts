@@ -1,8 +1,17 @@
 import path from "node:path";
 import type { CliClient } from "../ecosystem/cli-capabilities";
+import type { ManagedRuntimeCommands } from "./managed-runtime";
 
 type LocateCli = (client: CliClient) => string | null;
-type ManagedClient = "codex" | "grok" | "cursor" | "agy" | "opencode";
+type ManagedClient = keyof ManagedRuntimeCommands;
+
+const MANAGED_CLIENTS = new Set<ManagedClient>([
+  "codex",
+  "grok",
+  "cursor",
+  "agy",
+  "opencode",
+]);
 
 const FALLBACKS = {
   claude: "claude",
@@ -17,14 +26,20 @@ const FALLBACKS = {
 
 export function resolveRuntimeCommands(
   locate: LocateCli,
-  managed: Partial<Pick<Record<CliClient, string>, ManagedClient>> = {},
+  managed: ManagedRuntimeCommands,
 ) {
   return Object.fromEntries(
     (Object.keys(FALLBACKS) as CliClient[]).map((client) => [
       client,
-      managed[client as ManagedClient] ?? locate(client) ?? FALLBACKS[client],
+      isManagedClient(client)
+        ? managed[client]
+        : (locate(client) ?? FALLBACKS[client]),
     ]),
   ) as Record<CliClient, string>;
+}
+
+function isManagedClient(client: CliClient): client is ManagedClient {
+  return MANAGED_CLIENTS.has(client as ManagedClient);
 }
 
 export function executableEnvironment(

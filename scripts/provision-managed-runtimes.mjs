@@ -2,7 +2,17 @@
 
 import { createHash } from "node:crypto";
 import { execFile } from "node:child_process";
-import { chmod, mkdir, rename, stat, writeFile } from "node:fs/promises";
+import {
+  chmod,
+  lstat,
+  mkdir,
+  mkdtemp,
+  realpath,
+  rename,
+  rm,
+  stat,
+  writeFile,
+} from "node:fs/promises";
 import path from "node:path";
 import { promisify } from "node:util";
 import { fileURLToPath } from "node:url";
@@ -19,6 +29,13 @@ export const CURSOR_DARWIN_ARM64 = Object.freeze({
 export const ANTIGRAVITY_DARWIN_ARM64_MANIFEST_URL =
   "https://antigravity-cli-auto-updater-974169037036.us-central1.run.app/manifests/darwin_arm64.json";
 
+export const ANTIGRAVITY_DARWIN_ARM64 = Object.freeze({
+  version: "1.1.6",
+  url: "https://storage.googleapis.com/antigravity-public/antigravity-cli/1.1.6-6535449645285376/darwin-arm/cli_mac_arm64.tar.gz",
+  sha512:
+    "76b801b2c52eb106ec25073bda5d61a28bc3ff78f79631675642b743cd39fe2e5039a14211d03cabee88bf03450785af5859d1e7ca47c5c51e0676389b4b9d45",
+});
+
 export async function provisionManagedRuntimes(options = {}) {
   const platform = options.platform ?? process.platform;
   const arch = options.arch ?? process.arch;
@@ -32,13 +49,16 @@ export async function provisionManagedRuntimes(options = {}) {
   const targetDirectory = path.join(outputDirectory, target);
   const archiveDirectory = path.join(outputDirectory, ".archives");
   const cursor = options.cursor ?? CURSOR_DARWIN_ARM64;
+  const antigravity = options.antigravity ?? ANTIGRAVITY_DARWIN_ARM64;
   const antigravityManifestUrl =
     options.antigravityManifestUrl ?? ANTIGRAVITY_DARWIN_ARM64_MANIFEST_URL;
   const download = options.download ?? downloadBuffer;
+  const listArchive = options.listArchive ?? listTarGzip;
   const extractArchive = options.extractArchive ?? extractTarGzip;
 
   validateHttpsUrl(cursor.url, "Cursor archive");
   validateSha512(cursor.sha512, "Cursor");
+  validateRelease(antigravity, "Antigravity");
   validateHttpsUrl(antigravityManifestUrl, "Antigravity manifest");
   await mkdir(archiveDirectory, { recursive: true });
 
@@ -49,17 +69,19 @@ export async function provisionManagedRuntimes(options = {}) {
     `cursor-${cursor.version}.tar.gz`,
   );
   await writeFile(cursorArchivePath, cursorArchive);
-  const cursorDirectory = path.join(targetDirectory, "cursor");
-  await mkdir(cursorDirectory, { recursive: true });
-  await extractArchive(cursorArchivePath, cursorDirectory, {
-    stripComponents: 1,
+  validateArchiveMembers(await listArchive(cursorArchivePath), "Cursor");
+  const cursorExecutable = await installRuntimeAtomically({
+    targetDirectory: path.join(targetDirectory, "cursor"),
+    runtime: "Cursor",
+    executableName: "cursor-agent",
+    prepare: (stagingDirectory) =>
+      extractArchive(cursorArchivePath, stagingDirectory, {
+        stripComponents: 1,
+      }),
   });
-  const cursorExecutable = path.join(cursorDirectory, "cursor-agent");
-  await requireFile(cursorExecutable, "Cursor");
-  await chmod(cursorExecutable, 0o755);
 
   const manifestPayload = await download(antigravityManifestUrl);
-  const manifest = parseAntigravityManifest(manifestPayload);
+  const manifest = parseAntigravityManifest(manifestPayload, antigravity);
   const agyArchive = await download(manifest.url);
   verifySha512(agyArchive, manifest.sha512, "Antigravity");
   const agyArchivePath = path.join(
@@ -67,16 +89,21 @@ export async function provisionManagedRuntimes(options = {}) {
     `antigravity-${manifest.version}.tar.gz`,
   );
   await writeFile(agyArchivePath, agyArchive);
-  const agyDirectory = path.join(targetDirectory, "agy");
-  await mkdir(agyDirectory, { recursive: true });
-  await extractArchive(agyArchivePath, agyDirectory, {
-    member: "antigravity",
+  validateArchiveMembers(await listArchive(agyArchivePath), "Antigravity");
+  const agyExecutable = await installRuntimeAtomically({
+    targetDirectory: path.join(targetDirectory, "agy"),
+    runtime: "Antigravity",
+    executableName: "agy",
+    prepare: async (stagingDirectory) => {
+      await extractArchive(agyArchivePath, stagingDirectory, {
+        member: "antigravity",
+      });
+      await rename(
+        path.join(stagingDirectory, "antigravity"),
+        path.join(stagingDirectory, "agy"),
+      );
+    },
   });
-  const extractedAgy = path.join(agyDirectory, "antigravity");
-  await requireFile(extractedAgy, "Antigravity");
-  const agyExecutable = path.join(agyDirectory, "agy");
-  await rename(extractedAgy, agyExecutable);
-  await chmod(agyExecutable, 0o755);
 
   return {
     cursor: cursorExecutable,
@@ -86,7 +113,7 @@ export async function provisionManagedRuntimes(options = {}) {
   };
 }
 
-function parseAntigravityManifest(payload) {
+function parseAntigravityManifest(payload, expected) {
   let manifest;
   try {
     manifest = JSON.parse(payload.toString("utf8"));
@@ -103,6 +130,13 @@ function parseAntigravityManifest(payload) {
   }
   validateHttpsUrl(manifest.url, "Antigravity archive");
   validateSha512(manifest.sha512, "Antigravity");
+  if (
+    manifest.version !== expected.version ||
+    manifest.url !== expected.url ||
+    manifest.sha512.toLowerCase() !== expected.sha512.toLowerCase()
+  ) {
+    throw new Error("Antigravity manifest does not match pinned release");
+  }
   return manifest;
 }
 
@@ -123,11 +157,95 @@ async function extractTarGzip(archivePath, targetDirectory, options) {
   await execFileAsync("tar", args, { windowsHide: true });
 }
 
+async function listTarGzip(archivePath) {
+  const { stdout } = await execFileAsync("tar", ["-tzf", archivePath], {
+    encoding: "utf8",
+    windowsHide: true,
+  });
+  return stdout.split("\n").filter(Boolean);
+}
+
+function validateArchiveMembers(members, runtime) {
+  for (const member of members) {
+    const segments = member.split(/[\\/]/u);
+    if (
+      path.posix.isAbsolute(member) ||
+      path.win32.isAbsolute(member) ||
+      segments.includes("..")
+    ) {
+      throw new Error(`${runtime} archive contains unsafe member ${member}`);
+    }
+  }
+}
+
+async function installRuntimeAtomically(options) {
+  const parentDirectory = path.dirname(options.targetDirectory);
+  await mkdir(parentDirectory, { recursive: true });
+  const stagingDirectory = await mkdtemp(
+    path.join(
+      parentDirectory,
+      `.${path.basename(options.targetDirectory)}-staging-`,
+    ),
+  );
+  let backupDirectory;
+  let backupTarget;
+  try {
+    await options.prepare(stagingDirectory);
+    const stagingExecutable = path.join(
+      stagingDirectory,
+      options.executableName,
+    );
+    await requireContainedFile(
+      stagingDirectory,
+      stagingExecutable,
+      options.runtime,
+    );
+    await chmod(stagingExecutable, 0o755);
+
+    if (await pathExists(options.targetDirectory)) {
+      backupDirectory = await mkdtemp(
+        path.join(
+          parentDirectory,
+          `.${path.basename(options.targetDirectory)}-backup-`,
+        ),
+      );
+      backupTarget = path.join(
+        backupDirectory,
+        path.basename(options.targetDirectory),
+      );
+      await rename(options.targetDirectory, backupTarget);
+    }
+
+    try {
+      await rename(stagingDirectory, options.targetDirectory);
+    } catch (error) {
+      if (backupTarget && !(await pathExists(options.targetDirectory))) {
+        await rename(backupTarget, options.targetDirectory);
+      }
+      throw error;
+    }
+  } finally {
+    await rm(stagingDirectory, { recursive: true, force: true });
+    if (backupDirectory) {
+      await rm(backupDirectory, { recursive: true, force: true });
+    }
+  }
+  return path.join(options.targetDirectory, options.executableName);
+}
+
 function verifySha512(payload, expected, runtime) {
   const actual = createHash("sha512").update(payload).digest("hex");
   if (actual !== expected.toLowerCase()) {
     throw new Error(`${runtime} archive SHA-512 mismatch`);
   }
+}
+
+function validateRelease(release, runtime) {
+  if (!release || typeof release.version !== "string") {
+    throw new Error(`${runtime} release version is invalid`);
+  }
+  validateHttpsUrl(release.url, `${runtime} archive`);
+  validateSha512(release.sha512, runtime);
 }
 
 function validateSha512(value, runtime) {
@@ -143,11 +261,27 @@ function validateHttpsUrl(value, label) {
   }
 }
 
-async function requireFile(candidate, runtime) {
-  const metadata = await stat(candidate).catch(() => null);
+async function requireContainedFile(root, candidate, runtime) {
+  const metadata = await lstat(candidate).catch(() => null);
   if (!metadata?.isFile()) {
     throw new Error(`${runtime} archive did not contain its executable`);
   }
+  const [resolvedRoot, resolvedCandidate] = await Promise.all([
+    realpath(root),
+    realpath(candidate),
+  ]);
+  const relative = path.relative(resolvedRoot, resolvedCandidate);
+  if (
+    relative === "" ||
+    relative.startsWith(`..${path.sep}`) ||
+    path.isAbsolute(relative)
+  ) {
+    throw new Error(`${runtime} executable escaped its staging directory`);
+  }
+}
+
+async function pathExists(candidate) {
+  return Boolean(await stat(candidate).catch(() => null));
 }
 
 const invokedPath = process.argv[1] ? path.resolve(process.argv[1]) : null;
