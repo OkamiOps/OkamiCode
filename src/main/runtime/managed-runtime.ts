@@ -1,15 +1,8 @@
 import { createRequire } from "node:module";
-import {
-  chmodSync,
-  existsSync,
-  mkdirSync,
-  readFileSync,
-  renameSync,
-  unlinkSync,
-  writeFileSync,
-} from "node:fs";
+import { existsSync, readFileSync } from "node:fs";
 import path from "node:path";
 import { brotliDecompressSync } from "node:zlib";
+import { materializeVerifiedArtifactSync } from "./managed-artifact.mjs";
 
 interface ManagedRuntimeOptions {
   runtimeDirectory: string;
@@ -64,6 +57,7 @@ export function resolveManagedRuntimeCommands(
   );
   const grok = materializeGrok({
     sourceDirectory: grokPackage,
+    runtimeDirectory: options.runtimeDirectory,
     targetDirectory: path.join(options.runtimeDirectory, "grok", target),
     executableName: platform === "win32" ? "grok.exe" : "grok",
   });
@@ -140,12 +134,10 @@ function requiredManagedExecutable(
 
 function materializeGrok(options: {
   sourceDirectory: string;
+  runtimeDirectory: string;
   targetDirectory: string;
   executableName: string;
 }): string {
-  mkdirSync(options.targetDirectory, { recursive: true });
-  const target = path.join(options.targetDirectory, options.executableName);
-  if (existsSync(target)) return target;
   const raw = unpackedExecutablePath(
     path.join(options.sourceDirectory, "bin", options.executableName),
   );
@@ -153,19 +145,13 @@ function materializeGrok(options: {
   const payload = existsSync(raw)
     ? readFileSync(raw)
     : brotliDecompressSync(readFileSync(compressed));
-  const temporary = `${target}.tmp-${process.pid}`;
-  try {
-    writeFileSync(temporary, payload, { mode: 0o755 });
-    if (process.platform !== "win32") chmodSync(temporary, 0o755);
-    renameSync(temporary, target);
-  } finally {
-    try {
-      unlinkSync(temporary);
-    } catch {
-      // Atomic rename already consumed the temporary file.
-    }
-  }
-  return target;
+  return materializeVerifiedArtifactSync({
+    runtimeDirectory: options.runtimeDirectory,
+    targetDirectory: options.targetDirectory,
+    executableName: options.executableName,
+    label: "Grok",
+    payload,
+  });
 }
 
 function unpackedExecutablePath(candidate: string): string {

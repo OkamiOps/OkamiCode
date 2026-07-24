@@ -188,12 +188,15 @@ The command produces both the unpacked application and the Apple Silicon install
 - `release/mac-arm64/OkamiCode.app`
 - `release/OkamiCode-v1.0.1-beta-macOS-arm64.dmg`
 
-The verifier runs only executable `--version` probes with
-`PATH=/usr/bin:/bin`, an isolated `HOME`, and no inherited provider
-credentials. It emits JSON containing each provider, version, absolute source,
-SHA-256 checksum, and ownership. The command fails if a non-Claude executable
-escapes the application bundle or verifier user-data directory, including
-through a symlink. It does not send model turns.
+During `afterPack`, the build writes an exact managed-runtime trust manifest
+inside the application. The verifier requires that inventory and compares its
+expected SHA-256 with the observed Codex, Grok, Cursor, Antigravity, and
+OpenCode payloads before probing a version. MiMo, MiniMax, and external Claude
+must not carry an expected executable hash. Version probes use only
+`--version`, `PATH=/usr/bin:/bin`, an isolated `HOME`, and no inherited
+provider credentials. The JSON proof includes expected and observed checksums,
+absolute sources, ownership, and the trust-manifest checksum. A missing,
+modified, extra, or symlink-escaped artifact fails closed without a model turn.
 
 Open the DMG, drag **OkamiCode** to **Applications**, and launch it from Applications. The `1.0.1-beta` artifact is unsigned and non-notarized, so macOS may require an explicit approval in **Privacy & Security**. Production signing and notarization are intentionally not claimed by this beta.
 

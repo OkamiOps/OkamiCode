@@ -1,11 +1,26 @@
-import { chmod, mkdir, mkdtemp, symlink, writeFile } from "node:fs/promises";
+import {
+  chmod,
+  mkdir,
+  mkdtemp,
+  readFile,
+  realpath,
+  symlink,
+  writeFile,
+} from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
+import { brotliCompressSync } from "node:zlib";
 import { describe, expect, it } from "vitest";
 
 const verifier = await import("./verify-managed-runtime-package.mjs").catch(
   () => ({ verifyRuntimeOwnership: undefined }),
 );
+const trustGenerator =
+  await import("./generate-managed-runtime-trust-manifest.mjs").catch(() => ({
+    generateManagedRuntimeTrustManifest: undefined,
+  }));
+
+const TRUST_MANIFEST_NAME = "managed-runtime-trust-manifest.json";
 
 interface RuntimeFixture {
   provider: string;
@@ -208,6 +223,145 @@ describe("managed runtime package verifier", () => {
       }),
     ).rejects.toThrow(/only Claude may be external/iu);
   });
+
+  it("discovers and verifies a package-shaped fixture through its generated trust manifest", async () => {
+    expect(trustGenerator.generateManagedRuntimeTrustManifest).toBeTypeOf(
+      "function",
+    );
+    expect(verifier.verifyManagedRuntimePackage).toBeTypeOf("function");
+    const fixture = await createPackageShapedFixture();
+
+    const trust = await trustGenerator.generateManagedRuntimeTrustManifest!({
+      appPath: fixture.appPath,
+    });
+    const proof = await verifier.verifyManagedRuntimePackage!({
+      appPath: fixture.appPath,
+      userDataDirectory: fixture.userDataDirectory,
+      claudeSource: fixture.claudeSource,
+    });
+
+    expect(
+      trust.providers.map((entry: { provider: string }) => entry.provider),
+    ).toEqual([
+      "codex",
+      "grok",
+      "cursor",
+      "agy",
+      "opencode",
+      "mimo",
+      "minimax",
+      "claude",
+    ]);
+    expect(proof.status).toBe("pass");
+    expect(proof.trustManifest).toMatchObject({
+      source: await realpath(
+        path.join(fixture.resourcesDirectory, TRUST_MANIFEST_NAME),
+      ),
+      checksum: {
+        algorithm: "sha256",
+        value: expect.stringMatching(/^[a-f0-9]{64}$/u),
+      },
+    });
+    expect(
+      proof.runtimes.find(
+        (entry: { provider: string }) => entry.provider === "grok",
+      ),
+    ).toMatchObject({
+      ownership: "okami-user-data",
+      checksum: {
+        value: trust.providers.find(
+          (entry: { provider: string }) => entry.provider === "grok",
+        ).sha256,
+        expected: trust.providers.find(
+          (entry: { provider: string }) => entry.provider === "grok",
+        ).sha256,
+      },
+    });
+  });
+
+  it("rejects a packaged executable modified after trust-manifest generation", async () => {
+    expect(trustGenerator.generateManagedRuntimeTrustManifest).toBeTypeOf(
+      "function",
+    );
+    expect(verifier.verifyManagedRuntimePackage).toBeTypeOf("function");
+    const fixture = await createPackageShapedFixture();
+    await trustGenerator.generateManagedRuntimeTrustManifest!({
+      appPath: fixture.appPath,
+    });
+    await createExecutable(fixture.cursorSource, "tampered-cursor");
+
+    await expect(
+      verifier.verifyManagedRuntimePackage!({
+        appPath: fixture.appPath,
+        userDataDirectory: fixture.userDataDirectory,
+        claudeSource: fixture.claudeSource,
+      }),
+    ).rejects.toThrow(/cursor.*SHA-256 mismatch/iu);
+  });
+
+  it("requires the packaged trust manifest", async () => {
+    expect(verifier.verifyManagedRuntimePackage).toBeTypeOf("function");
+    const fixture = await createPackageShapedFixture();
+
+    await expect(
+      verifier.verifyManagedRuntimePackage!({
+        appPath: fixture.appPath,
+        userDataDirectory: fixture.userDataDirectory,
+        claudeSource: fixture.claudeSource,
+      }),
+    ).rejects.toThrow(/managed runtime trust manifest.*missing/iu);
+  });
+
+  it.each([
+    {
+      label: "missing",
+      mutate: (providers: unknown[]) => providers.slice(1),
+      expected: /trust manifest.*missing.*codex/iu,
+    },
+    {
+      label: "extra",
+      mutate: (providers: unknown[]) => [
+        ...providers,
+        {
+          provider: "unexpected",
+          transport: "unexpected",
+          entitlement: "subscription",
+          ownership: "app-bundle",
+          artifact: "unexpected",
+          artifactEncoding: "identity",
+          sha256: "0".repeat(64),
+        },
+      ],
+      expected: /trust manifest.*unexpected.*provider/iu,
+    },
+  ])(
+    "rejects a trust manifest with $label providers",
+    async ({ mutate, expected }) => {
+      expect(trustGenerator.generateManagedRuntimeTrustManifest).toBeTypeOf(
+        "function",
+      );
+      expect(verifier.verifyManagedRuntimePackage).toBeTypeOf("function");
+      const fixture = await createPackageShapedFixture();
+      await trustGenerator.generateManagedRuntimeTrustManifest!({
+        appPath: fixture.appPath,
+      });
+      const manifestPath = path.join(
+        fixture.resourcesDirectory,
+        TRUST_MANIFEST_NAME,
+      );
+      const manifest = JSON.parse(await readFile(manifestPath, "utf8"));
+      manifest.providers = mutate(manifest.providers);
+      await writeFile(manifestPath, `${JSON.stringify(manifest, null, 2)}\n`);
+
+      await expect(
+        verifier.verifyManagedRuntimePackage!({
+          appPath: fixture.appPath,
+          userDataDirectory: fixture.userDataDirectory,
+          claudeSource: fixture.claudeSource,
+        }),
+      ).rejects.toThrow(expected);
+    },
+  );
 });
 
 function executableRuntime(
@@ -259,4 +413,64 @@ async function createExecutable(
   );
   await chmod(executablePath, 0o755);
   return executablePath;
+}
+
+async function createPackageShapedFixture(): Promise<{
+  appPath: string;
+  resourcesDirectory: string;
+  userDataDirectory: string;
+  claudeSource: string;
+  cursorSource: string;
+}> {
+  const fixture = await createPackageFixture();
+  const unpacked = path.join(
+    fixture.resourcesDirectory,
+    "app.asar.unpacked",
+    "node_modules",
+  );
+  const managed = path.join(
+    fixture.resourcesDirectory,
+    "managed-runtimes",
+    "darwin-arm64",
+  );
+  await createExecutable(
+    path.join(
+      unpacked,
+      "@openai",
+      "codex-darwin-arm64",
+      "vendor",
+      "aarch64-apple-darwin",
+      "bin",
+      "codex",
+    ),
+    "codex-cli fixture",
+  );
+  const grokPayload = Buffer.from("#!/bin/sh\nprintf '%s\\n' 'grok fixture'\n");
+  const grokCompressed = path.join(
+    unpacked,
+    "@xai-official",
+    "grok-darwin-arm64",
+    "bin",
+    "grok.br",
+  );
+  await mkdir(path.dirname(grokCompressed), { recursive: true });
+  await writeFile(grokCompressed, brotliCompressSync(grokPayload));
+  const cursorSource = await createExecutable(
+    path.join(managed, "cursor", "cursor-agent"),
+    "cursor fixture",
+  );
+  await createExecutable(path.join(managed, "agy", "agy"), "agy fixture");
+  await createExecutable(
+    path.join(unpacked, "opencode-darwin-arm64", "bin", "opencode"),
+    "opencode fixture",
+  );
+  const claudeSource = await createExecutable(
+    path.join(fixture.root, "external", "claude"),
+    "claude fixture",
+  );
+  return {
+    ...fixture,
+    claudeSource,
+    cursorSource,
+  };
 }

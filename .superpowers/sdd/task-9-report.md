@@ -155,3 +155,151 @@ None blocking.
 
 The package remains unsigned and non-notarized. This is an existing beta
 limitation, not a Task 9 regression.
+
+## Critical and Important review follow-up
+
+Status: RESOLVED.
+
+The review correctly found that the first verifier proved a sidecar Grok path
+while production `materializeGrok` trusted any pre-existing target, and that
+the reported SHA-256 values were only observed rather than compared with an
+expected package inventory.
+
+### Runtime materialization RED
+
+Command:
+
+```text
+pnpm exec vitest run src/main/runtime/managed-runtime.test.ts
+```
+
+Observed result: exit 1; 2 failed, 2 passed.
+
+- A pre-existing Grok symlink escaping Okami runtime storage was returned.
+- A pre-existing regular Grok file with divergent bytes was returned.
+
+Both failures reproduced the production resolver path that supplies the
+command later spawned by Electron.
+
+### Runtime materialization GREEN
+
+The runtime and package verifier now share
+`materializeVerifiedArtifactSync`. It:
+
+- canonicalizes the Okami runtime root and target directory;
+- rejects a runtime root or target directory that is itself a symlink;
+- rejects target-directory escape;
+- uses `lstat` to reject symlinks and non-regular files;
+- canonicalizes the final target and checks containment;
+- compares SHA-256 against the official packaged/decompressed payload;
+- uses exclusive temporary-file creation and atomic rename;
+- returns no command when any check fails.
+
+Focused result: exit 0; 1 file passed, 4 tests passed.
+
+### Trust manifest and package-shaped fixture RED
+
+Command:
+
+```text
+pnpm exec vitest run scripts/verify-managed-runtime-package.test.ts
+```
+
+Observed result: exit 1 because the trust-manifest generator and `afterPack`
+hook did not yet exist.
+
+### Trust manifest and package-shaped fixture GREEN
+
+Command:
+
+```text
+pnpm exec vitest run src/main/runtime/managed-runtime.test.ts scripts/verify-managed-runtime-package.test.ts
+```
+
+Observed result after two fixture path/canonicalization corrections and the
+runtime-root symlink hardening: exit 0; 2 files passed, 14 tests passed.
+
+The package-shaped fixture uses the real macOS layout:
+
+- `Contents/Resources/app.asar.unpacked` for Codex, Grok, and OpenCode;
+- `Contents/Resources/managed-runtimes/darwin-arm64` for Cursor and
+  Antigravity;
+- Brotli-compressed Grok materialized through the same helper used by
+  production;
+- an external Claude executable;
+- the real eight-provider trust manifest.
+
+It proves successful discovery/materialization plus fail-closed behavior for a
+missing trust manifest, missing provider, extra provider, and executable
+tampering after manifest generation.
+
+### Real afterPack and package proof
+
+Command:
+
+```text
+pnpm package
+```
+
+Observed result: exit 0 on the first follow-up attempt. The real `.app`, DMG,
+and blockmap were generated. `afterPack` wrote:
+
+```text
+release/mac-arm64/OkamiCode.app/Contents/Resources/managed-runtime-trust-manifest.json
+```
+
+The manifest contains exactly eight provider contracts:
+
+- Codex, Grok materialized payload, Cursor, Antigravity, and OpenCode with
+  expected SHA-256 values;
+- MiMo and MiniMax with Token Plan ownership, no artifact, and no hash;
+- Claude with external ownership, no packaged artifact, and no expected hash.
+
+### Real verifier proof
+
+Command:
+
+```text
+pnpm verify:managed-package release/mac-arm64/OkamiCode.app
+```
+
+Observed result: exit 0 and JSON status `pass`.
+
+Every managed provider reports equal `checksum.value` and
+`checksum.expected`. The trust manifest itself reports SHA-256
+`27bb2fcc4b09cd7bd0107a1432ae092d61699b511c257e73333e62cb70091093`.
+Claude remains the only external executable and has `expected: null`.
+
+### Follow-up final regression
+
+Packaging rebuilt the native modules for Electron, so the SQLite dependency
+was restored for Node before the repository gate:
+
+```text
+pnpm rebuild better-sqlite3-multiple-ciphers
+pnpm check
+```
+
+Observed result: exit 0.
+
+- TypeScript project build: passed.
+- ESLint with zero warnings: passed.
+- Prettier check: passed.
+- Vitest: 125 files passed, 4 skipped; 782 tests passed, 9 skipped.
+
+No live provider turn ran in any follow-up gate.
+
+### Follow-up files
+
+- `.superpowers/sdd/task-9-report.md`
+- `README.md`
+- `docs/architecture/okami-runtime-sdk.md`
+- `docs/architecture/runtime-harness-boundary.md`
+- `electron-builder.yml`
+- `scripts/generate-managed-runtime-trust-manifest.mjs`
+- `scripts/verify-managed-runtime-package.mjs`
+- `scripts/verify-managed-runtime-package.test.ts`
+- `src/main/runtime/managed-artifact.d.mts`
+- `src/main/runtime/managed-artifact.mjs`
+- `src/main/runtime/managed-runtime.test.ts`
+- `src/main/runtime/managed-runtime.ts`

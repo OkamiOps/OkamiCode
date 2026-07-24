@@ -1,18 +1,15 @@
-/* global Buffer, process */
+/* global process */
 
 import { createHash } from "node:crypto";
 import { execFile } from "node:child_process";
 import {
   access,
-  chmod,
+  lstat,
   mkdir,
   opendir,
   readFile,
   realpath,
-  rename,
   stat,
-  unlink,
-  writeFile,
 } from "node:fs/promises";
 import { constants as fsConstants } from "node:fs";
 import { tmpdir } from "node:os";
@@ -20,21 +17,71 @@ import path from "node:path";
 import { promisify } from "node:util";
 import { pathToFileURL } from "node:url";
 import { brotliDecompress } from "node:zlib";
+import { materializeVerifiedArtifactSync } from "../src/main/runtime/managed-artifact.mjs";
 
 const execFileAsync = promisify(execFile);
 const brotliDecompressAsync = promisify(brotliDecompress);
 
 export const MINIMAL_PATH = "/usr/bin:/bin";
+export const TRUST_MANIFEST_NAME = "managed-runtime-trust-manifest.json";
 
-const EXPECTED_PROVIDERS = Object.freeze([
-  "codex",
-  "grok",
-  "cursor",
-  "agy",
-  "opencode",
-  "mimo",
-  "minimax",
-  "claude",
+const PROVIDER_CONTRACTS = Object.freeze([
+  Object.freeze({
+    provider: "codex",
+    transport: "codex-managed",
+    entitlement: "subscription",
+    ownership: "app-bundle",
+    artifactEncoding: "identity",
+  }),
+  Object.freeze({
+    provider: "grok",
+    transport: "grok-managed",
+    entitlement: "subscription",
+    ownership: "okami-user-data",
+    artifactEncoding: "brotli",
+  }),
+  Object.freeze({
+    provider: "cursor",
+    transport: "cursor-agent",
+    entitlement: "subscription",
+    ownership: "app-bundle",
+    artifactEncoding: "identity",
+  }),
+  Object.freeze({
+    provider: "agy",
+    transport: "agy-cli",
+    entitlement: "subscription",
+    ownership: "app-bundle",
+    artifactEncoding: "identity",
+  }),
+  Object.freeze({
+    provider: "opencode",
+    transport: "opencode-acp",
+    entitlement: "provider_managed",
+    ownership: "app-bundle",
+    artifactEncoding: "identity",
+  }),
+  Object.freeze({
+    provider: "mimo",
+    transport: "mimo-token-plan",
+    entitlement: "token_plan",
+    ownership: "token-plan",
+    artifactEncoding: null,
+  }),
+  Object.freeze({
+    provider: "minimax",
+    transport: "minimax-token-plan",
+    entitlement: "token_plan",
+    ownership: "token-plan",
+    artifactEncoding: null,
+  }),
+  Object.freeze({
+    provider: "claude",
+    transport: "claude-cli",
+    entitlement: "subscription",
+    ownership: "external",
+    artifactEncoding: null,
+  }),
 ]);
 
 /**
@@ -106,6 +153,22 @@ export async function verifyRuntimeOwnership(options) {
       throw new Error(`Only Claude may be external`);
     }
 
+    const observedSha256 = await sha256File(source);
+    if (
+      options.requireExpectedChecksums === true &&
+      ownership !== "external" &&
+      !isSha256(manifest.expectedSha256)
+    ) {
+      throw new Error(
+        `${manifest.provider} expected SHA-256 is missing from the trust manifest`,
+      );
+    }
+    if (
+      isSha256(manifest.expectedSha256) &&
+      observedSha256 !== manifest.expectedSha256
+    ) {
+      throw new Error(`${manifest.provider} SHA-256 mismatch`);
+    }
     const version = await inspectVersion({
       provider: manifest.provider,
       source,
@@ -121,7 +184,8 @@ export async function verifyRuntimeOwnership(options) {
       source,
       checksum: {
         algorithm: "sha256",
-        value: await sha256File(source),
+        value: observedSha256,
+        expected: manifest.expectedSha256 ?? null,
       },
       ownership,
       status: "pass",
@@ -145,7 +209,6 @@ export async function verifyRuntimeOwnership(options) {
 export async function discoverPackagedRuntimes(options) {
   const appPath = path.resolve(options.appPath);
   const resourcesDirectory = path.join(appPath, "Contents", "Resources");
-  const unpackedDirectory = path.join(resourcesDirectory, "app.asar.unpacked");
   const target = options.target ?? "darwin-arm64";
   if (target !== "darwin-arm64") {
     throw new Error(`Unsupported packaged verification target ${target}`);
@@ -153,49 +216,55 @@ export async function discoverPackagedRuntimes(options) {
 
   await requireDirectory(appPath, "OkamiCode app");
   await requireDirectory(resourcesDirectory, "OkamiCode resources");
-  await requireDirectory(unpackedDirectory, "unpacked application resources");
-
-  const codex = await findUniqueFile(
-    unpackedDirectory,
-    (candidate) =>
-      candidate.endsWith(
-        `${path.sep}vendor${path.sep}aarch64-apple-darwin${path.sep}bin${path.sep}codex`,
-      ) && candidate.includes(`${path.sep}@openai${path.sep}`),
-    "managed Codex executable",
+  const trustManifest =
+    options.trustManifest ??
+    (await readManagedRuntimeTrustManifest(appPath)).manifest;
+  validateTrustManifest(trustManifest);
+  const entries = new Map(
+    trustManifest.providers.map((entry) => [entry.provider, entry]),
   );
-  const grokCompressed = await findUniqueFile(
-    unpackedDirectory,
-    (candidate) =>
-      candidate.endsWith(`${path.sep}bin${path.sep}grok.br`) &&
-      candidate.includes(`${path.sep}@xai-official${path.sep}`),
-    "managed Grok artifact",
-  );
-  const opencode = await findUniqueFile(
-    unpackedDirectory,
-    (candidate) =>
-      candidate.endsWith(`${path.sep}bin${path.sep}opencode`) &&
-      candidate.includes(`${path.sep}opencode-darwin-arm64${path.sep}`),
-    "managed OpenCode executable",
-  );
-  const cursor = path.join(
-    resourcesDirectory,
-    "managed-runtimes",
-    target,
-    "cursor",
-    "cursor-agent",
-  );
-  const agy = path.join(
-    resourcesDirectory,
-    "managed-runtimes",
-    target,
-    "agy",
-    "agy",
-  );
-  const grok = await materializeGrokForVerification({
-    compressedSource: grokCompressed,
-    userDataDirectory: options.userDataDirectory,
-    target,
-  });
+  const sources = new Map();
+  for (const contract of PROVIDER_CONTRACTS) {
+    if (
+      contract.ownership === "token-plan" ||
+      contract.ownership === "external"
+    ) {
+      continue;
+    }
+    const entry = entries.get(contract.provider);
+    const artifact = await requireTrustedArtifact(resourcesDirectory, entry);
+    const packagedPayload = await readFile(artifact);
+    const executablePayload =
+      entry.artifactEncoding === "brotli"
+        ? await brotliDecompressAsync(packagedPayload)
+        : packagedPayload;
+    const observedSha256 = sha256Buffer(executablePayload);
+    if (observedSha256 !== entry.sha256) {
+      throw new Error(`${displayProvider(contract.provider)} SHA-256 mismatch`);
+    }
+    if (contract.provider === "grok") {
+      sources.set(
+        contract.provider,
+        materializeVerifiedArtifactSync({
+          runtimeDirectory: path.join(
+            options.userDataDirectory,
+            "managed-runtimes",
+          ),
+          targetDirectory: path.join(
+            options.userDataDirectory,
+            "managed-runtimes",
+            "grok",
+            target,
+          ),
+          executableName: "grok",
+          label: "Grok",
+          payload: executablePayload,
+        }),
+      );
+    } else {
+      sources.set(contract.provider, artifact);
+    }
+  }
   const claude =
     options.claudeSource ??
     (await findExecutableOnPath(
@@ -208,24 +277,32 @@ export async function discoverPackagedRuntimes(options) {
     );
   }
 
-  return [
-    executableManifest("codex", "codex-managed", codex, "subscription"),
-    executableManifest("grok", "grok-managed", grok, "subscription"),
-    executableManifest("cursor", "cursor-agent", cursor, "subscription"),
-    executableManifest("agy", "agy-cli", agy, "subscription"),
-    executableManifest(
-      "opencode",
-      "opencode-acp",
-      opencode,
-      "provider_managed",
-    ),
-    tokenPlanManifest("mimo", "mimo-token-plan"),
-    tokenPlanManifest("minimax", "minimax-token-plan"),
-    {
-      ...executableManifest("claude", "claude-cli", claude, "subscription"),
-      external: true,
-    },
-  ];
+  return PROVIDER_CONTRACTS.map((contract) => {
+    const entry = entries.get(contract.provider);
+    if (contract.ownership === "token-plan") {
+      return tokenPlanManifest(contract.provider, contract.transport);
+    }
+    if (contract.ownership === "external") {
+      return {
+        ...executableManifest(
+          contract.provider,
+          contract.transport,
+          claude,
+          contract.entitlement,
+        ),
+        external: true,
+      };
+    }
+    return {
+      ...executableManifest(
+        contract.provider,
+        contract.transport,
+        sources.get(contract.provider),
+        contract.entitlement,
+      ),
+      expectedSha256: entry.sha256,
+    };
+  });
 }
 
 export async function verifyManagedRuntimePackage(options) {
@@ -235,29 +312,267 @@ export async function verifyManagedRuntimePackage(options) {
       path.join(path.dirname(appPath), ".managed-runtime-verifier-user-data"),
   );
   await mkdir(userDataDirectory, { recursive: true, mode: 0o700 });
+  const trust = await readManagedRuntimeTrustManifest(appPath);
   const runtimes = await discoverPackagedRuntimes({
     appPath,
     userDataDirectory,
     claudeSource: options.claudeSource,
     hostPath: options.hostPath,
     target: options.target,
+    trustManifest: trust.manifest,
   });
-  const discoveredProviders = runtimes.map((runtime) => runtime.provider);
-  if (
-    discoveredProviders.length !== EXPECTED_PROVIDERS.length ||
-    EXPECTED_PROVIDERS.some(
-      (provider, index) => discoveredProviders[index] !== provider,
-    )
-  ) {
-    throw new Error(
-      `Packaged runtime manifest set is incomplete: ${discoveredProviders.join(", ")}`,
-    );
-  }
-  return verifyRuntimeOwnership({
+  const proof = await verifyRuntimeOwnership({
     appPath,
     userDataDirectory,
     runtimes,
+    requireExpectedChecksums: true,
   });
+  return {
+    ...proof,
+    trustManifest: {
+      source: trust.source,
+      checksum: {
+        algorithm: "sha256",
+        value: trust.checksum,
+      },
+    },
+  };
+}
+
+export async function buildManagedRuntimeTrustManifest(options) {
+  const appPath = path.resolve(options.appPath);
+  const resourcesDirectory = path.join(appPath, "Contents", "Resources");
+  const unpackedDirectory = path.join(resourcesDirectory, "app.asar.unpacked");
+  await requireDirectory(appPath, "OkamiCode app");
+  await requireDirectory(resourcesDirectory, "OkamiCode resources");
+  await requireDirectory(unpackedDirectory, "unpacked application resources");
+  const canonicalResourcesDirectory = await realpath(resourcesDirectory);
+
+  const discovered = new Map([
+    [
+      "codex",
+      await findUniqueFile(
+        unpackedDirectory,
+        (candidate) =>
+          candidate.endsWith(
+            `${path.sep}vendor${path.sep}aarch64-apple-darwin${path.sep}bin${path.sep}codex`,
+          ) && candidate.includes(`${path.sep}@openai${path.sep}`),
+        "managed Codex executable",
+      ),
+    ],
+    [
+      "grok",
+      await findUniqueFile(
+        unpackedDirectory,
+        (candidate) =>
+          candidate.endsWith(`${path.sep}bin${path.sep}grok.br`) &&
+          candidate.includes(`${path.sep}@xai-official${path.sep}`),
+        "managed Grok artifact",
+      ),
+    ],
+    [
+      "cursor",
+      path.join(
+        resourcesDirectory,
+        "managed-runtimes",
+        "darwin-arm64",
+        "cursor",
+        "cursor-agent",
+      ),
+    ],
+    [
+      "agy",
+      path.join(
+        resourcesDirectory,
+        "managed-runtimes",
+        "darwin-arm64",
+        "agy",
+        "agy",
+      ),
+    ],
+    [
+      "opencode",
+      await findUniqueFile(
+        unpackedDirectory,
+        (candidate) =>
+          candidate.endsWith(`${path.sep}bin${path.sep}opencode`) &&
+          candidate.includes(`${path.sep}opencode-darwin-arm64${path.sep}`),
+        "managed OpenCode executable",
+      ),
+    ],
+  ]);
+
+  const providers = [];
+  for (const contract of PROVIDER_CONTRACTS) {
+    if (
+      contract.ownership === "token-plan" ||
+      contract.ownership === "external"
+    ) {
+      providers.push({
+        ...contract,
+        artifact: null,
+        sha256: null,
+      });
+      continue;
+    }
+    const artifact = await requireContainedRegularFile(
+      resourcesDirectory,
+      discovered.get(contract.provider),
+      `managed ${displayProvider(contract.provider)} artifact`,
+    );
+    const packagedPayload = await readFile(artifact);
+    const executablePayload =
+      contract.artifactEncoding === "brotli"
+        ? await brotliDecompressAsync(packagedPayload)
+        : packagedPayload;
+    providers.push({
+      ...contract,
+      artifact: path
+        .relative(canonicalResourcesDirectory, artifact)
+        .split(path.sep)
+        .join("/"),
+      sha256: sha256Buffer(executablePayload),
+    });
+  }
+  return {
+    schemaVersion: 1,
+    target: "darwin-arm64",
+    hashAlgorithm: "sha256",
+    generatedAt: new Date().toISOString(),
+    providers,
+  };
+}
+
+async function readManagedRuntimeTrustManifest(appPath) {
+  const resourcesDirectory = path.join(appPath, "Contents", "Resources");
+  const source = path.join(resourcesDirectory, TRUST_MANIFEST_NAME);
+  let metadata;
+  try {
+    metadata = await lstat(source);
+  } catch {
+    throw new Error(`Managed runtime trust manifest is missing: ${source}`);
+  }
+  if (!metadata.isFile() || metadata.isSymbolicLink()) {
+    throw new Error("Managed runtime trust manifest must be a regular file");
+  }
+  const canonicalSource = await realpath(source);
+  const canonicalResources = await realpath(resourcesDirectory);
+  if (!containedBy(canonicalResources, canonicalSource)) {
+    throw new Error("Managed runtime trust manifest escapes the app bundle");
+  }
+  const payload = await readFile(canonicalSource);
+  let manifest;
+  try {
+    manifest = JSON.parse(payload.toString("utf8"));
+  } catch {
+    throw new Error("Managed runtime trust manifest is invalid JSON");
+  }
+  validateTrustManifest(manifest);
+  return {
+    source: canonicalSource,
+    checksum: sha256Buffer(payload),
+    manifest,
+  };
+}
+
+function validateTrustManifest(manifest) {
+  if (
+    !manifest ||
+    typeof manifest !== "object" ||
+    manifest.schemaVersion !== 1 ||
+    manifest.target !== "darwin-arm64" ||
+    manifest.hashAlgorithm !== "sha256" ||
+    !Array.isArray(manifest.providers)
+  ) {
+    throw new Error("Managed runtime trust manifest has an invalid schema");
+  }
+  const providers = new Map();
+  for (const entry of manifest.providers) {
+    if (!entry || typeof entry.provider !== "string") {
+      throw new Error(
+        "Managed runtime trust manifest contains an invalid provider",
+      );
+    }
+    if (providers.has(entry.provider)) {
+      throw new Error(
+        `Managed runtime trust manifest duplicates provider ${entry.provider}`,
+      );
+    }
+    providers.set(entry.provider, entry);
+  }
+  for (const contract of PROVIDER_CONTRACTS) {
+    if (!providers.has(contract.provider)) {
+      throw new Error(
+        `Managed runtime trust manifest is missing provider ${contract.provider}`,
+      );
+    }
+  }
+  for (const provider of providers.keys()) {
+    if (
+      !PROVIDER_CONTRACTS.some((contract) => contract.provider === provider)
+    ) {
+      throw new Error(
+        `Managed runtime trust manifest contains unexpected provider ${provider}`,
+      );
+    }
+  }
+  for (const contract of PROVIDER_CONTRACTS) {
+    const entry = providers.get(contract.provider);
+    if (
+      entry.transport !== contract.transport ||
+      entry.entitlement !== contract.entitlement ||
+      entry.ownership !== contract.ownership ||
+      entry.artifactEncoding !== contract.artifactEncoding
+    ) {
+      throw new Error(
+        `Managed runtime trust manifest contract mismatch for ${contract.provider}`,
+      );
+    }
+    if (
+      contract.ownership === "token-plan" ||
+      contract.ownership === "external"
+    ) {
+      if (entry.artifact !== null || entry.sha256 !== null) {
+        throw new Error(
+          `Managed runtime trust manifest must not hash ${contract.provider}`,
+        );
+      }
+    } else if (!isSafeArtifactPath(entry.artifact) || !isSha256(entry.sha256)) {
+      throw new Error(
+        `Managed runtime trust manifest artifact is invalid for ${contract.provider}`,
+      );
+    }
+  }
+}
+
+async function requireTrustedArtifact(resourcesDirectory, entry) {
+  const candidate = path.join(resourcesDirectory, ...entry.artifact.split("/"));
+  return requireContainedRegularFile(
+    resourcesDirectory,
+    candidate,
+    `${displayProvider(entry.provider)} trusted artifact`,
+  );
+}
+
+async function requireContainedRegularFile(root, candidate, label) {
+  if (typeof candidate !== "string" || !path.isAbsolute(candidate)) {
+    throw new Error(`${label} path must be absolute`);
+  }
+  let metadata;
+  try {
+    metadata = await lstat(candidate);
+  } catch {
+    throw new Error(`${label} is missing: ${candidate}`);
+  }
+  if (!metadata.isFile() || metadata.isSymbolicLink()) {
+    throw new Error(`${label} must be a regular file`);
+  }
+  const canonicalRoot = await realpath(root);
+  const canonicalCandidate = await realpath(candidate);
+  if (!containedBy(canonicalRoot, canonicalCandidate)) {
+    throw new Error(`${label} escapes the app bundle`);
+  }
+  return canonicalCandidate;
 }
 
 function executableManifest(provider, transport, source, entitlement) {
@@ -387,9 +702,39 @@ function selectVersionOutput(stdout, stderr) {
 }
 
 async function sha256File(candidate) {
-  return createHash("sha256")
-    .update(await readFile(candidate))
-    .digest("hex");
+  return sha256Buffer(await readFile(candidate));
+}
+
+function sha256Buffer(payload) {
+  return createHash("sha256").update(payload).digest("hex");
+}
+
+function isSha256(candidate) {
+  return typeof candidate === "string" && /^[a-f0-9]{64}$/u.test(candidate);
+}
+
+function isSafeArtifactPath(candidate) {
+  return (
+    typeof candidate === "string" &&
+    candidate.length > 0 &&
+    !path.posix.isAbsolute(candidate) &&
+    !path.win32.isAbsolute(candidate) &&
+    !candidate.split(/[\\/]/u).includes("..")
+  );
+}
+
+function displayProvider(provider) {
+  const labels = {
+    agy: "Antigravity",
+    claude: "Claude",
+    codex: "Codex",
+    cursor: "Cursor",
+    grok: "Grok",
+    mimo: "MiMo",
+    minimax: "MiniMax",
+    opencode: "OpenCode",
+  };
+  return labels[provider] ?? provider;
 }
 
 async function findUniqueFile(root, predicate, label) {
@@ -415,44 +760,6 @@ async function findUniqueFile(root, predicate, label) {
   return matches[0];
 }
 
-async function materializeGrokForVerification(options) {
-  const payload = await brotliDecompressAsync(
-    await readFile(options.compressedSource),
-  );
-  const targetDirectory = path.join(
-    options.userDataDirectory,
-    "managed-runtimes",
-    "grok",
-    options.target,
-  );
-  const target = path.join(targetDirectory, "grok");
-  await mkdir(targetDirectory, { recursive: true, mode: 0o700 });
-  if (await fileExists(target)) {
-    const existing = await readFile(target);
-    if (!Buffer.from(existing).equals(Buffer.from(payload))) {
-      throw new Error(
-        `Existing verification Grok executable does not match the packaged artifact: ${target}`,
-      );
-    }
-    await chmod(target, 0o755);
-    return target;
-  }
-
-  const temporary = `${target}.tmp-${process.pid}`;
-  try {
-    await writeFile(temporary, payload, { flag: "wx", mode: 0o755 });
-    await chmod(temporary, 0o755);
-    await rename(temporary, target);
-  } finally {
-    try {
-      await unlink(temporary);
-    } catch {
-      // Atomic rename consumed the temporary file.
-    }
-  }
-  return target;
-}
-
 async function findExecutableOnPath(executableName, searchPath) {
   for (const directory of String(searchPath ?? "").split(path.delimiter)) {
     if (!directory || !path.isAbsolute(directory)) continue;
@@ -465,15 +772,6 @@ async function findExecutableOnPath(executableName, searchPath) {
     }
   }
   return null;
-}
-
-async function fileExists(candidate) {
-  try {
-    await access(candidate);
-    return true;
-  } catch {
-    return false;
-  }
 }
 
 function errorMessage(error) {

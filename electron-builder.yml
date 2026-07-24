@@ -1,6 +1,7 @@
 appId: com.okami.workbench
 productName: OkamiCode
 asar: true
+afterPack: scripts/generate-managed-runtime-trust-manifest.mjs
 
 directories:
   output: release

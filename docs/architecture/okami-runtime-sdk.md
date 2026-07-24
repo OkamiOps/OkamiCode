@@ -57,7 +57,10 @@ sent accidentally to another.
   consume provider quota.
 - The packaged acceptance gate resolves real paths, rejects symlink escape,
   probes only `--version` with `PATH=/usr/bin:/bin` and an isolated `HOME`, and
-  reports provider, version, source, SHA-256 checksum, and ownership as JSON.
+  reports provider, version, source, expected and observed SHA-256, and
+  ownership as JSON. An `afterPack` trust manifest inventories every provider:
+  five managed executable payloads have expected hashes, MiMo and MiniMax have
+  no executable, and external Claude has no package-owned expected hash.
 
 ## Current limitations
 
